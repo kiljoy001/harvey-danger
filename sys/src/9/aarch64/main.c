@@ -3,12 +3,11 @@
  * license terms of the GNU GPL v2 in LICENSE.gpl found in the top-level
  * directory of this distribution at http://www.gnu.org/licenses/gpl-2.0.txt
  *
- * First ARM64 Harvey milestone: enter from an ARM64 Image, retain the
- * firmware's device tree, and report progress on QEMU virt's PL011.
- * The UART address is temporary; the real driver must obtain it from DT.
+ * Early ARM64 boot entry.  The fixed QEMU UART is used only until the
+ * device tree has supplied the actual UART address.
  */
 
-#include <u.h>
+#include "fdt.h"
 
 enum {
 	Uartbase = 0x09000000,
@@ -20,12 +19,14 @@ enum {
 	Fdtmax = 16 * 1024 * 1024,
 };
 
+static usize uartbase = Uartbase;
+
 static void
 uartputc(int c)
 {
 	volatile u32 *uart;
 
-	uart = (volatile u32 *)Uartbase;
+	uart = (volatile u32 *)uartbase;
 	while(uart[Uartfr] & Uarttxff)
 		;
 	uart[Uartdr] = c;
@@ -59,11 +60,31 @@ uarthex(usize n)
 	}
 }
 
+__attribute__((noreturn)) void
+arm64fault(void)
+{
+	u64 esr, elr, far;
+
+	__asm__ volatile("mrs %0, esr_el1" : "=r"(esr));
+	__asm__ volatile("mrs %0, elr_el1" : "=r"(elr));
+	__asm__ volatile("mrs %0, far_el1" : "=r"(far));
+	uartputs("ARM64 exception esr ");
+	uarthex(esr);
+	uartputs(" elr ");
+	uarthex(elr);
+	uartputs(" far ");
+	uarthex(far);
+	uartputs("\n");
+	for(;;)
+		__asm__ volatile("wfi");
+}
+
 void
 arm64main(usize dtb)
 {
 	u8 *p;
 	u32 size;
+	Fdtinfo info;
 
 	uartputs("HARVEY-ARM64 ENTRY\n");
 	if(dtb == 0 || (dtb & 7) != 0){
@@ -80,5 +101,38 @@ arm64main(usize dtb)
 	uarthex(dtb);
 	uartputs(", bytes ");
 	uarthex(size);
+	if(fdtparse(p, size, &info) < 0){
+		uartputs("\ndtb: cannot discover RAM and UART\n");
+		return;
+	}
+	uartputs("\nram: ");
+	uarthex(info.rambase);
+	uartputs(" bytes ");
+	uarthex(info.ramsize);
+	uartputs("\nuart: ");
+	uarthex(info.uartbase);
+	uartbase = info.uartbase;
+	uartputs("\ngic: ");
+	uarthex(info.gicdist);
+	uartputs(" cpu ");
+	uarthex(info.giccpu);
+	uartputs("\ntimer irq: ");
+	uarthex(info.timerirq);
 	uartputs("\nHARVEY-ARM64 EARLY-BOOT PASS\n");
+	if(arm64timerinit(&info) < 0){
+		uartputs("timer: initialization failed\n");
+		return;
+	}
+	if(arm64timerwait() < 0){
+		uartputs("timer: interrupts not delivered, state ");
+		uarthex(arm64timerdiag());
+		uartputs("\n");
+		arm64timerstop();
+		return;
+	}
+	arm64timerstop();
+	uartputs("HARVEY-ARM64 TIMER-IRQ PASS\n");
+#ifdef ARM64_TEST_FAULT
+	__asm__ volatile("brk #0");
+#endif
 }

@@ -9,7 +9,7 @@ import subprocess
 
 ROOT = Path(__file__).resolve().parents[2]
 SOURCE = ROOT / "sys/src/9/aarch64"
-OUT = ROOT / "build/arm64"
+OUT = Path(os.environ.get("ARM64_OUT", ROOT / "build/arm64"))
 CC = os.environ.get("ARM64_CC") or shutil.which("clang-23") or "clang"
 LD = os.environ.get("ARM64_LD", "ld.lld")
 OBJCOPY = os.environ.get("ARM64_OBJCOPY", "llvm-objcopy")
@@ -19,11 +19,14 @@ def main() -> None:
     OUT.mkdir(parents=True, exist_ok=True)
     flags = [
         "--target=aarch64-none-elf", "-ffreestanding", "-fno-builtin",
+        "-mgeneral-regs-only",
         "-fno-stack-protector", "-fno-unwind-tables", "-fno-asynchronous-unwind-tables",
         "-O2", "-Wall", "-Wextra", "-Werror", "-I", str(ROOT / "aarch64/include"),
     ]
+    if os.environ.get("ARM64_TEST_FAULT") == "1":
+        flags.append("-DARM64_TEST_FAULT")
     objects = []
-    for name in ("l.S", "main.c"):
+    for name in ("l.S", "main.c", "fdt.c", "timer.c"):
         obj = OUT / (name + ".o")
         subprocess.run([CC, *flags, "-c", str(SOURCE / name), "-o", str(obj)], check=True)
         objects.append(obj)
