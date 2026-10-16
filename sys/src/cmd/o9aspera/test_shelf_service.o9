@@ -82,6 +82,9 @@ main {
          cmp(result.read(), "action 7\n") == 0 &&
          cmp(firstState.read(), "12:34 0 1\n") == 0;
     print("shelf item ", ok, "\n");
+    ok = ok && probe.write("/mnt/shelf-test-a/view/ctl", "click 20 10\n") == 12 &&
+         probe.write("/mnt/shelf-test-a/view/ctl", "click 20 78\n") == 12 &&
+         cmp(result.read(), "action 8\n") == 0;
     ok = ok && probe.write("/mnt/shelf-test-a/view/ctl", "hide clock\n") == 11 &&
          cmp(secondState.read(), "12:34 0 0\n") == 0 &&
          cmp(widgets.read(), "menu control 1\nworkspaces pager 1\nwindows tasklist 1\nclock clock 0\n") == 0 &&

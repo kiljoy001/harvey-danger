@@ -5,10 +5,12 @@ import argparse
 import fcntl
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import time
 
 from prism import REPO_ROOT, KERNEL_BIN, VM_BIN, compile_o9
+from build_aspera_tools import main as build_shell_tools
 
 
 ROOT = Path(REPO_ROOT)
@@ -40,10 +42,18 @@ def run(smoke: bool, system_image: Path | None = None, ram: int = 1024) -> int:
     system = system_image is not None
     exchange = ROOT / "build/aspera-system" if system else EXCHANGE
     exchange.mkdir(parents=True, exist_ok=True)
+    probe_path = exchange / "terminal-probe"
     lock_path = ROOT / ("build/aspera-system.lock" if system else "build/aspera-live.lock")
     with open(lock_path, "w") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         prepare_viewer()
+        mountpoints = []
+        if not system:
+            for name in ("env", "fd"):
+                path = ROOT / name
+                if not path.exists():
+                    path.mkdir()
+                    mountpoints.append(path)
         guest_binary = ROOT / f"build/aspera-boot-{os.getpid()}"
         log_path = ROOT / f"build/aspera-guest-{os.getpid()}.log"
         shm_name = f"/aspera-display-{os.getpid()}"
@@ -52,6 +62,10 @@ def run(smoke: bool, system_image: Path | None = None, ram: int = 1024) -> int:
             try:
                 device = exchange / "dev"
                 device.mkdir(exist_ok=True)
+                if smoke:
+                    probe_path.write_text("1\n")
+                else:
+                    probe_path.unlink(missing_ok=True)
                 for name in ("ctl", "screen0", "screen1", "input"):
                     (device / name).touch()
                 (exchange / "clock").write_text(time.strftime("%H:%M") + "\n")
@@ -63,6 +77,11 @@ def run(smoke: bool, system_image: Path | None = None, ram: int = 1024) -> int:
                      "/lib/aspera/note.txt\n") if system else
                     f"build/aspera-live/{note_path.name}\n")
                 if not system:
+                    build_shell_tools()
+                    guest_bin = exchange / "bin"
+                    guest_bin.mkdir(exist_ok=True)
+                    for name in ("rc", "ls", "cat", "test", "echo"):
+                        shutil.copy2(ROOT / "build" / f"aspera-{name}", guest_bin / name)
                     compile_o9(str(SHELF_SOURCE), str(exchange / "shelf-service"))
                     compile_o9(str(SOURCE), str(guest_binary))
                 with open(log_path, "w+") as log:
@@ -91,14 +110,23 @@ def run(smoke: bool, system_image: Path | None = None, ram: int = 1024) -> int:
                         guest.terminate()
                         guest.wait(timeout=5)
                     if smoke and result.returncode == 0 and not system:
-                        if note_path.read_bytes() != b"Hi!":
-                            raise RuntimeError("Aspera notes save/reopen round trip failed")
+                        saved = note_path.read_bytes() if note_path.exists() else b""
+                        if saved != b"Hi!":
+                            raise RuntimeError(f"Aspera notes save/reopen round trip failed: {saved!r}")
+                        log.seek(0)
+                        preview_output = log.read()
+                        if ("ASPERA-TERM-COMMAND PASS" not in preview_output or
+                                "ASPERA-TERM-REOPEN PASS" not in preview_output):
+                            raise RuntimeError("Aspera guest rc terminal command failed: " +
+                                               preview_output[-1800:])
                         print("Aspera VM presentation and Notes save/reopen PASS")
                     if system:
                         log.seek(0)
                         output = log.read()
                         if ("ASPERA-LIVE READY" not in output or
-                                (smoke and "ASPERA-RC-PROBE PASS" not in output)):
+                                (smoke and ("ASPERA-RC-PROBE PASS" not in output or
+                                            "ASPERA-TERM-COMMAND PASS" not in output or
+                                            "ASPERA-TERM-REOPEN PASS" not in output))):
                             print(output[-2500:])
                             return 1
                         if smoke and result.returncode == 0:
@@ -119,6 +147,9 @@ def run(smoke: bool, system_image: Path | None = None, ram: int = 1024) -> int:
         finally:
             if smoke and not system:
                 (EXCHANGE / "smoke-note.txt").unlink(missing_ok=True)
+            probe_path.unlink(missing_ok=True)
+            for path in reversed(mountpoints):
+                path.rmdir()
             guest_binary.unlink(missing_ok=True)
             log_path.unlink(missing_ok=True)
             (Path("/dev/shm") / shm_name.lstrip("/")).unlink(missing_ok=True)

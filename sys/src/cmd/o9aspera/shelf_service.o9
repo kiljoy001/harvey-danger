@@ -114,10 +114,11 @@ class ShelfState {
     method int64 click(int64 x, int64 y) {
         lastAction = 0;
         if(x < 0 || x >= 1024 || y < 0 || y >= 768) { return 0; }
-        if(menuOpen && x >= 8 && x < 192 && y >= 34 && y < 102) {
+        if(menuOpen && x >= 8 && x < 192 && y >= 34 && y < 136) {
             menuOpen = false;
             lastAction = 6;
             if(y < 68) { lastAction = 7; }
+            else if(y < 102) { lastAction = 8; }
             return lastAction;
         }
         if(y >= 32) { return 0; }

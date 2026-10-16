@@ -1,0 +1,262 @@
+// A guest rc session presented in an Aspera window. The shell and its
+// namespace stay inside the VM; the display host only transports pixels.
+import "canvas.o9";
+import "window.o9";
+import "note.o9";
+import "stdlib/string.o9";
+
+function AsperaTermStartRaw() int64 {
+    int64 result;
+    c {
+        typedef struct {
+            int pid;
+            int input;
+            vlong offset;
+            char path[128];
+        } TermProcess;
+        static int sequence;
+        TermProcess *term;
+        int in[2], output, pid;
+
+        result = 0;
+        term = mallocz(sizeof *term, 1);
+        if(term == nil)
+            goto term_done;
+        snprint(term->path, sizeof term->path, "/mnt/o9/aspera-term-%d-%d",
+                getpid(), ++sequence);
+        output = create(term->path, OWRITE, 0600);
+        if(output < 0){
+            free(term);
+            goto term_done;
+        }
+        if(pipe(in) < 0){
+            close(output);
+            remove(term->path);
+            free(term);
+            goto term_done;
+        }
+        pid = rfork(RFPROC|RFFDG|RFNAMEG|RFENVG|RFNOTEG|RFNOWAIT);
+        if(pid == 0){
+            Dir *shell = dirstat("/bin/rc");
+            if(shell == nil)
+                bind("build/aspera-live/bin", "/bin", MBEFORE);
+            free(shell);
+            if(bind("#e", "/env", MREPL|MCREATE) < 0 ||
+               bind("#d", "/fd", MREPL) < 0){
+                fprint(output, "aspera terminal: shell namespace failed: %r\n");
+                _exits("namespace");
+            }
+            close(in[1]);
+            dup(in[0], 0);
+            dup(output, 1);
+            dup(output, 2);
+            if(in[0] > 2) close(in[0]);
+            if(output > 2) close(output);
+            execl("/bin/rc", "rc", "-i", nil);
+            print("aspera terminal: rc exec failed: %r\n");
+            _exits("rc exec");
+        }
+        close(in[0]);
+        close(output);
+        if(pid < 0){
+            close(in[1]);
+            remove(term->path);
+            free(term);
+            goto term_done;
+        }
+        term->pid = pid;
+        term->input = in[1];
+        result = (vlong)term;
+    term_done:;
+    }
+    return result;
+}
+
+function AsperaTermSendRaw(int64 handle, string command) int64 {
+    int64 result;
+    c {
+        typedef struct {
+            int pid;
+            int input;
+            vlong offset;
+            char path[128];
+        } TermProcess;
+        TermProcess *term = (TermProcess*)handle;
+        int n = o9_string_len(command);
+        result = 0;
+        if(term != nil && term->input >= 0 && n >= 0 && n <= 512 &&
+           write(term->input, o9_string_data(command), n) == n &&
+           write(term->input, "\n", 1) == 1)
+            result = 1;
+    }
+    return result;
+}
+
+function AsperaTermPollRaw(int64 handle) string {
+    string result;
+    c {
+        typedef struct {
+            int pid;
+            int input;
+            vlong offset;
+            char path[128];
+        } TermProcess;
+        TermProcess *term = (TermProcess*)handle;
+        char buf[2048];
+        int fd, n;
+        result = o9_string_new("", 0);
+        if(term != nil){
+            fd = open(term->path, OREAD);
+            if(fd >= 0){
+                if(seek(fd, term->offset, 0) >= 0){
+                    n = read(fd, buf, sizeof buf);
+                    if(n > 0){
+                        term->offset += n;
+                        result = o9_string_new(buf, n);
+                    }
+                }
+                close(fd);
+            }
+        }
+    }
+    return result;
+}
+
+function AsperaTermCloseRaw(int64 handle) int64 {
+    int64 result;
+    c {
+        typedef struct {
+            int pid;
+            int input;
+            vlong offset;
+            char path[128];
+        } TermProcess;
+        TermProcess *term = (TermProcess*)handle;
+        result = 0;
+        if(term != nil){
+            close(term->input);
+            postnote(PNGROUP, term->pid, "kill");
+            remove(term->path);
+            free(term);
+            result = 1;
+        }
+    }
+    return result;
+}
+
+function AsperaTermTailRaw(string value) string {
+    string result;
+    c {
+        int n = o9_string_len(value);
+        int start = n > 7000 ? n - 7000 : 0;
+        result = o9_string_new(o9_string_data(value) + start, n - start);
+    }
+    return result;
+}
+
+function AsperaTermSmokeRaw(string value) int64 {
+    int64 found;
+    c {
+        char *text = o9_string_cstr(value);
+        int fd = open("build/aspera-live/terminal-probe", OREAD);
+        found = 0;
+        if(fd >= 0 && text != nil){
+            if(strstr(text, "VMTERMOK") != nil) found = 1;
+            if(strstr(text, "REOPENOK") != nil) found = 2;
+        }
+        if(fd >= 0) close(fd);
+        free(text);
+    }
+    return found;
+}
+
+class AsperaTerminal {
+    private WindowActor window;
+    private AsperaCanvas surface;
+    private int64 process;
+    private string history;
+    private string input;
+    private bool exitRequested;
+
+    method AsperaTerminal(WindowActor owner) {
+        window = owner;
+        surface = new AsperaCanvas(owner.contentWidth(), owner.contentHeight());
+        Task<int64> started = spawn AsperaTermStartRaw();
+        process = started.await();
+        history = "Aspera rc  |  /bin is on GEFS\n";
+        input = "";
+        exitRequested = false;
+        if(process == 0) { history = "Could not start /bin/rc\n"; }
+        if(surface.ready()) {
+            owner.attachContent(surface);
+            render();
+        }
+    }
+
+    method bool ready() { return process != 0 && surface.ready(); }
+    method bool wantsClose() { return exitRequested; }
+    method string transcript() { return history; }
+
+    private method void append(string value) {
+        history = cat(history, value);
+        if(len(history) > 7000) {
+            Task<string> tail = spawn AsperaTermTailRaw(history);
+            history = tail.await();
+        }
+    }
+
+    method bool key(int64 value) {
+        if(process == 0) { return false; }
+        if(value == 13) {
+            if(cmp(input, "exit") == 0) {
+                exitRequested = true;
+                close();
+                return true;
+            }
+            append(cat(cat("% ", input), "\n"));
+            Task<int64> sent = spawn AsperaTermSendRaw(process, input);
+            if(sent.await() == 0) { append("rc has exited; reopen Terminal from the shelf\n"); }
+            input = "";
+            render();
+            return true;
+        }
+        if(value == 8 || (value >= 32 && value <= 126 && len(input) < 512)) {
+            Task<string> edited = spawn AsperaNoteEditRaw(input, value);
+            input = edited.await();
+            render();
+            return true;
+        }
+        return false;
+    }
+
+    method bool poll() {
+        if(process == 0) { return false; }
+        Task<string> chunk = spawn AsperaTermPollRaw(process);
+        string value = chunk.await();
+        if(len(value) == 0) { return false; }
+        append(value);
+        Task<int64> probe = spawn AsperaTermSmokeRaw(value);
+        int64 result = probe.await();
+        if(result == 1) { print("ASPERA-TERM-COMMAND PASS\n"); }
+        if(result == 2) { print("ASPERA-TERM-REOPEN PASS\n"); }
+        render();
+        return true;
+    }
+
+    method void render() {
+        if(surface.ready()) {
+            Task<int64> painted = spawn AsperaNoteRenderRaw(surface.bufferAddress(),
+                cat(cat(history, "% "), input), 0, "Aspera Terminal  |  rc");
+            painted.await();
+        }
+    }
+
+    method void close() {
+        if(process != 0) {
+            Task<int64> stopped = spawn AsperaTermCloseRaw(process);
+            stopped.await();
+            process = 0;
+        }
+        surface.close();
+    }
+}

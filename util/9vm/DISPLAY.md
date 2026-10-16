@@ -148,13 +148,19 @@ For a development boot that compiles the guest from the source checkout, use
 `./bin/aspera preview`.
 
 The guest manages focus, dragging, workspaces, themes, and the shelf view. It
-also runs a Notes client in a separate Objective-9C offscreen canvas. The
-client receives focused keyboard input and saves its text to
+starts a native `rc` terminal window and a Notes client, each with its own
+Objective-9C offscreen canvas. Closing the terminal stops its shell; choose
+**Open Terminal** from the Aspera shelf menu or press Alt+Enter to start a new
+session. The terminal runs commands inside the guest namespace, so `ls /bin`
+shows installed guest applications. It is currently a line-oriented shell
+window with bounded scrollback; programs requiring a full console protocol
+need further terminal support. The Notes client receives focused keyboard
+input and saves its text to
 `/lib/aspera/note.txt` on GEFS with Ctrl+S. The preview instead writes to
 `build/aspera-live/note.txt`. The host SDL process only presents
 completed frames and forwards mouse/key records. The shelf has workspace
-buttons, a window list, a local clock, and a menu to open Notes or change
-themes. The shelf state and hit routing run in a separate Objective-9C guest
+buttons, a window list, a local clock, and a menu to open Notes or Terminal and
+change themes. The shelf state and hit routing run in a separate Objective-9C guest
 program, `shelf_service.o9`, which Aspera mounts through `/srv/ShelfViews` at
 `/mnt/shelf`. Its 9P view exposes `protocol`, `widgets`, `layout`, `state`,
 `ctl`, and a per-attach `result`. Aspera sends clock and click commands to

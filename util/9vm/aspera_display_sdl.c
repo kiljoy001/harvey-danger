@@ -53,7 +53,10 @@ main(int argc, char **argv)
     SDL_Event event;
     uint32_t *argb = NULL;
     uint64_t smoke_start = 0, serial;
+    uint64_t terminal_frame = 0;
     uint32_t deadline;
+    uint32_t terminal_start = 0;
+    size_t terminal_sent = 0;
     int running = 1, failed = 0, dragging = 0, smoke, stage = 0, changed;
     char line[96];
     size_t i;
@@ -178,8 +181,8 @@ main(int argc, char **argv)
             stage = 1;
         }
         if(smoke && stage == 1 && display.seen >= smoke_start + 2){
-            if(vmdisplay_client_input(&display, "down 260 14\n") < 0 ||
-               vmdisplay_client_input(&display, "up 260 14\n") < 0)
+            if(vmdisplay_client_input(&display, "down 400 14\n") < 0 ||
+               vmdisplay_client_input(&display, "up 400 14\n") < 0)
                 failed = 1;
             stage = 2;
         }
@@ -215,6 +218,65 @@ main(int argc, char **argv)
             stage = 7;
         }
         if(smoke && stage == 7 && display.seen >= smoke_start + 11){
+            if(vmdisplay_client_input(&display, "down 260 14\n") < 0 ||
+               vmdisplay_client_input(&display, "up 260 14\n") < 0)
+                failed = 1;
+            terminal_frame = display.seen;
+            stage = 8;
+        }
+        if(smoke && stage == 8 && display.seen > terminal_frame){
+            const char *command_text = "echo VMTERMOK";
+            if(command_text[terminal_sent] != '\0'){
+                snprintf(line, sizeof line, "key %u 0\n",
+                         (unsigned char)command_text[terminal_sent++]);
+                if(vmdisplay_client_input_wait(&display, line, 1000) < 0)
+                    failed = 1;
+                terminal_frame = display.seen;
+            }else{
+                if(vmdisplay_client_input_wait(&display, "key 13 0\n", 1000) < 0)
+                    failed = 1;
+                terminal_start = SDL_GetTicks();
+                stage = 9;
+            }
+        }
+        if(smoke && stage == 9 && SDL_GetTicks() - terminal_start >= 750){
+            if(vmdisplay_client_input(&display, "down 684 128\n") < 0 ||
+               vmdisplay_client_input(&display, "up 684 128\n") < 0)
+                failed = 1;
+            terminal_frame = display.seen;
+            stage = 10;
+        }
+        if(smoke && stage == 10 && display.seen > terminal_frame){
+            if(vmdisplay_client_input(&display, "down 20 10\n") < 0 ||
+               vmdisplay_client_input(&display, "up 20 10\n") < 0)
+                failed = 1;
+            terminal_frame = display.seen;
+            stage = 11;
+        }
+        if(smoke && stage == 11 && display.seen > terminal_frame){
+            if(vmdisplay_client_input(&display, "down 20 78\n") < 0 ||
+               vmdisplay_client_input(&display, "up 20 78\n") < 0)
+                failed = 1;
+            terminal_frame = display.seen;
+            terminal_sent = 0;
+            stage = 12;
+        }
+        if(smoke && stage == 12 && display.seen > terminal_frame){
+            const char *command_text = "echo REOPENOK";
+            if(command_text[terminal_sent] != '\0'){
+                snprintf(line, sizeof line, "key %u 0\n",
+                         (unsigned char)command_text[terminal_sent++]);
+                if(vmdisplay_client_input_wait(&display, line, 1000) < 0)
+                    failed = 1;
+                terminal_frame = display.seen;
+            }else{
+                if(vmdisplay_client_input_wait(&display, "key 13 0\n", 1000) < 0)
+                    failed = 1;
+                terminal_start = SDL_GetTicks();
+                stage = 13;
+            }
+        }
+        if(smoke && stage == 13 && SDL_GetTicks() - terminal_start >= 750){
             puts("ASPERA-DISPLAY PASS committed frames and input round trip");
             running = 0;
         }

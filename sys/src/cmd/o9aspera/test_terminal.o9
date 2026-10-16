@@ -1,0 +1,73 @@
+import "terminal.o9";
+import "stdlib/time.o9";
+
+function AsperaTermContainsRaw(string text, string needle) int64 {
+    int64 found;
+    c {
+        char *body = o9_string_cstr(text);
+        char *part = o9_string_cstr(needle);
+        found = body != nil && part != nil && strstr(body, part) != nil;
+        free(body);
+        free(part);
+    }
+    return found;
+}
+
+main {
+    Task<int64> started = spawn AsperaTermStartRaw();
+    int64 process = started.await();
+    bool ok = process != 0;
+    if(ok) {
+        Task<int64> first = spawn AsperaTermSendRaw(process, "asperatest=42");
+        Task<int64> second = spawn AsperaTermSendRaw(process, "echo $asperatest");
+        Task<int64> third = spawn AsperaTermSendRaw(process, "ls -ld /bin/rc");
+        ok = first.await() == 1 && second.await() == 1 && third.await() == 1;
+        string output = "";
+        int64 i = 0;
+        bool foundValue = false;
+        bool foundBinary = false;
+        while(i < 50 && (!foundValue || !foundBinary)) {
+            Task<string> chunk = spawn AsperaTermPollRaw(process);
+            output = cat(output, chunk.await());
+            Task<int64> a = spawn AsperaTermContainsRaw(output, "42");
+            Task<int64> b = spawn AsperaTermContainsRaw(output, "/bin/rc");
+            foundValue = a.await() == 1;
+            foundBinary = b.await() == 1;
+            if(!foundValue || !foundBinary) {
+                Task<int64> pause = spawn TimeSleepRaw(50);
+                pause.await();
+            }
+            i = i + 1;
+        }
+        ok = ok && foundValue && foundBinary;
+        print("terminal output: ", output, "\n");
+        Task<int64> stopped = spawn AsperaTermCloseRaw(process);
+        ok = stopped.await() == 1 && ok;
+        Task<int64> reopened = spawn AsperaTermStartRaw();
+        int64 fresh = reopened.await();
+        ok = fresh != 0 && ok;
+        if(fresh != 0) {
+            Task<int64> sentAgain = spawn AsperaTermSendRaw(fresh, "echo reopened");
+            ok = sentAgain.await() == 1 && ok;
+            string secondOutput = "";
+            int64 tries = 0;
+            bool sawReopened = false;
+            while(tries < 50 && !sawReopened) {
+                Task<string> newChunk = spawn AsperaTermPollRaw(fresh);
+                secondOutput = cat(secondOutput, newChunk.await());
+                Task<int64> seen = spawn AsperaTermContainsRaw(secondOutput, "reopened");
+                sawReopened = seen.await() == 1;
+                if(!sawReopened) {
+                    Task<int64> pauseAgain = spawn TimeSleepRaw(50);
+                    pauseAgain.await();
+                }
+                tries = tries + 1;
+            }
+            ok = ok && sawReopened;
+            Task<int64> stoppedAgain = spawn AsperaTermCloseRaw(fresh);
+            ok = stoppedAgain.await() == 1 && ok;
+        }
+    }
+    if(ok) { print("ASPERA-TERMINAL PASS\n"); }
+    else { print("ASPERA-TERMINAL FAIL\n"); }
+}

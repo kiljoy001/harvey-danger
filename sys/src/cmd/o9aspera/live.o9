@@ -5,6 +5,7 @@ import "theme.o9";
 import "window.o9";
 import "desktop.o9";
 import "note.o9";
+import "terminal.o9";
 import "stdlib/io.o9";
 import "stdlib/string.o9";
 import "stdlib/time.o9";
@@ -103,6 +104,9 @@ class AsperaLive {
     private ShelfClient shelfService;
     private WindowActor noteWindow;
     private AsperaNote note;
+    private WindowActor terminalWindow;
+    private AsperaTerminal terminal;
+    private bool terminalOpen;
     private WindowActor dragWindow;
     private bool dragging;
     private int64 dragX;
@@ -138,6 +142,10 @@ class AsperaLive {
         notePath = notePathTask.await();
         if(len(notePath) == 0) { notePath = cat(base, "/note.txt"); }
         note = new AsperaNote(noteWindow, notePath);
+        terminalWindow = desk.createWindow("Terminal [rc]", 110, 115, 590, 410);
+        terminal = new AsperaTerminal(terminalWindow);
+        terminalOpen = terminal.ready();
+        if(!terminalOpen) { desk.closeWindow(terminalWindow); }
         dragging = false;
         frame = 0;
         lastClock = "";
@@ -152,6 +160,22 @@ class AsperaLive {
     }
 
     method bool ready() { return running; }
+
+    private method void openTerminal() {
+        if(terminalOpen) {
+            desk.focus(terminalWindow);
+        } else {
+            terminalWindow = desk.createWindow("Terminal [rc]", 110, 115, 590, 410);
+            terminal = new AsperaTerminal(terminalWindow);
+            terminalOpen = terminal.ready();
+            if(!terminalOpen) { desk.closeWindow(terminalWindow); }
+        }
+    }
+
+    method bool pollTerminal() {
+        if(!terminalOpen) { return false; }
+        return terminal.poll();
+    }
 
     method bool updateClock() {
         if(!shelfService.ready()) { return false; }
@@ -224,6 +248,7 @@ class AsperaLive {
                 }
                 return true;
             }
+            if(widgetAction == 8) { openTerminal(); return true; }
             if(widgetAction >= 100 && widgetAction < 104) {
                 int64 slot = widgetAction - 100;
                 if(slot >= desk.windowCount()) { return false; }
@@ -257,6 +282,10 @@ class AsperaLive {
                     if(note.isDirty() && !note.save()) { return true; }
                     note.close();
                 }
+                if(terminalOpen && hit.id() == terminalWindow.id()) {
+                    terminal.close();
+                    terminalOpen = false;
+                }
                 desk.closeWindow(hit);
             }
             if(part == 4) { hit.toggleShade(); }
@@ -271,6 +300,10 @@ class AsperaLive {
             if(desk.windowCount() > 0) { focused = desk.getFocused(); }
             if(modifier % 2 == 1 && key >= 49 && key <= 52) {
                 desk.switchDesktop((key - 49) % 2, (key - 49) / 2);
+                return true;
+            }
+            if(modifier % 2 == 1 && key == 13) {
+                openTerminal();
                 return true;
             }
             if(modifier % 2 == 1 && key == 115 && desk.windowCount() > 0) {
@@ -290,6 +323,15 @@ class AsperaLive {
                focused.id() == noteWindow.id()) {
                 return note.key(key);
             }
+            if(modifier % 4 < 2 && terminalOpen && desk.windowCount() > 0 &&
+               focused.id() == terminalWindow.id()) {
+                bool handled = terminal.key(key);
+                if(terminal.wantsClose()) {
+                    desk.closeWindow(terminalWindow);
+                    terminalOpen = false;
+                }
+                return handled;
+            }
         }
         return false;
     }
@@ -306,6 +348,7 @@ class AsperaLive {
 
     method void close() {
         if(note.ready()) { note.close(); }
+        if(terminalOpen) { terminal.close(); terminalOpen = false; }
         shelfService.close();
         canvas.close();
         running = false;
@@ -331,6 +374,10 @@ main {
                 idle = 0;
             } else {
                 idle = idle + 1;
+                if(idle % 2 == 0 && live.pollTerminal() && !live.publish()) {
+                    print("ASPERA-LIVE FAIL terminal frame\n");
+                    live.stop();
+                }
                 if(idle >= 12) {
                     if(live.updateClock() && !live.publish()) {
                         print("ASPERA-LIVE FAIL clock frame\n");

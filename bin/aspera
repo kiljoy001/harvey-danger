@@ -45,7 +45,7 @@ def check(command: str, image: Path) -> list[str]:
         o9_root = Path(os.environ["O9_REPO"])
         if not (o9_root / "o9c/o9c").is_file():
             problems.append(f"missing Objective-9C compiler at {o9_root / 'o9c/o9c'}")
-        for tool in ("clang", "ld.lld"):
+        for tool in ("clang", "ld.lld", "bison", "llvm-ar"):
             if shutil.which(tool) is None:
                 problems.append(f"missing command {tool}")
     for tool in ("gcc", "sdl2-config"):

@@ -177,7 +177,7 @@ function AsperaNoteVisualLineRaw(string value, int64 columns, int64 wanted) stri
     return out;
 }
 
-function AsperaNoteRenderRaw(int64 ptr, string value, int64 flags) int64 {
+function AsperaNoteRenderRaw(int64 ptr, string value, int64 flags, string title) int64 {
     c {
         #undef FONT8X14_H
         #include "font8x14.h"
@@ -190,6 +190,7 @@ function AsperaNoteRenderRaw(int64 ptr, string value, int64 flags) int64 {
 
         AsperaBuffer *b = (AsperaBuffer*)ptr;
         char *s = o9_string_cstr(value);
+        char *heading = o9_string_cstr(title);
 
         #define ASPERA_CHAR(ch_val, cx, cy, col) do { \
             unsigned char _ch = (unsigned char)(ch_val); \
@@ -234,7 +235,8 @@ function AsperaNoteRenderRaw(int64 ptr, string value, int64 flags) int64 {
                 for(int i = 0; i < width; i++)
                     scan[i] = 0x253747;
             }
-            ASPERA_TEXT("Aspera Notes  |  Ctrl+S saves", 8, 5, 0xffd382);
+            if(heading != nil)
+                ASPERA_TEXT(heading, 8, 5, 0xffd382);
             if(flags & 1)
                 ASPERA_TEXT("*", width - 16, 5, 0xffd382);
             if(flags & 2)
@@ -281,6 +283,7 @@ function AsperaNoteRenderRaw(int64 ptr, string value, int64 flags) int64 {
         #undef ASPERA_CHAR
         #undef ASPERA_TEXT
         free(s);
+        free(heading);
     }
     return 0;
 }
@@ -344,7 +347,8 @@ class AsperaNote {
             int64 flags = 0;
             if(dirty) { flags = flags + 1; }
             if(saveError) { flags = flags + 2; }
-            Task<int64> renderTask = spawn AsperaNoteRenderRaw(surface.bufferAddress(), contents, flags);
+            Task<int64> renderTask = spawn AsperaNoteRenderRaw(surface.bufferAddress(), contents, flags,
+                                                               "Aspera Notes  |  Ctrl+S saves");
             renderTask.await();
         }
     }

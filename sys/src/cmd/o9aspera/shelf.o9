@@ -166,11 +166,13 @@ function AsperaShelfBarRaw(int64 ptr, string stateKey, int64 selected) int64 {
                     ASPERA_TEXT(clk, 972, 9, 0xe4eaf0);
                 }
                 if(st[5] == '1'){
-                    ASPERA_FILL(8, 34, 184, 68, 0x263542);
-                    ASPERA_BORDER(8, 34, 184, 68, 0xb87d31);
+                    ASPERA_FILL(8, 34, 184, 102, 0x263542);
+                    ASPERA_BORDER(8, 34, 184, 102, 0xb87d31);
                     ASPERA_FILL(9, 68, 182, 1, 0x526b7d);
+                    ASPERA_FILL(9, 102, 182, 1, 0x526b7d);
                     ASPERA_TEXT("Open Notes", 20, 44, 0xe4eaf0);
-                    ASPERA_TEXT("Cycle theme", 20, 78, 0xe4eaf0);
+                    ASPERA_TEXT("Open Terminal", 20, 78, 0xe4eaf0);
+                    ASPERA_TEXT("Cycle theme", 20, 112, 0xe4eaf0);
                 }
             }
         }

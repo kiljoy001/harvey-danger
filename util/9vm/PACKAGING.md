@@ -15,7 +15,9 @@ desktop as the development preview. The desktop and shelf service are real
 Plan 9 executables installed in the image's `/bin`; the host SDL process only
 shows committed frames and forwards input. Notes save under `/lib/aspera` in
 GEFS. The image also contains native `rc`, `ls`, `cat`, `test`, and `echo`, so
-the guest can inspect its installed applications. It can be invoked from
+the guest can inspect its installed applications. The desktop starts with a
+terminal; closing it stops that `rc` session. Use **Open Terminal** in the shelf
+menu or Alt+Enter to start another. It can be invoked from
 another working directory by its absolute path.
 Supply a different image with `--image /path/to/image` and guest memory with
 `--ram`.
@@ -31,7 +33,9 @@ The script compiles the desktop and shelf from Objective-9C source, builds the
 native shell commands, copies them through a temporary FAT stage disk, checks
 the copies, and syncs GEFS.
 Keep a backup of an image before provisioning it. `bin/aspera start --smoke`
-checks the installed desktop's frame and input path.
+checks the installed desktop's frame, input, Notes, and terminal command path.
+The source VM regression for persistent `rc` state and close/reopen is
+`python3 util/9vm/test_aspera_terminal.py`.
 
 The graphical development preview has a separate command:
 
