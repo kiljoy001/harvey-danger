@@ -1,6 +1,6 @@
 # Starting and packaging Aspera
 
-## Start the current desktop
+## Start the current system
 
 From this checkout, after building the VM, kernel, Objective-9C libraries,
 and guest GEFS server:
@@ -10,12 +10,25 @@ and guest GEFS server:
 ./bin/aspera start
 ```
 
-`start` runs in the foreground and exits when the SDL window closes. It can
-be invoked from another working directory by its absolute path. The current
-desktop is a development boot: it recompiles `live.o9` and the shelf service,
-then runs the VM against this checkout's host 9P tree. `--smoke` drives a
-short, headless input and Notes save/reopen check. If Objective-9C is not in
-the sibling `objective-9c` checkout, set `O9_REPO` to its source root.
+`start` boots the image-backed Aspera system and shows its serial console in
+the calling terminal. It can be invoked from another working directory by
+its absolute path. The current GEFS boot mounts persistent storage and starts
+the o9irc service, but it does **not** start a graphical desktop. Supply a
+different image with `--image /path/to/image` and guest memory with `--ram`.
+
+The graphical development preview has a separate command:
+
+```sh
+./bin/aspera preview
+SDL_VIDEODRIVER=dummy ./bin/aspera preview --smoke
+```
+
+`preview` compiles `live.o9` and the shelf service to real Plan 9 guest
+executables, boots them with 9vm's `-boot` override, and exits when the SDL
+window closes. It uses the source checkout's host 9P tree and saves Notes in
+`build/aspera-live/note.txt`. It is not the image-backed system boot. If
+Objective-9C is not in the sibling `objective-9c` checkout, set `O9_REPO` to
+its source root.
 
 For a new source checkout with 9front source in a sibling `plan9front`
 directory, the current build sequence is:
@@ -64,7 +77,5 @@ from the assembled bundle itself.
 Before producing that bundle, separate guest compilation from VM startup,
 remove source-checkout paths from the host runner, install the guest desktop
 and services into GEFS, and make the isolated GEFS boot start the graphical
-session. The current image boot mounts persistent storage and starts the IRC
-service, but the desktop window is still launched through the development
-host-tree path. These are packaging gates, not properties of the current
-`bin/aspera start` command.
+session. These are packaging gates; `bin/aspera start` currently starts the
+image-backed console system.

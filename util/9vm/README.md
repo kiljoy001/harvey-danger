@@ -1,7 +1,9 @@
 # 9vm host 9P transports
 
-To launch the current Aspera desktop VM from this checkout, run
-`./bin/aspera check` followed by `./bin/aspera start`. See
+To launch the current GEFS-backed Aspera VM from this checkout, run
+`./bin/aspera check` followed by `./bin/aspera start`. It currently has a
+serial console and no graphical desktop. Run `./bin/aspera preview` for the
+graphical Objective-9C development boot. See
 [the startup and packaging notes](PACKAGING.md) for the runtime bundle target.
 
 For the full guest, o9c, Aspera, and later bare-metal layout, see
