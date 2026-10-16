@@ -90,3 +90,13 @@ util/harvey.raw
 /usr/harvey/lib/cache/
 compile_commands.json
 apex
+
+# Aspera microVM build and runtime outputs
+/build/
+/mnt/o9/
+/boot/boot
+/boot/gefsinit
+/util/9vm/9vm
+/util/9vm/netfs
+/util/9vm/test_payload.elf
+**/__pycache__/

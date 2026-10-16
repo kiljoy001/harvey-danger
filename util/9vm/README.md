@@ -1,5 +1,9 @@
 # 9vm host 9P transports
 
+To launch the current Aspera desktop VM from this checkout, run
+`./bin/aspera check` followed by `./bin/aspera start`. See
+[the startup and packaging notes](PACKAGING.md) for the runtime bundle target.
+
 For the full guest, o9c, Aspera, and later bare-metal layout, see
 [the architecture map](ARCHITECTURE.md).
 

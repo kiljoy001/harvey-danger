@@ -4,7 +4,8 @@ import sys
 import subprocess
 
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
-O9_REPO = "/home/scott/Repo/objective-9c"
+O9_REPO = os.path.abspath(os.environ.get(
+    "O9_REPO", os.path.join(REPO_ROOT, "..", "objective-9c")))
 LIBTAB_DIR = os.path.join(O9_REPO, "libtab")
 BUILD_DIR = os.path.join(REPO_ROOT, "build/libo9")
 OUT_LIB = os.path.join(REPO_ROOT, "build/libo9.a")

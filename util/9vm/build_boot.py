@@ -4,7 +4,8 @@ import sys
 import subprocess
 
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
-O9_REPO = "/home/scott/Repo/objective-9c"
+O9_REPO = os.path.abspath(os.environ.get(
+    "O9_REPO", os.path.join(REPO_ROOT, "..", "objective-9c")))
 O9C_BIN = os.path.join(O9_REPO, "o9c/o9c")
 
 BOOT_O9 = os.path.join(REPO_ROOT, "boot/init.o9")
