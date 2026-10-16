@@ -25,8 +25,10 @@ def main() -> None:
     ]
     if os.environ.get("ARM64_TEST_FAULT") == "1":
         flags.append("-DARM64_TEST_FAULT")
+    if os.environ.get("ARM64_TEST_RESERVE") == "1":
+        flags.append("-DARM64_TEST_RESERVE")
     objects = []
-    for name in ("l.S", "main.c", "fdt.c", "timer.c"):
+    for name in ("l.S", "main.c", "fdt.c", "timer.c", "phys.c"):
         obj = OUT / (name + ".o")
         subprocess.run([CC, *flags, "-c", str(SOURCE / name), "-o", str(obj)], check=True)
         objects.append(obj)

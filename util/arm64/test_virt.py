@@ -40,14 +40,16 @@ def main() -> None:
         expected = ("HARVEY-ARM64 ENTRY", "dtb: valid at ",
                     f"bytes 0x{memory * 1024 * 1024:016x}",
                     "uart: 0x0000000009000000", "timer irq: 0x000000000000001b",
-                    "HARVEY-ARM64 EARLY-BOOT PASS", "HARVEY-ARM64 TIMER-IRQ PASS")
+                    "HARVEY-ARM64 EARLY-BOOT PASS", "HARVEY-ARM64 PHYS-PAGE PASS",
+                    "HARVEY-ARM64 TIMER-IRQ PASS")
         if any(marker not in transcript for marker in expected):
             raise RuntimeError(f"ARM64 boot failed with {memory} MiB:\n" + transcript)
-        print(f"QEMU virt {memory} MiB: entry, DTB, timer IRQ PASS")
+        print(f"QEMU virt {memory} MiB: entry, DTB, physical pages, timer IRQ PASS")
 
     fault_out = ROOT / "build/arm64-fault"
     env = os.environ.copy()
-    env.update(ARM64_OUT=str(fault_out), ARM64_TEST_FAULT="1")
+    env.update(ARM64_OUT=str(fault_out), ARM64_TEST_FAULT="1",
+               ARM64_TEST_RESERVE="1")
     subprocess.run([sys.executable, str(Path(__file__).with_name("build_virt.py"))],
                    env=env, check=True, stdout=subprocess.DEVNULL)
     command = ["qemu-system-aarch64", "-machine", "virt", "-cpu", "cortex-a57",
@@ -66,10 +68,11 @@ def main() -> None:
             guest.kill()
             guest.wait()
     transcript = output.decode("utf-8", errors="replace")
-    if "HARVEY-ARM64 TIMER-IRQ PASS" not in transcript or \
+    if "HARVEY-ARM64 RESERVED-PAGE PASS" not in transcript or \
+            "HARVEY-ARM64 TIMER-IRQ PASS" not in transcript or \
             transcript.count("ARM64 exception esr 0x00000000f2000000") != 1:
         raise RuntimeError("ARM64 exception vector failed:\n" + transcript)
-    print("QEMU virt synchronous exception vector PASS")
+    print("QEMU virt reserved page and synchronous exception vector PASS")
 
 
 if __name__ == "__main__":

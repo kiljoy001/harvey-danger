@@ -22,12 +22,32 @@ struct Fdtnode {
 	u8 *intr;
 	u32 intrlen;
 	int memory, uart, gic, timer;
+	int reservedir, reserve;
 };
 
 static u32
 get4(u8 *p)
 {
 	return (u32)p[0]<<24 | (u32)p[1]<<16 | (u32)p[2]<<8 | p[3];
+}
+
+static u64
+get8(u8 *p)
+{
+	return (u64)get4(p)<<32 | get4(p+4);
+}
+
+static int
+addreserve(Fdtinfo *out, u64 base, u64 size)
+{
+	if(size == 0)
+		return 0;
+	if(base+size < base || out->nreserve == Maxfdtreserve)
+		return -1;
+	out->reserve[out->nreserve].base = base;
+	out->reserve[out->nreserve].size = size;
+	out->nreserve++;
+	return 0;
 }
 
 static int
@@ -92,8 +112,8 @@ int
 fdtparse(void *blob, usize bytes, Fdtinfo *out)
 {
 	u8 *p, *s, *str, *value;
-	u32 total, soff, ssize, stroff, strsize, pos, token, namelen, len, depth;
-	u32 i, off;
+	u32 total, soff, ssize, stroff, strsize, rsv, pos, token, namelen, len, depth;
+	u32 i, off, stride;
 	u64 base, size;
 	Fdtnode nodes[Maxdepth], *node;
 	int ended;
@@ -106,17 +126,30 @@ fdtparse(void *blob, usize bytes, Fdtinfo *out)
 		return -1;
 	soff = get4(p+8);
 	stroff = get4(p+12);
+	rsv = get4(p+16);
 	strsize = get4(p+32);
 	ssize = get4(p+36);
 	if(get4(p+20) < 17 || get4(p+24) > 17 ||
 	   soff > total || ssize > total-soff || stroff > total ||
-	   strsize > total-stroff || (soff&3) != 0)
+	   strsize > total-stroff || (soff&3) != 0 ||
+	   rsv < Fdtmin || rsv > soff || (rsv&7) != 0)
 		return -1;
 	s = p+soff;
 	str = p+stroff;
 	out->rambase = out->ramsize = out->uartbase = 0;
 	out->gicdist = out->giccpu = 0;
 	out->timerirq = 0;
+	out->nreserve = 0;
+	for(; rsv <= soff && soff-rsv >= 16; rsv += 16){
+		base = get8(p+rsv);
+		size = get8(p+rsv+8);
+		if(base == 0 && size == 0)
+			break;
+		if(addreserve(out, base, size) < 0)
+			return -1;
+	}
+	if(rsv > soff || soff-rsv < 16)
+		return -1;
 	pos = depth = ended = 0;
 	while(pos <= ssize && ssize-pos >= 4){
 		token = get4(s+pos);
@@ -144,6 +177,8 @@ fdtparse(void *blob, usize bytes, Fdtinfo *out)
 			               s[pos+4] == 'r' && s[pos+5] == 'y' &&
 			               (s[pos+6] == '@' || s[pos+6] == 0);
 			node->uart = node->gic = node->timer = 0;
+			node->reservedir = depth == 1 && same((char *)s+pos, "reserved-memory");
+			node->reserve = depth != 0 && nodes[depth-1].reservedir;
 			pos = (i+4)&~3U;
 			if(pos > ssize)
 				return -1;
@@ -188,6 +223,19 @@ fdtparse(void *blob, usize bytes, Fdtinfo *out)
 			if(depth == 0)
 				return -1;
 			node = &nodes[--depth];
+			if(node->reserve && node->reg != nil){
+				if(node->parentaddr == 0 || node->parentaddr > 2 ||
+				   node->parentsize == 0 || node->parentsize > 2)
+					return -1;
+				stride = (node->parentaddr+node->parentsize)*4;
+				if(node->reglen % stride != 0)
+					return -1;
+				for(i = 0; i < node->reglen/stride; i++){
+					if(regpair(node, i, &base, &size) < 0 ||
+					   addreserve(out, base, size) < 0)
+						return -1;
+				}
+			}
 			if(node->timer && node->intrlen >= 36 &&
 			   get4(node->intr+24) == 1)
 				out->timerirq = get4(node->intr+28)+16;

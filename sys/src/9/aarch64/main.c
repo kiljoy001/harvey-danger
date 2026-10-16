@@ -7,7 +7,11 @@
  * device tree has supplied the actual UART address.
  */
 
-#include "fdt.h"
+#include "phys.h"
+
+#ifdef ARM64_TEST_RESERVE
+extern char __image_end[];
+#endif
 
 enum {
 	Uartbase = 0x09000000,
@@ -85,6 +89,10 @@ arm64main(usize dtb)
 	u8 *p;
 	u32 size;
 	Fdtinfo info;
+	u64 page0, page1;
+#ifdef ARM64_TEST_RESERVE
+	u64 blocked;
+#endif
 
 	uartputs("HARVEY-ARM64 ENTRY\n");
 	if(dtb == 0 || (dtb & 7) != 0){
@@ -119,6 +127,37 @@ arm64main(usize dtb)
 	uartputs("\ntimer irq: ");
 	uarthex(info.timerirq);
 	uartputs("\nHARVEY-ARM64 EARLY-BOOT PASS\n");
+#ifdef ARM64_TEST_RESERVE
+	if(info.nreserve == Maxfdtreserve)
+		return;
+	blocked = ((u64)__image_end+4095) & ~(u64)4095;
+	info.reserve[info.nreserve].base = blocked;
+	info.reserve[info.nreserve++].size = 4096;
+#endif
+	if(arm64physinit(&info, dtb, size) < 0 ||
+	   (page0 = arm64physpage()) == 0 ||
+	   (page1 = arm64physpage()) == 0 ||
+	   page1 == page0 || ((page0|page1)&4095) != 0 ||
+	   *(u64 *)page0 != 0 || *(u64 *)(page0+4096-8) != 0 ||
+	   *(u64 *)page1 != 0 || *(u64 *)(page1+4096-8) != 0){
+		uartputs("physical pages: initialization failed\n");
+		return;
+	}
+	*(u64 *)page0 = 0x1122334455667788ULL;
+	if(*(u64 *)page0 != 0x1122334455667788ULL || *(u64 *)page1 != 0){
+		uartputs("physical pages: isolation failed\n");
+		return;
+	}
+	uartputs("physical page: ");
+	uarthex(page0);
+	uartputs("\nHARVEY-ARM64 PHYS-PAGE PASS\n");
+#ifdef ARM64_TEST_RESERVE
+	if(page0 <= blocked){
+		uartputs("reserved page: allocator reused it\n");
+		return;
+	}
+	uartputs("HARVEY-ARM64 RESERVED-PAGE PASS\n");
+#endif
 	if(arm64timerinit(&info) < 0){
 		uartputs("timer: initialization failed\n");
 		return;

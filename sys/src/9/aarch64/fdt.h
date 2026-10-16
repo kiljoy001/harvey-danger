@@ -4,6 +4,13 @@
 #include <u.h>
 
 typedef struct Fdtinfo Fdtinfo;
+typedef struct Fdtreserve Fdtreserve;
+struct Fdtreserve {
+	u64 base;
+	u64 size;
+};
+
+enum { Maxfdtreserve = 32 };
 struct Fdtinfo {
 	u64 rambase;
 	u64 ramsize;
@@ -11,6 +18,8 @@ struct Fdtinfo {
 	u64 gicdist;
 	u64 giccpu;
 	u32 timerirq;
+	u32 nreserve;
+	Fdtreserve reserve[Maxfdtreserve];
 };
 
 int fdtparse(void *, usize, Fdtinfo *);

@@ -22,6 +22,13 @@ get4(u8 *p)
 }
 
 static void
+put8(u8 *p, u64 n)
+{
+	put4(p, n>>32);
+	put4(p+4, n);
+}
+
+static void
 reject(u8 *p, usize n, char *reason)
 {
 	Fdtinfo info;
@@ -82,6 +89,23 @@ main(int argc, char **argv)
 	memcpy(work, original, n);
 	put4(work+structure+16, strsize);
 	reject(work, n, "property name outside strings");
+	memcpy(work, original, n);
+	put4(work+16, 0x31);
+	reject(work, n, "unaligned reservation map");
+	/* Insert one firmware reservation before the structure block. */
+	memcpy(work, original, n);
+	memmove(work+structure+16, work+structure, n-structure-16);
+	put4(work+8, structure+16);
+	put4(work+12, strings+16);
+	put8(work+structure-16, 0x40090000);
+	put8(work+structure-8, 0x1000);
+	memset(work+structure, 0, 16);
+	if(fdtparse(work, n, &info) < 0 || info.nreserve != 1 ||
+	   info.reserve[0].base != 0x40090000 || info.reserve[0].size != 0x1000)
+		return 1;
+	put8(work+structure-16, ~(u64)0);
+	put8(work+structure-8, 0x1000);
+	reject(work, n, "overflowing reservation");
 	/* Mutate the real structure; the parser may accept or reject, but never overread. */
 	x = 0x9e3779b9;
 	for(i = 0; i < 2000; i++){
