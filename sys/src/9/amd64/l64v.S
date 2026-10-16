@@ -61,9 +61,8 @@ outb:
 
 .global outsb
 outsb:
-	MOVL	%edi, %edx			/* MOVL	port+0(FP), DX */
-	MOVQ	%rsi, %rdi
 	MOVL	%edx, %ecx
+	MOVL	%edi, %edx
 	CLD
 	REP; OUTSB
 	RET
@@ -425,6 +424,11 @@ gotolabel:
 	MOVQ	0(%rdi), %rsp
 	MOVQ	8(%rdi), %r11
 	MOVQ	16(%rdi), %rbp
+	MOVQ	24(%rdi), %rbx
+	MOVQ	32(%rdi), %r12
+	MOVQ	40(%rdi), %r13
+	MOVQ	48(%rdi), %r14
+	MOVQ	56(%rdi), %r15
 	MOVQ	$1, %rax			/* return 1 */
 	JMP	*%r11
 
@@ -435,6 +439,11 @@ gotolabel:
 .global slim_setlabel
 slim_setlabel:
 	MOVQ	%rbp, 16(%rdi)
+	MOVQ	%rbx, 24(%rdi)
+	MOVQ	%r12, 32(%rdi)
+	MOVQ	%r13, 40(%rdi)
+	MOVQ	%r14, 48(%rdi)
+	MOVQ	%r15, 56(%rdi)
 	POPQ	%r11		/* Save return PC */
 	MOVQ	%r11, 8(%rdi)
 	MOVQ	%rsp, 0(%rdi)	/* store SP */

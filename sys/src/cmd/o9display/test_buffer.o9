@@ -1,0 +1,28 @@
+import "buffer.o9";
+
+main {
+    DisplayBuffer a = new DisplayBuffer(1, 10, 4, 2);
+    DisplayBuffer bad = new DisplayBuffer(2, 10, 513, 1);
+    bool ok = a.valid() && a.size() == 32 && !bad.valid();
+    ok = ok && a.clear(16711680);
+    Bytes data = new Bytes(a.data());
+    ok = ok && data.get(0) == 0 && data.get(1) == 0 &&
+         data.get(2) == 255 && data.get(3) == 255;
+    ok = ok && data.get(28) == 0 && data.get(30) == 255;
+    Bytes patch = new Bytes("");
+    patch.append(0);
+    patch.append(17);
+    patch.append(255);
+    patch.append(128);
+    ok = ok && a.write(4, patch.text());
+    data.setText(a.data());
+    ok = ok && data.get(4) == 0 && data.get(5) == 17 &&
+         data.get(6) == 255 && data.get(7) == 128;
+    ok = ok && !a.write(30, patch.text());
+    ok = ok && a.write(28, patch.text());
+    ok = ok && !a.write(-1, patch.text());
+    ok = ok && !a.clear(16777216);
+    ok = ok && a.size() == 32;
+    if(ok) { print("O9DISPLAY-BUFFER PASS\n"); }
+    else { print("O9DISPLAY-BUFFER FAIL\n"); }
+}

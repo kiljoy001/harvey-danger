@@ -1100,8 +1100,7 @@ syschdir(Ar0 *ar0, ...)
 
 static int dcok[] = {
 	'M',
-	'N',
-	'9'};
+	'N'};
 
 /* to be used in chan.c to disallow attach to these devices
  */

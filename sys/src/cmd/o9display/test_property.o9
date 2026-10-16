@@ -1,0 +1,49 @@
+import "state.o9";
+import "buffer.o9";
+
+// Deterministic generated cases exercise offsets, byte values, ownership,
+// and commit/release ordering without relying on a host test framework.
+main {
+    DisplayBuffer image = new DisplayBuffer(1, 7, 8, 8);
+    DisplayState model = new DisplayState();
+    int64 surface = model.create(7, 8, 8);
+    int64[] expected;
+    int64 seed = 1337;
+    int64 i = 0;
+    bool ok = image.valid() && surface > 0;
+    while(i < 32) {
+        expected[i] = 0;
+        i = i + 1;
+    }
+    i = 32;
+    while(i < 256) {
+        expected[i] = 0;
+        i = i + 1;
+    }
+    i = 0;
+    while(i < 24) {
+        seed = (seed * 1664525 + 1013904223) % 2147483647;
+        int64 offset = seed % 256;
+        int64 value = (seed / 257) % 256;
+        Bytes patch = new Bytes("");
+        patch.append(cast<byte>(value));
+        ok = ok && image.write(offset, patch.text());
+        expected[offset] = value;
+        ok = ok && !image.write(256, patch.text());
+        ok = ok && !model.attach(8, surface, i + 1, 8, 8);
+        ok = ok && model.attach(7, surface, i + 1, 8, 8);
+        ok = ok && model.commit(7, surface) == i + 1;
+        ok = ok && !model.release(surface, i + 2);
+        ok = ok && model.release(surface, i + 1);
+        i = i + 1;
+    }
+    Bytes finalPixels = new Bytes(image.data());
+    ok = ok && finalPixels.length() == 256;
+    i = 0;
+    while(i < 256) {
+        ok = ok && finalPixels.get(i) == expected[i];
+        i = i + 1;
+    }
+    if(ok) { print("O9DISPLAY-PROPERTY PASS\n"); }
+    else { print("O9DISPLAY-PROPERTY FAIL\n"); }
+}

@@ -1,0 +1,29 @@
+import "store.o9";
+
+main {
+    File fixed = new File("/build/sophia-fixed-test.disk");
+    fixed.remove();
+    Bytes zero = new Bytes("");
+    zero.append(0);
+    Task<string> fixedSpace = spawn StringRepeatRaw(zero.text(), 32768);
+    bool ok = fixed.write(fixedSpace.await()) == 0;
+    SophiaStore onDisk = new SophiaStore("/build/sophia-fixed-test.disk");
+    Task<string> blockData = spawn StringRepeatRaw("x", 9000);
+    string large = blockData.await();
+    ok = ok && onDisk.ready() && onDisk.create("/large", false, 0644) &&
+         onDisk.writeAt("/large", 0, large, false) == 9000;
+    SophiaStore diskReopen = new SophiaStore("/build/sophia-fixed-test.disk");
+    ok = ok && diskReopen.ready() && fixed.size() == 32768 &&
+         diskReopen.size("/large") == 9000 &&
+         cmp(diskReopen.readAt("/large", 4090, 32),
+             onDisk.readAt("/large", 4090, 32)) == 0;
+    ok = ok && diskReopen.writeAt("/large", 2, "cut", true) == 3;
+    SophiaStore truncated = new SophiaStore("/build/sophia-fixed-test.disk");
+    Bytes truncatedData = new Bytes(truncated.readAt("/large", 0, 16));
+    ok = ok && truncated.ready() && truncated.size("/large") == 5 &&
+         truncatedData.get(0) == 0 && truncatedData.get(1) == 0 &&
+         cmp(truncated.readAt("/large", 2, 3), "cut") == 0;
+    fixed.remove();
+    if(ok) { print("SOPHIA-FIXED PASS\n"); }
+    else { print("SOPHIA-FIXED FAIL\n"); }
+}

@@ -1,0 +1,309 @@
+// Desktop Compositor and Workspace Manager for o9aspera
+// Enlightenment-inspired Virtual Desktops, Magnetic Snapping, Pager, and Z-Ordering.
+
+import "stdlib/collections.o9";
+import "canvas.o9";
+import "theme.o9";
+import "window.o9";
+
+class DesktopCompositor {
+    prop int64 screenW;
+    prop int64 screenH;
+
+    // Virtual Desktop grid (e.g., 2 x 2)
+    prop int64 deskCols;
+    prop int64 deskRows;
+    prop int64 curDeskX;
+    prop int64 curDeskY;
+
+    // Window Z-Order (last index is topmost)
+    prop list<WindowActor> winList;
+    prop WindowActor focusedWin;
+    prop Theme defaultTheme;
+
+    prop int64 nextWinId;
+
+    method DesktopCompositor(int64 width, int64 height, Theme theme) {
+        screenW = width;
+        screenH = height;
+        deskCols = 2;
+        deskRows = 2;
+        curDeskX = 0;
+        curDeskY = 0;
+
+        winList = new list<WindowActor>();
+        defaultTheme = theme;
+        nextWinId = 1;
+    }
+
+    method int64 getDeskCols() { return deskCols; }
+    method int64 getDeskRows() { return deskRows; }
+    method int64 getCurDeskX() { return curDeskX; }
+    method int64 getCurDeskY() { return curDeskY; }
+
+    method int64 currentDesktopId() {
+        return curDeskY * deskCols + curDeskX;
+    }
+
+    method void switchDesktop(int64 dx, int64 dy) {
+        if(dx >= 0 && dx < deskCols && dy >= 0 && dy < deskRows) {
+            curDeskX = dx;
+            curDeskY = dy;
+        }
+    }
+
+    method void setGridSize(int64 cols, int64 rows) {
+        if(cols > 0 && cols <= 8 && rows > 0 && rows <= 8) {
+            deskCols = cols;
+            deskRows = rows;
+            if(curDeskX >= cols) { curDeskX = cols - 1; }
+            if(curDeskY >= rows) { curDeskY = rows - 1; }
+        }
+    }
+
+    method void setDefaultTheme(Theme t) {
+        int64 i = 0;
+        defaultTheme = t;
+        while(i < winList.length()) {
+            WindowActor w = winList.get(i);
+            w.setTheme(t);
+            i = i + 1;
+        }
+    }
+
+    method Theme getTheme() {
+        return defaultTheme;
+    }
+
+    // Create a new window on the current virtual workspace
+    method WindowActor createWindow(string title, int64 x, int64 y, int64 width, int64 height) {
+        WindowActor w = new WindowActor(nextWinId, title, x, y, width, height, defaultTheme);
+        w.setDesktop(currentDesktopId());
+        nextWinId = nextWinId + 1;
+
+        // Append at the top of Z-order.
+        winList.add(w);
+        focus(w);
+        return w;
+    }
+
+    method void focus(WindowActor target) {
+        int64 i = 0;
+        int64 targetIdx = -1;
+
+        while(i < winList.length()) {
+            WindowActor w = winList.get(i);
+            if(w.id() == target.id()) { targetIdx = i; }
+            i = i + 1;
+        }
+        if(targetIdx >= 0) {
+            i = 0;
+            while(i < winList.length()) {
+                WindowActor w = winList.get(i);
+                if(w.id() == target.id()) {
+                    w.setFocused(true);
+                } else {
+                    w.setFocused(false);
+                }
+                i = i + 1;
+            }
+
+            focusedWin = target;
+
+            // Bring to front in Z-order
+            if(targetIdx >= 0 && targetIdx < winList.length() - 1) {
+                winList.remove(targetIdx);
+                // Re-insert at end (topmost)
+                winList.add(target);
+            }
+        }
+    }
+
+    method WindowActor getFocused() {
+        return focusedWin;
+    }
+
+    method int64 windowCount() {
+        return winList.length();
+    }
+
+    method WindowActor getWindowAt(int64 index) {
+        return winList.get(index);
+    }
+
+    method void closeWindow(WindowActor target) {
+        int64 i = 0;
+        bool found = false;
+        while(i < winList.length() && !found) {
+            WindowActor w = winList.get(i);
+            if(w.id() == target.id()) {
+                winList.remove(i);
+                found = true;
+                if(winList.length() > 0) {
+                    WindowActor lastWin = winList.get(winList.length() - 1);
+                    focus(lastWin);
+                } else {
+                    WindowActor none;
+                    focusedWin = none;
+                }
+            }
+            if(!found) {
+                i = i + 1;
+            }
+        }
+    }
+
+    // Enlightenment Magnetic Snapping Algorithm
+    // Checks candidate position against screen edges and neighboring window edges.
+    method void snapMove(WindowActor target, int64 requestedX, int64 requestedY) {
+        int64 snap = defaultTheme.snapMargin();
+        int64 finalX = requestedX;
+        int64 finalY = requestedY;
+        int64 tw = target.width();
+        int64 th = target.visibleHeight();
+        int64 i = 0;
+
+        // 1. Snap to screen boundaries
+        if(finalX < snap && finalX > -snap) { finalX = 0; }
+        if(finalY < snap && finalY > -snap) { finalY = 0; }
+        if(finalX + tw > screenW - snap && finalX + tw < screenW + snap) { finalX = screenW - tw; }
+        if(finalY + th > screenH - snap && finalY + th < screenH + snap) { finalY = screenH - th; }
+
+        // 2. Snap to neighbor window edges on the same workspace
+        while(i < winList.length()) {
+            WindowActor other = winList.get(i);
+            if(other.id() != target.id() && (other.sticky() || other.getDesktop() == currentDesktopId())) {
+                int64 ox = other.x();
+                int64 oy = other.y();
+                int64 ow = other.width();
+                int64 oh = other.visibleHeight();
+
+                // Target right snaps to Other left
+                if(finalX + tw >= ox - snap && finalX + tw <= ox + snap) {
+                    finalX = ox - tw;
+                }
+                // Target left snaps to Other right
+                if(finalX >= ox + ow - snap && finalX <= ox + ow + snap) {
+                    finalX = ox + ow;
+                }
+                // Target bottom snaps to Other top
+                if(finalY + th >= oy - snap && finalY + th <= oy + snap) {
+                    finalY = oy - th;
+                }
+                // Target top snaps to Other bottom
+                if(finalY >= oy + oh - snap && finalY <= oy + oh + snap) {
+                    finalY = oy + oh;
+                }
+
+                // Align top edges
+                if(finalY >= oy - snap && finalY <= oy + snap) {
+                    finalY = oy;
+                }
+                // Align left edges
+                if(finalX >= ox - snap && finalX <= ox + snap) {
+                    finalX = ox;
+                }
+            }
+            i = i + 1;
+        }
+
+        target.moveTo(finalX, finalY);
+    }
+
+    // Return an index rather than an invalid object handle on empty space.
+    method int64 windowIndexAt(int64 px, int64 py) {
+        int64 curDesk = currentDesktopId();
+        int64 i = winList.length() - 1;
+
+        // Iterate backwards (from top of Z-stack to bottom)
+        while(i >= 0) {
+            WindowActor w = winList.get(i);
+            if(w.sticky() || w.getDesktop() == curDesk) {
+                if(w.hitTest(px, py) > 0) {
+                    return i;
+                }
+            }
+            i = i - 1;
+        }
+        return -1;
+    }
+
+    method WindowActor findWindowAt(int64 px, int64 py) {
+        int64 index = windowIndexAt(px, py);
+        if(index >= 0) { return winList.get(index); }
+        WindowActor none;
+        return none;
+    }
+
+    // Render Enlightenment-style Workspace Pager Gadget
+    method void renderPager(AsperaCanvas canvas, int64 px, int64 py, int64 pw, int64 ph) {
+        int64 cellW = pw / deskCols;
+        int64 cellH = ph / deskRows;
+        int64 cx = 0;
+        int64 cy = 0;
+
+        // Pager outer background and border
+        canvas.fillBorderRect(px, py, pw, ph, 0x182028, defaultTheme.getFrameActive());
+
+        while(cy < deskRows) {
+            cx = 0;
+            while(cx < deskCols) {
+                int64 cellX = px + cx * cellW;
+                int64 cellY = py + cy * cellH;
+                int64 deskId = cy * deskCols + cx;
+
+                // Active workspace highlight
+                if(cx == curDeskX && cy == curDeskY) {
+                    canvas.fillBorderRect(cellX, cellY, cellW, cellH, 0x283848, defaultTheme.getTitleActiveFg());
+                } else {
+                    canvas.borderRect(cellX, cellY, cellW, cellH, defaultTheme.getFrameInactive());
+                }
+
+                // Render miniature window outlines inside this desktop cell
+                int64 k = 0;
+                while(k < winList.length()) {
+                    WindowActor w = winList.get(k);
+                    if(w.sticky() || w.getDesktop() == deskId) {
+                        int64 miniX = cellX + (w.x() * cellW) / screenW;
+                        int64 miniY = cellY + (w.y() * cellH) / screenH;
+                        int64 miniW = (w.width() * cellW) / screenW;
+                        int64 miniH = (w.visibleHeight() * cellH) / screenH;
+                        if(miniW < 2) { miniW = 2; }
+                        if(miniH < 2) { miniH = 2; }
+
+                        int64 miniCol = defaultTheme.getTitleInactiveBg();
+                        if(w.focused()) {
+                            miniCol = defaultTheme.getTitleActiveBg();
+                        }
+                        canvas.fillBorderRect(miniX, miniY, miniW, miniH, miniCol, defaultTheme.getBevelLight());
+                    }
+                    k = k + 1;
+                }
+
+                cx = cx + 1;
+            }
+            cy = cy + 1;
+        }
+    }
+
+    // Render all visible windows on current workspace to screen
+    method void renderAll(AsperaCanvas canvas) {
+        int64 curDesk = currentDesktopId();
+        int64 i = 0;
+
+        // 1. Draw desktop background
+        canvas.fillRect(0, 0, screenW, screenH, defaultTheme.getContentBg());
+
+        // 2. Draw windows from bottom of Z-stack to top
+        while(i < winList.length()) {
+            WindowActor w = winList.get(i);
+            if(w.sticky() || w.getDesktop() == curDesk) {
+                w.renderFrame(canvas);
+            }
+            i = i + 1;
+        }
+
+        // 3. Draw Enlightenment Pager in bottom-right corner (width=140, height=90)
+        renderPager(canvas, screenW - 150, screenH - 100, 140, 90);
+    }
+}

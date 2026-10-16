@@ -1,0 +1,325 @@
+// VM desktop preview. Window policy and painting live in Objective-9C.
+// The host transports input records and complete frames; it never draws UI.
+import "canvas.o9";
+import "theme.o9";
+import "window.o9";
+import "desktop.o9";
+import "note.o9";
+import "stdlib/io.o9";
+import "stdlib/string.o9";
+import "stdlib/time.o9";
+import "stdlib/file.o9";
+import "stdlib/namespace.o9";
+import "shelf.o9";
+import "shelf_client.o9";
+
+function AsperaParseInputRaw(string line) int64 {
+    int64 out;
+    c {
+        char *s, *p;
+        int cmd;
+        long x, y;
+
+        out = 0;
+        s = o9_string_cstr(line);
+        if(s != nil){
+            cmd = 0;
+            p = s;
+            if(strncmp(s, "quit", 4) == 0 && (s[4] == '\0' || s[4] == ' ' || s[4] == '\n')){
+                cmd = 1;
+                p = s + 4;
+            }else if(strncmp(s, "move ", 5) == 0){
+                cmd = 2;
+                p = s + 5;
+            }else if(strncmp(s, "up", 2) == 0 && (s[2] == '\0' || s[2] == ' ' || s[2] == '\n')){
+                cmd = 3;
+                p = s + 2;
+            }else if(strncmp(s, "down ", 5) == 0){
+                cmd = 4;
+                p = s + 5;
+            }else if(strncmp(s, "key ", 4) == 0){
+                cmd = 5;
+                p = s + 4;
+            }
+            if(cmd != 0){
+                while(*p == ' ')
+                    p++;
+                x = 0;
+                if(*p == '-'){
+                    x = -1;
+                    while(*p != '\0' && *p != ' ')
+                        p++;
+                }else if(*p >= '0' && *p <= '9'){
+                    while(*p >= '0' && *p <= '9'){
+                        x = x * 10 + (*p - '0');
+                        p++;
+                    }
+                }else if(cmd == 2 || cmd == 4 || cmd == 5){
+                    x = -1;
+                }
+                while(*p == ' ')
+                    p++;
+                y = 0;
+                if(*p == '-'){
+                    y = -1;
+                }else if(*p >= '0' && *p <= '9'){
+                    while(*p >= '0' && *p <= '9'){
+                        y = y * 10 + (*p - '0');
+                        p++;
+                    }
+                }else if(cmd == 2 || cmd == 4 || cmd == 5){
+                    y = -1;
+                }
+                out = (vlong)cmd | (((vlong)(ushort)(short)x) << 8) | (((vlong)(ushort)(short)y) << 24);
+            }
+            free(s);
+        }
+    }
+    return out;
+}
+
+class AsperaLive {
+    private DesktopCompositor desk;
+    private AsperaCanvas canvas;
+    private AsperaShelf shelf;
+    private ShelfClient shelfService;
+    private WindowActor noteWindow;
+    private AsperaNote note;
+    private WindowActor dragWindow;
+    private bool dragging;
+    private int64 dragX;
+    private int64 dragY;
+    private int64 dragWindowX;
+    private int64 dragWindowY;
+    private int64 frame;
+    private bool running;
+    private string base;
+    private string notePath;
+    private string lastClock;
+    private int64 themeIndex;
+    private E16Theme themeE16;
+    private Win95Theme themeWin95;
+    private Plan9Theme themePlan9;
+    private NeXTTheme themeNeXT;
+
+    method AsperaLive(string directory) {
+        base = directory;
+        themeE16 = new E16Theme();
+        themeWin95 = new Win95Theme();
+        themePlan9 = new Plan9Theme();
+        themeNeXT = new NeXTTheme();
+        desk = new DesktopCompositor(1024, 768, themeE16);
+        canvas = new AsperaCanvas(1024, 768);
+        shelf = new AsperaShelf();
+        shelfService = new ShelfClient(cat(base, "/shelf-service"));
+        themeIndex = 0;
+        noteWindow = desk.createWindow("Notes", 60, 80, 560, 440);
+        Task<string> notePathTask = spawn IOReadLineRaw(cat(base, "/notepath"), 0);
+        notePath = notePathTask.await();
+        if(len(notePath) == 0) { notePath = cat(base, "/note.txt"); }
+        note = new AsperaNote(noteWindow, notePath);
+        dragging = false;
+        frame = 0;
+        lastClock = "";
+        running = canvas.ready() && note.ready() && shelfService.ready();
+        Task<string> now = spawn IOReadLineRaw(cat(base, "/clock"), 0);
+        if(shelfService.ready()) {
+            string current = now.await();
+            lastClock = current;
+            shelfService.setClock(current);
+            shelf.applySnapshot(shelfService.snapshot());
+        }
+    }
+
+    method bool ready() { return running; }
+
+    method bool updateClock() {
+        if(!shelfService.ready()) { return false; }
+        Task<string> now = spawn IOReadLineRaw(cat(base, "/clock"), 0);
+        string current = now.await();
+        if(cmp(current, lastClock) == 0) { return false; }
+        lastClock = current;
+        if(!shelfService.setClock(current)) { return false; }
+        return shelf.applySnapshot(shelfService.snapshot());
+    }
+
+    private method void nextTheme() {
+        themeIndex = (themeIndex + 1) % 4;
+        if(themeIndex == 0) {
+            desk.setDefaultTheme(themeE16);
+        }
+        if(themeIndex == 1) {
+            desk.setDefaultTheme(themeWin95);
+        }
+        if(themeIndex == 2) {
+            desk.setDefaultTheme(themePlan9);
+        }
+        if(themeIndex == 3) {
+            desk.setDefaultTheme(themeNeXT);
+        }
+    }
+
+    method bool input(string line) {
+        Task<int64> parsedTask = spawn AsperaParseInputRaw(line);
+        int64 parsed = parsedTask.await();
+        int64 cmd = parsed & 255;
+        int64 x = (parsed >> 8) & 65535;
+        int64 y = (parsed >> 24) & 65535;
+        if(x >= 32768) { x = x - 65536; }
+        if(y >= 32768) { y = y - 65536; }
+        if(cmd == 1) {
+            if(note.isDirty() && !note.save()) { return true; }
+            running = false;
+            return false;
+        }
+        if(cmd == 2) {
+            if(dragging && x >= 0 && x < 1024 && y >= 0 && y < 768) {
+                desk.snapMove(dragWindow, dragWindowX + x - dragX,
+                             dragWindowY + y - dragY);
+                return true;
+            }
+            return false;
+        }
+        if(cmd == 3) {
+            dragging = false;
+            return false;
+        }
+        if(cmd == 4) {
+            if(x < 0 || x >= 1024 || y < 0 || y >= 768) { return false; }
+            int64 widgetAction = shelfService.click(x, y);
+            shelf.applySnapshot(shelfService.snapshot());
+            if(widgetAction >= 1 && widgetAction <= 4) {
+                desk.switchDesktop((widgetAction - 1) % 2,
+                                   (widgetAction - 1) / 2);
+                return true;
+            }
+            if(widgetAction == 5) { return true; }
+            if(widgetAction == 6) { nextTheme(); return true; }
+            if(widgetAction == 7) {
+                if(note.ready()) {
+                    desk.focus(noteWindow);
+                } else {
+                    noteWindow = desk.createWindow("Notes", 60, 80, 560, 440);
+                    note = new AsperaNote(noteWindow, notePath);
+                }
+                return true;
+            }
+            if(widgetAction >= 100 && widgetAction < 104) {
+                int64 slot = widgetAction - 100;
+                if(slot >= desk.windowCount()) { return false; }
+                WindowActor chosen = desk.getWindowAt(slot);
+                if(!chosen.sticky()) {
+                    int64 target = chosen.getDesktop();
+                    desk.switchDesktop(target % 2, target / 2);
+                }
+                desk.focus(chosen);
+                return true;
+            }
+            if(x >= 874 && x < 1014 && y >= 668 && y < 758) {
+                desk.switchDesktop((x - 874) / 70, (y - 668) / 45);
+                return true;
+            }
+            int64 index = desk.windowIndexAt(x, y);
+            if(index < 0) { return false; }
+            WindowActor hit = desk.getWindowAt(index);
+            int64 part = hit.hitTest(x, y);
+            desk.focus(hit);
+            if(part == 2) {
+                dragWindow = hit;
+                dragging = true;
+                dragX = x;
+                dragY = y;
+                dragWindowX = hit.x();
+                dragWindowY = hit.y();
+            }
+            if(part == 3) {
+                if(hit.id() == noteWindow.id()) {
+                    if(note.isDirty() && !note.save()) { return true; }
+                    note.close();
+                }
+                desk.closeWindow(hit);
+            }
+            if(part == 4) { hit.toggleShade(); }
+            if(part == 5) { hit.toggleSticky(); }
+            if(part == 6) { hit.toggleMaximize(1024, 768); }
+            return true;
+        }
+        if(cmd == 5) {
+            int64 key = x;
+            int64 modifier = y;
+            WindowActor focused;
+            if(desk.windowCount() > 0) { focused = desk.getFocused(); }
+            if(modifier % 2 == 1 && key >= 49 && key <= 52) {
+                desk.switchDesktop((key - 49) % 2, (key - 49) / 2);
+                return true;
+            }
+            if(modifier % 2 == 1 && key == 115 && desk.windowCount() > 0) {
+                focused.toggleShade();
+                return true;
+            }
+            if(modifier % 2 == 1 && key == 112 && desk.windowCount() > 0) {
+                focused.toggleSticky();
+                return true;
+            }
+            if(modifier % 4 >= 2 && key == 115 && desk.windowCount() > 0 &&
+               focused.id() == noteWindow.id()) {
+                note.save();
+                return true;
+            }
+            if(modifier % 4 < 2 && desk.windowCount() > 0 &&
+               focused.id() == noteWindow.id()) {
+                return note.key(key);
+            }
+        }
+        return false;
+    }
+
+    method bool publish() {
+        desk.renderAll(canvas);
+        shelf.render(canvas, desk);
+        if(!canvas.present(base, frame % 2)) {
+            return false;
+        }
+        frame = frame + 1;
+        return true;
+    }
+
+    method void close() {
+        if(note.ready()) { note.close(); }
+        shelfService.close();
+        canvas.close();
+        running = false;
+    }
+    method void stop() { running = false; }
+}
+
+main {
+    AsperaLive live = new AsperaLive("build/aspera-live");
+    if(!live.ready() || !live.publish()) {
+        print("ASPERA-LIVE FAIL initial frame\n");
+    } else {
+        print("ASPERA-LIVE READY\n");
+        int64 idle = 0;
+        while(live.ready()) {
+            Task<string> lineTask = spawn AsperaInputRaw("build/aspera-live");
+            string line = lineTask.await();
+            if(len(line) > 0) {
+                if(live.input(line) && !live.publish()) {
+                    print("ASPERA-LIVE FAIL frame\n");
+                    live.stop();
+                }
+                idle = 0;
+            } else {
+                idle = idle + 1;
+                if(idle >= 12) {
+                    if(live.updateClock() && !live.publish()) {
+                        print("ASPERA-LIVE FAIL clock frame\n");
+                        live.stop();
+                    }
+                    idle = 0;
+                }
+            }
+        }
+    }
+    live.close();
+}

@@ -1,0 +1,39 @@
+import "state.o9";
+
+main {
+    DisplayState display = new DisplayState();
+    int64 first = display.create(10, 640, 480);
+    int64 second = display.create(20, 320, 240);
+    bool ok = first == 1 && second == 2 && display.count() == 2;
+    ok = ok && display.create(10, 0, 480) == 0;
+    ok = ok && display.create(10, 4097, 480) == 0;
+    ok = ok && !display.attach(20, first, 1, 640, 480);
+    ok = ok && !display.removeSurface(20, first);
+    ok = ok && !display.attach(10, first, 1, 639, 480);
+    ok = ok && display.attach(10, first, 1, 640, 480);
+    ok = ok && display.commit(10, first) == 1;
+    ok = ok && display.commit(10, first) == 0;
+    ok = ok && display.attach(10, first, 2, 640, 480);
+    ok = ok && display.commit(10, first) == 0;
+    ok = ok && !display.release(first, 2);
+    ok = ok && display.release(first, 1);
+    ok = ok && display.commit(10, first) == 2;
+    ok = ok && display.focus(first);
+    ok = ok && display.focusFor(10) == first;
+    ok = ok && display.focusFor(20) == 0;
+    ok = ok && display.removeSurface(10, first);
+    ok = ok && display.focusFor(10) == 0;
+    ok = ok && display.count() == 1;
+    ok = ok && display.closeOwner(20) == 1;
+    ok = ok && display.count() == 0;
+    int64 i = 0;
+    while(i < 16) {
+        ok = ok && display.create(30, 64, 64) > 0;
+        i = i + 1;
+    }
+    ok = ok && display.create(30, 64, 64) == 0;
+    ok = ok && display.closeOwner(30) == 16;
+    ok = ok && display.count() == 0;
+    if(ok) { print("O9DISPLAY-STATE PASS\n"); }
+    else { print("O9DISPLAY-STATE FAIL\n"); }
+}

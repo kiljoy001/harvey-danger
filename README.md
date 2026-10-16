@@ -11,6 +11,21 @@ Harvey is a distributed operating system. It’s most directly descended from [P
 
 Starting July 2020, we will be replacing Harvey's user mode programs with programs written in Go. Many of these will come from [u-root](https://u-root.org).
 
+## Prism Microkernel & Objective-9C Userland (Experimental)
+
+The `micro-kvm` branch provides a stripped AMD64 microkernel running directly under a minimal KVM hypervisor (`util/9vm/9vm.c`) with an Objective-9C (`o9c`) actor supervisor as PID 1 (`boot/init.o9`).
+
+### Architecture & Design
+- **Host-Passthrough Namespace**: The diskless host-passthrough namespace mounts the host tree through `#~/host`, with VirtIO 9P (`#9/0`) as a fallback, and overlays synthetic `/dev`, `/proc`, `/srv`, and `/env` bindings. See [9vm host transports](util/9vm/README.md).
+- **Concurrency Model**: Objective-9C actors use lightweight processes sharing memory via `rfork(RFMEM)` and CSP channels.
+- **Toolchain**: Built with modern LLVM (`clang`, `ld.lld`, `llvm-ar`) without legacy Plan 9 compilers.
+- **External Verification**: Automated test runner lives in `util/9vm/test_boot.py`.
+
+The [architecture map](util/9vm/ARCHITECTURE.md) shows the Linux microVM,
+guest IPC, Objective-9C, Lola prototype, and bare-metal portability target.
+For the interactive Objective-9C Lola VM preview and its current limits, see
+the [display guide](util/9vm/DISPLAY.md).
+
 ### Getting started
 
 Start by reading the [Wiki](https://github.com/Harvey-OS/harvey/wiki).

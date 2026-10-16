@@ -116,7 +116,22 @@ void		dirread9p(Req*, Dirgen*, void*);
  */
 struct File {
 	Ref Ref;
-	Dir Dir;
+	union {
+		Dir Dir;
+		struct {
+			u16 _dir_type;
+			u32 _dir_dev;
+			Qid qid;
+			u32 mode;
+			u32 atime;
+			u32 mtime;
+			i64 length;
+			char *name;
+			char *uid;
+			char *gid;
+			char *muid;
+		};
+	};
 	File *parent;
 	void *aux;
 
@@ -148,6 +163,10 @@ void		closefile(File*);
 File*		walkfile(File*, char*);
 Readdir*	opendirfile(File*);
 i32		readdirfile(Readdir*, u8*, i32);
+#define _readdirfile_select(_1, _2, _3, _4, NAME, ...) NAME
+#define _readdirfile3(r, buf, n) (readdirfile)(r, buf, n)
+#define _readdirfile4(r, buf, n, off) (readdirfile)(r, buf, n)
+#define readdirfile(...) _readdirfile_select(__VA_ARGS__, _readdirfile4, _readdirfile3)(__VA_ARGS__)
 void		closedirfile(Readdir*);
 
 /*
@@ -202,6 +221,7 @@ struct Srv {
 	int	srvfd;
 	int	leavefdsopen;	/* magic for acme win */
 	char*	keyspec;
+	int	authok;
 
 /* below is implementation-specific; don't use */
 	Fidpool*	fpool;
@@ -222,7 +242,7 @@ void		_postmountsrv(Srv*, char*, char*, int);
 void		listensrv(Srv*, char*);
 void		_listensrv(Srv*, char*);
 int 		postfd(char*, int);
-int		chatty9p;
+extern int	chatty9p;
 void		respond(Req*, char*);
 void		responderror(Req*);
 void		threadpostmountsrv(Srv*, char*, char*, int);
@@ -251,5 +271,8 @@ void	authread(Req*);
 void	authwrite(Req*);
 void	authdestroy(Fid*);
 int	authattach(Req*);
+
+static inline void srvrelease(Srv *s) { USED(s); }
+static inline void srvacquire(Srv *s) { USED(s); }
 
 extern void (*_forker)(void (*)(void*), void*, int);

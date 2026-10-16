@@ -703,15 +703,15 @@ i8250getc(Uart *uart)
 static void
 i8250putc(Uart *uart, int c)
 {
-	int i;
 	Ctlr *ctlr;
 
 	ctlr = uart->regs;
-	for(i = 0; !(csr8r(ctlr, Lsr) & Thre) && i < 128; i++)
-		delay(1);
+	if(cpuhypervisor() == CpuHypervisorUnknown){
+		int i;
+		for(i = 0; !(csr8r(ctlr, Lsr) & Thre) && i < 128; i++)
+			delay(1);
+	}
 	csr8o(ctlr, Thr, c);
-	for(i = 0; !(csr8r(ctlr, Lsr) & Thre) && i < 128; i++)
-		delay(1);
 }
 
 static void
@@ -762,6 +762,30 @@ static Uart *i8250consuart;
 static void
 i8250consputs(char *s, int n)
 {
+	if(cpuhypervisor() != CpuHypervisorUnknown){
+		Ctlr *ctlr = i8250consuart->regs;
+		char buf[256];
+		int bi = 0;
+		int i;
+		for(i = 0; i < n; i++){
+			if(s[i] == '\n'){
+				buf[bi++] = '\r';
+				if(bi == (int)sizeof(buf)){
+					outsb(ctlr->io + Thr, buf, bi);
+					bi = 0;
+				}
+			}
+			buf[bi++] = s[i];
+			if(bi == (int)sizeof(buf)){
+				outsb(ctlr->io + Thr, buf, bi);
+				bi = 0;
+			}
+		}
+		if(bi > 0)
+			outsb(ctlr->io + Thr, buf, bi);
+		return;
+	}
+
 	int i;
 	for(i = 0; i < n; i++){
 		if(s[i] == '\n')

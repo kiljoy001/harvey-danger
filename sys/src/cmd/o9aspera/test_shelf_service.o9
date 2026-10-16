@@ -1,0 +1,98 @@
+import "shelf_service.o9";
+import "stdlib/file.o9";
+import "stdlib/io.o9";
+import "stdlib/namespace.o9";
+import "stdlib/time.o9";
+
+class ShelfProbe {
+    method int64 write(string path, string data) {
+        File ctl = new File(path);
+        return ctl.append(data);
+    }
+}
+
+main {
+    ShelfProbe probe = new ShelfProbe();
+    ShelfState model = new ShelfState();
+    ShelfViews views = new ShelfViews(model);
+    int64 registered = viewController(views);
+    print("shelf registered ", registered, "\n");
+    // The test helper is the final class in this test binary, so it names
+    // this binary's local /srv post. The standalone service posts ShelfViews.
+    File service = new File("/srv/ShelfProbe");
+    File srvDir = new File("/srv");
+    print("shelf srv list ", srvDir.list(), "\n");
+    int64 tries = 0;
+    while(!service.exists() && tries < 20) {
+        Task<int64> pause = spawn TimeSleepRaw(25);
+        pause.await();
+        tries = tries + 1;
+    }
+    File first = new File("/mnt/shelf-test-a");
+    File second = new File("/mnt/shelf-test-b");
+    Namespace mounts = new Namespace();
+    bool posted = service.exists();
+    bool dirs = first.mkdirAll() && second.mkdirAll();
+    bool root = mounts.root("/mnt");
+    bool firstMount = mounts.mountsrvReplace("/srv/ShelfProbe", "shelf-test-a", "");
+    bool secondMount = mounts.mountsrvReplace("/srv/ShelfProbe", "shelf-test-b", "");
+    bool applied = mounts.apply();
+    bool ok = posted && dirs && root && firstMount && secondMount && applied;
+    print("shelf setup ", posted, " ", dirs, " ", root, " ", firstMount, " ", secondMount, " ", applied, "\n");
+    print("shelf mount ", ok, "\n");
+    File protocol = new File("/mnt/shelf-test-a/view/protocol");
+    File firstState = new File("/mnt/shelf-test-a/view/state");
+    File secondState = new File("/mnt/shelf-test-b/view/state");
+    File firstStateTab = new File("/mnt/shelf-test-a/view/state.tab");
+    File secondStateTab = new File("/mnt/shelf-test-b/view/state.tab");
+    File result = new File("/mnt/shelf-test-a/view/result");
+    File otherResult = new File("/mnt/shelf-test-b/view/result");
+    File layout = new File("/mnt/shelf-test-a/view/layout");
+    File widgets = new File("/mnt/shelf-test-a/view/widgets");
+    File widgetsTab = new File("/mnt/shelf-test-a/view/widgets.tab");
+    ok = ok && cmp(protocol.read(), "o9shelf 1\n") == 0 &&
+         cmp(firstState.read(), "--:-- 0 1\n") == 0 &&
+         cmp(firstStateTab.read(), "clock\tmenu\tclock_visible\n--:--\t0\t1\n") == 0 &&
+         cmp(widgetsTab.read(), "id\tkind\tx\ty\twidth\theight\tvisible\nclock\tclock\t972\t9\t40\t14\t1\n") == 0 &&
+         cmp(widgets.read(), "menu control 1\nworkspaces pager 1\nwindows tasklist 1\nclock clock 1\n") == 0 &&
+         cmp(layout.read(), "menu 8 4 72 24\nworkspaces 92 5 144 22\nwindows 250 4 560 24\nclock 972 9 40 14\n") == 0;
+    print("shelf initial ", ok, " protocol ", protocol.read(), " state ", firstState.read(), "\n");
+    ok = ok && probe.write("/mnt/shelf-test-a/view/ctl", "clock 12:34\n") == 12 &&
+         cmp(secondState.read(), "12:34 0 1\n") == 0 &&
+         cmp(secondStateTab.read(), "clock\tmenu\tclock_visible\n12:34\t0\t1\n") == 0;
+    print("shelf clock ", ok, " state ", secondState.read(), "\n");
+    int64 invalidHour = probe.write("/mnt/shelf-test-a/view/ctl", "clock 24:00\n");
+    int64 invalidDigit = probe.write("/mnt/shelf-test-a/view/ctl", "clock 12:3x\n");
+    print("shelf invalid writes ", invalidHour, " ", invalidDigit, "\n");
+    ok = ok && invalidHour < 0 && invalidDigit < 0 &&
+         cmp(firstState.read(), "12:34 0 1\n") == 0;
+    print("shelf invalid ", ok, "\n");
+    ok = ok && probe.write("/mnt/shelf-test-a/view/ctl", "click 20 10\n") == 12 &&
+         cmp(result.read(), "action 5\n") == 0 &&
+         cmp(secondState.read(), "12:34 1 1\n") == 0;
+    print("shelf menu ", ok, " result ", result.read(), "\n");
+    ok = ok && probe.write("/mnt/shelf-test-b/view/ctl", "click 92 10\n") == 12 &&
+         cmp(otherResult.read(), "action 1\n") == 0 &&
+         cmp(result.read(), "action 5\n") == 0;
+    ok = ok && probe.write("/mnt/shelf-test-b/view/ctl", "click 128 10\n") == 13 &&
+         cmp(otherResult.read(), "action 2\n") == 0 &&
+         cmp(result.read(), "action 5\n") == 0;
+    print("shelf result isolation ", ok, "\n");
+    ok = ok && probe.write("/mnt/shelf-test-a/view/ctl", "click 20 44\n") == 12 &&
+         cmp(result.read(), "action 7\n") == 0 &&
+         cmp(firstState.read(), "12:34 0 1\n") == 0;
+    print("shelf item ", ok, "\n");
+    ok = ok && probe.write("/mnt/shelf-test-a/view/ctl", "hide clock\n") == 11 &&
+         cmp(secondState.read(), "12:34 0 0\n") == 0 &&
+         cmp(widgets.read(), "menu control 1\nworkspaces pager 1\nwindows tasklist 1\nclock clock 0\n") == 0 &&
+         cmp(widgetsTab.read(), "id\tkind\tx\ty\twidth\theight\tvisible\nclock\tclock\t972\t9\t40\t14\t0\n") == 0 &&
+         cmp(layout.read(), "menu 8 4 72 24\nworkspaces 92 5 144 22\nwindows 250 4 560 24\n") == 0;
+    print("shelf hide ", ok, "\n");
+    ok = ok && probe.write("/mnt/shelf-test-a/view/ctl", "click 1024 5\n") == 13 &&
+         cmp(result.read(), "action 0\n") == 0;
+    mounts.unmount("/mnt/shelf-test-a");
+    mounts.unmount("/mnt/shelf-test-b");
+    mounts.close();
+    if(ok) { print("SHELF-9P PASS\n"); }
+    else { print("SHELF-9P FAIL\n"); }
+}

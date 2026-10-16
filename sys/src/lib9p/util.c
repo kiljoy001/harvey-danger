@@ -14,6 +14,8 @@
 #include <thread.h>
 #include "9p.h"
 
+int	chatty9p;
+
 void
 readbuf(Req *r, void *s, i32 n)
 {

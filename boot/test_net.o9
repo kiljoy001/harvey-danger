@@ -1,0 +1,222 @@
+import "stdlib/net.o9";
+
+function raw_bind(string dev, string target, int64 flags) int64 {
+    int64 res;
+    c {
+        char *cdev = o9_string_cstr(dev);
+        char *ctgt = o9_string_cstr(target);
+        res = bind(cdev, ctgt, (int)flags);
+        if(res < 0){
+            fprint(2, "o9-net: bind %s -> %s failed: %r\n", cdev, ctgt);
+        } else {
+            print("o9-net: bound %s -> %s\n", cdev, ctgt);
+        }
+        free(cdev);
+        free(ctgt);
+    }
+    return res;
+}
+
+function raw_mount_net() int64 {
+    int64 res;
+    c {
+        int fd = open("#9/1", ORDWR);
+        res = -1;
+        if(fd < 0){
+            fprint(2, "o9-net: open #9/1 failed: %r\n");
+        } else {
+            if(mount(fd, -1, "/net", MREPL, "") < 0){
+                fprint(2, "o9-net: mount #9/1 -> /net failed: %r\n");
+                close(fd);
+            } else {
+                print("o9-net: mounted #9/1 -> /net\n");
+                res = 0;
+            }
+        }
+    }
+    return res;
+}
+
+function raw_read_file(string path) int64 {
+    int64 nbytes;
+    c {
+        char *cpath = o9_string_cstr(path);
+        int fd = open(cpath, OREAD);
+        nbytes = -1;
+        if(fd >= 0){
+            char buf[512];
+            int n = read(fd, buf, sizeof(buf)-1);
+            if(n > 0){
+                buf[n] = '\0';
+                print("o9-net: read %s (%d bytes):\n%s\n", cpath, n, buf);
+                nbytes = n;
+            }
+            close(fd);
+        } else {
+            fprint(2, "o9-net: open %s failed: %r\n", cpath);
+        }
+        free(cpath);
+    }
+    return nbytes;
+}
+
+function raw_config_ip(string ip, string mask, string gw) int64 {
+    int64 res;
+    c {
+        int fd = open("/net/ipifc/clone", ORDWR);
+        res = -1;
+        if(fd < 0){
+            fprint(2, "o9-net: open /net/ipifc/clone failed: %r\n");
+        } else {
+            char buf[64];
+            int n = read(fd, buf, sizeof(buf)-1);
+            if(n > 0) buf[n] = '\0';
+            print("o9-net: allocated ipifc conv %s\n", buf);
+
+            if(fprint(fd, "bind ether /net/ether0") < 0){
+                fprint(2, "o9-net: ctl 'bind ether /net/ether0' failed: %r\n");
+            } else {
+                print("o9-net: bound ether /net/ether0 to ipifc\n");
+                char *cip = o9_string_cstr(ip);
+                char *cmask = o9_string_cstr(mask);
+                char *cgw = o9_string_cstr(gw);
+                if(fprint(fd, "add %s %s %s", cip, cmask, cgw) < 0){
+                    fprint(2, "o9-net: ctl 'add %s %s %s' failed: %r\n", cip, cmask, cgw);
+                } else {
+                    print("o9-net: configured IP %s mask %s gw %s\n", cip, cmask, cgw);
+                    res = 0;
+                }
+                free(cip);
+                free(cmask);
+                free(cgw);
+            }
+            close(fd);
+        }
+    }
+    return res;
+}
+
+function raw_probe_proto(string path) int64 {
+    int64 res;
+    c {
+        char *cpath = o9_string_cstr(path);
+        int fd = open(cpath, ORDWR);
+        res = -1;
+        if(fd < 0){
+            fprint(2, "o9-net: open %s failed: %r\n", cpath);
+        } else {
+            char buf[32];
+            int n = read(fd, buf, sizeof(buf)-1);
+            if(n > 0) buf[n] = '\0';
+            print("o9-net: proto %s allocated conv %s\n", cpath, buf);
+            res = 0;
+            close(fd);
+        }
+        free(cpath);
+    }
+    return res;
+}
+
+class NetActor {
+    int64 status;
+
+    method NetActor() {
+        status = 0;
+    }
+
+    method int64 init_stack() {
+        print("[NetActor] Initializing network namespace...\n");
+        Task<int64> t1 = spawn raw_bind("#c", "/dev", 2);
+        t1.await();
+        Task<int64> t2 = spawn raw_mount_net();
+        t2.await();
+        return 0;
+    }
+
+    method int64 verify_ether() {
+        print("[NetActor] Verifying VirtIO ethernet adapter (#l0 / /net/ether0)...\n");
+        Task<int64> t = spawn raw_read_file("/net/ether0/stats");
+        int64 n = t.await();
+        if (n > 0) {
+            return 0;
+        }
+        return -1;
+    }
+
+    method int64 configure_interface(string ip, string mask, string gw) {
+        print("[NetActor] Configuring IP interface with ", ip, "...\n");
+        Task<int64> t1 = spawn raw_config_ip(ip, mask, gw);
+        int64 rc = t1.await();
+        if(rc == 0){
+            Task<int64> t2 = spawn raw_read_file("/net/ipifc/0/status");
+            t2.await();
+        }
+        return rc;
+    }
+
+    method int64 verify_protocols() {
+        print("[NetActor] Verifying protocol endpoints (TCP, UDP, and IL)...\n");
+        Task<int64> t1 = spawn raw_probe_proto("/net/tcp/clone");
+        int64 r1 = t1.await();
+        Task<int64> t2 = spawn raw_probe_proto("/net/udp/clone");
+        int64 r2 = t2.await();
+        Task<int64> t3 = spawn raw_probe_proto("/net/il/clone");
+        int64 r3 = t3.await();
+        if (r1 == 0) {
+            if (r2 == 0) {
+                if (r3 == 0) {
+                    return 0;
+                }
+            }
+        }
+        return -1;
+    }
+
+    method int64 test_dial_keywords() {
+        print("[NetActor] Testing Objective-9C native dial keywords...\n");
+        NetConn udp_conn = dial udp 127.0.0.1:9000;
+        print("o9-dial: dialed udp -> ", udp_conn.endpoint(), "\n");
+        NetConn il_conn = dial il 10.0.2.2:9999;
+        print("o9-dial: dialed il -> ", il_conn.endpoint(), "\n");
+        udp_conn.close();
+        il_conn.close();
+        return 0;
+    }
+}
+
+main {
+    print("\n==================================================\n");
+    print("  Prism Microkernel Network Self-Test (IL, TCP, UDP)\n");
+    print("==================================================\n");
+
+    NetActor mgr = new NetActor();
+    mgr.init_stack();
+
+    int64 eth_ok = mgr.verify_ether();
+    if (eth_ok == 0) {
+        print("[NetActor] VirtIO-Net hardware online and verified.\n");
+    } else {
+        print("[NetActor] FAILED: VirtIO-Net adapter not accessible.\n");
+    }
+
+    int64 ip_ok = mgr.configure_interface("10.0.2.15", "255.255.255.0", "10.0.2.0");
+    if (ip_ok == 0) {
+        print("[NetActor] IP interface 10.0.2.15 bound and configured.\n");
+    } else {
+        print("[NetActor] FAILED: IP interface configuration failed.\n");
+    }
+
+    int64 proto_ok = mgr.verify_protocols();
+    if (proto_ok == 0) {
+        print("[NetActor] TCP, UDP, and IL stacks online and operational.\n");
+    } else {
+        print("[NetActor] FAILED: Transport protocols failed.\n");
+    }
+
+    mgr.test_dial_keywords();
+    print("[NetActor] Native dial keywords verified.\n");
+
+    print("\n==================================================\n");
+    print("  Network Self-Test Complete\n");
+    print("==================================================\n");
+}

@@ -475,6 +475,7 @@ enum {
 	Logicmp = 1 << 5,
 	Logudp = 1 << 6,
 	Logcompress = 1 << 7,
+	Logil = 1 << 8,
 	Loggre = 1 << 9,
 	Logppp = 1 << 10,
 	Logtcprxmt = 1 << 11,

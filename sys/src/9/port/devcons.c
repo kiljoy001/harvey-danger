@@ -267,7 +267,7 @@ static void
 putstrn0(char *str, int n, int usewrite)
 {
 	kmesgputs(str, n);
-	if(consputs != nil)
+	if(consputs != nil && consputs != consuartputs)
 		consputs(str, n);
 	if(consuartputs != nil)
 		consuartputs(str, n);
@@ -382,6 +382,8 @@ panic(char *fmt, ...)
 	va_start(arg, fmt);
 	n = vseprint(buf + strlen(buf), buf + sizeof(buf), fmt, arg) - buf;
 	va_end(arg);
+	hi(buf);
+	hi("\n");
 	iprint("%s\n", buf);
 	if(consdebug)
 		(*consdebug)();

@@ -70,8 +70,8 @@ Channel*chancreate(int elemsize, int bufsize);
 int	chaninit(Channel *c, int elemsize, int elemcnt);
 void	chanfree(Channel *c);
 int	chanprint(Channel *, char *, ...);
-i32	decref(Ref *r);			/* returns 0 iff value is now zero */
-void	incref(Ref *r);
+i32	decref(void *r);			/* returns 0 iff value is now zero */
+void	incref(void *r);
 int	nbrecv(Channel *c, void *v);
 void*	nbrecvp(Channel *c);
 u32	nbrecvul(Channel *c);

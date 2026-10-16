@@ -1,0 +1,131 @@
+import "io.o9";
+import "file.o9";
+import "namespace.o9";
+import "time.o9";
+import "test_helpers.o9";
+import "service.o9";
+
+main {
+    DisplayState model = new DisplayState();
+    DisplayViews service = new DisplayViews(model);
+    int64 registered = viewController(service);
+    Task<int64> lifecycle = spawn ViewCloseNotificationsRaw(true);
+    lifecycle.await();
+    print("registered ", registered, "\n");
+
+    File firstDir = new File("/mnt/display-a");
+    File secondDir = new File("/mnt/display-b");
+    File srv = new File("/srv/DisplayViews");
+    int64 tries = 0;
+    while(!srv.exists() && tries < 20) {
+        Task<int64> pause = spawn TimeSleepRaw(50);
+        pause.await();
+        tries = tries + 1;
+    }
+    print("srv ", srv.exists(), "\n");
+    bool dirs = firstDir.mkdirAll() && secondDir.mkdirAll();
+    bool ok = dirs;
+    print("dirs ", dirs, "\n");
+    Namespace mounts = new Namespace();
+    bool rooted = mounts.root("/mnt");
+    bool firstMount = mounts.mountsrvReplace("/srv/DisplayViews", "display-a", "");
+    bool secondMount = mounts.mountsrvReplace("/srv/DisplayViews", "display-b", "");
+    bool applied = mounts.apply();
+    print("mounts ", rooted, " ", firstMount, " ", secondMount, " ", applied, "\n");
+    ok = ok && rooted && firstMount && secondMount && applied;
+    print("mount ", ok, "\n");
+
+    File protocol = new File("/mnt/display-a/view/protocol");
+    ok = ok && cmp(protocol.read(), "o9display 1 xrgb8888\n") == 0;
+    print("protocol ", ok, "\n");
+    StreamWriter ctl = new StreamWriter("/mnt/display-a/view/ctl", "a");
+    int64 wroteBuffer = ctl.write("buffer 2 2\n");
+    print("wrote buffer ", wroteBuffer, "\n");
+    ok = ok && wroteBuffer == 11;
+    ctl.close();
+    File result = new File("/mnt/display-a/view/result");
+    print("result buffer ", result.read(), "\n");
+    ok = ok && cmp(result.read(), "buffer 1\n") == 0;
+    print("buffer create ", ok, "\n");
+
+    File pixels = new File("/mnt/display-a/view/buffers/1/data");
+    Bytes initial = new Bytes(pixels.read());
+    ok = ok && initial.length() == 16 && initial.get(0) == 0;
+    Bytes patch = new Bytes("");
+    patch.append(0);
+    patch.append(7);
+    patch.append(128);
+    patch.append(255);
+    StreamWriter upload = new StreamWriter("/mnt/display-a/view/buffers/1/data", "a");
+    ok = ok && upload.writeBytes(patch) == 4;
+    upload.close();
+    Bytes actual = new Bytes(pixels.read());
+    ok = ok && actual.length() == 16 && actual.get(0) == 0 &&
+         actual.get(1) == 7 && actual.get(2) == 128 && actual.get(3) == 255;
+    print("buffer upload ", ok, "\n");
+
+    StreamWriter surface = new StreamWriter("/mnt/display-a/view/ctl", "a");
+    ok = ok && surface.write("surface 2 2\n") == 12;
+    surface.close();
+    ok = ok && cmp(result.read(), "surface 1\n") == 0;
+    print("surface create ", ok, "\n");
+    StreamWriter attach = new StreamWriter("/mnt/display-a/view/surfaces/1/ctl", "a");
+    ok = ok && attach.write("attach 1\n") == 9;
+    attach.close();
+    StreamWriter commit = new StreamWriter("/mnt/display-a/view/surfaces/1/ctl", "a");
+    ok = ok && commit.write("commit\n") == 7;
+    commit.close();
+    File surfaceStatus = new File("/mnt/display-a/view/surfaces/1/status");
+    ok = ok && cmp(surfaceStatus.read(), "1\n") == 0;
+    print("commit ", ok, "\n");
+    Task<int64> blocked = spawn DisplayTestWrite("/mnt/display-a/view/buffers/1/data", patch.text());
+    int64 blockedResult = blocked.await();
+    print("blocked result ", blockedResult, "\n");
+    ok = ok && blockedResult < 0;
+
+    File other = new File("/mnt/display-b/view/buffers/1/data");
+    ok = ok && !other.exists();
+    StreamWriter otherCtl = new StreamWriter("/mnt/display-b/view/ctl", "a");
+    ok = ok && otherCtl.write("buffer 2 2\n") == 11;
+    otherCtl.close();
+    Bytes otherData = new Bytes(other.read());
+    ok = ok && otherData.length() == 16 && otherData.get(1) == 0;
+    Task<int64> oversized = spawn DisplayTestWrite("/mnt/display-b/view/ctl", "buffer 513 1\n");
+    ok = ok && oversized.await() < 0;
+    File absent = new File("/mnt/display-b/view/buffers/2/data");
+    ok = ok && !absent.exists();
+    StreamWriter otherSurface = new StreamWriter("/mnt/display-b/view/ctl", "a");
+    ok = ok && otherSurface.write("surface 2 2\n") == 12;
+    otherSurface.close();
+    print("count both ", model.count(), "\n");
+    ok = ok && model.count() == 2;
+    StreamWriter endFirst = new StreamWriter("/mnt/display-a/view/ctl", "a");
+    ok = ok && endFirst.write("close\n") == 6;
+    endFirst.close();
+    print("count first close ", model.count(), "\n");
+    ok = ok && model.count() == 1;
+    Task<int64> closedWrite = spawn DisplayTestWrite("/mnt/display-a/view/ctl", "buffer 2 2\n");
+    ok = ok && closedWrite.await() < 0;
+    bool unmounted = mounts.unmount("/mnt/display-b");
+    print("unmounted ", unmounted, "\n");
+    ok = ok && unmounted;
+    int64 waitClose = 0;
+    while(model.count() != 0 && waitClose < 20) {
+        Task<int64> pauseClose = spawn TimeSleepRaw(50);
+        pauseClose.await();
+        waitClose = waitClose + 1;
+    }
+    print("count unmounted ", model.count(), " waited ", waitClose, "\n");
+    ok = ok && model.count() == 0;
+    Task<bool> remount = spawn DisplayTestRemount();
+    ok = ok && remount.await();
+    waitClose = 0;
+    while(model.count() != 0 && waitClose < 20) {
+        Task<int64> pauseClose = spawn TimeSleepRaw(50);
+        pauseClose.await();
+        waitClose = waitClose + 1;
+    }
+    ok = ok && model.count() == 0;
+    if(ok) { print("O9DISPLAY-9P PASS\n"); }
+    else { print("O9DISPLAY-9P FAIL\n"); }
+}

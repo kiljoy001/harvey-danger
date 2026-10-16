@@ -1226,7 +1226,9 @@ namec(char *aname, int amode, int omode, int perm)
 {
 	Proc *up = externup();
 	int len, n, nomount;
-	Chan *c, *cnew;
+	Chan *scratch;
+	/* Error handlers use these after waserror() restores the stack. */
+	Chan *volatile c, *volatile cnew, *volatile found;
 	Path *path;
 	Elemlist e;
 	Rune r;
@@ -1354,7 +1356,7 @@ namec(char *aname, int amode, int omode, int perm)
 		e.nelems--;
 	}
 
-	if(walk(&c, e.elems, e.nelems, nomount, &e.nerror) < 0){
+	if(walk((Chan**)&c, e.elems, e.nelems, nomount, &e.nerror) < 0){
 		if(e.nerror < 0 || e.nerror > e.nelems){
 			print("namec %s walk error nerror=%d\n", aname, e.nerror);
 			e.nerror = 0;
@@ -1373,7 +1375,7 @@ namec(char *aname, int amode, int omode, int perm)
 		/* no need to maintain path - cannot dotdot an Abind */
 		mh = nil;
 		if(!nomount)
-			domount(&c, &mh, nil);
+			domount((Chan**)&c, &mh, nil);
 		if(c->umh != nil)
 			putmhead(c->umh);
 		c->umh = mh;
@@ -1388,7 +1390,7 @@ namec(char *aname, int amode, int omode, int perm)
 		incref(&path->r);
 		mh = nil;
 		if(!nomount)
-			domount(&c, &mh, &path);
+			domount((Chan**)&c, &mh, &path);
 
 		/* our own copy to open or remove */
 		c = cunique(c);
@@ -1466,7 +1468,7 @@ namec(char *aname, int amode, int omode, int perm)
 		 */
 		e.nelems++;
 		e.nerror++;
-		if(walk(&c, e.elems + e.nelems - 1, 1, nomount, nil) == 0){
+		if(walk((Chan**)&c, e.elems + e.nelems - 1, 1, nomount, nil) == 0){
 			if(omode & OEXCL)
 				error(Eexist);
 			omode |= OTRUNC;
@@ -1514,10 +1516,15 @@ namec(char *aname, int amode, int omode, int perm)
 		 * The channel staying behind is c, the one moving forward is cnew.
 		 */
 		mh = nil;
-		cnew = nil;	  /* is this assignment necessary? */
+		cnew = nil;
+		found = nil;
 		if(!waserror()) { /* try create */
-			if(!nomount && findmount(&cnew, &mh, c->dev->dc, c->devno, c->qid))
-				cnew = createdir(cnew, mh);
+			scratch = nil;
+			if(!nomount && findmount(&scratch, &mh, c->dev->dc, c->devno, c->qid)){
+				found = scratch;
+				cnew = createdir(scratch, mh);
+				found = nil;
+			}
 			else {
 				cnew = c;
 				incref(&cnew->r);
@@ -1551,7 +1558,10 @@ namec(char *aname, int amode, int omode, int perm)
 			break;
 		}
 		/* create failed */
-		cclose(cnew);
+		if(cnew != nil)
+			cclose(cnew);
+		if(found != nil)
+			cclose(found);
 		if(mh)
 			putmhead(mh);
 		if(omode & OEXCL)
@@ -1560,7 +1570,7 @@ namec(char *aname, int amode, int omode, int perm)
 		createerr = up->errstr;
 		up->errstr = tmperrbuf;
 		/* note: we depend that walk does not error */
-		if(walk(&c, e.elems + e.nelems - 1, 1, nomount, nil) < 0){
+		if(walk((Chan**)&c, e.elems + e.nelems - 1, 1, nomount, nil) < 0){
 			up->errstr = createerr;
 			error(createerr); /* report true error */
 		}

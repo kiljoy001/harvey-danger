@@ -13,13 +13,13 @@
 #include "threadimpl.h"
 
 void
-incref(Ref *r)
+incref(void *r)
 {
-	ainc(&r->ref);
+	ainc(&((Ref*)r)->ref);
 }
 
 i32
-decref(Ref *r)
+decref(void *r)
 {
-	return adec(&r->ref);
+	return adec(&((Ref*)r)->ref);
 }

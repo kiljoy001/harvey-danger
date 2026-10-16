@@ -1,0 +1,35 @@
+import "namespace.o9";
+import "io.o9";
+import "file.o9";
+
+function DisplayTestWrite(string path, string data) int64 {
+    int64 out;
+    c {
+        char *name;
+        int fd;
+        name = o9_string_cstr(path);
+        out = -1;
+        if(name != nil){
+            fd = open(name, OWRITE);
+            if(fd >= 0){
+                out = write(fd, o9_string_data(data), o9_string_len(data));
+                close(fd);
+            }
+            free(name);
+        }
+    }
+    return out;
+}
+
+function DisplayTestRemount() bool {
+    Namespace remount = new Namespace();
+    bool ok = remount.root("/mnt") &&
+              remount.mountsrvReplace("/srv/DisplayViews", "display-b", "") &&
+              remount.apply();
+    StreamWriter resumed = new StreamWriter("/mnt/display-b/view/ctl", "a");
+    ok = ok && resumed.write("surface 3 3\n") == 12;
+    resumed.close();
+    File result = new File("/mnt/display-b/view/result");
+    ok = ok && cmp(result.read(), "surface 3\n") == 0;
+    return ok && remount.unmount("/mnt/display-b");
+}

@@ -1,0 +1,408 @@
+import "view.o9";
+import "state.o9";
+import "buffer.o9";
+
+class DisplayCodec {
+    method string number(int64 value) {
+        if(value == 0) { return "0"; }
+        string out = "";
+        int64 n = value;
+        while(n > 0) {
+            Task<string> digitTask = spawn StringSliceRaw("0123456789", n % 10, 1);
+            out = cat(digitTask.await(), out);
+            n = n / 10;
+        }
+        return out;
+    }
+
+    method int64 unsigned(string text) {
+        Task<string> cleanTask = spawn StringTrimRaw(text);
+        string clean = cleanTask.await();
+        if(len(clean) == 0 || len(clean) > 10) { return -1; }
+        int64 n = 0;
+        int64 i = 0;
+        while(i < len(clean)) {
+            Task<byte> charTask = spawn BytesGetRaw(clean, i);
+            int64 digit = charTask.await() - 48;
+            if(digit < 0 || digit > 9 || n > (2147483647 - digit) / 10) {
+                return -1;
+            }
+            n = n * 10 + digit;
+            i = i + 1;
+        }
+        return n;
+    }
+}
+
+class DisplaySession {
+    private int64 ownerId;
+    private DisplayState model;
+    private DisplayBuffer[] buffers;
+    private int64 bufferCount;
+    private int64 nextBuffer;
+    private int64 bufferBytes;
+    private int64 createdBuffer;
+    private int64 createdSurface;
+    private DisplayCodec codec;
+    private string result;
+    private bool active;
+
+    method DisplaySession(int64 owner, DisplayState stateModel) {
+        ownerId = owner;
+        model = stateModel;
+        codec = new DisplayCodec();
+        bufferCount = 0;
+        nextBuffer = 1;
+        bufferBytes = 0;
+        createdBuffer = 0;
+        createdSurface = 0;
+        result = "ready\n";
+        active = true;
+    }
+
+    internal method int64 findBufferIndex(int64 id) {
+        int64 i = 0;
+        while(i < bufferCount) {
+            DisplayBuffer buffer = buffers[i];
+            if(buffer.id() == id) { return i; }
+            i = i + 1;
+        }
+        return -1;
+    }
+
+    internal method int64 lastBuffer() { return createdBuffer; }
+    internal method int64 lastSurface() { return createdSurface; }
+
+    internal method bool removeBuffer(int64 id) {
+        int64 i = 0;
+        while(i < bufferCount) {
+            DisplayBuffer buffer = buffers[i];
+            if(buffer.id() == id) {
+                if(model.bufferReferenced(ownerId, id)) { return false; }
+                bufferBytes = bufferBytes - buffer.size();
+                while(i < bufferCount - 1) {
+                    buffers[i] = buffers[i + 1];
+                    i = i + 1;
+                }
+                bufferCount = bufferCount - 1;
+                return true;
+            }
+            i = i + 1;
+        }
+        return false;
+    }
+
+    internal method bool removeSurface(int64 id) {
+        if(!model.removeSurface(ownerId, id)) { return false; }
+        return true;
+    }
+
+    method string read(string path) {
+        if(!active) { return ""; }
+        if(cmp(path, "result") == 0) { return cat(result, ""); }
+        int64 i = 0;
+        while(i < bufferCount) {
+            DisplayBuffer buffer = buffers[i];
+            string prefix = cat("buffers/", codec.number(buffer.id()));
+            if(cmp(path, cat(prefix, "/data")) == 0) {
+                return cat(buffer.data(), "");
+            }
+            if(cmp(path, cat(prefix, "/status")) == 0) {
+                return cat(cat(codec.number(buffer.width()), " "),
+                           cat(codec.number(buffer.height()), " xrgb8888\n"));
+            }
+            i = i + 1;
+        }
+        i = 1;
+        while(i < model.highWater()) {
+            // Surface IDs may have holes; model validates ownership below.
+            string prefix = cat("surfaces/", codec.number(i));
+            if(cmp(path, cat(prefix, "/status")) == 0) {
+                int64 serial = model.serialFor(ownerId, i);
+                if(serial >= 0) { return cat(codec.number(serial), "\n"); }
+            }
+            i = i + 1;
+        }
+        return "";
+    }
+
+    internal method bool createBuffer(int64 width, int64 height) {
+        if(width <= 0 || height <= 0 || width > 512 || height > 512 ||
+           bufferCount >= 8 || width * height * 4 > 4194304 - bufferBytes) {
+            return false;
+        }
+        int64 id = nextBuffer;
+        DisplayBuffer buffer = new DisplayBuffer(id, ownerId, width, height);
+        bool validBuffer = buffer.valid();
+        if(!validBuffer) { return false; }
+        buffers[bufferCount] = buffer;
+        bufferCount = bufferCount + 1;
+        bufferBytes = bufferBytes + buffer.size();
+        nextBuffer = nextBuffer + 1;
+        createdBuffer = id;
+        result = cat(cat("buffer ", codec.number(id)), "\n");
+        return true;
+    }
+
+    internal method bool createSurface(int64 width, int64 height) {
+        if(width <= 0 || height <= 0 || width > 512 || height > 512) {
+            return false;
+        }
+        int64 id = model.create(ownerId, width, height);
+        if(id == 0) { return false; }
+        createdSurface = id;
+        result = cat(cat("surface ", codec.number(id)), "\n");
+        return true;
+    }
+
+    internal method bool command(string text) {
+        Task<string> lineTask = spawn StringTrimRaw(text);
+        string line = lineTask.await();
+        Task<string> verbTask = spawn StringFieldRaw(line, " ", 0);
+        Task<string> firstTask = spawn StringFieldRaw(line, " ", 1);
+        Task<string> secondTask = spawn StringFieldRaw(line, " ", 2);
+        string verb = verbTask.await();
+        int64 first = codec.unsigned(firstTask.await());
+        int64 second = codec.unsigned(secondTask.await());
+        if(cmp(verb, "buffer") == 0) {
+            return createBuffer(first, second);
+        }
+        if(cmp(verb, "surface") == 0) {
+            return createSurface(first, second);
+        }
+        if(cmp(verb, "drop-buffer") == 0 && first > 0) {
+            bool ok = removeBuffer(first);
+            if(ok) { result = "ok\n"; }
+            return ok;
+        }
+        if(cmp(verb, "drop-surface") == 0 && first > 0) {
+            bool ok = removeSurface(first);
+            if(ok) { result = "ok\n"; }
+            return ok;
+        }
+        if(cmp(verb, "close") == 0 && len(line) == 5) {
+            close();
+            return true;
+        }
+        return false;
+    }
+
+    method int64 write(string path, int64 offset, string text, bool truncate) {
+        if(!active) { return -1; }
+        Task<int64> dataPathTask = spawn StringEndsWithRaw(path, "/data");
+        bool dataPath = dataPathTask.await() == 1;
+        if(truncate && len(text) == 0 &&
+           !dataPath) { return 0; }
+        if(cmp(path, "ctl") == 0) {
+            if(offset != 0 || len(text) > 128 || len(text) == 0 ||
+               !command(text)) { return -1; }
+            return len(text);
+        }
+        int64 i = 0;
+        while(i < bufferCount) {
+            DisplayBuffer buffer = buffers[i];
+            string prefix = cat("buffers/", codec.number(buffer.id()));
+            if(cmp(path, cat(prefix, "/data")) == 0) {
+                if(model.bufferCommitted(ownerId, buffer.id())) { return -1; }
+                if(truncate && !buffer.zero()) { return -1; }
+                if(!buffer.write(offset, text)) { return -1; }
+                return len(text);
+            }
+            if(cmp(path, cat(prefix, "/ctl")) == 0) {
+                if(offset != 0 || len(text) > 64 ||
+                   model.bufferCommitted(ownerId, buffer.id())) { return -1; }
+                Task<string> cleanTask = spawn StringTrimRaw(text);
+                string clean = cleanTask.await();
+                Task<string> verbTask = spawn StringFieldRaw(clean, " ", 0);
+                Task<string> colorTask = spawn StringFieldRaw(clean, " ", 1);
+                if(cmp(verbTask.await(), "clear") != 0 ||
+                   !buffer.clear(codec.unsigned(colorTask.await()))) {
+                    return -1;
+                }
+                result = "ok\n";
+                return len(text);
+            }
+            i = i + 1;
+        }
+        if(offset != 0 || len(text) > 64) { return -1; }
+        Task<string> cleanTask = spawn StringTrimRaw(text);
+        string clean = cleanTask.await();
+        Task<string> verbTask = spawn StringFieldRaw(clean, " ", 0);
+        Task<string> targetTask = spawn StringFieldRaw(clean, " ", 1);
+        string verb = verbTask.await();
+        int64 target = codec.unsigned(targetTask.await());
+        i = 1;
+        while(i < model.highWater()) {
+            string pathCtl = cat(cat("surfaces/", codec.number(i)), "/ctl");
+            if(cmp(path, pathCtl) == 0) {
+                if(cmp(verb, "attach") == 0) {
+                    int64 index = findBufferIndex(target);
+                    if(index < 0) { return -1; }
+                    DisplayBuffer b = buffers[index];
+                    if(!model.attach(ownerId, i, b.id(),
+                       b.width(), b.height())) { return -1; }
+                    result = "ok\n";
+                    return len(text);
+                }
+                if(cmp(verb, "commit") == 0) {
+                    int64 serial = model.commit(ownerId, i);
+                    if(serial == 0) { return -1; }
+                    result = cat(cat("frame ", codec.number(serial)), "\n");
+                    return len(text);
+                }
+                if(cmp(verb, "destroy") == 0 && removeSurface(i)) {
+                    result = "ok\n";
+                    return len(text);
+                }
+                return -1;
+            }
+            i = i + 1;
+        }
+        return -1;
+    }
+
+    method void close() {
+        if(active) {
+            active = false;
+            model.closeOwner(ownerId);
+            bufferCount = 0;
+            bufferBytes = 0;
+        }
+    }
+}
+
+class DisplayViews {
+    ViewController;
+    private DisplayState model;
+    private string[] ids;
+    private DisplaySession[] sessions;
+    private FileTree[] trees;
+    private DisplayCodec codec;
+    private int64 count;
+    private int64 nextOwner;
+
+    method DisplayViews(DisplayState stateModel) {
+        model = stateModel;
+        codec = new DisplayCodec();
+        count = 0;
+        nextOwner = 1;
+    }
+
+    internal method int64 findIndex(string id) {
+        int64 i = 0;
+        while(i < count) {
+            if(cmp(ids[i], id) == 0) { return i; }
+            i = i + 1;
+        }
+        return -1;
+    }
+
+    internal method FileTree display(string id, string caller) {
+        int64 slot = 0;
+        while(slot < count && len(ids[slot]) != 0) {
+            slot = slot + 1;
+        }
+        if(slot == count && count >= 64) { return nil; }
+        DisplaySession session = new DisplaySession(nextOwner, model);
+        FileTree tree = new FileTree();
+        tree.text("protocol", "o9display 1 xrgb8888\n", false);
+        tree.live("ctl", true);
+        tree.live("result", false);
+        tree.dir("buffers");
+        tree.dir("surfaces");
+        ids[slot] = cat(id, "");
+        sessions[slot] = session;
+        trees[slot] = tree;
+        if(slot == count) { count = count + 1; }
+        nextOwner = nextOwner + 1;
+        return tree;
+    }
+
+    // Called after the last fid for a view is clunked. The runtime sends it
+    // asynchronously so a server clunk cannot wait on its own 9P request.
+    internal method void closeView(string id) {
+        int64 index = findIndex(id);
+        if(index >= 0) {
+            DisplaySession session = sessions[index];
+            session.close();
+            ids[index] = "";
+        }
+    }
+
+    internal method string readText(string id, string path) {
+        int64 index = findIndex(id);
+        if(index < 0) { return ""; }
+        DisplaySession session = sessions[index];
+        return session.read(path);
+    }
+
+    internal method int64 writeText(string id, string path, int64 offset,
+                                   string text, bool truncate) {
+        int64 index = findIndex(id);
+        if(index < 0) { return -1; }
+        DisplaySession session = sessions[index];
+        int64 written = session.write(path, offset, text, truncate);
+        if(written < 0 || len(text) == 0) { return written; }
+        FileTree tree = trees[index];
+        Task<string> cleanTask = spawn StringTrimRaw(text);
+        string clean = cleanTask.await();
+        Task<string> verbTask = spawn StringFieldRaw(clean, " ", 0);
+        string verb = verbTask.await();
+        if(cmp(path, "ctl") == 0) {
+            if(cmp(verb, "buffer") == 0) {
+                int64 bufferId = session.lastBuffer();
+                string basePath = cat("buffers/", codec.number(bufferId));
+                if(tree.dir(basePath) < 0 ||
+                   tree.live(cat(basePath, "/data"), true) < 0 ||
+                   tree.live(cat(basePath, "/ctl"), true) < 0 ||
+                   tree.live(cat(basePath, "/status"), false) < 0) {
+                    session.removeBuffer(bufferId);
+                    return -1;
+                }
+            }
+            if(cmp(verb, "surface") == 0) {
+                int64 surfaceId = session.lastSurface();
+                string basePath = cat("surfaces/", codec.number(surfaceId));
+                if(tree.dir(basePath) < 0 ||
+                   tree.live(cat(basePath, "/ctl"), true) < 0 ||
+                   tree.live(cat(basePath, "/status"), false) < 0) {
+                    session.removeSurface(surfaceId);
+                    return -1;
+                }
+            }
+            if(cmp(verb, "drop-buffer") == 0) {
+                Task<string> bufferTarget = spawn StringFieldRaw(clean, " ", 1);
+                string basePath = cat("buffers/", bufferTarget.await());
+                tree.remove(cat(basePath, "/data"));
+                tree.remove(cat(basePath, "/ctl"));
+                tree.remove(cat(basePath, "/status"));
+                tree.remove(basePath);
+            }
+            if(cmp(verb, "drop-surface") == 0) {
+                Task<string> surfaceTarget = spawn StringFieldRaw(clean, " ", 1);
+                string basePath = cat("surfaces/", surfaceTarget.await());
+                tree.remove(cat(basePath, "/ctl"));
+                tree.remove(cat(basePath, "/status"));
+                tree.remove(basePath);
+            }
+        }
+        if(cmp(verb, "destroy") == 0) {
+            Task<string> targetField = spawn StringFieldRaw(path, "/", 1);
+            string surfaceId = targetField.await();
+            string basePath = cat("surfaces/", surfaceId);
+            tree.remove(cat(basePath, "/ctl"));
+            tree.remove(cat(basePath, "/status"));
+            tree.remove(basePath);
+        }
+        return written;
+    }
+}
+
+main {
+    DisplayState model = new DisplayState();
+    DisplayViews service = new DisplayViews(model);
+    viewController(service);
+    Task<int64> lifecycle = spawn ViewCloseNotificationsRaw(true);
+    lifecycle.await();
+    serve();
+}

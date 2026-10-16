@@ -16,11 +16,6 @@
 #undef DBG
 #define DBG iprint
 
-typedef enum CpuHypervisor {
-	CpuHypervisorUnknown = 0,
-	CpuHypervisorKvm,
-} CpuHypervisor;
-
 static int
 cpuidinit(void)
 {

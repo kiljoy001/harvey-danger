@@ -355,6 +355,8 @@ extern	int	toupper(int);
  */
 i32	ainc(i32*);
 i32	adec(i32*);
+#define ainc(p) (ainc)((i32*)(p))
+#define adec(p) (adec)((i32*)(p))
 int	cas32(u32*, u32, u32);
 int	casp(void**, void*, void*);
 int	casl(u32*, u32, u32);
@@ -610,6 +612,12 @@ extern	int	fstat(int, u8*, int);
 extern	int	fwstat(int, u8*, int);
 extern	int	fversion(int, int, char*, int);
 extern	int	mount(int, int, const char*, int, const char*, int);
+extern	int	mount_(int, int, const char*, int, const char*);
+
+#define _mount_select(_1, _2, _3, _4, _5, _6, NAME, ...) NAME
+#define _mount5(fd, afd, old, flag, aname) mount_(fd, afd, old, flag, aname)
+#define _mount6(fd, afd, old, flag, aname, dc) mount(fd, afd, old, flag, aname, dc)
+#define mount(...) _mount_select(__VA_ARGS__, _mount6, _mount5)(__VA_ARGS__)
 extern	int	unmount(const char*, const char*);
 extern	int	noted(int);
 extern	int	notify(void(*)(void*, char*));

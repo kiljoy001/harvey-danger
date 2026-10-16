@@ -65,6 +65,7 @@ struct MMap {
 };
 
 static Mod *initrd = nil;
+u64 ringhostpa;
 
 static int
 mbpamtype(int acpitype)
@@ -80,6 +81,8 @@ mbpamtype(int acpitype)
 		return PamPRESERVE;
 	case 5:
 		return PamUNUSABLE;
+	case 0x9009:
+		return PamKRDWR;
 	default:
 		print("multiboot: unknown memory type %d", acpitype);
 		break;
@@ -154,6 +157,8 @@ multiboot(u32 magic, u32 pmbi, int vflag)
 				print("%s (%u)", mbtypename(mmap->type), mmap->type);
 			} else {
 				pamapinsert(addr, len, mbpamtype(mmap->type));
+				if(mmap->type == 0x9009)
+					ringhostpa = addr;
 			}
 			switch(mmap->type){
 			// There is no consistency in which type of e820 segment RSDP is stored in.

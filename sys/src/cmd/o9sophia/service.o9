@@ -1,0 +1,154 @@
+// Mountable Objective-9C Sophia prototype. Creation and removal are ctl
+// commands until the generic FileTree facade supports 9P Tcreate/Tremove.
+import "store.o9";
+import "view.o9";
+import "process.o9";
+
+class SophiaViews {
+    ViewController;
+    private SophiaStore store;
+    private string[] ids;
+    private FileTree[] trees;
+    private int64 count;
+
+    method SophiaViews(string backing) {
+        store = new SophiaStore(backing);
+        count = 0;
+    }
+
+    method bool ready() { return store.ready(); }
+
+    private method int64 slotFor(string id) {
+        int64 i = 0;
+        while(i < count) {
+            if(cmp(ids[i], id) == 0) { return i; }
+            i = i + 1;
+        }
+        return -1;
+    }
+
+    private method string relative(string path) {
+        Task<string> result = spawn StringSliceRaw(path, 1, len(path) - 1);
+        return result.await();
+    }
+
+    private method void announce(string path, bool directory) {
+        string name = relative(path);
+        int64 i = 0;
+        while(i < count) {
+            if(len(ids[i]) > 0) {
+                FileTree tree = trees[i];
+                if(directory) { tree.dir(name); }
+                else { tree.live(name, true); }
+            }
+            i = i + 1;
+        }
+    }
+
+    private method void withdraw(string path) {
+        string name = relative(path);
+        int64 i = 0;
+        while(i < count) {
+            if(len(ids[i]) > 0) {
+                FileTree tree = trees[i];
+                tree.remove(name);
+            }
+            i = i + 1;
+        }
+    }
+
+    internal method FileTree display(string id, string caller) {
+        if(!store.ready()) { return nil; }
+        int64 slot = 0;
+        while(slot < count && len(ids[slot]) > 0) { slot = slot + 1; }
+        if(slot == count && count >= 64) { return nil; }
+        FileTree tree = new FileTree();
+        tree.text("protocol", "o9sophia 1\n", false);
+        tree.live("ctl", true);
+        int64 i = 1;
+        while(i < store.highWater()) {
+            string path = store.pathAt(i);
+            if(len(path) > 0) {
+                string name = relative(path);
+                if(store.isDir(path)) { tree.dir(name); }
+                else { tree.live(name, true); }
+            }
+            i = i + 1;
+        }
+        ids[slot] = cat(id, "");
+        trees[slot] = tree;
+        if(slot == count) { count = count + 1; }
+        return tree;
+    }
+
+    internal method void closeView(string id) {
+        int64 slot = slotFor(id);
+        if(slot >= 0) {
+            FileTree tree = trees[slot];
+            tree.close();
+            ids[slot] = "";
+        }
+    }
+
+    internal method string readText(string id, string path) {
+        if(slotFor(id) < 0 || cmp(path, "ctl") == 0) { return ""; }
+        string name = cat("/", path);
+        if(!store.exists(name) || store.isDir(name)) { return ""; }
+        return store.readAt(name, 0, 4194304);
+    }
+
+    internal method int64 writeText(string id, string path, int64 offset,
+                                   string text, bool truncate) {
+        if(slotFor(id) < 0) { return -1; }
+        if(cmp(path, "ctl") == 0) {
+            if(truncate && len(text) == 0) { return 0; }
+            if(offset != 0 || len(text) < 4 || len(text) > 300) { return -1; }
+            Task<string> cleanTask = spawn StringTrimRaw(text);
+            string clean = cleanTask.await();
+            Task<string> verbTask = spawn StringFieldRaw(clean, " ", 0);
+            Task<string> pathTask = spawn StringFieldRaw(clean, " ", 1);
+            Task<string> extraTask = spawn StringFieldRaw(clean, " ", 2);
+            string verb = verbTask.await();
+            string target = pathTask.await();
+            if(len(extraTask.await()) > 0) { return -1; }
+            if(cmp(verb, "mkdir") == 0) {
+                if(!store.create(target, true, 0755)) { return -1; }
+                announce(target, true);
+                return len(text);
+            }
+            if(cmp(verb, "mkfile") == 0) {
+                if(!store.create(target, false, 0644)) { return -1; }
+                announce(target, false);
+                return len(text);
+            }
+            if(cmp(verb, "remove") == 0) {
+                if(!store.remove(target)) { return -1; }
+                withdraw(target);
+                return len(text);
+            }
+            return -1;
+        }
+        string name = cat("/", path);
+        if(!store.exists(name) || store.isDir(name)) { return -1; }
+        return store.writeAt(name, offset, text, truncate);
+    }
+}
+
+main {
+    // argv[1] is the Objective-9C service name; argv[2] is the backing image.
+    Task<string> arg = spawn ProcessArgRaw(2);
+    string backing = arg.await();
+    if(len(backing) == 0) {
+        print("usage: o9sophia service-name backing-file-or-device\n");
+    } else {
+        SophiaViews sophia = new SophiaViews(backing);
+        if(!sophia.ready()) {
+            print("o9sophia: backing store failed integrity checks\n");
+        } else {
+            viewController(sophia);
+            Task<int64> notify = spawn ViewCloseNotificationsRaw(true);
+            notify.await();
+            serve();
+        }
+    }
+}

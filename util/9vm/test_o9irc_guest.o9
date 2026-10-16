@@ -1,0 +1,66 @@
+// Probe an Objective-9C IRC service in a Harvey development VM.
+function probe_irc_service() int64 {
+    int64 result;
+    c {
+        char *args[] = {"o9irc-ircfs", "o9irc", "", "", "",
+                        "/tmp/o9irc", "0", nil};
+        char buf[128];
+        int fd, pid, i, n;
+
+        result = -1;
+        if(bind("#c", "/dev", MAFTER) < 0 ||
+           bind("#s", "/srv", MREPL|MCREATE) < 0){
+            print("o9irc-probe: namespace failed: %r\n");
+            goto probe_done;
+        }
+        fd = create("/n/o9irc", OREAD, DMDIR|0775);
+        if(fd >= 0) close(fd);
+        pid = rfork(RFPROC|RFFDG|RFNOWAIT);
+        if(pid == 0){
+            exec("/build/o9irc-ircfs", args);
+            print("o9irc-probe: exec failed: %r\n");
+            _exits("ircfs");
+        }
+        if(pid < 0) goto probe_done;
+        for(i = 0; i < 100; i++){
+            fd = open("/srv/o9irc", OREAD);
+            if(fd >= 0) break;
+            sleep(50);
+        }
+        if(fd < 0){
+            print("o9irc-probe: service missing: %r\n");
+            goto probe_done;
+        }
+        n = -1;
+        for(i = 0; i < 200; i++){
+            if(i > 0){
+                fd = open("/srv/o9irc", OREAD);
+                if(fd < 0){ sleep(50); continue; }
+            }
+            if(mount(fd, -1, "/n/o9irc", MREPL|MCREATE, "") < 0){
+                close(fd);
+                sleep(50);
+                continue;
+            }
+            fd = open("/n/o9irc/view/networks/default/status", OREAD);
+            n = fd < 0 ? -1 : read(fd, buf, sizeof buf);
+            if(fd >= 0) close(fd);
+            if(n > 0) break;
+            unmount(nil, "/n/o9irc");
+            sleep(50);
+        }
+        if(n <= 0){
+            print("o9irc-probe: status failed: %r\n");
+            goto probe_done;
+        }
+        print("O9IRC-GUEST-VIEW PASS\n");
+        result = 1;
+    probe_done:;
+    }
+    return result;
+}
+
+main {
+    Task<int64> probe = spawn probe_irc_service();
+    probe.await();
+}

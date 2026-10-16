@@ -1,0 +1,818 @@
+// Fast software canvas for the Aspera window compositor.
+// The VM backend sends 32-bit RGB frames to the 9P display device.
+
+function AsperaAllocCanvasRaw(int64 width, int64 height) int64 {
+    int64 ptr;
+    c {
+        typedef struct {
+            int width;
+            int height;
+            u32 *pixels;
+        } AsperaBuffer;
+
+        AsperaBuffer *b = nil;
+        if(width > 0 && height > 0 && width <= 4096 && height <= 4096 &&
+           width * height <= 16777216)
+            b = (AsperaBuffer*)malloc(sizeof(AsperaBuffer));
+        if(b != nil){
+            b->width = (int)width;
+            b->height = (int)height;
+            b->pixels = (u32*)malloc(b->width * b->height * sizeof(u32));
+            if(b->pixels != nil)
+                memset(b->pixels, 0, b->width * b->height * sizeof(u32));
+            else {
+                free(b);
+                b = nil;
+            }
+        }
+        ptr = (vlong)b;
+    }
+    return ptr;
+}
+
+function AsperaFreeCanvasRaw(int64 ptr) int64 {
+    c {
+        typedef struct {
+            int width;
+            int height;
+            u32 *pixels;
+        } AsperaBuffer;
+
+        AsperaBuffer *b = (AsperaBuffer*)ptr;
+        if(b != nil){
+            if(b->pixels != nil){
+                free(b->pixels);
+            }
+            free(b);
+        }
+    }
+    return 0;
+}
+
+function AsperaClearRaw(int64 ptr, int64 color) int64 {
+    c {
+        typedef struct {
+            int width;
+            int height;
+            u32 *pixels;
+        } AsperaBuffer;
+
+        AsperaBuffer *b = (AsperaBuffer*)ptr;
+        if(b != nil && b->pixels != nil){
+            int total = b->width * b->height;
+            u32 col = (u32)color;
+            for(int i = 0; i < total; i++){
+                b->pixels[i] = col;
+            }
+        }
+    }
+    return 0;
+}
+
+function AsperaFillRectRaw(int64 ptr, int64 x, int64 y, int64 w, int64 h, int64 color) int64 {
+    c {
+        typedef struct {
+            int width;
+            int height;
+            u32 *pixels;
+        } AsperaBuffer;
+
+        AsperaBuffer *b = (AsperaBuffer*)ptr;
+        if(b != nil && b->pixels != nil && w > 0 && h > 0){
+            int x0, y0, x1, y1;
+
+            if(x >= b->width || y >= b->height ||
+               x <= -w || y <= -h)
+                goto aspera_skip_rect;
+            x0 = x < 0 ? 0 : (int)x;
+            y0 = y < 0 ? 0 : (int)y;
+            x1 = w > b->width - x0 ? b->width : (int)(x + w);
+            y1 = h > b->height - y0 ? b->height : (int)(y + h);
+
+            if(x0 < 0) x0 = 0;
+            if(y0 < 0) y0 = 0;
+            if(x1 > b->width) x1 = b->width;
+            if(y1 > b->height) y1 = b->height;
+
+            u32 col = (u32)color;
+            for(int j = y0; j < y1; j++){
+                u32 *row = b->pixels + j * b->width;
+                for(int i = x0; i < x1; i++){
+                    row[i] = col;
+                }
+            }
+        }
+    aspera_skip_rect:;
+    }
+    return 0;
+}
+
+function AsperaBorderRectRaw(int64 ptr, int64 x, int64 y, int64 w, int64 h, int64 thick, int64 color) int64 {
+    c {
+        typedef struct {
+            int width;
+            int height;
+            u32 *pixels;
+        } AsperaBuffer;
+
+        AsperaBuffer *b = (AsperaBuffer*)ptr;
+        if(b != nil && b->pixels != nil && w > 0 && h > 0){
+            int t = (int)thick;
+            if(t < 1) t = 1;
+            if(t > b->width) t = b->width;
+            if(t > b->height) t = b->height;
+            int x0, y0, x1, y1;
+
+            if(x >= b->width || y >= b->height ||
+               x <= -w || y <= -h)
+                goto aspera_skip_rect;
+            x0 = x < 0 ? 0 : (int)x;
+            y0 = y < 0 ? 0 : (int)y;
+            x1 = w > b->width - x0 ? b->width : (int)(x + w);
+            y1 = h > b->height - y0 ? b->height : (int)(y + h);
+
+            if(x0 < 0) x0 = 0;
+            if(y0 < 0) y0 = 0;
+            if(x1 > b->width) x1 = b->width;
+            if(y1 > b->height) y1 = b->height;
+
+            u32 col = (u32)color;
+
+            for(int j = y0; j < y0 + t && j < y1; j++){
+                u32 *row = b->pixels + j * b->width;
+                for(int i = x0; i < x1; i++) row[i] = col;
+            }
+            for(int j = y1 - t; j < y1; j++){
+                if(j >= y0){
+                    u32 *row = b->pixels + j * b->width;
+                    for(int i = x0; i < x1; i++) row[i] = col;
+                }
+            }
+            for(int j = y0; j < y1; j++){
+                u32 *row = b->pixels + j * b->width;
+                for(int i = x0; i < x0 + t && i < x1; i++) row[i] = col;
+                for(int i = x1 - t; i < x1; i++){
+                    if(i >= x0) row[i] = col;
+                }
+            }
+        }
+    aspera_skip_rect:;
+    }
+    return 0;
+}
+
+function AsperaDrawTextRaw(int64 ptr, string str, int64 x, int64 y, int64 color) int64 {
+    c {
+        #include "font8x14.h"
+
+        typedef struct {
+            int width;
+            int height;
+            u32 *pixels;
+        } AsperaBuffer;
+
+        AsperaBuffer *b = (AsperaBuffer*)ptr;
+        char *s = o9_string_cstr(str);
+        if(b != nil && b->pixels != nil && s != nil){
+            int cur_x = (int)x;
+            int cur_y = (int)y;
+            u32 col = (u32)color;
+
+            for(int idx = 0; s[idx] != '\0'; idx++){
+                unsigned char ch = (unsigned char)s[idx];
+                if(ch >= 32 && ch <= 126){
+                    int glyph_idx = ch - 32;
+                    for(int row = 0; row < 14; row++){
+                        int py = cur_y + row;
+                        if(py >= 0 && py < b->height){
+                            unsigned char bits = font8x14_data[glyph_idx][row];
+                            u32 *scan = b->pixels + py * b->width;
+                            for(int col_idx = 0; col_idx < 8; col_idx++){
+                                int px = cur_x + col_idx;
+                                if(px >= 0 && px < b->width){
+                                    if(bits & (0x80 >> col_idx)){
+                                        scan[px] = col;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                cur_x += 8;
+            }
+            free(s);
+        }
+    }
+    return 0;
+}
+
+function AsperaBlitClipRaw(int64 dstptr, int64 srcptr, int64 x, int64 y,
+                         int64 clipx, int64 clipy, int64 clipw, int64 cliph) int64 {
+    int64 out;
+    c {
+        typedef struct {
+            int width;
+            int height;
+            u32 *pixels;
+        } AsperaBuffer;
+        AsperaBuffer *dst = (AsperaBuffer*)dstptr;
+        AsperaBuffer *src = (AsperaBuffer*)srcptr;
+        vlong x0, y0, x1, y1, row;
+
+        out = -1;
+        if(dst != nil && src != nil && dst != src &&
+           dst->pixels != nil && src->pixels != nil &&
+           clipw > 0 && cliph > 0 &&
+           x > -1000000 && x < 1000000 && y > -1000000 && y < 1000000 &&
+           clipx > -1000000 && clipx < 1000000 &&
+           clipy > -1000000 && clipy < 1000000 &&
+           clipw <= 4096 && cliph <= 4096){
+            x0 = x > clipx ? x : clipx;
+            y0 = y > clipy ? y : clipy;
+            if(x0 < 0) x0 = 0;
+            if(y0 < 0) y0 = 0;
+            x1 = x + src->width;
+            y1 = y + src->height;
+            if(x1 > clipx + clipw) x1 = clipx + clipw;
+            if(y1 > clipy + cliph) y1 = clipy + cliph;
+            if(x1 > dst->width) x1 = dst->width;
+            if(y1 > dst->height) y1 = dst->height;
+            for(row = y0; row < y1 && x0 < x1; row++)
+                memmove(dst->pixels + row * dst->width + x0,
+                        src->pixels + (row - y) * src->width + (x0 - x),
+                        (x1 - x0) * sizeof(u32));
+            out = 0;
+        }
+    }
+    return out;
+}
+
+function AsperaSavePpmRaw(int64 ptr, string path) int64 {
+    int64 res;
+    c {
+        typedef struct {
+            int width;
+            int height;
+            u32 *pixels;
+        } AsperaBuffer;
+
+        res = -1;
+        AsperaBuffer *b = (AsperaBuffer*)ptr;
+        char *p = o9_string_cstr(path);
+        if(b != nil && b->pixels != nil && p != nil){
+            int fd = create(p, OWRITE, 0666);
+            if(fd >= 0){
+                char hdr[64];
+                int hlen = snprint(hdr, sizeof(hdr), "P6\n%d %d\n255\n", b->width, b->height);
+                int good = write(fd, hdr, hlen) == hlen;
+
+                int row_len = b->width * 3;
+                u8 *row_buf = (u8*)malloc(row_len);
+                if(row_buf != nil){
+                    for(int j = 0; j < b->height && good; j++){
+                        u32 *src = b->pixels + j * b->width;
+                        u8 *dst = row_buf;
+                        for(int i = 0; i < b->width; i++){
+                            u32 c = src[i];
+                            *dst++ = (u8)((c >> 16) & 0xFF);
+                            *dst++ = (u8)((c >> 8) & 0xFF);
+                            *dst++ = (u8)(c & 0xFF);
+                        }
+                        int sent = 0;
+                        while(sent < row_len){
+                            int wrote = write(fd, row_buf + sent, row_len - sent);
+                            if(wrote <= 0){
+                                good = 0;
+                                break;
+                            }
+                            sent += wrote;
+                        }
+                    }
+                    free(row_buf);
+                    if(good)
+                        res = 0;
+                }
+                close(fd);
+            } else {
+                fprint(2, "[aspera] failed to create PPM file '%s': %r\n", p);
+            }
+            free(p);
+        }
+    }
+    return res;
+}
+
+function AsperaFillBorderRectRaw(int64 ptr, int64 x, int64 y, int64 w, int64 h,
+                               int64 fillCol, int64 borderCol) int64 {
+    c {
+        typedef struct {
+            int width;
+            int height;
+            u32 *pixels;
+        } AsperaBuffer;
+
+        AsperaBuffer *b = (AsperaBuffer*)ptr;
+        if(b != nil && b->pixels != nil && w > 0 && h > 0){
+            if(x < b->width && y < b->height && x > -w && y > -h){
+                int x0 = x < 0 ? 0 : (int)x;
+                int y0 = y < 0 ? 0 : (int)y;
+                int x1 = w > b->width - x0 ? b->width : (int)(x + w);
+                int y1 = h > b->height - y0 ? b->height : (int)(y + h);
+                if(x0 < 0) x0 = 0;
+                if(y0 < 0) y0 = 0;
+                if(x1 > b->width) x1 = b->width;
+                if(y1 > b->height) y1 = b->height;
+                u32 fcol = (u32)fillCol;
+                u32 bcol = (u32)borderCol;
+                for(int j = y0; j < y1; j++){
+                    u32 *row = b->pixels + j * b->width;
+                    for(int i = x0; i < x1; i++)
+                        row[i] = fcol;
+                }
+                if(y0 < y1){
+                    u32 *top = b->pixels + y0 * b->width;
+                    u32 *bot = b->pixels + (y1 - 1) * b->width;
+                    for(int i = x0; i < x1; i++){
+                        top[i] = bcol;
+                        bot[i] = bcol;
+                    }
+                }
+                for(int j = y0; j < y1; j++){
+                    u32 *row = b->pixels + j * b->width;
+                    if(x0 < x1){
+                        row[x0] = bcol;
+                        row[x1 - 1] = bcol;
+                    }
+                }
+            }
+        }
+    }
+    return 0;
+}
+
+function AsperaFillBorderTextRaw(int64 ptr, int64 x, int64 y, int64 w, int64 h,
+                               int64 fillCol, int64 borderCol, string str,
+                               int64 dxy, int64 textCol) int64 {
+    c {
+        #undef FONT8X14_H
+        #include "font8x14.h"
+
+        typedef struct {
+            int width;
+            int height;
+            u32 *pixels;
+        } AsperaBuffer;
+
+        AsperaBuffer *b = (AsperaBuffer*)ptr;
+        char *s = o9_string_cstr(str);
+        if(b != nil && b->pixels != nil && w > 0 && h > 0){
+            if(x < b->width && y < b->height && x > -w && y > -h){
+                int x0 = x < 0 ? 0 : (int)x;
+                int y0 = y < 0 ? 0 : (int)y;
+                int x1 = w > b->width - x0 ? b->width : (int)(x + w);
+                int y1 = h > b->height - y0 ? b->height : (int)(y + h);
+                if(x0 < 0) x0 = 0;
+                if(y0 < 0) y0 = 0;
+                if(x1 > b->width) x1 = b->width;
+                if(y1 > b->height) y1 = b->height;
+                u32 fcol = (u32)fillCol;
+                u32 bcol = (u32)borderCol;
+                for(int j = y0; j < y1; j++){
+                    u32 *row = b->pixels + j * b->width;
+                    for(int i = x0; i < x1; i++)
+                        row[i] = fcol;
+                }
+                if(y0 < y1){
+                    u32 *top = b->pixels + y0 * b->width;
+                    u32 *bot = b->pixels + (y1 - 1) * b->width;
+                    for(int i = x0; i < x1; i++){
+                        top[i] = bcol;
+                        bot[i] = bcol;
+                    }
+                }
+                for(int j = y0; j < y1; j++){
+                    u32 *row = b->pixels + j * b->width;
+                    if(x0 < x1){
+                        row[x0] = bcol;
+                        row[x1 - 1] = bcol;
+                    }
+                }
+            }
+            if(s != nil){
+                int cur_x = (int)x + (int)(dxy & 0xFFFF);
+                int cur_y = (int)y + (int)((dxy >> 16) & 0xFFFF);
+                u32 col = (u32)textCol;
+                for(int idx = 0; s[idx] != '\0' && idx < 15; idx++){
+                    unsigned char ch = (unsigned char)s[idx];
+                    if(ch >= 32 && ch <= 126){
+                        int glyph_idx = ch - 32;
+                        for(int row = 0; row < 14; row++){
+                            int py = cur_y + row;
+                            if(py >= 0 && py < b->height){
+                                unsigned char bits = font8x14_data[glyph_idx][row];
+                                u32 *scan = b->pixels + py * b->width;
+                                for(int col_idx = 0; col_idx < 8; col_idx++){
+                                    int px = cur_x + col_idx;
+                                    if(px >= 0 && px < b->width && (bits & (0x80 >> col_idx)))
+                                        scan[px] = col;
+                                }
+                            }
+                        }
+                    }
+                    cur_x += 8;
+                }
+            }
+        }
+        free(s);
+    }
+    return 0;
+}
+
+function AsperaWindowFrameRaw(int64 ptr, int64 xywh, int64 metrics,
+                            int64 colors1, int64 colors2, int64 colors3,
+                            int64 colors4, int64 colors5,
+                            string titleStr, int64 srcptr) int64 {
+    c {
+        #undef FONT8X14_H
+        #include "font8x14.h"
+
+        typedef struct {
+            int width;
+            int height;
+            u32 *pixels;
+        } AsperaBuffer;
+
+        AsperaBuffer *b = (AsperaBuffer*)ptr;
+        AsperaBuffer *src = (AsperaBuffer*)srcptr;
+        char *title = o9_string_cstr(titleStr);
+        int wx = (int)(short)(xywh & 0xFFFF);
+        int wy = (int)(short)((xywh >> 16) & 0xFFFF);
+        int ww = (int)(xywh >> 32) & 0xFFFF;
+        int vh = (int)(xywh >> 48) & 0xFFFF;
+        int bw = (int)(metrics & 0xFF);
+        int th = (int)((metrics >> 8) & 0xFF);
+        int bs = (int)((metrics >> 16) & 0xFF);
+        int bsp = (int)((metrics >> 24) & 0xFF);
+        int flags = (int)((metrics >> 32) & 0xFF);
+        u32 frameCol = (u32)(colors1 & 0xFFFFFF);
+        u32 bevelLight = (u32)((colors1 >> 24) & 0xFFFFFF);
+        u32 bevelDark = (u32)(colors2 & 0xFFFFFF);
+        u32 titleBg = (u32)((colors2 >> 24) & 0xFFFFFF);
+        u32 titleFg = (u32)(colors3 & 0xFFFFFF);
+        u32 closeCol = (u32)((colors3 >> 24) & 0xFFFFFF);
+        u32 maxCol = (u32)(colors4 & 0xFFFFFF);
+        u32 shadeCol = (u32)((colors4 >> 24) & 0xFFFFFF);
+        u32 stickCol = (u32)(colors5 & 0xFFFFFF);
+
+        #define ASPERA_FILL(rx, ry, rw, rh, col) do { \
+            int _x = (rx), _y = (ry), _w = (rw), _h = (rh); \
+            if(_w > 0 && _h > 0 && _x < b->width && _y < b->height && _x > -_w && _y > -_h){ \
+                int _x0 = _x < 0 ? 0 : _x; \
+                int _y0 = _y < 0 ? 0 : _y; \
+                int _x1 = _w > b->width - _x0 ? b->width : _x + _w; \
+                int _y1 = _h > b->height - _y0 ? b->height : _y + _h; \
+                u32 _c = (col); \
+                for(int _j = _y0; _j < _y1; _j++){ \
+                    u32 *_row = b->pixels + _j * b->width; \
+                    for(int _i = _x0; _i < _x1; _i++) _row[_i] = _c; \
+                } \
+            } \
+        } while(0)
+
+        #define ASPERA_BORDER(rx, ry, rw, rh, rt, col) do { \
+            int _x = (rx), _y = (ry), _w = (rw), _h = (rh), _t = (rt); \
+            if(_t < 1) _t = 1; \
+            if(_w > 0 && _h > 0 && _x < b->width && _y < b->height && _x > -_w && _y > -_h){ \
+                int _x0 = _x < 0 ? 0 : _x; \
+                int _y0 = _y < 0 ? 0 : _y; \
+                int _x1 = _w > b->width - _x0 ? b->width : _x + _w; \
+                int _y1 = _h > b->height - _y0 ? b->height : _y + _h; \
+                u32 _c = (col); \
+                for(int _j = _y0; _j < _y0 + _t && _j < _y1; _j++){ \
+                    u32 *_row = b->pixels + _j * b->width; \
+                    for(int _i = _x0; _i < _x1; _i++) _row[_i] = _c; \
+                } \
+                for(int _j = _y1 - _t; _j < _y1; _j++){ \
+                    if(_j >= _y0){ \
+                        u32 *_row = b->pixels + _j * b->width; \
+                        for(int _i = _x0; _i < _x1; _i++) _row[_i] = _c; \
+                    } \
+                } \
+                for(int _j = _y0; _j < _y1; _j++){ \
+                    u32 *_row = b->pixels + _j * b->width; \
+                    for(int _i = _x0; _i < _x0 + _t && _i < _x1; _i++) _row[_i] = _c; \
+                    for(int _i = _x1 - _t; _i < _x1; _i++) if(_i >= _x0) _row[_i] = _c; \
+                } \
+            } \
+        } while(0)
+
+        #define ASPERA_CHAR(ch_val, cx, cy, col) do { \
+            unsigned char _ch = (unsigned char)(ch_val); \
+            if(_ch >= 32 && _ch <= 126){ \
+                int _gi = _ch - 32; \
+                for(int _r = 0; _r < 14; _r++){ \
+                    int _py = (cy) + _r; \
+                    if(_py >= 0 && _py < b->height){ \
+                        unsigned char _bits = font8x14_data[_gi][_r]; \
+                        u32 *_scan = b->pixels + _py * b->width; \
+                        for(int _ci = 0; _ci < 8; _ci++){ \
+                            int _px = (cx) + _ci; \
+                            if(_px >= 0 && _px < b->width && (_bits & (0x80 >> _ci))) \
+                                _scan[_px] = (col); \
+                        } \
+                    } \
+                } \
+            } \
+        } while(0)
+
+        if(b != nil && b->pixels != nil && ww > 0 && vh > 0){
+            ASPERA_BORDER(wx, wy, ww, vh, bw, frameCol);
+            ASPERA_FILL(wx, wy, ww, 1, bevelLight);
+            ASPERA_FILL(wx, wy, 1, vh, bevelLight);
+            ASPERA_FILL(wx, wy + vh - 1, ww, 1, bevelDark);
+            ASPERA_FILL(wx + ww - 1, wy, 1, vh, bevelDark);
+            ASPERA_FILL(wx + bw, wy + bw, ww - bw * 2, th, titleBg);
+            if(title != nil){
+                int tx = wx + bw + 6;
+                int ty = wy + bw + 4;
+                for(int idx = 0; title[idx] != '\0'; idx++){
+                    ASPERA_CHAR(title[idx], tx, ty, titleFg);
+                    tx += 8;
+                }
+            }
+            int btnX = wx + ww - bw - bs - 2;
+            int btnY = wy + bw + (th - bs) / 2;
+            if(flags & 1){
+                ASPERA_FILL(btnX, btnY, bs, bs, closeCol);
+                ASPERA_BORDER(btnX, btnY, bs, bs, 1, bevelDark);
+                ASPERA_CHAR('x', btnX + 4, btnY + 1, 0xffffff);
+                btnX -= bs + bsp;
+            }
+            if((flags & 2) && !(flags & 16)){
+                ASPERA_FILL(btnX, btnY, bs, bs, maxCol);
+                ASPERA_BORDER(btnX, btnY, bs, bs, 1, bevelDark);
+                ASPERA_CHAR('+', btnX + 4, btnY + 1, 0xffffff);
+                btnX -= bs + bsp;
+            }
+            if(flags & 4){
+                ASPERA_FILL(btnX, btnY, bs, bs, shadeCol);
+                ASPERA_BORDER(btnX, btnY, bs, bs, 1, bevelDark);
+                ASPERA_CHAR((flags & 16) ? 'v' : '^', btnX + 4, btnY + 1, 0xffffff);
+                btnX -= bs + bsp;
+            }
+            if(flags & 8){
+                ASPERA_FILL(btnX, btnY, bs, bs, stickCol);
+                ASPERA_BORDER(btnX, btnY, bs, bs, 1, bevelDark);
+                ASPERA_CHAR((flags & 32) ? '*' : 'o', btnX + 4, btnY + 1, 0xffffff);
+            }
+            if(!(flags & 16)){
+                int cx = wx + bw;
+                int cy = wy + bw + th;
+                int cw = ww - bw * 2;
+                int ch = vh - bw * 2 - th;
+                ASPERA_BORDER(cx - 1, cy - 1, cw + 2, ch + 2, 1, bevelDark);
+                if(src != nil && src->pixels != nil && src != b && cw > 0 && ch > 0){
+                    int x0 = cx < 0 ? 0 : cx;
+                    int y0 = cy < 0 ? 0 : cy;
+                    int x1 = cx + (src->width < cw ? src->width : cw);
+                    int y1 = cy + (src->height < ch ? src->height : ch);
+                    if(x1 > b->width) x1 = b->width;
+                    if(y1 > b->height) y1 = b->height;
+                    for(int row = y0; row < y1 && x0 < x1; row++)
+                        memmove(b->pixels + row * b->width + x0,
+                                src->pixels + (row - cy) * src->width + (x0 - cx),
+                                (x1 - x0) * sizeof(u32));
+                }
+            }
+        }
+        #undef ASPERA_FILL
+        #undef ASPERA_BORDER
+        #undef ASPERA_CHAR
+        free(title);
+    }
+    return 0;
+}
+
+function AsperaPresentRaw(int64 ptr, string directory, int64 preferred) int64 {
+    int64 out;
+    c {
+        typedef struct {
+            int width;
+            int height;
+            u32 *pixels;
+        } AsperaBuffer;
+        AsperaBuffer *b = (AsperaBuffer*)ptr;
+        char *base, path[512], command[32];
+        int ctl, fd, slot, attempt, n, sent, total, good, committed;
+
+        out = -1;
+        base = o9_string_cstr(directory);
+        if(b != nil && b->pixels != nil && b->width == 1024 && b->height == 768 &&
+           base != nil && snprint(path, sizeof path, "%s/dev/ctl", base) < sizeof path){
+            slot = -1;
+            for(attempt = 0; attempt < 100 && slot < 0; attempt++){
+                int candidate = (preferred + attempt) % 2;
+                ctl = open(path, OWRITE);
+                if(ctl >= 0){
+                    n = snprint(command, sizeof command, "begin %d\n", candidate);
+                    if(write(ctl, command, n) == n)
+                        slot = candidate;
+                    close(ctl);
+                }
+                if(slot < 0)
+                    sleep(2);
+            }
+            if(slot >= 0){
+                snprint(path, sizeof path, "%s/dev/screen%d", base, slot);
+                fd = open(path, OWRITE);
+                good = fd >= 0;
+                sent = 0;
+                total = b->width * b->height * sizeof(u32);
+                while(good && sent < total){
+                    n = write(fd, (u8*)b->pixels + sent, total - sent);
+                    if(n <= 0)
+                        good = 0;
+                    else
+                        sent += n;
+                }
+                if(fd >= 0)
+                    close(fd);
+                snprint(path, sizeof path, "%s/dev/ctl", base);
+                ctl = open(path, OWRITE);
+                committed = 0;
+                if(ctl >= 0){
+                    n = snprint(command, sizeof command,
+                                good ? "commit %d\n" : "abort %d\n", slot);
+                    if(write(ctl, command, n) == n && good){
+                        out = slot;
+                        committed = 1;
+                    }
+                    close(ctl);
+                }
+                if(good && !committed){
+                    ctl = open(path, OWRITE);
+                    if(ctl >= 0){
+                        n = snprint(command, sizeof command, "abort %d\n", slot);
+                        write(ctl, command, n);
+                        close(ctl);
+                    }
+                }
+            }
+        }
+        free(base);
+    }
+    return out;
+}
+
+function AsperaInputRaw(string directory) string {
+    string out;
+    c {
+        char *base, path[512], record[96];
+        int fd, n, attempt;
+
+        out = nil;
+        base = o9_string_cstr(directory);
+        if(base != nil && snprint(path, sizeof path, "%s/dev/input", base) < sizeof path){
+            for(attempt = 0; attempt < 10 && out == nil; attempt++){
+                fd = open(path, OREAD);
+                if(fd >= 0){
+                    n = read(fd, record, sizeof record - 1);
+                    if(n > 0){
+                        if(record[n-1] == '\n') n--;
+                        out = o9_string_new(record, n);
+                    }
+                    close(fd);
+                }
+                if(out == nil && attempt + 1 < 10)
+                    sleep(8);
+            }
+        }
+        free(base);
+        if(out == nil)
+            out = o9_string_new("", 0);
+    }
+    return out;
+}
+
+class AsperaCanvas {
+    prop int64 screenW;
+    prop int64 screenH;
+    prop int64 handle;
+
+    method AsperaCanvas(int64 width, int64 height) {
+        screenW = width;
+        screenH = height;
+        Task<int64> t = spawn AsperaAllocCanvasRaw(width, height);
+        handle = t.await();
+    }
+
+    method int64 width() {
+        return screenW;
+    }
+
+    method int64 height() {
+        return screenH;
+    }
+
+    method bool ready() {
+        return handle != 0;
+    }
+
+    method void clear(int64 color) {
+        if(handle != 0) {
+            Task<int64> t = spawn AsperaClearRaw(handle, color);
+            t.await();
+        }
+    }
+
+    method void fillRect(int64 x, int64 y, int64 w, int64 h, int64 color) {
+        if(handle != 0) {
+            Task<int64> t = spawn AsperaFillRectRaw(handle, x, y, w, h, color);
+            t.await();
+        }
+    }
+
+    method void borderRect(int64 x, int64 y, int64 w, int64 h, int64 color) {
+        borderRectN(x, y, w, h, 1, color);
+    }
+
+    method void borderRectN(int64 x, int64 y, int64 w, int64 h, int64 thick, int64 color) {
+        if(handle != 0) {
+            Task<int64> t = spawn AsperaBorderRectRaw(handle, x, y, w, h, thick, color);
+            t.await();
+        }
+    }
+
+    method void fillBorderRect(int64 x, int64 y, int64 w, int64 h,
+                               int64 fillCol, int64 borderCol) {
+        if(handle != 0) {
+            Task<int64> t = spawn AsperaFillBorderRectRaw(handle, x, y, w, h,
+                                                        fillCol, borderCol);
+            t.await();
+        }
+    }
+
+    method void fillBorderText(int64 x, int64 y, int64 w, int64 h,
+                               int64 fillCol, int64 borderCol, string s,
+                               int64 dx, int64 dy, int64 textCol) {
+        if(handle != 0) {
+            int64 dxy = (dx & 65535) + ((dy & 65535) * 65536);
+            Task<int64> t = spawn AsperaFillBorderTextRaw(handle, x, y, w, h,
+                                                        fillCol, borderCol, s,
+                                                        dxy, textCol);
+            t.await();
+        }
+    }
+
+    method void drawWindowFrame(int64 xywh, int64 metrics, int64 colors1,
+                                int64 colors2, int64 colors3, int64 colors4,
+                                int64 colors5, string title, int64 srcptr) {
+        if(handle != 0) {
+            Task<int64> t = spawn AsperaWindowFrameRaw(handle, xywh, metrics,
+                                                     colors1, colors2, colors3,
+                                                     colors4, colors5, title, srcptr);
+            t.await();
+        }
+    }
+
+    method void text(string s, int64 x, int64 y, int64 color) {
+        if(handle != 0) {
+            Task<int64> t = spawn AsperaDrawTextRaw(handle, s, x, y, color);
+            t.await();
+        }
+    }
+
+    method bool blitClip(AsperaCanvas source, int64 x, int64 y,
+                         int64 clipx, int64 clipy, int64 clipw, int64 cliph) {
+        if(handle == 0 || !source.ready()) { return false; }
+        Task<int64> t = spawn AsperaBlitClipRaw(handle, source.bufferAddress(), x, y,
+                                               clipx, clipy, clipw, cliph);
+        return t.await() == 0;
+    }
+
+    method int64 savePPM(string path) {
+        if(handle != 0) {
+            Task<int64> t = spawn AsperaSavePpmRaw(handle, path);
+            return t.await();
+        }
+        return -1;
+    }
+
+    method bool present(string directory, int64 preferred) {
+        if(handle == 0) { return false; }
+        Task<int64> t = spawn AsperaPresentRaw(handle, directory, preferred);
+        return t.await() >= 0;
+    }
+
+    method int64 bufferAddress() {
+        return handle;
+    }
+
+    method void close() {
+        if(handle != 0) {
+            Task<int64> t = spawn AsperaFreeCanvasRaw(handle);
+            t.await();
+            handle = 0;
+        }
+    }
+}

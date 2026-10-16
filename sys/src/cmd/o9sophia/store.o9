@@ -1,0 +1,463 @@
+// Sophia's filesystem policy and append-only disk format in Objective-9C.
+// A small native binding supplies positional I/O on Plan 9 file descriptors.
+import "bytes.o9";
+import "string.o9";
+import "file.o9";
+
+function SophiaReadAtRaw(string path, int64 offset, int64 count) string {
+    string out;
+    c {
+        char *p;
+        int fd;
+        vlong n, got;
+        O9String *s;
+
+        out = o9_string_new("", 0);
+        p = o9_string_cstr(path);
+        if(p != nil && offset >= 0 && count > 0 && count <= 8388608){
+            fd = open(p, OREAD);
+            if(fd >= 0){
+                if(seek(fd, offset, 0) >= 0){
+                    s = o9_string_new(nil, count);
+                    if(s != nil){
+                        got = 0;
+                        while(got < count){
+                            n = read(fd, o9_string_data(s) + got, count - got);
+                            if(n <= 0)
+                                break;
+                            got += n;
+                        }
+                        out = o9_string_new(o9_string_data(s), got);
+                        o9_string_release(s);
+                    }
+                }
+                close(fd);
+            }
+        }
+        free(p);
+    }
+    return out;
+}
+
+function SophiaWriteAtRaw(string path, int64 offset, string data) int64 {
+    int64 out;
+    c {
+        char *p;
+        int fd;
+        vlong n, total, size;
+
+        out = -1;
+        p = o9_string_cstr(path);
+        if(p != nil && offset >= 0){
+            fd = open(p, OWRITE);
+            if(fd >= 0){
+                if(seek(fd, offset, 0) >= 0){
+                    size = o9_string_len(data);
+                    total = 0;
+                    while(total < size){
+                        n = write(fd, o9_string_data(data) + total, size - total);
+                        if(n <= 0)
+                            break;
+                        total += n;
+                    }
+                    if(total == size)
+                        out = total;
+                }
+                close(fd);
+            }
+        }
+        free(p);
+    }
+    return out;
+}
+
+class SophiaEntry {
+    private string pathValue;
+    private string dataValue;
+    private int64 modeValue;
+    private bool directory;
+    private bool active;
+
+    method SophiaEntry(string path, bool dir, int64 mode, string data) {
+        pathValue = path;
+        directory = dir;
+        modeValue = mode;
+        dataValue = data;
+        active = true;
+    }
+
+    method string path() { return pathValue; }
+    method string data() { return dataValue; }
+    method int64 mode() { return modeValue; }
+    method bool isDir() { return directory; }
+    method bool exists() { return active; }
+    method void replace(string data) { dataValue = data; }
+    method void remove() { active = false; dataValue = ""; }
+}
+
+class SophiaStore {
+    private string backing;
+    private SophiaEntry[] entries;
+    private int64 count;
+    private bool healthy;
+    private int64 generationValue;
+    private int64 tail;
+    private int64 fixedCapacity;
+
+    method SophiaStore(string path) {
+        backing = path;
+        count = 0;
+        generationValue = 0;
+        tail = 8;
+        fixedCapacity = 0;
+        healthy = load();
+    }
+
+    method bool ready() { return healthy; }
+    method int64 generation() { return generationValue; }
+    method int64 entryCount() {
+        int64 n = 0;
+        int64 i = 0;
+        while(i < count) {
+            if(entries[i].exists()) { n = n + 1; }
+            i = i + 1;
+        }
+        return n;
+    }
+
+    private method int64 findEntry(string path) {
+        int64 i = 0;
+        while(i < count) {
+            if(entries[i].exists() && cmp(entries[i].path(), path) == 0) {
+                return i;
+            }
+            i = i + 1;
+        }
+        return -1;
+    }
+
+    private method bool legal(string path) {
+        int64 n = len(path);
+        if(n < 2 || n > 255) { return false; }
+        Task<byte> start = spawn BytesGetRaw(path, 0);
+        if(start.await() != 47) { return false; }
+        int64 i = 1;
+        int64 segment = 1;
+        while(i < n) {
+            Task<byte> b = spawn BytesGetRaw(path, i);
+            byte ch = b.await();
+            if(ch == 0 || ch == 10 || ch == 13 || ch == 92) { return false; }
+            if(ch == 47) {
+                if(segment == i) { return false; }
+                Task<string> part = spawn StringSliceRaw(path, segment, i - segment);
+                string value = part.await();
+                if(cmp(value, ".") == 0 || cmp(value, "..") == 0) { return false; }
+                segment = i + 1;
+            }
+            i = i + 1;
+        }
+        if(segment == n) { return false; }
+        Task<string> last = spawn StringSliceRaw(path, segment, n - segment);
+        return cmp(last.await(), ".") != 0 && cmp(last.await(), "..") != 0;
+    }
+
+    private method string parent(string path) {
+        Task<int64> slash = spawn StringLastIndexOfRaw(path, "/");
+        int64 at = slash.await();
+        if(at <= 0) { return "/"; }
+        Task<string> result = spawn StringSliceRaw(path, 0, at);
+        return result.await();
+    }
+
+    private method bool parentIsDir(string path) {
+        int64 at = findEntry(parent(path));
+        return at >= 0 && entries[at].isDir();
+    }
+
+    private method void put(string path, bool dir, int64 mode, string data) {
+        int64 at = findEntry(path);
+        if(at >= 0) {
+            entries[at].remove();
+        }
+        SophiaEntry entry = new SophiaEntry(path, dir, mode, data);
+        entries[count] = entry;
+        count = count + 1;
+        generationValue = generationValue + 1;
+    }
+
+    private method string le32(int64 value) {
+        Bytes b = new Bytes("");
+        int64 i = 0;
+        while(i < 4) {
+            b.append(cast<byte>(value % 256));
+            value = value / 256;
+            i = i + 1;
+        }
+        return b.text();
+    }
+
+    private method string patch(string old, int64 offset, string data,
+                                bool truncate) {
+        if(truncate) { old = ""; }
+        int64 gap = 0;
+        if(offset > len(old)) { gap = offset - len(old); }
+        int64 prefix = offset;
+        if(prefix > len(old)) { prefix = len(old); }
+        Task<string> head = spawn StringSliceRaw(old, 0, prefix);
+        string next = head.await();
+        if(gap > 0) {
+            Bytes zero = new Bytes("");
+            zero.append(0);
+            Task<string> fill = spawn StringRepeatRaw(zero.text(), gap);
+            next = cat(next, fill.await());
+        }
+        next = cat(next, data);
+        if(offset + len(data) < len(old)) {
+            Task<string> rest = spawn StringSliceRaw(old, offset + len(data),
+                                                     len(old) - offset - len(data));
+            next = cat(next, rest.await());
+        }
+        return next;
+    }
+
+    private method int64 number(string data, int64 offset) {
+        if(offset < 0 || offset + 4 > len(data)) { return -1; }
+        int64 value = 0;
+        int64 factor = 1;
+        int64 i = 0;
+        while(i < 4) {
+            Task<byte> b = spawn BytesGetRaw(data, offset + i);
+            value = value + b.await() * factor;
+            factor = factor * 256;
+            i = i + 1;
+        }
+        return value;
+    }
+
+    private method string encode(byte op, string path, int64 mode, string data) {
+        Bytes b = new Bytes("");
+        b.append(op);
+        b.append(cast<byte>(len(path)));
+        b.append(cast<byte>(0));
+        return cat(cat(cat(b.text(), le32(mode)), le32(len(data))), cat(path, data));
+    }
+
+    private method bool append(byte op, string path, int64 mode, string data) {
+        if(!healthy || len(data) > 4194304) { return false; }
+        string payload = encode(op, path, mode, data);
+        string record = cat(cat(le32(len(payload)), hash(payload)), payload);
+        File image = new File(backing);
+        int64 capacity = image.size();
+        if(capacity < tail) {
+            healthy = false;
+            return false;
+        }
+        if(fixedCapacity > 0 && len(record) > fixedCapacity - tail) {
+            return false;
+        }
+        Task<int64> wrote = spawn SophiaWriteAtRaw(backing, tail, record);
+        if(wrote.await() != len(record)) {
+            healthy = false;
+            return false;
+        }
+        tail = tail + len(record);
+        return true;
+    }
+
+    private method bool replay(string payload) {
+        if(len(payload) < 11) { return false; }
+        Task<byte> opTask = spawn BytesGetRaw(payload, 0);
+        Task<byte> pathLenTask = spawn BytesGetRaw(payload, 1);
+        Task<byte> reserved = spawn BytesGetRaw(payload, 2);
+        byte op = opTask.await();
+        int64 pathLen = pathLenTask.await();
+        int64 mode = number(payload, 3);
+        int64 dataLen = number(payload, 7);
+        if(reserved.await() != 0 || pathLen < 2 || pathLen > 255 ||
+           dataLen < 0 || len(payload) != 11 + pathLen + dataLen) { return false; }
+        Task<string> p = spawn StringSliceRaw(payload, 11, pathLen);
+        Task<string> d = spawn StringSliceRaw(payload, 11 + pathLen, dataLen);
+        string path = p.await();
+        string data = d.await();
+        if(!legal(path)) { return false; }
+        if(op == 1 || op == 2) {
+            if(findEntry(path) >= 0 || !parentIsDir(path) || count >= 4096 ||
+               (op == 2 && dataLen != 0)) { return false; }
+            put(path, op == 2, mode, data);
+            return true;
+        }
+        int64 at = findEntry(path);
+        if(at < 0) { return false; }
+        if(op == 3 && !entries[at].isDir()) {
+            entries[at].replace(data);
+            generationValue = generationValue + 1;
+            return true;
+        }
+        if(op == 5 && !entries[at].isDir() && dataLen >= 5) {
+            int64 offset = number(data, 0);
+            Task<byte> flag = spawn BytesGetRaw(data, 4);
+            byte truncate = flag.await();
+            if(offset < 0 || truncate > 1 || offset > 4194304 - (dataLen - 5)) {
+                return false;
+            }
+            Task<string> body = spawn StringSliceRaw(data, 5, dataLen - 5);
+            string next = patch(entries[at].data(), offset, body.await(),
+                                truncate == 1);
+            if(len(next) > 4194304) { return false; }
+            entries[at].replace(next);
+            generationValue = generationValue + 1;
+            return true;
+        }
+        if(op == 4 && dataLen == 0 && !hasChildren(path)) {
+            entries[at].remove();
+            generationValue = generationValue + 1;
+            return true;
+        }
+        return false;
+    }
+
+    private method bool load() {
+        SophiaEntry root = new SophiaEntry("/", true, 0755, "");
+        entries[count] = root;
+        count = count + 1;
+        File image = new File(backing);
+        if(!image.exists()) {
+            return image.write("SOPHIA1\n") == 0;
+        }
+        int64 size = image.size();
+        if(size < 8) { return false; }
+        Task<string> magic = spawn SophiaReadAtRaw(backing, 0, 8);
+        string signature = magic.await();
+        Bytes zeros = new Bytes("");
+        zeros.append(0);
+        Task<string> blank = spawn StringRepeatRaw(zeros.text(), 8);
+        if(cmp(signature, blank.await()) == 0) {
+            Task<int64> formatted = spawn SophiaWriteAtRaw(backing, 0, "SOPHIA1\n");
+            if(formatted.await() != 8) { return false; }
+        } else if(cmp(signature, "SOPHIA1\n") != 0) { return false; }
+        int64 offset = 8;
+        while(offset < size) {
+            if(size - offset < 68) {
+                Task<string> restTask = spawn SophiaReadAtRaw(backing, offset,
+                                                               size - offset);
+                Task<string> emptyRest = spawn StringRepeatRaw(zeros.text(),
+                                                               size - offset);
+                if(cmp(restTask.await(), emptyRest.await()) == 0) {
+                    tail = offset;
+                    fixedCapacity = size;
+                    return true;
+                }
+                return false;
+            }
+            Task<string> headerTask = spawn SophiaReadAtRaw(backing, offset, 68);
+            string header = headerTask.await();
+            if(len(header) != 68) { return false; }
+            int64 n = number(header, 0);
+            if(n == 0) {
+                Task<string> emptyTail = spawn StringRepeatRaw(zeros.text(), 68);
+                if(cmp(header, emptyTail.await()) == 0) {
+                    tail = offset;
+                    fixedCapacity = size;
+                    return true;
+                }
+            }
+            if(n < 11 || n > 4194570 || n > size - offset - 68) { return false; }
+            Task<string> expectedTask = spawn StringSliceRaw(header, 4, 64);
+            Task<string> bodyTask = spawn SophiaReadAtRaw(backing, offset + 68, n);
+            string body = bodyTask.await();
+            if(len(body) != n || cmp(hash(body), expectedTask.await()) != 0 ||
+               !replay(body)) { return false; }
+            offset = offset + 68 + n;
+        }
+        tail = offset;
+        return offset == size;
+    }
+
+    method bool exists(string path) { return findEntry(path) >= 0; }
+    method bool isDir(string path) {
+        int64 at = findEntry(path);
+        return at >= 0 && entries[at].isDir();
+    }
+    method int64 size(string path) {
+        int64 at = findEntry(path);
+        if(at < 0 || entries[at].isDir()) { return -1; }
+        return len(entries[at].data());
+    }
+    method string digest(string path) {
+        int64 at = findEntry(path);
+        if(at < 0 || entries[at].isDir()) { return ""; }
+        return hash(entries[at].data());
+    }
+
+    method bool create(string path, bool dir, int64 mode) {
+        if(!healthy || !legal(path) || findEntry(path) >= 0 ||
+           !parentIsDir(path) || count >= 4096 || mode < 0 || mode > 0777) {
+            return false;
+        }
+        byte op = 1;
+        if(dir) { op = 2; }
+        if(!append(op, path, mode, "")) { return false; }
+        put(path, dir, mode, "");
+        return true;
+    }
+
+    method string readAt(string path, int64 offset, int64 amount) {
+        int64 at = findEntry(path);
+        if(at < 0 || entries[at].isDir() || offset < 0 || amount < 0 ||
+           amount > 4194304) { return ""; }
+        string data = entries[at].data();
+        if(offset >= len(data)) { return ""; }
+        int64 available = len(data) - offset;
+        if(amount > available) { amount = available; }
+        Task<string> out = spawn StringSliceRaw(data, offset, amount);
+        return out.await();
+    }
+
+    method int64 writeAt(string path, int64 offset, string data, bool truncate) {
+        int64 at = findEntry(path);
+        if(!healthy || at < 0 || entries[at].isDir() || offset < 0 ||
+           len(data) > 4194304 || offset > 4194304 - len(data)) { return -1; }
+        string old = entries[at].data();
+        if(len(data) == 0 && !truncate) { return 0; }
+        string next = patch(old, offset, data, truncate);
+        if(len(next) > 4194304) { return -1; }
+        Bytes flag = new Bytes("");
+        if(truncate) { flag.append(1); }
+        else { flag.append(0); }
+        string delta = cat(cat(le32(offset), flag.text()), data);
+        if(!append(5, path, entries[at].mode(), delta)) { return -1; }
+        entries[at].replace(next);
+        generationValue = generationValue + 1;
+        return len(data);
+    }
+
+    private method bool hasChildren(string path) {
+        string prefix = cat(path, "/");
+        if(cmp(path, "/") == 0) { prefix = "/"; }
+        int64 i = 0;
+        while(i < count) {
+            if(entries[i].exists() &&
+               cmp(entries[i].path(), path) != 0) {
+                Task<int64> starts = spawn StringStartsWithRaw(entries[i].path(), prefix);
+                if(starts.await() == 1) { return true; }
+            }
+            i = i + 1;
+        }
+        return false;
+    }
+
+    method bool remove(string path) {
+        int64 at = findEntry(path);
+        if(!healthy || at < 0 || cmp(path, "/") == 0 || hasChildren(path) ||
+           !append(4, path, entries[at].mode(), "")) { return false; }
+        entries[at].remove();
+        generationValue = generationValue + 1;
+        return true;
+    }
+
+    method string pathAt(int64 index) {
+        if(index < 0 || index >= count || !entries[index].exists()) { return ""; }
+        return entries[index].path();
+    }
+    method int64 highWater() { return count; }
+}

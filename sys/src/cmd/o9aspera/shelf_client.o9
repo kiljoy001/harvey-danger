@@ -1,0 +1,203 @@
+// Aspera's client for the shelf view. All menu and widget state belongs to the service.
+import "stdlib/file.o9";
+import "stdlib/io.o9";
+import "stdlib/namespace.o9";
+import "stdlib/string.o9";
+import "stdlib/time.o9";
+
+function AsperaShelfStartRaw(string binary) int64 {
+    int64 out;
+    c {
+        char *path;
+        int pid;
+
+        out = -1;
+        path = o9_string_cstr(binary);
+        if(path != nil){
+            /* The shelf service owns its mounts; do not share the desktop's pgrp. */
+            pid = rfork(RFPROC|RFFDG|RFNAMEG|RFNOTEG);
+            if(pid == 0){
+                execl(path, path, nil);
+                exits("shelf exec");
+            }
+            if(pid > 0)
+                out = pid;
+            free(path);
+        }
+    }
+    return out;
+}
+
+function AsperaShelfReadRaw(string path) string {
+    string out;
+    c {
+        char *name, buf[1024];
+        int fd, n, total;
+
+        out = nil;
+        name = o9_string_cstr(path);
+        if(name != nil){
+            fd = open(name, OREAD);
+            if(fd >= 0){
+                total = 0;
+                while(total < (int)sizeof(buf) - 1){
+                    n = read(fd, buf + total, (int)sizeof(buf) - 1 - total);
+                    if(n <= 0)
+                        break;
+                    total += n;
+                }
+                close(fd);
+                out = o9_string_new(buf, total);
+            }
+            free(name);
+        }
+        if(out == nil)
+            out = o9_string_new("", 0);
+    }
+    return out;
+}
+
+function AsperaShelfWriteRaw(string path, string text) int64 {
+    int64 out;
+    c {
+        char *name;
+        int fd, n, length;
+
+        out = 0;
+        name = o9_string_cstr(path);
+        length = o9_string_len(text);
+        if(name != nil && length >= 0){
+            fd = open(name, OWRITE);
+            if(fd >= 0){
+                n = write(fd, o9_string_data(text), length);
+                if(n == length)
+                    out = 1;
+                close(fd);
+            }
+            free(name);
+        }
+    }
+    return out;
+}
+
+function AsperaShelfClickRaw(string root, int64 x, int64 y) int64 {
+    int64 out;
+    c {
+        char *base, path[256], cmd[64], buf[128];
+        int fd, n, val;
+
+        out = 0;
+        base = o9_string_cstr(root);
+        if(base != nil){
+            snprint(path, sizeof path, "%s/ctl", base);
+            fd = open(path, OWRITE);
+            if(fd >= 0){
+                n = snprint(cmd, sizeof cmd, "click %lld %lld\n", (vlong)x, (vlong)y);
+                int ok = write(fd, cmd, n) == n;
+                close(fd);
+                if(ok){
+                    snprint(path, sizeof path, "%s/result", base);
+                    fd = open(path, OREAD);
+                    if(fd >= 0){
+                        n = read(fd, buf, (int)sizeof(buf) - 1);
+                        close(fd);
+                        if(n > 0){
+                            buf[n] = '\0';
+                            char *sp = strchr(buf, ' ');
+                            if(sp != nil){
+                                sp++;
+                                val = 0;
+                                while(*sp >= '0' && *sp <= '9'){
+                                    val = val * 10 + (*sp - '0');
+                                    sp++;
+                                }
+                                out = val;
+                            }
+                        }
+                    }
+                }
+            }
+            free(base);
+        }
+    }
+    return out;
+}
+
+class ShelfClient {
+    private string root;
+    private bool mounted;
+
+    method ShelfClient(string serviceBinary) {
+        root = "/mnt/shelf/view";
+        mounted = false;
+        Task<int64> pid = spawn AsperaShelfStartRaw(serviceBinary);
+        if(pid.await() >= 0) {
+            File mountPoint = new File("/mnt/shelf");
+            if(mountPoint.mkdirAll()) {
+                File service = new File("/srv/ShelfViews");
+                int64 tries = 0;
+                while(!service.exists() && tries < 40) {
+                    Task<int64> pause = spawn TimeSleepRaw(25);
+                    pause.await();
+                    tries = tries + 1;
+                }
+                if(service.exists()) {
+                    Namespace ns = new Namespace();
+                    mounted = ns.root("/mnt") &&
+                              ns.mountsrvReplace("/srv/ShelfViews", "shelf", "") &&
+                              ns.apply();
+                    ns.close();
+                    if(mounted) {
+                        Task<string> proto = spawn AsperaShelfReadRaw(cat(root, "/protocol"));
+                        mounted = cmp(proto.await(), "o9shelf 1\n") == 0;
+                    }
+                }
+            }
+        }
+    }
+
+    method bool ready() { return mounted; }
+
+    method string snapshot() {
+        if(!mounted) { return ""; }
+        Task<string> data = spawn AsperaShelfReadRaw(cat(root, "/state.tab"));
+        return data.await();
+    }
+
+    method string layout() {
+        if(!mounted) { return ""; }
+        Task<string> data = spawn AsperaShelfReadRaw(cat(root, "/layout"));
+        return data.await();
+    }
+
+    method string widgets() {
+        if(!mounted) { return ""; }
+        Task<string> data = spawn AsperaShelfReadRaw(cat(root, "/widgets"));
+        return data.await();
+    }
+
+    method bool command(string text) {
+        if(!mounted) { return false; }
+        Task<int64> ok = spawn AsperaShelfWriteRaw(cat(root, "/ctl"), text);
+        return ok.await() == 1;
+    }
+
+    method int64 click(int64 x, int64 y) {
+        if(!mounted || x < 0 || y < 0 || x >= 1024 || y >= 768) { return 0; }
+        Task<int64> action = spawn AsperaShelfClickRaw(root, x, y);
+        return action.await();
+    }
+
+    method bool setClock(string clockText) {
+        return command(cat(cat("clock ", clockText), "\n"));
+    }
+
+    method void close() {
+        if(mounted) {
+            Namespace ns = new Namespace();
+            ns.unmount("/mnt/shelf");
+            ns.close();
+            mounted = false;
+        }
+    }
+}

@@ -1,0 +1,148 @@
+// Boot as an Objective-9C workload to check a 9front GEFS image in Harvey.
+function setup_guest_namespace() int64 {
+    int64 result;
+    c {
+        result = bind("#c", "/dev", MAFTER);
+        if(result >= 0)
+            result = bind("#s", "/srv", MREPL|MCREATE);
+        if(result < 0)
+            print("gefs-guest: namespace setup failed: %r\n");
+    }
+    return result;
+}
+
+function check_guest_gefs() int64 {
+    int64 result;
+    c {
+        int fd, pid;
+        Waitmsg *w;
+        char *args[] = {"gefs", "-c", "-f", "/mnt/image", nil};
+
+        result = -1;
+        fd = open("#9/2", ORDWR);
+        if(fd < 0 || mount(fd, -1, "/mnt", MREPL, "") < 0){
+            print("gefs-guest: mount image transport failed: %r\n");
+            if(fd >= 0)
+                close(fd);
+        } else {
+            pid = rfork(RFPROC|RFFDG);
+            if(pid == 0){
+                exec("/build/gefs-guest", args);
+                print("gefs-guest: exec failed: %r\n");
+                _exits("exec");
+            }
+            if(pid < 0)
+                print("gefs-guest: rfork failed: %r\n");
+            else {
+                w = wait();
+                if(w != nil){
+                    if(w->msg[0] == '\0')
+                        result = 1;
+                    else
+                        print("gefs-guest: check failed: %s\n", w->msg);
+                    free(w);
+                } else
+                    print("gefs-guest: wait failed: %r\n");
+            }
+        }
+    }
+    return result;
+}
+
+function mount_guest_gefs() int64 {
+    int64 result;
+    c {
+        int pid, fd, i, n, verify;
+        char *setting;
+        char buf[64], probe[] = "Harvey GEFS persistent probe\n";
+        char *args[] = {"gefs", "-A", "-m", "32", "-n", "asperagefs",
+                        "-f", "/mnt/image", nil};
+
+        result = -1;
+        fd = open("/dev/hostowner", OWRITE);
+        if(fd < 0 || write(fd, "glenda", 6) != 6){
+            print("gefs-guest: could not select image owner: %r\n");
+        }
+        if(fd >= 0)
+            close(fd);
+        setting = getenv("O9_GEFS_VERIFY");
+        verify = setting != nil && strcmp(setting, "1") == 0;
+        free(setting);
+        pid = rfork(RFPROC|RFFDG|RFNOWAIT);
+        if(pid == 0){
+            exec("/build/gefs-guest", args);
+            print("gefs-guest: server exec failed: %r\n");
+            _exits("exec");
+        }
+        if(pid < 0){
+            print("gefs-guest: server rfork failed: %r\n");
+        } else {
+            fd = -1;
+            for(i = 0; i < 100; i++){
+                fd = open("/srv/asperagefs", OREAD);
+                if(fd >= 0)
+                    break;
+                sleep(50);
+            }
+            if(fd < 0)
+                print("gefs-guest: server did not post /srv/asperagefs\n");
+            else if(mount(fd, -1, "/mnt", MREPL|MCREATE, "") < 0){
+                print("gefs-guest: mount GEFS failed: %r\n");
+                close(fd);
+            } else {
+                if(!verify){
+                    fd = create("/mnt/gefs-probe", ORDWR, 0600);
+                    if(fd < 0)
+                        print("gefs-guest: create failed: %r\n");
+                    else {
+                        n = write(fd, probe, sizeof(probe)-1);
+                        close(fd);
+                        if(n != sizeof(probe)-1)
+                            print("gefs-guest: write failed: %r\n");
+                    }
+                }
+                fd = open("/mnt/gefs-probe", OREAD);
+                n = fd < 0 ? -1 : read(fd, buf, sizeof buf);
+                if(fd >= 0)
+                    close(fd);
+                if(n == sizeof(probe)-1 &&
+                   memcmp(buf, probe, sizeof(probe)-1) == 0)
+                    result = 1;
+                else
+                    print("gefs-guest: readback failed: %r\n");
+                if(!verify && result == 1){
+                    fd = open("/srv/asperagefs.cmd", ORDWR);
+                    if(fd >= 0){
+                        write(fd, "sync\n", 5);
+                        sleep(1000);
+                        write(fd, "halt\n", 5);
+                        close(fd);
+                        sleep(1000);
+                    } else {
+                        print("gefs-guest: sync ctl failed: %r\n");
+                        result = -1;
+                    }
+                }
+            }
+        }
+    }
+    return result;
+}
+
+main {
+    Task<int64> setup = spawn setup_guest_namespace();
+    setup.await();
+    Task<int64> check = spawn check_guest_gefs();
+    int64 checked = check.await();
+    if(checked == 1) {
+        print("GEFS-GUEST-CHECK PASS\n");
+        Task<int64> mounted = spawn mount_guest_gefs();
+        if(mounted.await() == 1) {
+            print("GEFS-GUEST-MOUNT PASS\n");
+        } else {
+            print("GEFS-GUEST-MOUNT FAIL\n");
+        }
+    } else {
+        print("GEFS-GUEST-CHECK FAIL\n");
+    }
+}

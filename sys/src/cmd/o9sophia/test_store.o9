@@ -1,0 +1,50 @@
+import "store.o9";
+
+main {
+    File image = new File("/build/sophia-store-test.log");
+    image.remove();
+    SophiaStore first = new SophiaStore("/build/sophia-store-test.log");
+    bool ok = first.ready() && first.entryCount() == 1;
+    print("sophia init ", ok, " ready ", first.ready(), " count ", first.entryCount(),
+          " exists ", image.exists(), " size ", image.size(), "\n");
+    ok = ok && first.create("/home", true, 0755);
+    ok = ok && first.create("/home/note", false, 0644);
+    ok = ok && first.writeAt("/home/note", 0, "hello", false) == 5;
+    ok = ok && first.writeAt("/home/note", 5, " world", false) == 6;
+    int64 beforePatch = image.size();
+    ok = ok && first.writeAt("/home/note", 1, "a", false) == 1 &&
+         image.size() - beforePatch < 128;
+    print("sophia created/wrote ", ok, "\n");
+    ok = ok && cmp(first.readAt("/home/note", 6, 5), "world") == 0;
+    ok = ok && cmp(first.readAt("/home/note", 0, 20), "hallo world") == 0;
+    ok = ok && first.writeAt("/home/note", 15, "!", false) == 1;
+    Bytes sparse = new Bytes(first.readAt("/home/note", 0, 20));
+    ok = ok && sparse.length() == 16 && sparse.get(11) == 0 &&
+         sparse.get(14) == 0 && sparse.get(15) == 33;
+    print("sophia offset/sparse ", ok, " bytes ", sparse.length(), "\n");
+    ok = ok && !first.create("/home/note", false, 0644) &&
+         !first.create("/home/../escape", false, 0644) &&
+         !first.create("/missing/note", false, 0644) &&
+         !first.remove("/home");
+    string originalHash = first.digest("/home/note");
+    SophiaStore reopened = new SophiaStore("/build/sophia-store-test.log");
+    print("sophia reopen ready ", reopened.ready(), " count ", reopened.entryCount(), " size ", reopened.size("/home/note"), "\n");
+    ok = ok && reopened.ready() && reopened.entryCount() == 3 &&
+         reopened.size("/home/note") == 16 &&
+         cmp(reopened.digest("/home/note"), originalHash) == 0 &&
+         cmp(reopened.readAt("/home/note", 0, 16), sparse.text()) == 0;
+    ok = ok && reopened.remove("/home/note") && reopened.remove("/home") &&
+         !reopened.exists("/home/note");
+    ok = ok && reopened.create("/home", true, 0755);
+    SophiaStore third = new SophiaStore("/build/sophia-store-test.log");
+    print("sophia third ready ", third.ready(), " count ", third.entryCount(), "\n");
+    ok = ok && third.ready() && third.isDir("/home") &&
+         !third.exists("/home/note") && third.entryCount() == 2;
+    image.append("bad tail");
+    SophiaStore damaged = new SophiaStore("/build/sophia-store-test.log");
+    print("sophia damaged ready ", damaged.ready(), "\n");
+    ok = ok && !damaged.ready() && !damaged.create("/bad", false, 0644);
+    image.remove();
+    if(ok) { print("SOPHIA-STORE PASS\n"); }
+    else { print("SOPHIA-STORE FAIL\n"); }
+}

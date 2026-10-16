@@ -1623,8 +1623,8 @@ archreset(void)
 	 * The reset register (0xcf9) is usually in one of the bridge
 	 * chips. The actual location and sequence could be extracted from
 	 * ACPI but why bother, this is the end of the line anyway.
-	print("Takes a licking and keeps on ticking...\n");
 	 */
+	outb(0xF4, 0x00); /* 9vm shutdown */
 	i = inb(0xcf9); /* ICHx reset control */
 	i &= 0x06;
 	outb(0xcf9, i | 0x02); /* SYS_RST */

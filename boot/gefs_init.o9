@@ -1,0 +1,188 @@
+// Aspera's first user process. The program and GEFS server live in #/boot.
+// Only the opaque image is exported by the host; no host tree is mounted.
+function start_gefs_root() int64 {
+    int64 result;
+    c {
+        char *args[] = {"gefs", "-A", "-m", "32", "-n", "asperagefs",
+                        "-f", "/mnt/image", nil};
+        char *dirs[] = {"/mnt/bin", "/mnt/dev", "/mnt/env", "/mnt/fd",
+                        "/mnt/mnt", "/mnt/mnt/o9", "/mnt/n", "/mnt/n/o9irc", "/mnt/net", "/mnt/proc",
+                        "/mnt/srv", "/mnt/boot", "/mnt/rom", "/mnt/lib",
+                        "/mnt/lib/o9irc", nil};
+        char *ircargs[] = {"o9irc-ircfs", "o9irc", "", "", "",
+                           "/lib/o9irc", "262144", nil};
+        char *probe = "Aspera GEFS root probe\n";
+        char *mode;
+        char buf[64];
+        Dir *d;
+        int fd, pid, srvfd, i, n, hasApp;
+
+        result = -1;
+        fd = open("#9/2", ORDWR);
+        if(fd < 0 || mount(fd, -1, "/mnt", MREPL, "") < 0){
+            print("aspera: image transport mount failed: %r\n");
+            if(fd >= 0) close(fd);
+            goto gefs_done;
+        }
+        pid = rfork(RFPROC|RFFDG|RFNOWAIT);
+        if(pid == 0){
+            exec("/boot/gefs", args);
+            print("aspera: embedded GEFS exec failed: %r\n");
+            _exits("gefs");
+        }
+        if(pid < 0){
+            print("aspera: GEFS fork failed: %r\n");
+            goto gefs_done;
+        }
+        srvfd = -1;
+        for(i = 0; i < 200; i++){
+            srvfd = open("/srv/asperagefs", OREAD);
+            if(srvfd >= 0) break;
+            sleep(50);
+        }
+        if(srvfd < 0 || mount(srvfd, -1, "/mnt", MREPL|MCREATE, "") < 0){
+            print("aspera: GEFS mount failed: %r\n");
+            if(srvfd >= 0) close(srvfd);
+            goto gefs_done;
+        }
+        for(i = 0; dirs[i] != nil; i++){
+            d = dirstat(dirs[i]);
+            if(d != nil){
+                free(d);
+                continue;
+            }
+            fd = create(dirs[i], OREAD, DMDIR|0775);
+            if(fd < 0){
+                print("aspera: mkdir %s failed: %r\n", dirs[i]);
+                goto gefs_done;
+            }
+            close(fd);
+        }
+        srvfd = open("/srv/asperagefs", OREAD);
+        if(srvfd < 0 || mount(srvfd, -1, "/", MREPL|MCREATE, "") < 0){
+            print("aspera: root pivot failed: %r\n");
+            if(srvfd >= 0) close(srvfd);
+            goto gefs_done;
+        }
+        if(bind("#c", "/dev", MAFTER) < 0 ||
+           bind("#s", "/srv", MREPL|MCREATE) < 0 ||
+           bind("#e", "/env", MREPL|MCREATE) < 0 ||
+           bind("#/", "/rom", MREPL) < 0 ||
+           bind("#@", "/mnt/o9", MREPL|MCREATE) < 0){
+            print("aspera: device namespace bind failed: %r\n");
+            goto gefs_done;
+        }
+        d = dirstat("/");
+        if(d == nil || (d->mode & DMDIR) == 0){
+            print("aspera: GEFS root stat failed: %r\n");
+            free(d);
+            goto gefs_done;
+        }
+        free(d);
+        fd = open("#9/1", ORDWR);
+        if(fd >= 0 && mount(fd, -1, "/net", MREPL, "") < 0)
+            close(fd);
+        mode = getenv("O9_GEFS_ROOT_TEST");
+        if(mode != nil && strcmp(mode, "write") == 0){
+            fd = create("/aspera-root-probe", ORDWR, 0600);
+            if(fd < 0 || write(fd, probe, strlen(probe)) != strlen(probe)){
+                print("aspera: root write failed: %r\n");
+                if(fd >= 0) close(fd);
+                free(mode);
+                goto gefs_done;
+            }
+            close(fd);
+            fd = open("/srv/asperagefs.cmd", ORDWR);
+            if(fd < 0 || write(fd, "sync\n", 5) != 5){
+                print("aspera: root sync failed: %r\n");
+                if(fd >= 0) close(fd);
+                free(mode);
+                goto gefs_done;
+            }
+            close(fd);
+            print("ASPERA-GEFS-ROOT-WRITE PASS\n");
+        }
+        if(mode != nil && strcmp(mode, "verify") == 0){
+            fd = open("/aspera-root-probe", OREAD);
+            n = fd < 0 ? -1 : read(fd, buf, sizeof buf);
+            if(fd >= 0) close(fd);
+            if(n != strlen(probe) || memcmp(buf, probe, n) != 0){
+                print("aspera: root verify failed: %r\n");
+                free(mode);
+                goto gefs_done;
+            }
+            print("ASPERA-GEFS-ROOT-VERIFY PASS\n");
+        }
+        free(mode);
+        d = dirstat("/bin/o9irc-ircfs");
+        hasApp = d != nil;
+        free(d);
+        d = hasApp ? dirstat("/rom/boot/o9irc-ircfs") : nil;
+        if(hasApp && (d == nil || d->length == 0))
+            print("aspera: o9irc boot binary unavailable: %r\n");
+        if(d != nil && d->length > 0){
+            free(d);
+            pid = rfork(RFPROC|RFFDG|RFNOWAIT);
+            if(pid == 0){
+                exec("/rom/boot/o9irc-ircfs", ircargs);
+                print("aspera: o9irc service exec failed: %r\n");
+                _exits("ircfs");
+            }
+            if(pid < 0){
+                print("aspera: o9irc service fork failed: %r\n");
+                goto gefs_done;
+            }
+            for(i = 0; i < 100; i++){
+                fd = open("/srv/o9irc", OREAD);
+                if(fd >= 0) break;
+                sleep(50);
+            }
+            if(fd < 0){
+                print("aspera: o9irc service did not post /srv/o9irc\n");
+                goto gefs_done;
+            }
+            n = -1;
+            for(i = 0; i < 200; i++){
+                if(i > 0){
+                    fd = open("/srv/o9irc", OREAD);
+                    if(fd < 0){ sleep(50); continue; }
+                }
+                if(mount(fd, -1, "/n/o9irc", MREPL|MCREATE, "") < 0){
+                    close(fd);
+                    sleep(50);
+                    continue;
+                }
+                fd = open("/n/o9irc/view/networks/default/status", OREAD);
+                n = fd < 0 ? -1 : read(fd, buf, sizeof buf);
+                if(fd >= 0) close(fd);
+                if(n > 0) break;
+                unmount(nil, "/n/o9irc");
+                sleep(50);
+            }
+            if(n <= 0){
+                print("aspera: o9irc view status failed: %r\n");
+                goto gefs_done;
+            }
+            print("ASPERA-O9IRC-VIEW PASS\n");
+            print("ASPERA-O9IRC-SERVICE PASS\n");
+        } else
+            free(d);
+        print("ASPERA-GEFS-ROOT PASS\n");
+        result = 1;
+    gefs_done:;
+    }
+    return result;
+}
+
+function stay_alive() int64 {
+    c { for(;;) sleep(1000); }
+    return 0;
+}
+
+main {
+    Task<int64> boot = spawn start_gefs_root();
+    if(boot.await() == 1) {
+        Task<int64> idle = spawn stay_alive();
+        idle.await();
+    }
+}

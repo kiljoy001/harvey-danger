@@ -1,0 +1,136 @@
+import "canvas.o9";
+import "theme.o9";
+import "window.o9";
+import "desktop.o9";
+import "shelf.o9";
+import "note.o9";
+
+function AsperaPixelRaw(int64 handle, int64 x, int64 y) int64 {
+    int64 out;
+    c {
+        typedef struct {
+            int width;
+            int height;
+            u32 *pixels;
+        } AsperaBuffer;
+        AsperaBuffer *b = (AsperaBuffer*)handle;
+        out = -1;
+        if(b != nil && b->pixels != nil && x >= 0 && y >= 0 &&
+           x < b->width && y < b->height)
+            out = b->pixels[y * b->width + x];
+    }
+    return out;
+}
+
+main {
+    AsperaCanvas bad = new AsperaCanvas(4097, 1);
+    AsperaCanvas canvas = new AsperaCanvas(32, 24);
+    bool ok = !bad.ready() && canvas.ready();
+    int64 seed = 41;
+    int64 i = 0;
+    while(i < 48) {
+        seed = (seed * 48271) % 2147483647;
+        int64 x = (seed % 60) - 20;
+        seed = (seed * 48271) % 2147483647;
+        int64 y = (seed % 48) - 16;
+        seed = (seed * 48271) % 2147483647;
+        int64 width = 1 + seed % 15;
+        seed = (seed * 48271) % 2147483647;
+        int64 height = 1 + seed % 15;
+        canvas.clear(0);
+        canvas.fillRect(x, y, width, height, 0x44aa77);
+        int64 py = 0;
+        while(py < 24) {
+            int64 px = 0;
+            while(px < 32) {
+                int64 expected = 0;
+                if(px >= x && px < x + width &&
+                   py >= y && py < y + height) {
+                    expected = 0x44aa77;
+                }
+                Task<int64> pixel = spawn AsperaPixelRaw(canvas.bufferAddress(), px, py);
+                if(pixel.await() != expected) { ok = false; }
+                px = px + 7;
+            }
+            py = py + 5;
+        }
+        i = i + 1;
+    }
+    canvas.close();
+    bad.close();
+    print("canvas property ", ok, "\n");
+
+    AsperaCanvas source = new AsperaCanvas(8, 8);
+    AsperaCanvas destination = new AsperaCanvas(12, 12);
+    source.clear(0x123456);
+    destination.clear(0);
+    ok = ok && destination.blitClip(source, -2, 3, 2, 4, 5, 5);
+    Task<int64> inside = spawn AsperaPixelRaw(destination.bufferAddress(), 2, 4);
+    Task<int64> outside = spawn AsperaPixelRaw(destination.bufferAddress(), 1, 4);
+    ok = ok && inside.await() == 0x123456 && outside.await() == 0;
+    source.close();
+    destination.close();
+    print("offscreen clip ", ok, "\n");
+
+    E16Theme theme = new E16Theme();
+    DesktopCompositor desk = new DesktopCompositor(320, 240, theme);
+    WindowActor first = desk.createWindow("first", 10, 10, 100, 100);
+    WindowActor second = desk.createWindow("second", 20, 20, 100, 100);
+    int64 index = desk.windowIndexAt(25, 25);
+    ok = ok && index >= 0;
+    if(index >= 0) {
+        WindowActor top = desk.getWindowAt(index);
+        ok = ok && top.id() == second.id();
+    }
+    desk.focus(first);
+    index = desk.windowIndexAt(25, 25);
+    if(index >= 0) {
+        WindowActor top = desk.getWindowAt(index);
+        ok = ok && top.id() == first.id();
+    } else { ok = false; }
+    WindowActor outsider = new WindowActor(999, "outsider", 0, 0, 10, 10, theme);
+    desk.focus(outsider);
+    index = desk.windowIndexAt(25, 25);
+    if(index >= 0) {
+        WindowActor top = desk.getWindowAt(index);
+        ok = ok && top.id() == first.id();
+    } else { ok = false; }
+    desk.closeWindow(first);
+    desk.closeWindow(second);
+    ok = ok && desk.windowCount() == 0 && desk.windowIndexAt(25, 25) == -1;
+    print("desktop state ", ok, "\n");
+
+    AsperaShelf shelf = new AsperaShelf();
+    ok = ok && !shelf.applySnapshot("--:-- 0 1\n");
+    ok = ok && shelf.applySnapshot("12:34 1 0\n");
+    ok = ok && !shelf.applySnapshot("12:34 1 0\n");
+    ok = ok && !shelf.applySnapshot("bad 2 1\n");
+    ok = ok && shelf.applySnapshot("12:35 0 1\n");
+    ok = ok && shelf.applySnapshot("clock\tmenu\tclock_visible\n12:36\t0\t1\n");
+    ok = ok && !shelf.applySnapshot("clock\tmenu\tclock_visible\n12:36\t0\t1\n");
+    print("shelf state ", ok, "\n");
+
+    string notePath = "build/aspera-live/note-unit.txt";
+    Task<int64> removeBefore = spawn AsperaNoteRemoveRaw(notePath);
+    removeBefore.await();
+    WindowActor noteWindow = new WindowActor(100, "note", 0, 0, 160, 100, theme);
+    AsperaNote note = new AsperaNote(noteWindow, notePath);
+    ok = ok && note.ready() && note.key(72) && note.key(105);
+    ok = ok && note.key(13) && note.key(120) && note.key(8);
+    ok = ok && cmp(note.text(), "Hi\n") == 0 && note.isDirty();
+    ok = ok && note.save() && !note.isDirty();
+    note.close();
+    AsperaNote reloaded = new AsperaNote(noteWindow, notePath);
+    ok = ok && cmp(reloaded.text(), "Hi\n") == 0;
+    reloaded.close();
+    AsperaNote cannotSave = new AsperaNote(noteWindow,
+        "build/aspera-live/no-such-directory/note.txt");
+    ok = ok && cannotSave.key(65) && !cannotSave.save() && cannotSave.isDirty();
+    cannotSave.close();
+    Task<int64> removeAfter = spawn AsperaNoteRemoveRaw(notePath);
+    removeAfter.await();
+    print("note client ", ok, "\n");
+
+    if(ok) { print("ASPERA-LIVE-TEST PASS\n"); }
+    else { print("ASPERA-LIVE-TEST FAIL\n"); }
+}

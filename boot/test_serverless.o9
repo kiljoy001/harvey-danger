@@ -1,0 +1,15 @@
+main {
+    print("\n[Serverless Plan 9] Hello from ephemeral KVM microkernel!\n");
+    print("[Serverless Plan 9] Computing fibonacci(10)...\n");
+    int64 a = 0;
+    int64 b = 1;
+    int64 i = 0;
+    while (i < 10) {
+        int64 temp = a + b;
+        a = b;
+        b = temp;
+        i = i + 1;
+    }
+    print("[Serverless Plan 9] Result: fib(10) = ", a, "\n");
+    print("[Serverless Plan 9] Workload complete. Exiting.\n");
+}

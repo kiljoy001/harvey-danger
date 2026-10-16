@@ -360,7 +360,7 @@ elf64ldseg(Chan *c, usize *entryp, Ldseg **rp, char *mach, u32 minpgsz)
 				}
 			}
 			entry = get64(ehdr.e_entry);
-			phoff = get16(ehdr.e_phoff);
+			phoff = get64(ehdr.e_phoff);
 			phnum = get16(ehdr.e_phnum);
 			phentsize = get16(ehdr.e_phentsize);
 

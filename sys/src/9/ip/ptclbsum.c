@@ -46,9 +46,13 @@
  * code and should be modified for each CPU to be as fast as possible.
  */
 
-#include <u.h>
-#include <libc.h>
-#include <ip.h>
+#include "u.h"
+#include "../port/lib.h"
+#include "mem.h"
+#include "dat.h"
+#include "fns.h"
+#include "../port/error.h"
+#include "ip.h"
 
 #define ADDCARRY(x) (x > 65535 ? x -= 65535 : x)
 #define REDUCE32                                                             \

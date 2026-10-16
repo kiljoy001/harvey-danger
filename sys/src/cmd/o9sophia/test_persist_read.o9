@@ -1,0 +1,10 @@
+import "store.o9";
+
+main {
+    SophiaStore store = new SophiaStore("/build/sophia-reboot-test.disk");
+    bool ok = store.ready() && store.isDir("/home") &&
+              store.size("/home/data") == 9003 &&
+              cmp(store.readAt("/home/data", 8995, 8), "plan9end") == 0;
+    if(ok) { print("SOPHIA-BOOT-READ PASS\n"); }
+    else { print("SOPHIA-BOOT-READ FAIL\n"); }
+}

@@ -283,18 +283,18 @@ apiconline(void)
 
 	/*
 	 * Use the TSC to determine the APIC timer frequency.
-	 * It might be possible to snarf this from a chipset
-	 * register instead.
+	 * Calibrate in 1ms under hypervisors rather than burning 100ms.
 	 */
 	apicrput(Tdc, DivX1);
 	apicrput(Tlvt, Im);
-	tsc = rdtsc() + machp()->cpuhz / 10;
+	u64 delta = (cpuhypervisor() != CpuHypervisorUnknown) ? 1000 : 10;
+	tsc = rdtsc() + machp()->cpuhz / delta;
 	apicrput(Tic, 0xffffffff);
 
 	while(rdtsc() < tsc)
 		;
 
-	apic->Lapic.hz = (0xffffffff - apicrget(Tcc)) * 10;
+	apic->Lapic.hz = (0xffffffff - apicrget(Tcc)) * delta;
 	apic->Lapic.max = apic->Lapic.hz / HZ;
 	apic->Lapic.min = apic->Lapic.hz / (100 * HZ);
 	apic->Lapic.div = ((machp()->cpuhz / apic->Lapic.max) + HZ / 2) / HZ;

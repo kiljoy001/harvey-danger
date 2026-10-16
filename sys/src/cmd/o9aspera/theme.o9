@@ -1,0 +1,297 @@
+// First-Class Declarative Enlightenment-Inspired Theme Engine for o9aspera
+// Defines window frame parts, states, actions (shade, stick, max, close), and themes.
+
+class Theme {
+    prop string themeName;
+
+    // Metrics
+    prop int64 borderSize;
+    prop int64 titleHeight;
+    prop int64 buttonSize;
+    prop int64 buttonSpacing;
+    prop int64 snapDistance;
+
+    // Colors
+    prop int64 titleActiveBg;
+    prop int64 titleActiveFg;
+    prop int64 titleInactiveBg;
+    prop int64 titleInactiveFg;
+    prop int64 frameActive;
+    prop int64 frameInactive;
+    prop int64 bevelLight;
+    prop int64 bevelDark;
+    prop int64 contentBg;
+
+    // Action button colors
+    prop int64 btnCloseColor;
+    prop int64 btnShadeColor;
+    prop int64 btnStickColor;
+    prop int64 btnMaxColor;
+
+    // Features
+    prop bool enableShade;
+    prop bool enableStick;
+    prop bool enableMax;
+    prop bool enableClose;
+
+    method Theme(string name) {
+        themeName = name;
+        borderSize = 4;
+        titleHeight = 22;
+        buttonSize = 16;
+        buttonSpacing = 2;
+        snapDistance = 14;
+
+        titleActiveBg = 0x204060;
+        titleActiveFg = 0xffffff;
+        titleInactiveBg = 0x505860;
+        titleInactiveFg = 0xa0a8b0;
+        frameActive = 0x306090;
+        frameInactive = 0x606870;
+        bevelLight = 0x8090a0;
+        bevelDark = 0x182028;
+        contentBg = 0x101820;
+
+        btnCloseColor = 0xd04030;
+        btnShadeColor = 0xe0a020;
+        btnStickColor = 0x30a0d0;
+        btnMaxColor = 0x40c060;
+
+        enableShade = true;
+        enableStick = true;
+        enableMax = true;
+        enableClose = true;
+    }
+
+    method string name() { return themeName; }
+    method int64 borderThickness() { return borderSize; }
+    method int64 titlebarHeight() { return titleHeight; }
+    method int64 snapMargin() { return snapDistance; }
+    method int64 btnSize() { return buttonSize; }
+    method int64 btnSpacing() { return buttonSpacing; }
+
+    method int64 getTitleActiveBg() { return titleActiveBg; }
+    method int64 getTitleActiveFg() { return titleActiveFg; }
+    method int64 getTitleInactiveBg() { return titleInactiveBg; }
+    method int64 getTitleInactiveFg() { return titleInactiveFg; }
+    method int64 getFrameActive() { return frameActive; }
+    method int64 getFrameInactive() { return frameInactive; }
+    method int64 getBevelLight() { return bevelLight; }
+    method int64 getBevelDark() { return bevelDark; }
+    method int64 getContentBg() { return contentBg; }
+
+    method int64 getBtnCloseColor() { return btnCloseColor; }
+    method int64 getBtnShadeColor() { return btnShadeColor; }
+    method int64 getBtnStickColor() { return btnStickColor; }
+    method int64 getBtnMaxColor() { return btnMaxColor; }
+
+    method bool hasShade() { return enableShade; }
+    method bool hasStick() { return enableStick; }
+    method bool hasMax() { return enableMax; }
+    method bool hasClose() { return enableClose; }
+
+    // Hit-testing constants
+    method int64 hitNone() { return 0; }
+    method int64 hitContent() { return 1; }
+    method int64 hitTitle() { return 2; }
+    method int64 hitClose() { return 3; }
+    method int64 hitShade() { return 4; }
+    method int64 hitStick() { return 5; }
+    method int64 hitMax() { return 6; }
+    method int64 hitBorderN() { return 7; }
+    method int64 hitBorderS() { return 8; }
+    method int64 hitBorderW() { return 9; }
+    method int64 hitBorderE() { return 10; }
+    method int64 hitCornerNW() { return 11; }
+    method int64 hitCornerNE() { return 12; }
+    method int64 hitCornerSW() { return 13; }
+    method int64 hitCornerSE() { return 14; }
+
+    // Hit test mouse coordinate (px, py) against window bounds (wx, wy, ww, wh, isShaded)
+    method int64 hitTest(int64 wx, int64 wy, int64 ww, int64 wh, bool isShaded, int64 px, int64 py) {
+        int64 bw = borderSize;
+        int64 th = titleHeight;
+        int64 bs = buttonSize;
+        int64 actualH = wh;
+        int64 btnX;
+
+        if(isShaded) {
+            actualH = th + bw * 2;
+        }
+
+        // Inside window total rectangle?
+        if(px < wx || px >= wx + ww || py < wy || py >= wy + actualH) {
+            return hitNone();
+        }
+
+        // Corners
+        if(px < wx + bw && py < wy + bw) { return hitCornerNW(); }
+        if(px >= wx + ww - bw && py < wy + bw) { return hitCornerNE(); }
+        if(px < wx + bw && py >= wy + actualH - bw) { return hitCornerSW(); }
+        if(px >= wx + ww - bw && py >= wy + actualH - bw) { return hitCornerSE(); }
+
+        // Outer borders
+        if(py < wy + bw) { return hitBorderN(); }
+        if(py >= wy + actualH - bw) { return hitBorderS(); }
+        if(px < wx + bw) { return hitBorderW(); }
+        if(px >= wx + ww - bw) { return hitBorderE(); }
+
+        // Titlebar & Titlebar buttons
+        if(py >= wy + bw && py < wy + bw + th) {
+            // Right-aligned buttons: Close, Max, Shade, Stick
+            btnX = wx + ww - bw - bs - 2;
+
+            if(enableClose) {
+                if(px >= btnX && px < btnX + bs && py >= wy + bw + 2 && py < wy + bw + 2 + bs) {
+                    return hitClose();
+                }
+                btnX = btnX - bs - buttonSpacing;
+            }
+
+            if(enableMax && !isShaded) {
+                if(px >= btnX && px < btnX + bs && py >= wy + bw + 2 && py < wy + bw + 2 + bs) {
+                    return hitMax();
+                }
+                btnX = btnX - bs - buttonSpacing;
+            }
+
+            if(enableShade) {
+                if(px >= btnX && px < btnX + bs && py >= wy + bw + 2 && py < wy + bw + 2 + bs) {
+                    return hitShade();
+                }
+                btnX = btnX - bs - buttonSpacing;
+            }
+
+            if(enableStick) {
+                if(px >= btnX && px < btnX + bs && py >= wy + bw + 2 && py < wy + bw + 2 + bs) {
+                    return hitStick();
+                }
+            }
+
+            return hitTitle();
+        }
+
+        // If shaded, content is collapsed
+        if(isShaded) {
+            return hitNone();
+        }
+
+        return hitContent();
+    }
+}
+
+// Enlightenment E16-inspired Theme: Slate & Amber with rounded titlebar handles
+class E16Theme {
+    Theme;
+
+    method E16Theme() {
+        super("e16-slate");
+        borderSize = 4;
+        titleHeight = 22;
+        buttonSize = 16;
+        buttonSpacing = 3;
+        snapDistance = 16;
+
+        titleActiveBg = 0x283848;
+        titleActiveFg = 0xf0c040; // Amber title
+        titleInactiveBg = 0x182028;
+        titleInactiveFg = 0x708090;
+        frameActive = 0x3a4c5e;
+        frameInactive = 0x222a32;
+        bevelLight = 0x5a7088;
+        bevelDark = 0x10141a;
+        contentBg = 0x0c1014;
+
+        btnCloseColor = 0xe04030;
+        btnShadeColor = 0xf0a820;
+        btnStickColor = 0x38a8e0;
+        btnMaxColor = 0x48c868;
+    }
+}
+
+// Windows 95 Classic Theme: 3D beveled silver frames with bold blue active titlebar
+class Win95Theme {
+    Theme;
+
+    method Win95Theme() {
+        super("win95");
+        borderSize = 3;
+        titleHeight = 20;
+        buttonSize = 14;
+        buttonSpacing = 2;
+        snapDistance = 12;
+
+        titleActiveBg = 0x000080; // Classic Navy
+        titleActiveFg = 0xffffff;
+        titleInactiveBg = 0x808080;
+        titleInactiveFg = 0xc0c0c0;
+        frameActive = 0xc0c0c0; // Win95 Silver
+        frameInactive = 0xc0c0c0;
+        bevelLight = 0xffffff;
+        bevelDark = 0x404040;
+        contentBg = 0xffffff;
+
+        btnCloseColor = 0xc0c0c0;
+        btnShadeColor = 0xc0c0c0;
+        btnStickColor = 0xc0c0c0;
+        btnMaxColor = 0xc0c0c0;
+    }
+}
+
+// Plan 9 Classic Theme: Minimalist high-contrast yellow/black Rio aesthetics
+class Plan9Theme {
+    Theme;
+
+    method Plan9Theme() {
+        super("plan9");
+        borderSize = 2;
+        titleHeight = 18;
+        buttonSize = 12;
+        buttonSpacing = 2;
+        snapDistance = 8;
+
+        titleActiveBg = 0xeeee9e; // Classic Plan 9 Yellow
+        titleActiveFg = 0x000000;
+        titleInactiveBg = 0xcccccc;
+        titleInactiveFg = 0x444444;
+        frameActive = 0x999944;
+        frameInactive = 0x888888;
+        bevelLight = 0xffffff;
+        bevelDark = 0x222222;
+        contentBg = 0xffffea; // Pale yellow terminal canvas
+
+        btnCloseColor = 0xaa2222;
+        btnShadeColor = 0x888822;
+        btnStickColor = 0x2266aa;
+        btnMaxColor = 0x228822;
+    }
+}
+
+// NeXTSTEP Theme: Sleek dark borders, deep black titlebars, white icons
+class NeXTTheme {
+    Theme;
+
+    method NeXTTheme() {
+        super("nextstep");
+        borderSize = 3;
+        titleHeight = 22;
+        buttonSize = 16;
+        buttonSpacing = 2;
+        snapDistance = 14;
+
+        titleActiveBg = 0x000000; // NeXT Pitch Black
+        titleActiveFg = 0xffffff;
+        titleInactiveBg = 0x444444;
+        titleInactiveFg = 0xaaaaaa;
+        frameActive = 0x555555;
+        frameInactive = 0x333333;
+        bevelLight = 0x888888;
+        bevelDark = 0x111111;
+        contentBg = 0x222222;
+
+        btnCloseColor = 0x333333;
+        btnShadeColor = 0x444444;
+        btnStickColor = 0x555555;
+        btnMaxColor = 0x666666;
+    }
+}

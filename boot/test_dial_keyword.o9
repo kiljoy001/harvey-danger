@@ -1,0 +1,12 @@
+
+import "stdlib/net.o9";
+
+main {
+    print("Testing dial keyword...\n");
+    NetConn udp = dial udp 127.0.0.1:9000;
+    NetConn il = dial il 10.0.2.2:9999;
+    print("dialed udp: ", udp.endpoint(), "\n");
+    print("dialed il: ", il.endpoint(), "\n");
+    udp.close();
+    il.close();
+}

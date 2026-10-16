@@ -1294,8 +1294,10 @@ pexit(char *exitstr, int freemem)
 	if(up->kp == 0){
 		p = up->parent;
 		if(p == 0){
-			if(exitstr == 0)
-				exitstr = "unknown";
+			if(exitstr == nil || strcmp(exitstr, "") == 0 || strcmp(exitstr, "halt") == 0 || strcmp(exitstr, "main") == 0 || strcmp(exitstr, "exit") == 0){
+				print("[init] PID 1 exited cleanly (%s), shutting down.\n", exitstr ? exitstr : "0");
+				exit(0);
+			}
 			panic("boot process died: %s", exitstr);
 		}
 

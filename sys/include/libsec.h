@@ -7,6 +7,10 @@
  * in the LICENSE file.
  */
 
+#ifndef _MPINT
+typedef struct mpint mpint;
+#endif
+
 /*
  * AES definitions
  */

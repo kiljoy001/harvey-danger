@@ -42,6 +42,12 @@ void checkpa(char *, u64);
 #define clearmmucache() /* x86 doesn't have one */
 void (*coherence)(void);
 int corecolor(int);
+typedef enum CpuHypervisor {
+	CpuHypervisorUnknown = 0,
+	CpuHypervisorKvm,
+} CpuHypervisor;
+
+CpuHypervisor cpuhypervisor(void);
 u32 cpuid(u32, u32, u32[4]);
 int cpuidinfo(u32, u32, u32[4]);
 char *cpuidname(u32 *);
@@ -142,6 +148,7 @@ void pcisetbme(Pcidev *);
 void pcisetmwi(Pcidev *);
 int pcisetpms(Pcidev *, int);
 void pcishowdev(Pcidev *);
+u32 pcibarsize(Pcidev *, int);
 int pickcore(int, int);
 void pamapdump(void);
 void pamapinit(void);
@@ -311,28 +318,6 @@ void dumpgpr(Ureg *ureg);
 /* debug support. */
 int backtrace_list(usize pc, usize fp, usize *pcs, usize nr_slots);
 
-/* horror */
-static inline void
-__clobber_callee_regs(void)
-{
-	__asm__ volatile(""
-			 :
-			 :
-			 : "rbx", "r12", "r13", "r14", "r15");
-}
-
 int slim_setlabel(Label *) __attribute__((returns_twice));
 
-#ifndef __clang__
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
-#endif
-
-#define setlabel(label) ({int err;                                                 \
-                    __clobber_callee_regs();                               \
-                    err = slim_setlabel(label);                                     \
-                    err; })
-
-#ifndef __clang__
-#pragma GCC diagnostic pop
-#endif
+#define setlabel(label) slim_setlabel(label)

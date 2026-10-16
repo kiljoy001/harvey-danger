@@ -1,0 +1,222 @@
+// Display protocol state. The display service owns this object; clients only
+// reach it through the service's per-attach 9P view.
+
+class DisplaySurface {
+    private int64 surfaceId;
+    private int64 ownerId;
+    private int64 pixelWidth;
+    private int64 pixelHeight;
+    private int64 committedBuffer;
+    private int64 pendingBuffer;
+    private int64 frameSerial;
+
+    method DisplaySurface(int64 id, int64 owner, int64 width, int64 height) {
+        surfaceId = id;
+        ownerId = owner;
+        pixelWidth = width;
+        pixelHeight = height;
+        committedBuffer = 0;
+        pendingBuffer = 0;
+        frameSerial = 0;
+    }
+
+    method int64 id() { return surfaceId; }
+    method int64 owner() { return ownerId; }
+    method int64 width() { return pixelWidth; }
+    method int64 height() { return pixelHeight; }
+    method int64 buffer() { return committedBuffer; }
+    method int64 pending() { return pendingBuffer; }
+    method int64 serial() { return frameSerial; }
+
+    method bool attach(int64 bufferId, int64 width, int64 height) {
+        if(bufferId <= 0 || width != pixelWidth || height != pixelHeight) {
+            return false;
+        }
+        // The scanout still owns this buffer until it reports release.
+        if(bufferId == committedBuffer) { return false; }
+        pendingBuffer = bufferId;
+        return true;
+    }
+
+    method int64 commit() {
+        if(pendingBuffer == 0 || committedBuffer != 0) { return 0; }
+        committedBuffer = pendingBuffer;
+        pendingBuffer = 0;
+        frameSerial = frameSerial + 1;
+        return frameSerial;
+    }
+
+    // Called by the compositor after it has finished using the frame.
+    method bool release(int64 serial) {
+        if(committedBuffer == 0 || serial != frameSerial) { return false; }
+        committedBuffer = 0;
+        return true;
+    }
+}
+
+class DisplayState {
+    private DisplaySurface[] surfaces;
+    private int64 surfaceCount;
+    private int64 nextSurface;
+    private int64 focusedSurface;
+
+    method DisplayState() {
+        surfaceCount = 0;
+        nextSurface = 1;
+        focusedSurface = 0;
+    }
+
+    internal method int64 findIndex(int64 id) {
+        int64 i = 0;
+        while(i < surfaceCount) {
+            DisplaySurface surface = surfaces[i];
+            if(surface.id() == id) { return i; }
+            i = i + 1;
+        }
+        return -1;
+    }
+
+    internal method int64 ownedCount(int64 owner) {
+        int64 count = 0;
+        int64 i = 0;
+        while(i < surfaceCount) {
+            DisplaySurface surface = surfaces[i];
+            if(surface.owner() == owner) { count = count + 1; }
+            i = i + 1;
+        }
+        return count;
+    }
+
+    // The service supplies owner from the authenticated attach, not a client
+    // command. Dimension and per-owner limits bound future buffer allocation.
+    internal method int64 create(int64 owner, int64 width, int64 height) {
+        if(owner <= 0 || width <= 0 || height <= 0 ||
+           width > 4096 || height > 4096 ||
+           surfaceCount >= 256 || ownedCount(owner) >= 16) {
+            return 0;
+        }
+        int64 id = nextSurface;
+        nextSurface = nextSurface + 1;
+        DisplaySurface surface = new DisplaySurface(id, owner, width, height);
+        surfaces[surfaceCount] = surface;
+        surfaceCount = surfaceCount + 1;
+        return id;
+    }
+
+    internal method bool removeSurface(int64 owner, int64 id) {
+        int64 i = 0;
+        while(i < surfaceCount) {
+            DisplaySurface surface = surfaces[i];
+            if(surface.id() == id) {
+                if(surface.owner() != owner) { return false; }
+                if(focusedSurface == id) { focusedSurface = 0; }
+                while(i < surfaceCount - 1) {
+                    surfaces[i] = surfaces[i + 1];
+                    i = i + 1;
+                }
+                surfaceCount = surfaceCount - 1;
+                return true;
+            }
+            i = i + 1;
+        }
+        return false;
+    }
+
+    // An attach close revokes every surface and its focus in one operation.
+    internal method int64 closeOwner(int64 owner) {
+        int64 removed = 0;
+        int64 i = 0;
+        while(i < surfaceCount) {
+            DisplaySurface surface = surfaces[i];
+            if(surface.owner() == owner) {
+                if(focusedSurface == surface.id()) { focusedSurface = 0; }
+                int64 j = i;
+                while(j < surfaceCount - 1) {
+                    surfaces[j] = surfaces[j + 1];
+                    j = j + 1;
+                }
+                surfaceCount = surfaceCount - 1;
+                removed = removed + 1;
+            } else {
+                i = i + 1;
+            }
+        }
+        return removed;
+    }
+
+    internal method bool attach(int64 owner, int64 id, int64 bufferId,
+                       int64 width, int64 height) {
+        int64 index = findIndex(id);
+        if(index < 0) { return false; }
+        DisplaySurface surface = surfaces[index];
+        if(surface.owner() != owner) { return false; }
+        return surface.attach(bufferId, width, height);
+    }
+
+    internal method int64 commit(int64 owner, int64 id) {
+        int64 index = findIndex(id);
+        if(index < 0) { return 0; }
+        DisplaySurface surface = surfaces[index];
+        if(surface.owner() != owner) { return 0; }
+        return surface.commit();
+    }
+
+    // Only the display service calls this after scanout; it is not exposed to
+    // the client view.
+    internal method bool release(int64 id, int64 serial) {
+        int64 index = findIndex(id);
+        if(index < 0) { return false; }
+        DisplaySurface surface = surfaces[index];
+        return surface.release(serial);
+    }
+
+    internal method bool focus(int64 id) {
+        if(findIndex(id) < 0) { return false; }
+        focusedSurface = id;
+        return true;
+    }
+
+    internal method bool bufferCommitted(int64 owner, int64 bufferId) {
+        int64 i = 0;
+        while(i < surfaceCount) {
+            DisplaySurface surface = surfaces[i];
+            if(surface.owner() == owner && surface.buffer() == bufferId) {
+                return true;
+            }
+            i = i + 1;
+        }
+        return false;
+    }
+
+    internal method bool bufferReferenced(int64 owner, int64 bufferId) {
+        int64 i = 0;
+        while(i < surfaceCount) {
+            DisplaySurface surface = surfaces[i];
+            if(surface.owner() == owner &&
+               (surface.buffer() == bufferId || surface.pending() == bufferId)) {
+                return true;
+            }
+            i = i + 1;
+        }
+        return false;
+    }
+
+    internal method int64 focusFor(int64 owner) {
+        int64 index = findIndex(focusedSurface);
+        if(index < 0) { return 0; }
+        DisplaySurface surface = surfaces[index];
+        if(surface.owner() != owner) { return 0; }
+        return focusedSurface;
+    }
+
+    internal method int64 count() { return surfaceCount; }
+    internal method int64 highWater() { return nextSurface; }
+
+    internal method int64 serialFor(int64 owner, int64 id) {
+        int64 index = findIndex(id);
+        if(index < 0) { return -1; }
+        DisplaySurface surface = surfaces[index];
+        if(surface.owner() != owner) { return -1; }
+        return surface.serial();
+    }
+}

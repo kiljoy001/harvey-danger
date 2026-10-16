@@ -19,7 +19,7 @@ struct Mainarg
 	char	**argv;
 };
 
-int	mainstacksize;
+__attribute__((weak)) int	mainstacksize;
 int	_threadnotefd;
 int	_threadpasserpid;
 static jmp_buf _mainjmp;

@@ -439,6 +439,7 @@ die(char *s)
 	wave('e');
 	wave(':');
 	hi(s);
+	outb(0xF4, 0x00);
 	while(staydead)
 		;
 	staydead = 1;
@@ -528,7 +529,11 @@ main(Mach *mach, u32 mbmagic, u32 mbaddress)
 	cgainit();
 	i8250console("0");
 
-	consputs = cgaconsputs;
+	extern void (*consuartputs)(char *, int);
+	if(consuartputs != nil)
+		consputs = consuartputs;
+	else
+		consputs = cgaconsputs;
 
 	print("\nHarvey\n");
 	multiboot(mbmagic, mbaddress, 1);
@@ -832,7 +837,10 @@ shutdown(int ispanic)
 void
 reboot(void *v, void *w, i32 i)
 {
-	panic("reboot\n");
+	USED(v);
+	USED(w);
+	USED(i);
+	exit(0);
 }
 
 void

@@ -1,0 +1,293 @@
+// Window Actor for o9aspera - Enlightenment-inspired Window Model
+// Supports offscreen backing, accordion shading, desktop pinning, and magnetic snapping.
+
+import "canvas.o9";
+import "theme.o9";
+import "stdlib/draw.o9";
+
+class WindowActor {
+    prop int64 winId;
+    prop string title;
+    prop int64 wx;
+    prop int64 wy;
+    prop int64 ww;
+    prop int64 wh;
+
+    // Saved geometry for un-shading and un-maximizing
+    prop int64 savedH;
+    prop int64 savedX;
+    prop int64 savedY;
+    prop int64 savedW;
+
+    prop bool isShaded;
+    prop bool isSticky;
+    prop bool isMaximized;
+    prop bool isFocused;
+    prop int64 desktopId;
+    prop int64 groupId;
+
+    prop Theme activeTheme;
+    prop DrawScrollbar vscroll;
+    prop AsperaCanvas contentSurface;
+    prop bool hasContentSurface;
+
+    method WindowActor(int64 id, string label, int64 x, int64 y, int64 width, int64 height, Theme theme) {
+        winId = id;
+        title = label;
+        wx = x;
+        wy = y;
+        ww = width;
+        wh = height;
+        savedH = height;
+        savedX = x;
+        savedY = y;
+        savedW = width;
+
+        isShaded = false;
+        isSticky = false;
+        isMaximized = false;
+        isFocused = true;
+        desktopId = 0;
+        groupId = 0;
+
+        activeTheme = theme;
+        int64 bw = theme.borderThickness();
+        int64 th = theme.titlebarHeight();
+        vscroll = new DrawScrollbar(x + width - bw - 14, y + bw + th, 14, height - bw * 2 - th);
+        hasContentSurface = false;
+    }
+
+    method DrawScrollbar getScrollbar() {
+        return vscroll;
+    }
+
+    method void attachContent(AsperaCanvas surface) {
+        contentSurface = surface;
+        hasContentSurface = true;
+    }
+
+    method int64 id() { return winId; }
+    method string getTitle() { return title; }
+    method void setTitle(string s) { title = s; }
+
+    method int64 x() { return wx; }
+    method int64 y() { return wy; }
+    method int64 width() { return ww; }
+    method int64 height() { return wh; }
+
+    method void setTheme(Theme t) {
+        activeTheme = t;
+    }
+
+    method Theme getTheme() {
+        return activeTheme;
+    }
+
+    // Visible height takes shading (accordion roll-up) into account
+    method int64 visibleHeight() {
+        if(isShaded) {
+            return activeTheme.titlebarHeight() + activeTheme.borderThickness() * 2;
+        }
+        return wh;
+    }
+
+    // Content area inside border and titlebar
+    method int64 contentX() {
+        return wx + activeTheme.borderThickness();
+    }
+
+    method int64 contentY() {
+        return wy + activeTheme.borderThickness() + activeTheme.titlebarHeight();
+    }
+
+    method int64 contentWidth() {
+        int64 cw = ww - activeTheme.borderThickness() * 2;
+        if(cw < 0) { return 0; }
+        return cw;
+    }
+
+    method int64 contentHeight() {
+        if(isShaded) { return 0; }
+        int64 ch = wh - activeTheme.borderThickness() * 2 - activeTheme.titlebarHeight();
+        if(ch < 0) { return 0; }
+        return ch;
+    }
+
+    // Enlightenment Shading (Accordion Roll-Up)
+    method void toggleShade() {
+        if(!isShaded) {
+            savedH = wh;
+            isShaded = true;
+        } else {
+            wh = savedH;
+            isShaded = false;
+        }
+    }
+
+    method void setShaded(bool val) {
+        if(val && !isShaded) {
+            savedH = wh;
+            isShaded = true;
+        }
+        if(!val && isShaded) {
+            wh = savedH;
+            isShaded = false;
+        }
+    }
+
+    method bool shaded() { return isShaded; }
+
+    // Desktop Pinning (Sticky across all virtual workspaces)
+    method void toggleSticky() {
+        isSticky = !isSticky;
+    }
+
+    method void setSticky(bool val) {
+        isSticky = val;
+    }
+
+    method bool sticky() { return isSticky; }
+
+    // Maximization
+    method void toggleMaximize(int64 screenW, int64 screenH) {
+        if(!isMaximized) {
+            savedX = wx;
+            savedY = wy;
+            savedW = ww;
+            savedH = wh;
+            wx = 0;
+            wy = 0;
+            ww = screenW;
+            wh = screenH;
+            isMaximized = true;
+            isShaded = false;
+        } else {
+            wx = savedX;
+            wy = savedY;
+            ww = savedW;
+            wh = savedH;
+            isMaximized = false;
+        }
+    }
+
+    // Magnetic Screen Snapping
+    method void snapLeft(int64 screenW, int64 screenH) {
+        wx = 0;
+        wy = 0;
+        ww = screenW / 2;
+        wh = screenH;
+        isMaximized = false;
+        isShaded = false;
+    }
+
+    method void snapRight(int64 screenW, int64 screenH) {
+        wx = screenW / 2;
+        wy = 0;
+        ww = screenW / 2;
+        wh = screenH;
+        isMaximized = false;
+        isShaded = false;
+    }
+
+    method void snapTop(int64 screenW, int64 screenH) {
+        wx = 0;
+        wy = 0;
+        ww = screenW;
+        wh = screenH / 2;
+        isMaximized = false;
+        isShaded = false;
+    }
+
+    method void snapBottom(int64 screenW, int64 screenH) {
+        wx = 0;
+        wy = screenH / 2;
+        ww = screenW;
+        wh = screenH / 2;
+        isMaximized = false;
+        isShaded = false;
+    }
+
+    method void moveTo(int64 newX, int64 newY) {
+        wx = newX;
+        wy = newY;
+    }
+
+    method void resizeTo(int64 newW, int64 newH) {
+        if(newW > 40) { ww = newW; }
+        if(newH > 30) { wh = newH; }
+        if(!isShaded) { savedH = wh; }
+    }
+
+    method void setFocused(bool f) {
+        isFocused = f;
+    }
+
+    method bool focused() {
+        return isFocused;
+    }
+
+    method int64 getDesktop() {
+        return desktopId;
+    }
+
+    method void setDesktop(int64 d) {
+        desktopId = d;
+    }
+
+    // Hit-testing using the active theme
+    method int64 hitTest(int64 px, int64 py) {
+        return activeTheme.hitTest(wx, wy, ww, wh, isShaded, px, py);
+    }
+
+    // Render frame decorations into a AsperaCanvas
+    method void renderFrame(AsperaCanvas canvas) {
+        int64 bw = activeTheme.borderThickness();
+        int64 th = activeTheme.titlebarHeight();
+        int64 bs = activeTheme.btnSize();
+        int64 bsp = activeTheme.btnSpacing();
+        int64 vh = visibleHeight();
+        int64 frameCol;
+        int64 titleBg;
+        int64 titleFg;
+        int64 flags = 0;
+        int64 srcHandle = 0;
+
+        if(isFocused) {
+            frameCol = activeTheme.getFrameActive();
+            titleBg = activeTheme.getTitleActiveBg();
+            titleFg = activeTheme.getTitleActiveFg();
+        } else {
+            frameCol = activeTheme.getFrameInactive();
+            titleBg = activeTheme.getTitleInactiveBg();
+            titleFg = activeTheme.getTitleInactiveFg();
+        }
+
+        if(activeTheme.hasClose()) { flags = flags | 1; }
+        if(activeTheme.hasMax()) { flags = flags | 2; }
+        if(activeTheme.hasShade()) { flags = flags | 4; }
+        if(activeTheme.hasStick()) { flags = flags | 8; }
+        if(isShaded) { flags = flags | 16; }
+        if(isSticky) { flags = flags | 32; }
+        if(!isShaded && hasContentSurface) {
+            srcHandle = contentSurface.bufferAddress();
+        }
+
+        int64 xywh = (wx & 65535) | ((wy & 65535) << 16) |
+                     ((ww & 65535) << 32) | ((vh & 65535) << 48);
+        int64 metrics = (bw & 255) | ((th & 255) << 8) |
+                        ((bs & 255) << 16) | ((bsp & 255) << 24) |
+                        (flags << 32);
+        int64 colors1 = (frameCol & 16777215) |
+                        ((activeTheme.getBevelLight() & 16777215) << 24);
+        int64 colors2 = (activeTheme.getBevelDark() & 16777215) |
+                        ((titleBg & 16777215) << 24);
+        int64 colors3 = (titleFg & 16777215) |
+                        ((activeTheme.getBtnCloseColor() & 16777215) << 24);
+        int64 colors4 = (activeTheme.getBtnMaxColor() & 16777215) |
+                        ((activeTheme.getBtnShadeColor() & 16777215) << 24);
+        int64 colors5 = activeTheme.getBtnStickColor() & 16777215;
+
+        canvas.drawWindowFrame(xywh, metrics, colors1, colors2, colors3,
+                               colors4, colors5, title, srcHandle);
+    }
+}

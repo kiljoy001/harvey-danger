@@ -1,0 +1,219 @@
+// Aspera paints a snapshot from the separate Objective-9C shelf service.
+// Hit routing and widget state live in shelf_service.o9.
+import "canvas.o9";
+import "desktop.o9";
+import "stdlib/string.o9";
+
+function AsperaShelfLabelRaw(string title) string {
+    string out;
+    c {
+        char *src, buf[64];
+        Rune rune;
+        int used, count, n;
+
+        src = o9_string_cstr(title);
+        used = count = 0;
+        if(src != nil){
+            while(src[used] != '\0' && count < 15){
+                n = chartorune(&rune, src + used);
+                if(n <= 0 || used + n >= (int)sizeof buf)
+                    break;
+                used += n;
+                count++;
+            }
+            memmove(buf, src, used);
+            free(src);
+        }
+        buf[used] = '\0';
+        out = o9_string_from_c(buf);
+    }
+    return out;
+}
+
+function AsperaShelfSnapshotRaw(string value) string {
+    string out;
+    c {
+        char *s, *row, buf[8];
+        char *header = "clock\tmenu\tclock_visible\n";
+        char separator;
+        int i, n;
+
+        out = nil;
+        s = o9_string_cstr(value);
+        if(s != nil){
+            row = s;
+            separator = ' ';
+            if(strncmp(s, header, strlen(header)) == 0){
+                row = s + strlen(header);
+                separator = '\t';
+            }
+            n = strlen(row);
+            while(n > 0 && (row[n - 1] == '\n' || row[n - 1] == '\r' || row[n - 1] == ' ' || row[n - 1] == '\t'))
+                n--;
+            if(n == 9 && row[5] == separator && row[7] == separator &&
+               (row[6] == '0' || row[6] == '1') &&
+               (row[8] == '0' || row[8] == '1')){
+                int ok = 1;
+                for(i = 0; i < 5; i++){
+                    if(row[i] == ' ' || row[i] == '\t' || row[i] == '\n' || row[i] == '\r')
+                        ok = 0;
+                }
+                if(ok){
+                    memmove(buf, row, 5);
+                    buf[5] = row[6];
+                    buf[6] = row[8];
+                    buf[7] = '\0';
+                    out = o9_string_new(buf, 7);
+                }
+            }
+            free(s);
+        }
+        if(out == nil)
+            out = o9_string_new("", 0);
+    }
+    return out;
+}
+
+function AsperaShelfBarRaw(int64 ptr, string stateKey, int64 selected) int64 {
+    c {
+        #undef FONT8X14_H
+        #include "font8x14.h"
+
+        typedef struct {
+            int width;
+            int height;
+            u32 *pixels;
+        } AsperaBuffer;
+
+        AsperaBuffer *b = (AsperaBuffer*)ptr;
+        char *st = o9_string_cstr(stateKey);
+
+        #define ASPERA_FILL(rx, ry, rw, rh, col) do { \
+            int _x = (rx), _y = (ry), _w = (rw), _h = (rh); \
+            if(_w > 0 && _h > 0 && _x < b->width && _y < b->height && _x > -_w && _y > -_h){ \
+                int _x0 = _x < 0 ? 0 : _x; \
+                int _y0 = _y < 0 ? 0 : _y; \
+                int _x1 = _w > b->width - _x0 ? b->width : _x + _w; \
+                int _y1 = _h > b->height - _y0 ? b->height : _y + _h; \
+                u32 _c = (col); \
+                for(int _j = _y0; _j < _y1; _j++){ \
+                    u32 *_row = b->pixels + _j * b->width; \
+                    for(int _i = _x0; _i < _x1; _i++) _row[_i] = _c; \
+                } \
+            } \
+        } while(0)
+
+        #define ASPERA_BORDER(rx, ry, rw, rh, col) do { \
+            int _x0 = (rx), _y0 = (ry), _x1 = (rx) + (rw), _y1 = (ry) + (rh); \
+            u32 _c = (col); \
+            if(_x0 >= 0 && _y0 >= 0 && _x1 <= b->width && _y1 <= b->height && _x0 < _x1 && _y0 < _y1){ \
+                u32 *_top = b->pixels + _y0 * b->width; \
+                u32 *_bot = b->pixels + (_y1 - 1) * b->width; \
+                for(int _i = _x0; _i < _x1; _i++){ _top[_i] = _c; _bot[_i] = _c; } \
+                for(int _j = _y0; _j < _y1; _j++){ \
+                    u32 *_row = b->pixels + _j * b->width; \
+                    _row[_x0] = _c; _row[_x1 - 1] = _c; \
+                } \
+            } \
+        } while(0)
+
+        #define ASPERA_TEXT(str_lit, tx, ty, col) do { \
+            const char *_s = (str_lit); \
+            int _cx = (tx), _cy = (ty); \
+            u32 _c = (col); \
+            for(int _idx = 0; _s[_idx] != '\0'; _idx++){ \
+                unsigned char _ch = (unsigned char)_s[_idx]; \
+                if(_ch >= 32 && _ch <= 126){ \
+                    int _gi = _ch - 32; \
+                    for(int _r = 0; _r < 14; _r++){ \
+                        int _py = _cy + _r; \
+                        if(_py >= 0 && _py < b->height){ \
+                            unsigned char _bits = font8x14_data[_gi][_r]; \
+                            u32 *_scan = b->pixels + _py * b->width; \
+                            for(int _ci = 0; _ci < 8; _ci++){ \
+                                int _px = _cx + _ci; \
+                                if(_px >= 0 && _px < b->width && (_bits & (0x80 >> _ci))) \
+                                    _scan[_px] = _c; \
+                            } \
+                        } \
+                    } \
+                } \
+                _cx += 8; \
+            } \
+        } while(0)
+
+        if(b != nil && b->pixels != nil){
+            ASPERA_FILL(0, 0, 1024, 32, 0x1b2631);
+            ASPERA_FILL(0, 31, 1024, 1, 0x3b5264);
+            ASPERA_FILL(8, 4, 72, 24, 0x314354);
+            ASPERA_BORDER(8, 4, 72, 24, 0xb87d31);
+            ASPERA_TEXT("Aspera", 16, 9, 0xffd382);
+            for(int i = 0; i < 4; i++){
+                int x = 92 + i * 36;
+                u32 bg = (i == (int)selected) ? 0x9a6e2e : 0x253440;
+                char num[2];
+                num[0] = (char)('1' + i);
+                num[1] = '\0';
+                ASPERA_FILL(x, 5, 32, 22, bg);
+                ASPERA_BORDER(x, 5, 32, 22, 0x536675);
+                ASPERA_TEXT(num, x + 12, 8, 0xffffff);
+            }
+            if(st != nil && strlen(st) == 7){
+                if(st[6] == '1'){
+                    char clk[6];
+                    memmove(clk, st, 5);
+                    clk[5] = '\0';
+                    ASPERA_TEXT(clk, 972, 9, 0xe4eaf0);
+                }
+                if(st[5] == '1'){
+                    ASPERA_FILL(8, 34, 184, 68, 0x263542);
+                    ASPERA_BORDER(8, 34, 184, 68, 0xb87d31);
+                    ASPERA_FILL(9, 68, 182, 1, 0x526b7d);
+                    ASPERA_TEXT("Open Notes", 20, 44, 0xe4eaf0);
+                    ASPERA_TEXT("Cycle theme", 20, 78, 0xe4eaf0);
+                }
+            }
+        }
+        #undef ASPERA_FILL
+        #undef ASPERA_BORDER
+        #undef ASPERA_TEXT
+        free(st);
+    }
+    return 0;
+}
+
+class AsperaShelf {
+    private string stateKey;
+
+    method AsperaShelf() {
+        stateKey = "--:--01";
+    }
+
+    // The 9P service owns this state; Aspera only paints its snapshot.
+    method bool applySnapshot(string value) {
+        Task<string> parsedTask = spawn AsperaShelfSnapshotRaw(value);
+        string parsed = parsedTask.await();
+        if(len(parsed) != 7) {
+            return false;
+        }
+        if(cmp(stateKey, parsed) == 0) {
+            return false;
+        }
+        stateKey = parsed;
+        return true;
+    }
+
+    method void render(AsperaCanvas canvas, DesktopCompositor desk) {
+        Task<int64> barTask = spawn AsperaShelfBarRaw(canvas.bufferAddress(), stateKey, desk.currentDesktopId());
+        barTask.await();
+        int64 i = 0;
+        while(i < desk.windowCount() && i < 4) {
+            WindowActor w = desk.getWindowAt(i);
+            int64 x = 250 + i * 140;
+            int64 bg = 0x314354;
+            if(w.focused()) { bg = 0x526b7d; }
+            canvas.fillBorderText(x, 4, 136, 24, bg, 0x536675, w.getTitle(), 6, 5, 0xe4eaf0);
+            i = i + 1;
+        }
+    }
+}

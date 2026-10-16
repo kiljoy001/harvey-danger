@@ -100,7 +100,12 @@ struct Label {
 	usize sp;
 	usize pc;
 	usize fp;
-	usize _pad[13];
+	usize rbx;
+	usize r12;
+	usize r13;
+	usize r14;
+	usize r15;
+	usize _pad[8];
 };
 
 struct Fxsave {

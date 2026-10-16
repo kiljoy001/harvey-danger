@@ -1,0 +1,84 @@
+import "service.o9";
+import "namespace.o9";
+import "time.o9";
+
+function SophiaTestWriteRaw(string path, int64 offset, string data) int64 {
+    int64 out;
+    c {
+        char *p;
+        int fd;
+
+        out = -1;
+        p = o9_string_cstr(path);
+        if(p != nil && offset >= 0){
+            fd = open(p, OWRITE);
+            if(fd >= 0){
+                if(seek(fd, offset, 0) >= 0)
+                    out = write(fd, o9_string_data(data), o9_string_len(data));
+                close(fd);
+            }
+        }
+        free(p);
+    }
+    return out;
+}
+
+class SophiaProbe {
+    method int64 write(string path, string data) {
+        Task<int64> result = spawn SophiaTestWriteRaw(path, 0, data);
+        return result.await();
+    }
+    method int64 writeAt(string path, int64 offset, string data) {
+        Task<int64> result = spawn SophiaTestWriteRaw(path, offset, data);
+        return result.await();
+    }
+}
+
+main {
+    File image = new File("/build/sophia-service-test.log");
+    image.remove();
+    SophiaViews service = new SophiaViews("/build/sophia-service-test.log");
+    SophiaProbe probe = new SophiaProbe();
+    bool ok = service.ready() && viewController(service) == 0;
+    File post = new File("/srv/SophiaProbe");
+    int64 tries = 0;
+    while(!post.exists() && tries < 40) {
+        Task<int64> pause = spawn TimeSleepRaw(25);
+        pause.await();
+        tries = tries + 1;
+    }
+    File a = new File("/mnt/sophia-a");
+    File b = new File("/mnt/sophia-b");
+    Namespace ns = new Namespace();
+    ok = ok && post.exists() && a.mkdirAll() && b.mkdirAll() &&
+         ns.root("/mnt") &&
+         ns.mountsrvReplace("/srv/SophiaProbe", "sophia-a", "") &&
+         ns.mountsrvReplace("/srv/SophiaProbe", "sophia-b", "") && ns.apply();
+    string ctl = "/mnt/sophia-a/view/ctl";
+    string first = "/mnt/sophia-a/view/docs/note";
+    string second = "/mnt/sophia-b/view/docs/note";
+    ok = ok && probe.write(ctl, "mkdir /docs\n") == 12 &&
+         probe.write(ctl, "mkfile /docs/note\n") == 18;
+    File other = new File(second);
+    ok = ok && other.exists() &&
+         probe.write(first, "hello") == 5 &&
+         probe.writeAt(first, 5, " world") == 6 &&
+         cmp(other.read(), "hello world") == 0;
+    Task<string> middle = spawn SophiaReadAtRaw(second, 6, 5);
+    ok = ok && cmp(middle.await(), "world") == 0 &&
+         probe.writeAt(second, 1, "a") == 1;
+    File firstFile = new File(first);
+    ok = ok && cmp(firstFile.read(), "hallo world") == 0;
+    ok = ok && probe.write(ctl, "remove /docs\n") < 0 &&
+         probe.write(ctl, "remove /docs/note\n") == 18 &&
+         !other.exists();
+    SophiaStore reopened = new SophiaStore("/build/sophia-service-test.log");
+    ok = ok && reopened.ready() && reopened.isDir("/docs") &&
+         !reopened.exists("/docs/note");
+    ns.unmount("/mnt/sophia-a");
+    ns.unmount("/mnt/sophia-b");
+    ns.close();
+    image.remove();
+    if(ok) { print("SOPHIA-9P PASS\n"); }
+    else { print("SOPHIA-9P FAIL\n"); }
+}

@@ -127,6 +127,19 @@ Bopen(char *name, int mode)
 	return bp;
 }
 
+Biobuf*
+Bfdopen(int f, int mode)
+{
+	Biobuf *bp;
+
+	bp = malloc(sizeof(Biobuf));
+	if(bp == nil)
+		return nil;
+	Binits(bp, f, mode, bp->b, sizeof(bp->b));
+	bp->flag = Bmagic;
+	return bp;
+}
+
 int
 Bterm(Biobufhdr *bp)
 {

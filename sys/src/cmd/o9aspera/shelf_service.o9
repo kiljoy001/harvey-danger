@@ -1,0 +1,252 @@
+// Shelf state and hit routing live in a separate Objective-9C 9P service.
+// Aspera remains responsible for workspace and window policy.
+import "stdlib/view.o9";
+import "stdlib/string.o9";
+import "bytes.o9";
+
+class ShelfNumber {
+    method string format(int64 value) {
+        if(value == 0) { return "0"; }
+        if(value < 0 || value > 2147483647) { return ""; }
+        string result = "";
+        int64 n = value;
+        while(n > 0) {
+            Task<string> digit = spawn StringSliceRaw("0123456789", n % 10, 1);
+            result = cat(digit.await(), result);
+            n = n / 10;
+        }
+        return result;
+    }
+
+    method int64 parse(string value) {
+        if(len(value) == 0 || len(value) > 10) { return -1; }
+        int64 n = 0;
+        int64 i = 0;
+        while(i < len(value)) {
+            Task<byte> ch = spawn BytesGetRaw(value, i);
+            int64 digit = ch.await() - 48;
+            if(digit < 0 || digit > 9 || n > (2147483647 - digit) / 10) {
+                return -1;
+            }
+            n = n * 10 + digit;
+            i = i + 1;
+        }
+        return n;
+    }
+}
+
+class ShelfState {
+    private string clockText;
+    private bool menuOpen;
+    private bool clockVisible;
+    private ShelfNumber number;
+    private int64 lastAction;
+
+    method ShelfState() {
+        clockText = "--:--";
+        menuOpen = false;
+        clockVisible = true;
+        number = new ShelfNumber();
+        lastAction = 0;
+    }
+
+    method string snapshot() {
+        string menu = "0";
+        string visible = "0";
+        if(menuOpen) { menu = "1"; }
+        if(clockVisible) { visible = "1"; }
+        return cat(cat(cat(cat(clockText, " "), menu), " "), cat(visible, "\n"));
+    }
+
+    method string stateTab() {
+        string menu = "0";
+        string visible = "0";
+        if(menuOpen) { menu = "1"; }
+        if(clockVisible) { visible = "1"; }
+        return cat("clock\tmenu\tclock_visible\n",
+                   cat(cat(cat(cat(clockText, "\t"), menu), "\t"),
+                       cat(visible, "\n")));
+    }
+
+    method string widgetsTab() {
+        string visible = "0";
+        if(clockVisible) { visible = "1"; }
+        return cat("id\tkind\tx\ty\twidth\theight\tvisible\n",
+                   cat("clock\tclock\t972\t9\t40\t14\t", cat(visible, "\n")));
+    }
+
+    method string layout() {
+        string result = "menu 8 4 72 24\nworkspaces 92 5 144 22\n";
+        result = cat(result, "windows 250 4 560 24\n");
+        if(clockVisible) { result = cat(result, "clock 972 9 40 14\n"); }
+        return result;
+    }
+
+    method string widgets() {
+        string result = "menu control 1\nworkspaces pager 1\nwindows tasklist 1\n";
+        if(clockVisible) { return cat(result, "clock clock 1\n"); }
+        return cat(result, "clock clock 0\n");
+    }
+
+    method string result() {
+        return cat(cat("action ", number.format(lastAction)), "\n");
+    }
+
+    private method bool validClock(string value) {
+        if(len(value) != 5) { return false; }
+        Task<byte> h0 = spawn BytesGetRaw(value, 0);
+        Task<byte> h1 = spawn BytesGetRaw(value, 1);
+        Task<byte> colon = spawn BytesGetRaw(value, 2);
+        Task<byte> m0 = spawn BytesGetRaw(value, 3);
+        Task<byte> m1 = spawn BytesGetRaw(value, 4);
+        int64 a = h0.await() - 48;
+        int64 b = h1.await() - 48;
+        int64 c = m0.await() - 48;
+        int64 d = m1.await() - 48;
+        int64 hour = a * 10 + b;
+        int64 minute = c * 10 + d;
+        return colon.await() == 58 && a >= 0 && a <= 9 &&
+               b >= 0 && b <= 9 && c >= 0 && c <= 9 &&
+               d >= 0 && d <= 9 && hour >= 0 && hour <= 23 &&
+               minute >= 0 && minute <= 59;
+    }
+
+    method int64 click(int64 x, int64 y) {
+        lastAction = 0;
+        if(x < 0 || x >= 1024 || y < 0 || y >= 768) { return 0; }
+        if(menuOpen && x >= 8 && x < 192 && y >= 34 && y < 102) {
+            menuOpen = false;
+            lastAction = 6;
+            if(y < 68) { lastAction = 7; }
+            return lastAction;
+        }
+        if(y >= 32) { return 0; }
+        if(x >= 8 && x < 80) {
+            menuOpen = !menuOpen;
+            lastAction = 5;
+        } else if(x >= 92 && x < 236) {
+            lastAction = ((x - 92) / 36) + 1;
+        } else if(x >= 250 && x < 810) {
+            lastAction = 100 + (x - 250) / 140;
+        } else if(menuOpen) {
+            menuOpen = false;
+            lastAction = 5;
+        }
+        return lastAction;
+    }
+
+    method bool command(string text) {
+        Task<string> cleanTask = spawn StringTrimRaw(text);
+        string clean = cleanTask.await();
+        Task<string> verbTask = spawn StringFieldRaw(clean, " ", 0);
+        Task<string> firstTask = spawn StringFieldRaw(clean, " ", 1);
+        Task<string> secondTask = spawn StringFieldRaw(clean, " ", 2);
+        Task<string> extraTask = spawn StringFieldRaw(clean, " ", 3);
+        string verb = verbTask.await();
+        string first = firstTask.await();
+        string second = secondTask.await();
+        if(len(extraTask.await()) != 0) { return false; }
+        if(cmp(verb, "clock") == 0 && len(second) == 0 && validClock(first)) {
+            clockText = first;
+            lastAction = 0;
+            return true;
+        }
+        if(cmp(verb, "show") == 0 && cmp(first, "clock") == 0 && len(second) == 0) {
+            clockVisible = true;
+            lastAction = 0;
+            return true;
+        }
+        if(cmp(verb, "hide") == 0 && cmp(first, "clock") == 0 && len(second) == 0) {
+            clockVisible = false;
+            lastAction = 0;
+            return true;
+        }
+        if(cmp(verb, "click") == 0) {
+            int64 x = number.parse(first);
+            int64 y = number.parse(second);
+            if(x < 0 || y < 0) { return false; }
+            click(x, y);
+            return true;
+        }
+        return false;
+    }
+}
+
+class ShelfViews {
+    ViewController;
+    private ShelfState model;
+    private string[] ids;
+    private string[] results;
+    private int64 count;
+
+    method ShelfViews(ShelfState stateModel) {
+        model = stateModel;
+        count = 0;
+    }
+
+    private method int64 find(string id) {
+        int64 i = 0;
+        while(i < count) {
+            if(cmp(ids[i], id) == 0) { return i; }
+            i = i + 1;
+        }
+        return -1;
+    }
+
+    internal method FileTree display(string id, string caller) {
+        int64 slot = 0;
+        while(slot < count && len(ids[slot]) != 0) { slot = slot + 1; }
+        if(slot == count && count >= 64) { return nil; }
+        FileTree tree = new FileTree();
+        tree.text("protocol", "o9shelf 1\n", false);
+        tree.live("state", false);
+        tree.live("state.tab", false);
+        tree.live("layout", false);
+        tree.live("widgets", false);
+        tree.live("widgets.tab", false);
+        tree.live("ctl", true);
+        tree.live("result", false);
+        ids[slot] = cat(id, "");
+        results[slot] = "action 0\n";
+        if(slot == count) { count = count + 1; }
+        return tree;
+    }
+
+    internal method void closeView(string id) {
+        int64 slot = find(id);
+        if(slot >= 0) {
+            ids[slot] = "";
+            results[slot] = "";
+        }
+    }
+
+    internal method string readText(string id, string path) {
+        int64 slot = find(id);
+        if(slot < 0) { return ""; }
+        if(cmp(path, "state") == 0) { return model.snapshot(); }
+        if(cmp(path, "state.tab") == 0) { return model.stateTab(); }
+        if(cmp(path, "layout") == 0) { return model.layout(); }
+        if(cmp(path, "widgets") == 0) { return model.widgets(); }
+        if(cmp(path, "widgets.tab") == 0) { return model.widgetsTab(); }
+        if(cmp(path, "result") == 0) { return cat(results[slot], ""); }
+        return "";
+    }
+
+    internal method int64 writeText(string id, string path, int64 offset,
+                                   string text, bool truncate) {
+        int64 slot = find(id);
+        if(slot < 0 || cmp(path, "ctl") != 0 || offset != 0 || len(text) < 2 ||
+           len(text) > 64 || !model.command(text)) { return -1; }
+        results[slot] = model.result();
+        return len(text);
+    }
+}
+
+main {
+    ShelfState model = new ShelfState();
+    ShelfViews service = new ShelfViews(model);
+    viewController(service);
+    Task<int64> lifecycle = spawn ViewCloseNotificationsRaw(true);
+    lifecycle.await();
+    serve();
+}

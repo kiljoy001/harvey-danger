@@ -107,7 +107,7 @@ tbdffmt(Fmt *fmt)
 	return r;
 }
 
-static u32
+u32
 pcibarsize(Pcidev *p, int rno)
 {
 	u32 v, size;

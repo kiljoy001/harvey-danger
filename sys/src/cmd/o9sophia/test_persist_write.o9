@@ -1,0 +1,13 @@
+import "store.o9";
+
+main {
+    SophiaStore store = new SophiaStore("/build/sophia-reboot-test.disk");
+    Task<string> largeTask = spawn StringRepeatRaw("plan9", 1800);
+    string large = largeTask.await();
+    bool ok = store.ready() && store.create("/home", true, 0755) &&
+              store.create("/home/data", false, 0600) &&
+              store.writeAt("/home/data", 0, large, false) == 9000 &&
+              store.writeAt("/home/data", 9000, "end", false) == 3;
+    if(ok) { print("SOPHIA-BOOT-WRITE PASS\n"); }
+    else { print("SOPHIA-BOOT-WRITE FAIL\n"); }
+}

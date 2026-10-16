@@ -2006,8 +2006,11 @@ static void
 acpiinitonce(void)
 {
 	parsersdptr();
-	if(root != nil)
-		print("ACPI initialized\n");
+	if(root == nil || fadt == nil){
+		print("ACPI not present\n");
+		return;
+	}
+	print("ACPI initialized\n");
 	addarchfile("acpimem", 0444, acpimemread, nil);
 	addarchfile("acpiio", 0666 | DMEXCL, acpiioread, acpiiowrite);
 	addarchfile("acpiintr", 0444 | DMEXCL, acpiintrread, nil);
@@ -2015,7 +2018,6 @@ acpiinitonce(void)
 	 * should use fadt->xpm* and fadt->xgpe* registers for 64 bits.
 	 * We are not ready in this kernel for that.
 	 */
-	assert(fadt != nil);
 	acpiioalloc(fadt->smicmd, 1);
 	acpiioalloc(fadt->pm1aevtblk, fadt->pm1evtlen);
 	acpiioalloc(fadt->pm1bevtblk, fadt->pm1evtlen);
