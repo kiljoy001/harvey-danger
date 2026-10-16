@@ -13,6 +13,24 @@ import "stdlib/namespace.o9";
 import "shelf.o9";
 import "shelf_client.o9";
 
+function AsperaShelfBinaryRaw(string base) string {
+    string out;
+    c {
+        Dir *d = dirstat("/bin/aspera-shelf-service");
+        if(d != nil){
+            free(d);
+            out = o9_string_new("/bin/aspera-shelf-service", 25);
+        }else{
+            char *b = o9_string_cstr(base);
+            char path[256];
+            int n = b == nil ? -1 : snprint(path, sizeof path, "%s/shelf-service", b);
+            out = n < 0 || n >= sizeof path ? o9_string_new("", 0) : o9_string_new(path, n);
+            free(b);
+        }
+    }
+    return out;
+}
+
 function AsperaParseInputRaw(string line) int64 {
     int64 out;
     c {
@@ -111,7 +129,9 @@ class AsperaLive {
         desk = new DesktopCompositor(1024, 768, themeE16);
         canvas = new AsperaCanvas(1024, 768);
         shelf = new AsperaShelf();
-        shelfService = new ShelfClient(cat(base, "/shelf-service"));
+        Task<string> shelfPathTask = spawn AsperaShelfBinaryRaw(base);
+        string shelfPath = shelfPathTask.await();
+        shelfService = new ShelfClient(shelfPath);
         themeIndex = 0;
         noteWindow = desk.createWindow("Notes", 60, 80, 560, 440);
         Task<string> notePathTask = spawn IOReadLineRaw(cat(base, "/notepath"), 0);

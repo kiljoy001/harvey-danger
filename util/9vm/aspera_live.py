@@ -36,9 +36,11 @@ def prepare_viewer() -> None:
     )
 
 
-def run(smoke: bool) -> int:
-    EXCHANGE.mkdir(parents=True, exist_ok=True)
-    lock_path = ROOT / "build/aspera-live.lock"
+def run(smoke: bool, system_image: Path | None = None, ram: int = 1024) -> int:
+    system = system_image is not None
+    exchange = ROOT / "build/aspera-system" if system else EXCHANGE
+    exchange.mkdir(parents=True, exist_ok=True)
+    lock_path = ROOT / ("build/aspera-system.lock" if system else "build/aspera-live.lock")
     with open(lock_path, "w") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         prepare_viewer()
@@ -48,26 +50,38 @@ def run(smoke: bool) -> int:
         try:
             guest = None
             try:
-                device = EXCHANGE / "dev"
+                device = exchange / "dev"
                 device.mkdir(exist_ok=True)
                 for name in ("ctl", "screen0", "screen1", "input"):
                     (device / name).touch()
-                (EXCHANGE / "clock").write_text(time.strftime("%H:%M") + "\n")
-                note_path = EXCHANGE / ("smoke-note.txt" if smoke else "note.txt")
-                if smoke:
+                (exchange / "clock").write_text(time.strftime("%H:%M") + "\n")
+                note_path = exchange / ("smoke-note.txt" if smoke else "note.txt")
+                if smoke and not system:
                     note_path.unlink(missing_ok=True)
-                (EXCHANGE / "notepath").write_text(
+                (exchange / "notepath").write_text(
+                    ("/lib/aspera/smoke-note.txt\n" if smoke else
+                     "/lib/aspera/note.txt\n") if system else
                     f"build/aspera-live/{note_path.name}\n")
-                compile_o9(str(SHELF_SOURCE), str(EXCHANGE / "shelf-service"))
-                compile_o9(str(SOURCE), str(guest_binary))
+                if not system:
+                    compile_o9(str(SHELF_SOURCE), str(exchange / "shelf-service"))
+                    compile_o9(str(SOURCE), str(guest_binary))
                 with open(log_path, "w+") as log:
+                    vm_args = [VM_BIN, "-m", str(ram), "-display-shm", shm_name]
+                    if system:
+                        cmdline = "bootargs=local!#9/0 nobootprompt=local asperadesktop=1"
+                        if smoke:
+                            cmdline += " asperarcprobe=1"
+                        vm_args += ["-c", cmdline,
+                                    "-gefs-image", str(system_image),
+                                    "-display-root", str(exchange)]
+                    else:
+                        vm_args += ["-r", REPO_ROOT, "-boot", str(guest_binary)]
+                    vm_args.append(KERNEL_BIN)
                     guest = subprocess.Popen(
-                        [VM_BIN, "-m", "1024", "-r", REPO_ROOT,
-                         "-boot", str(guest_binary), "-display-shm", shm_name,
-                         KERNEL_BIN],
+                        vm_args,
                         cwd=ROOT, stdout=log, stderr=subprocess.STDOUT,
                     )
-                    command = [str(VIEWER), str(EXCHANGE), shm_name]
+                    command = [str(VIEWER), str(exchange), shm_name]
                     if smoke:
                         command.append("--smoke")
                     result = subprocess.run(command, cwd=ROOT, check=False)
@@ -76,10 +90,19 @@ def run(smoke: bool) -> int:
                     except subprocess.TimeoutExpired:
                         guest.terminate()
                         guest.wait(timeout=5)
-                    if smoke and result.returncode == 0:
+                    if smoke and result.returncode == 0 and not system:
                         if note_path.read_bytes() != b"Hi!":
                             raise RuntimeError("Aspera notes save/reopen round trip failed")
                         print("Aspera VM presentation and Notes save/reopen PASS")
+                    if system:
+                        log.seek(0)
+                        output = log.read()
+                        if ("ASPERA-LIVE READY" not in output or
+                                (smoke and "ASPERA-RC-PROBE PASS" not in output)):
+                            print(output[-2500:])
+                            return 1
+                        if smoke and result.returncode == 0:
+                            print("Aspera GEFS desktop frame/input PASS")
                     if result.returncode != 0 or guest.returncode != 0:
                         log.seek(0)
                         print(log.read()[-2500:])
@@ -94,7 +117,7 @@ def run(smoke: bool) -> int:
                         guest.kill()
                         guest.wait()
         finally:
-            if smoke:
+            if smoke and not system:
                 (EXCHANGE / "smoke-note.txt").unlink(missing_ok=True)
             guest_binary.unlink(missing_ok=True)
             log_path.unlink(missing_ok=True)
@@ -105,9 +128,15 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--smoke", action="store_true",
                         help="test guest frame publication and mouse input with SDL dummy")
+    parser.add_argument("--system-image", type=Path,
+                        help="boot the installed desktop from an isolated GEFS image")
+    parser.add_argument("--ram", type=int, default=1024)
     args = parser.parse_args()
+    if args.ram < 256 or args.ram > 65536:
+        parser.error("--ram must be between 256 and 65536 MiB")
     try:
-        raise SystemExit(run(args.smoke))
+        raise SystemExit(run(args.smoke, args.system_image.resolve()
+                             if args.system_image else None, args.ram))
     except (OSError, subprocess.CalledProcessError, RuntimeError) as error:
         print(f"Aspera VM error: {error}")
         raise SystemExit(1)

@@ -73,9 +73,11 @@ also avoids relinking a nonexistent snapshot predecessor with ID `-1` and
 uses unsigned byte shifts to decode on-disk integers. The cross-OS regression
 writes in Harvey, verifies after a Harvey reboot, then reads the file in
 9front. A separate root regression writes, syncs, and verifies across two
-isolated Aspera boots. Shell and desktop packaging on the GEFS image and a
-power-loss fault test remain before full desktop or host-crash consistency
-can be claimed.
+isolated Aspera boots. The installed image now contains the Objective-9C
+desktop and shelf plus native `rc`, `ls`, `cat`, `test`, and `echo`. The normal
+`bin/aspera start` path starts that desktop from GEFS and gives the guest a
+separate, narrow display exchange on `#9/0`. A power-loss fault test remains
+before host-crash consistency can be claimed.
 
 `sys/src/cmd/o9sophia` remains an Objective-9C filesystem experiment, tested
 by `util/9vm/test_sophia.py`. It is not a prerequisite for persistent storage

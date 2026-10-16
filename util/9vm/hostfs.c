@@ -26,6 +26,12 @@ static int display_file(struct hostfs *h, const char *path) {
         return DisplayNone;
     length = strlen(prefix);
     if (strncmp(path, prefix, length) != 0) {
+        if (snprintf(prefix, sizeof prefix, "%s/dev/", h->root_dir) >=
+            (int)sizeof prefix)
+            return DisplayNone;
+        length = strlen(prefix);
+        if (strncmp(path, prefix, length) == 0)
+            goto display_name;
         if (snprintf(prefix, sizeof prefix, "%s/build/lola-live/dev/", h->root_dir) >=
             (int)sizeof prefix)
             return DisplayNone;
@@ -33,6 +39,7 @@ static int display_file(struct hostfs *h, const char *path) {
         if (strncmp(path, prefix, length) != 0)
             return DisplayNone;
     }
+display_name:
     name = path + length;
     if (strcmp(name, "ctl") == 0) return DisplayCtl;
     if (strcmp(name, "screen0") == 0) return DisplayScreen0;

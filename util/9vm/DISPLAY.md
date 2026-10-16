@@ -135,19 +135,23 @@ and `drawcompat` as clients of this protocol. The existing `o9aspera` C
 canvas/SDL code is a host prototype; the target userland services are
 Objective-9C.
 
-## Aspera VM desktop preview
+## Aspera VM desktop
 
-The Aspera desktop can now run inside 9vm as Objective-9C userland. From the
-Harvey checkout, launch its SDL presentation window with:
+The Aspera desktop runs inside 9vm as Objective-9C userland. With a provisioned
+GEFS image, launch its SDL presentation window with:
 
 ```sh
-python3 util/9vm/aspera_live.py
+./bin/aspera start
 ```
+
+For a development boot that compiles the guest from the source checkout, use
+`./bin/aspera preview`.
 
 The guest manages focus, dragging, workspaces, themes, and the shelf view. It
 also runs a Notes client in a separate Objective-9C offscreen canvas. The
 client receives focused keyboard input and saves its text to
-`build/aspera-live/note.txt` with Ctrl+S. The host SDL process only presents
+`/lib/aspera/note.txt` on GEFS with Ctrl+S. The preview instead writes to
+`build/aspera-live/note.txt`. The host SDL process only presents
 completed frames and forwards mouse/key records. The shelf has workspace
 buttons, a window list, a local clock, and a menu to open Notes or change
 themes. The shelf state and hit routing run in a separate Objective-9C guest
@@ -159,16 +163,18 @@ are bounded and clock values are validated. The `/srv` posting and mount use
 the guest namespace; no AppUser or network authentication is involved yet.
 Click a window name to focus it; use Alt+1 through Alt+4 to change
 workspaces, Alt+s to shade,
-and Alt+p to pin the focused window. Escape exits the preview.
+and Alt+p to pin the focused window. Escape exits the desktop.
 
-The launcher compiles a private guest binary and uses 9vm's `-boot` override;
-it does not replace `boot/boot`. Guest frames and input pass through a bounded
+The GEFS launcher executes the installed desktop and shelf binaries. Native
+`rc` and basic commands are installed in the same image; a boot probe can
+stat the desktop executable through the guest namespace. The preview compiles
+a private guest binary and uses 9vm's `-boot` override. Guest frames and input
+pass through a bounded
 9P display device under `build/aspera-live/dev`. Its payload lives in two
 shared-memory frame slots and an input queue; the files are device endpoints,
 not frame snapshots. The SDL bridge consumes committed slots and releases
 them before the guest reuses them. This is an operational VM display path,
-but the `o9display` service is not yet wired to Aspera, and the normal Aspera
-boot does not start this desktop. The preview uses a fixed 1024 by 768 output
+but the `o9display` service is not yet wired to Aspera. The desktop uses a fixed 1024 by 768 output
 and one trusted guest display producer. Notes currently renders printable
 ASCII with its built-in 8 by 14 font. It is therefore still a desktop
 prototype rather than a complete multi-client display service.

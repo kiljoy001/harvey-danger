@@ -10,11 +10,28 @@ and guest GEFS server:
 ./bin/aspera start
 ```
 
-`start` boots the image-backed Aspera system and shows its serial console in
-the calling terminal. It can be invoked from another working directory by
-its absolute path. The current GEFS boot mounts persistent storage and starts
-the o9irc service, but it does **not** start a graphical desktop. Supply a
-different image with `--image /path/to/image` and guest memory with `--ram`.
+`start` boots the GEFS-backed Aspera system and opens the same Objective-9C
+desktop as the development preview. The desktop and shelf service are real
+Plan 9 executables installed in the image's `/bin`; the host SDL process only
+shows committed frames and forwards input. Notes save under `/lib/aspera` in
+GEFS. The image also contains native `rc`, `ls`, `cat`, `test`, and `echo`, so
+the guest can inspect its installed applications. It can be invoked from
+another working directory by its absolute path.
+Supply a different image with `--image /path/to/image` and guest memory with
+`--ram`.
+
+To provision an existing GEFS image, using an installed 9front VM image as the
+native GEFS writer:
+
+```sh
+python3 util/9vm/install_aspera.py --base /path/to/9front.img --image /path/to/aspera.img
+```
+
+The script compiles the desktop and shelf from Objective-9C source, builds the
+native shell commands, copies them through a temporary FAT stage disk, checks
+the copies, and syncs GEFS.
+Keep a backup of an image before provisioning it. `bin/aspera start --smoke`
+checks the installed desktop's frame and input path.
 
 The graphical development preview has a separate command:
 
@@ -61,9 +78,7 @@ bin/aspera                    installed launcher
 libexec/aspera/9vm           KVM runner
 libexec/aspera/display-sdl   host window and input adapter
 libexec/aspera/harvey.32bit  guest kernel
-libexec/aspera/desktop       compiled Objective-9C desktop
-libexec/aspera/shelf-service compiled Objective-9C shelf service
-share/aspera/root.img        pristine GEFS image template
+share/aspera/root.img        pristine GEFS image with desktop and shell
 ```
 
 At first launch, copy the image template to a user-owned data directory and
@@ -74,8 +89,8 @@ directory per VM instance. A package build should generate a manifest with
 hashes and toolchain/source revisions, then verify a boot and Notes save/reopen
 from the assembled bundle itself.
 
-Before producing that bundle, separate guest compilation from VM startup,
-remove source-checkout paths from the host runner, install the guest desktop
-and services into GEFS, and make the isolated GEFS boot start the graphical
-session. These are packaging gates; `bin/aspera start` currently starts the
-image-backed console system.
+Before producing that bundle, remove remaining source-checkout paths from the
+host runner, assemble the runtime artifacts and pristine image into a
+relocatable bundle, and verify boot and Notes persistence from that bundle.
+`bin/aspera start` now runs the installed graphical desktop from GEFS; it is
+still a source-checkout launcher.

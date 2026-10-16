@@ -996,6 +996,7 @@ int main(int argc, char **argv) {
     const char *root_dir = ".";
     const char *boot_override = NULL;
     const char *display_name = NULL;
+    const char *display_root = NULL;
     const char *gefs_image = NULL;
     bool legacy_host_root = false;
     bool isolated_gefs_root;
@@ -1015,6 +1016,8 @@ int main(int argc, char **argv) {
             boot_override = argv[++i];
         } else if (strcmp(argv[i], "-display-shm") == 0 && i + 1 < argc) {
             display_name = argv[++i];
+        } else if (strcmp(argv[i], "-display-root") == 0 && i + 1 < argc) {
+            display_root = argv[++i];
         } else if (strcmp(argv[i], "-gefs-image") == 0 && i + 1 < argc) {
             gefs_image = argv[++i];
         } else if (strcmp(argv[i], "-legacy-host-root") == 0) {
@@ -1033,7 +1036,7 @@ int main(int argc, char **argv) {
     }
 
     if (!kernel_path) {
-        fprintf(stderr, "Usage: %s [-m <mb>] [-c <cmdline>] [-r <root>] [-boot <guest>] [-display-shm <name>] [-netfs <sock>] [-gefs-image <image>] [-legacy-host-root] [-no9ring] <kernel-elf>\n", argv[0]);
+        fprintf(stderr, "Usage: %s [-m <mb>] [-c <cmdline>] [-r <root>] [-boot <guest>] [-display-shm <name>] [-display-root <dir>] [-netfs <sock>] [-gefs-image <image>] [-legacy-host-root] [-no9ring] <kernel-elf>\n", argv[0]);
         return 1;
     }
     isolated_gefs_root = gefs_image != NULL && boot_override == NULL && !legacy_host_root;
@@ -1076,7 +1079,14 @@ int main(int argc, char **argv) {
     }
 
     struct hostfs hostfs_inst;
-    if (isolated_gefs_root) {
+    if (isolated_gefs_root && display_root != NULL) {
+        if (display_name == NULL || realpath(display_root, real_root) == NULL ||
+            strcmp(real_root, "/") == 0) {
+            fprintf(stderr, "[9vm] Invalid display exchange directory\n");
+            return 1;
+        }
+        hostfs_init(&hostfs_inst, real_root);
+    } else if (isolated_gefs_root) {
         if (hostfs_init_image(&hostfs_inst, gefs_image) < 0) {
             fprintf(stderr, "[9vm] Invalid GEFS image: %s\n", gefs_image);
             return 1;
