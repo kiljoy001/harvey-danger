@@ -7,7 +7,12 @@ kernel image, DTB, firmware memory reservations and `/reserved-memory` `reg`
 ranges. An identity map enables the MMU and caches with normal attributes for
 RAM and device attributes for MMIO. The guest then receives three virtual timer
 interrupts through an EL1 vector and reports synchronous exceptions over
-serial. It does **not** yet start the Plan 9 scheduler or user processes.
+serial. It enters EL0, resumes after a test syscall, and switches between two
+page-table roots whose user mappings point to different physical pages. The
+boot check confirms that EL0 cannot read kernel memory, write its code page,
+or execute its stack. A timer interrupt can arrive from EL0 and return to the
+interrupted instruction. It does **not** yet start the Plan 9 scheduler or load
+user programs.
 
 ```sh
 python3 util/arm64/test_virt.py
@@ -29,9 +34,11 @@ interface. The link address and initial diagnostic UART are specific to QEMU
 single RAM range, PL011 and GICv2. The GIC path has only been exercised with
 QEMU's default GICv2; GICv3 and real board interrupt routing need separate
 drivers. The allocator hands out zeroed 4 KiB pages but has no free operation.
-The identity map is an early boot map; it does not isolate processes or protect
-kernel text from writes. The next milestones are process page tables, context
-switching, syscalls and userland. Storage, networking and display follow after
+The identity map remains writable and executable in EL1, while its entries are
+inaccessible to EL0. Separate user roots and a complete general-register trap
+frame are in place, but the current syscall handler is a boot check. The next
+milestones are runnable process state and scheduling, normal syscall dispatch,
+executable loading and userland. Storage, networking and display follow after
 a serial shell boots.
 
 The build uses `clang-23` if present because this host's default `clang` only

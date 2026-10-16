@@ -7,7 +7,7 @@
  * device tree has supplied the actual UART address.
  */
 
-#include "mmu.h"
+#include "user.h"
 
 #ifdef ARM64_TEST_RESERVE
 extern char __image_end[];
@@ -89,7 +89,8 @@ arm64main(usize dtb)
 	u8 *p;
 	u32 size;
 	Fdtinfo info;
-	u64 page0, page1, root, translated;
+	u64 page0, page1, codepage, stackpage, codepage2, stackpage2;
+	u64 root, userroot, userroot2, translated;
 #ifdef ARM64_TEST_RESERVE
 	u64 blocked;
 #endif
@@ -158,8 +159,15 @@ arm64main(usize dtb)
 	}
 	uartputs("HARVEY-ARM64 RESERVED-PAGE PASS\n");
 #endif
+	codepage = arm64physpage();
+	stackpage = arm64physpage();
+	codepage2 = arm64physpage();
+	stackpage2 = arm64physpage();
 	root = arm64mmubuild(&info);
-	if(root == 0){
+	if(codepage == 0 || stackpage == 0 || codepage2 == 0 ||
+	   stackpage2 == 0 || root == 0 ||
+	   (userroot = arm64mmuuser(root, codepage, stackpage)) == 0 ||
+	   (userroot2 = arm64mmuuser(root, codepage2, stackpage2)) == 0){
 		uartputs("MMU: page table build failed\n");
 		return;
 	}
@@ -190,8 +198,43 @@ arm64main(usize dtb)
 		arm64timerstop();
 		return;
 	}
-	arm64timerstop();
 	uartputs("HARVEY-ARM64 TIMER-IRQ PASS\n");
+	arm64mmuswitch(userroot);
+	if(arm64mmutranslate(ARM64USERBASE, &translated) < 0 ||
+	   translated != codepage){
+		uartputs("EL0: first address space failed\n");
+		return;
+	}
+	if(arm64userprobe(codepage, stackpage, page0) < 0){
+		uartputs("EL0: trap/isolation check failed, ESR ");
+		uarthex(arm64userdiag());
+		uartputs("\n");
+		return;
+	}
+	arm64mmuswitch(userroot2);
+	if(arm64mmutranslate(ARM64USERBASE, &translated) < 0 ||
+	   translated != codepage2 ||
+	   arm64userprobe(codepage2, stackpage2, page0) < 0){
+		uartputs("EL0: second address space failed, ESR ");
+		uarthex(arm64userdiag());
+		uartputs("\n");
+		return;
+	}
+	arm64mmuswitch(root);
+	if(arm64mmutranslate(ARM64USERBASE, &translated) == 0){
+		uartputs("EL0: user mapping visible in kernel root\n");
+		return;
+	}
+	arm64timerstop();
+	if(arm64el0irqs == 0){
+		uartputs("EL0: timer did not interrupt user code\n");
+		return;
+	}
+	uartputs("HARVEY-ARM64 EL0-SVC PASS\n");
+	uartputs("HARVEY-ARM64 EL0-ISOLATION PASS\n");
+	uartputs("HARVEY-ARM64 EL0-PERMISSIONS PASS\n");
+	uartputs("HARVEY-ARM64 ADDRESS-SPACE SWITCH PASS\n");
+	uartputs("HARVEY-ARM64 EL0-TIMER-IRQ PASS\n");
 #ifdef ARM64_TEST_FAULT
 	__asm__ volatile("brk #0");
 #endif

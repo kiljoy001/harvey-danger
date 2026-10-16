@@ -8,6 +8,7 @@ static volatile u32 *gicdist;
 static u32 timerirq;
 static u32 period;
 volatile u32 arm64ticks;
+volatile u32 arm64el0irqs;
 static volatile u32 lastirq;
 
 int
@@ -30,6 +31,7 @@ arm64timerinit(Fdtinfo *info)
 		return -1;
 	period = freq/100;
 	arm64ticks = 0;
+	arm64el0irqs = 0;
 
 	__asm__ volatile("msr vbar_el1, %0; isb" :: "r"(arm64vectors) : "memory");
 	dist[0x000/4] = 0;
@@ -55,11 +57,15 @@ void
 arm64irq(void)
 {
 	u32 irq;
+	u64 spsr;
 
+	__asm__ volatile("mrs %0, spsr_el1" : "=r"(spsr));
 	irq = giccpu[0x00c/4] & 0x3ff;
 	lastirq = irq;
 	if(irq == timerirq){
 		arm64ticks++;
+		if((spsr&15) == 0)
+			arm64el0irqs++;
 		__asm__ volatile("msr cntv_tval_el0, %0; isb" :: "r"((u64)period) : "memory");
 		giccpu[0x010/4] = irq;
 	}else{

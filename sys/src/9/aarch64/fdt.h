@@ -28,5 +28,6 @@ void arm64timerstop(void);
 int arm64timerwait(void);
 u64 arm64timerdiag(void);
 extern volatile u32 arm64ticks;
+extern volatile u32 arm64el0irqs;
 
 #endif
