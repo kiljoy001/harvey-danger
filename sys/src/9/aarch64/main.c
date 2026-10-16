@@ -7,7 +7,7 @@
  * device tree has supplied the actual UART address.
  */
 
-#include "phys.h"
+#include "mmu.h"
 
 #ifdef ARM64_TEST_RESERVE
 extern char __image_end[];
@@ -89,7 +89,7 @@ arm64main(usize dtb)
 	u8 *p;
 	u32 size;
 	Fdtinfo info;
-	u64 page0, page1;
+	u64 page0, page1, root, translated;
 #ifdef ARM64_TEST_RESERVE
 	u64 blocked;
 #endif
@@ -158,6 +158,27 @@ arm64main(usize dtb)
 	}
 	uartputs("HARVEY-ARM64 RESERVED-PAGE PASS\n");
 #endif
+	root = arm64mmubuild(&info);
+	if(root == 0){
+		uartputs("MMU: page table build failed\n");
+		return;
+	}
+	arm64mmuon(root);
+	if(!arm64mmuactive() || *(u64 *)page0 != 0x1122334455667788ULL ||
+	   *(u64 *)page1 != 0){
+		uartputs("MMU: translated RAM check failed\n");
+		return;
+	}
+	if(arm64mmutranslate(page0, &translated) < 0 || translated != page0 ||
+	   arm64mmutranslate(info.uartbase, &translated) < 0 ||
+	   translated != info.uartbase ||
+	   arm64mmutranslate(info.rambase+info.ramsize-4096, &translated) < 0 ||
+	   translated != info.rambase+info.ramsize-4096 ||
+	   arm64mmutranslate(info.rambase+info.ramsize, &translated) == 0){
+		uartputs("MMU: translation boundaries failed\n");
+		return;
+	}
+	uartputs("HARVEY-ARM64 MMU-ON PASS\n");
 	if(arm64timerinit(&info) < 0){
 		uartputs("timer: initialization failed\n");
 		return;

@@ -20,15 +20,16 @@ def main() -> None:
             or struct.unpack_from("<I", header, 56)[0] != 0x644D5241:
         raise RuntimeError("bad ARM64 Image header")
 
-    for memory in (256, 512):
-        command = ["qemu-system-aarch64", "-machine", "virt", "-cpu", "cortex-a57",
+    for cpu, memory in (("cortex-a57", 256), ("cortex-a57", 512),
+                        ("cortex-a57", 1536), ("cortex-a35", 512)):
+        command = ["qemu-system-aarch64", "-machine", "virt", "-cpu", cpu,
                    "-m", f"{memory}M", "-smp", "1", "-nographic", "-monitor", "none",
                    "-kernel", str(IMAGE)]
         guest = subprocess.Popen(command, stdout=subprocess.PIPE,
                                  stderr=subprocess.STDOUT)
         try:
             try:
-                output, _ = guest.communicate(timeout=2)
+                output, _ = guest.communicate(timeout=3)
             except subprocess.TimeoutExpired:
                 guest.terminate()
                 output, _ = guest.communicate(timeout=3)
@@ -41,10 +42,12 @@ def main() -> None:
                     f"bytes 0x{memory * 1024 * 1024:016x}",
                     "uart: 0x0000000009000000", "timer irq: 0x000000000000001b",
                     "HARVEY-ARM64 EARLY-BOOT PASS", "HARVEY-ARM64 PHYS-PAGE PASS",
+                    "HARVEY-ARM64 MMU-ON PASS",
                     "HARVEY-ARM64 TIMER-IRQ PASS")
-        if any(marker not in transcript for marker in expected):
-            raise RuntimeError(f"ARM64 boot failed with {memory} MiB:\n" + transcript)
-        print(f"QEMU virt {memory} MiB: entry, DTB, physical pages, timer IRQ PASS")
+        if any(marker not in transcript for marker in expected) or \
+                "ARM64 exception" in transcript or "failed" in transcript:
+            raise RuntimeError(f"ARM64 boot failed with {cpu}, {memory} MiB:\n" + transcript)
+        print(f"QEMU virt {cpu}, {memory} MiB: DTB, pages, MMU, timer IRQ PASS")
 
     fault_out = ROOT / "build/arm64-fault"
     env = os.environ.copy()
@@ -69,6 +72,7 @@ def main() -> None:
             guest.wait()
     transcript = output.decode("utf-8", errors="replace")
     if "HARVEY-ARM64 RESERVED-PAGE PASS" not in transcript or \
+            "HARVEY-ARM64 MMU-ON PASS" not in transcript or \
             "HARVEY-ARM64 TIMER-IRQ PASS" not in transcript or \
             transcript.count("ARM64 exception esr 0x00000000f2000000") != 1:
         raise RuntimeError("ARM64 exception vector failed:\n" + transcript)

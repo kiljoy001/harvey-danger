@@ -4,9 +4,10 @@ The ARM64 Image boots directly on QEMU `virt`. It enters Harvey's ARM64
 assembly and C, clears BSS, sets a stack, parses the device tree to discover
 RAM, PL011, GICv2 and the timer PPI. A monotonic early allocator excludes the
 kernel image, DTB, firmware memory reservations and `/reserved-memory` `reg`
-ranges. The guest then receives three virtual timer interrupts through an EL1
-vector and reports synchronous exceptions over serial. It does **not** yet
-start the Plan 9 scheduler or user processes.
+ranges. An identity map enables the MMU and caches with normal attributes for
+RAM and device attributes for MMIO. The guest then receives three virtual timer
+interrupts through an EL1 vector and reports synchronous exceptions over
+serial. It does **not** yet start the Plan 9 scheduler or user processes.
 
 ```sh
 python3 util/arm64/test_virt.py
@@ -27,10 +28,11 @@ interface. The link address and initial diagnostic UART are specific to QEMU
 `virt`. The early parser supports root-level 1- or 2-cell `reg` addresses, a
 single RAM range, PL011 and GICv2. The GIC path has only been exercised with
 QEMU's default GICv2; GICv3 and real board interrupt routing need separate
-drivers. The allocator hands out zeroed 4 KiB pages but has no free operation
-or page tables yet. The next kernel milestones are MMU and page management,
-then process context, syscalls and userland. Storage, networking and display
-follow after a serial shell boots.
+drivers. The allocator hands out zeroed 4 KiB pages but has no free operation.
+The identity map is an early boot map; it does not isolate processes or protect
+kernel text from writes. The next milestones are process page tables, context
+switching, syscalls and userland. Storage, networking and display follow after
+a serial shell boots.
 
 The build uses `clang-23` if present because this host's default `clang` only
 contains the x86 backend. `-mgeneral-regs-only` prevents use of SIMD registers
