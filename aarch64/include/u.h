@@ -8,6 +8,9 @@
  * contained in the LICENSE.gpl file.
  */
 
+#ifndef HARVEY_AARCH64_U_H
+#define HARVEY_AARCH64_U_H
+
 #define nil ((void *)0)
 
 typedef signed char i8;
@@ -50,3 +53,5 @@ typedef __builtin_va_list va_list;
 #define va_copy(v,l)    __builtin_va_copy(v,l)
 
 #define getcallerpc()	((usize)__builtin_return_address(0))
+
+#endif

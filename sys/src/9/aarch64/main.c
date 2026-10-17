@@ -201,6 +201,11 @@ arm64main(usize dtb)
 		return;
 	}
 	uartputs("HARVEY-ARM64 TIMER-IRQ PASS\n");
+	if(arm64irqmaskprobe() < 0){
+		uartputs("ARM64 interrupt mask failed\n");
+		return;
+	}
+	uartputs("HARVEY-ARM64 IRQ-MASK PASS\n");
 	arm64mmuswitch(userroot);
 	if(arm64mmutranslate(ARM64USERBASE, &translated) < 0 ||
 	   translated != codepage){

@@ -3,6 +3,7 @@
  * GNU GPL v2 in the top-level LICENSE.gpl file.
  * Exercise the same Label switch primitive that port/proc.c calls.
  */
+#include <u.h>
 #include "context.h"
 
 enum {

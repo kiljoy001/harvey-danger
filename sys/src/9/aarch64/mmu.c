@@ -8,6 +8,7 @@ enum {
 };
 
 static const u64 Maxidentity = 16ULL * 1024 * 1024 * 1024;
+static u64 kernelroot;
 
 enum {
 	Ptevalid = 1,
@@ -121,10 +122,17 @@ arm64mmuon(u64 rootpa)
 	__asm__ volatile("msr mair_el1, %0" :: "r"((u64)0x04ff) : "memory");
 	__asm__ volatile("msr tcr_el1, %0" :: "r"(tcr) : "memory");
 	__asm__ volatile("msr ttbr0_el1, %0" :: "r"(rootpa) : "memory");
+	kernelroot = rootpa;
 	__asm__ volatile("isb; tlbi vmalle1; dsb sy; isb" ::: "memory");
 	__asm__ volatile("mrs %0, sctlr_el1" : "=r"(sctlr));
 	sctlr |= (1ULL<<12) | (1ULL<<2) | 1;
 	__asm__ volatile("msr sctlr_el1, %0; isb" :: "r"(sctlr) : "memory");
+}
+
+u64
+arm64mmukernelroot(void)
+{
+	return kernelroot;
 }
 
 void

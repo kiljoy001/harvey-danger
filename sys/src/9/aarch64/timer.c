@@ -1,6 +1,9 @@
 /* QEMU virt GICv2 and ARM generic virtual timer bring-up. */
 #include "fdt.h"
 
+extern u64 splhi(void);
+extern void splx(u64);
+
 extern char arm64vectors[];
 
 static volatile u32 *giccpu;
@@ -106,4 +109,39 @@ arm64timerdiag(void)
 	       ((u64)(lastirq&0x3ff)<<40) |
 	       ((u64)(giccpu[0x000/4]&3)<<52) |
 	       ((u64)(gicdist[0x000/4]&3)<<54);
+}
+
+int
+arm64irqmaskprobe(void)
+{
+	u64 old, now, start, freq, daif;
+	u32 ticks;
+
+	__asm__ volatile("mrs %0, cntfrq_el0" : "=r"(freq));
+	old = splhi();
+	__asm__ volatile("mrs %0, daif" : "=r"(daif));
+	if((old & (1ULL<<7)) != 0 || (daif & (1ULL<<7)) == 0){
+		splx(old);
+		return -1;
+	}
+	ticks = arm64ticks;
+	__asm__ volatile("mrs %0, cntvct_el0" : "=r"(start));
+	do {
+		__asm__ volatile("mrs %0, cntvct_el0" : "=r"(now));
+	} while(now-start < freq/50);
+	if(arm64ticks != ticks){
+		splx(old);
+		return -1;
+	}
+	splx(old);
+	__asm__ volatile("mrs %0, daif" : "=r"(daif));
+	if(daif & (1ULL<<7))
+		return -1;
+	__asm__ volatile("mrs %0, cntvct_el0" : "=r"(start));
+	do {
+		__asm__ volatile("mrs %0, cntvct_el0" : "=r"(now));
+		if(arm64ticks > ticks)
+			return 0;
+	} while(now-start < freq/10);
+	return -1;
 }

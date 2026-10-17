@@ -15,12 +15,14 @@ interrupted instruction. It does **not** yet start the Plan 9 scheduler or load
 user programs. The ARM64 `Label` save/restore routines now match the calling
 convention used by Harvey's shared scheduler in `sys/src/9/port/proc.c`. QEMU
 tests switch between two independent kernel stacks and check callee-saved
-register preservation while the timer is active. The build still links only
+register preservation while the timer is active. Interrupt masking is also
+checked across two timer periods. The build still links only
 the boot probe; it does not yet link `port/proc.c`.
 
 ```sh
 python3 util/arm64/test_virt.py
 python3 util/arm64/test_fdt.py
+python3 util/arm64/check_port.py
 ```
 
 For interactive inspection:
@@ -50,3 +52,11 @@ The build uses `clang-23` if present because this host's default `clang` only
 contains the x86 backend. `-mgeneral-regs-only` prevents use of SIMD registers
 before the kernel has enabled and saved their state. Set `ARM64_CC`, `ARM64_LD`
 and `ARM64_OBJCOPY` to override the compiler, linker and binary converter.
+
+`check_port.py` compiles Harvey's shared process scheduler, process table, EDF
+and lock sources with the initial ARM64 architecture hooks. It deliberately
+stops at object files: the shared allocator, page allocator and other port
+services still need to be linked before `procinit0()`, `userinit()` and
+`schedinit()` can run. The current process MMU hook handles a kernel root or a
+prebuilt user root; page-table reclamation is deliberately rejected until the
+allocator supports freeing pages.

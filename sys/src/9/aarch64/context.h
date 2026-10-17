@@ -5,8 +5,6 @@
 #ifndef HARVEY_ARM64_CONTEXT_H
 #define HARVEY_ARM64_CONTEXT_H
 
-#include <u.h>
-
 /* The shared scheduler stores one Label in each Proc and Mach. */
 typedef struct Label Label;
 struct Label {
@@ -28,5 +26,8 @@ struct Label {
 
 int slim_setlabel(Label *) __attribute__((returns_twice));
 void gotolabel(Label *) __attribute__((noreturn));
+u64 splhi(void);
+u64 spllo(void);
+void splx(u64);
 
 #endif

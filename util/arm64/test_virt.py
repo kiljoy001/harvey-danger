@@ -59,6 +59,7 @@ def main() -> None:
                     "HARVEY-ARM64 EARLY-BOOT PASS", "HARVEY-ARM64 PHYS-PAGE PASS",
                     "HARVEY-ARM64 MMU-ON PASS",
                     "HARVEY-ARM64 TIMER-IRQ PASS", "HARVEY-ARM64 EL0-SVC PASS",
+                    "HARVEY-ARM64 IRQ-MASK PASS",
                     "HARVEY-ARM64 EL0-ISOLATION PASS",
                     "HARVEY-ARM64 EL0-PERMISSIONS PASS",
                     "HARVEY-ARM64 ADDRESS-SPACE SWITCH PASS",
@@ -67,7 +68,7 @@ def main() -> None:
         if any(marker not in transcript for marker in expected) or \
                 "ARM64 exception" in transcript or "failed" in transcript:
             raise RuntimeError(f"ARM64 boot failed with {cpu}, {memory} MiB:\n" + transcript)
-        print(f"QEMU virt {cpu}, {memory} MiB: MMU, EL0 SVC, permissions, address spaces, IRQ PASS")
+        print(f"QEMU virt {cpu}, {memory} MiB: MMU, EL0, IRQ mask, context switch PASS")
 
     fault_out = ROOT / "build/arm64-fault"
     env = os.environ.copy()
@@ -82,6 +83,7 @@ def main() -> None:
     if "HARVEY-ARM64 RESERVED-PAGE PASS" not in transcript or \
             "HARVEY-ARM64 MMU-ON PASS" not in transcript or \
             "HARVEY-ARM64 TIMER-IRQ PASS" not in transcript or \
+            "HARVEY-ARM64 IRQ-MASK PASS" not in transcript or \
             "HARVEY-ARM64 CONTEXT-SWITCH PASS" not in transcript or \
             "HARVEY-ARM64 EL0-TIMER-IRQ PASS" not in transcript or \
             transcript.count("ARM64 exception esr 0x00000000f2000000") != 1:

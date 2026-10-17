@@ -34,3 +34,41 @@ gotolabel:
 	mov	sp, x9
 	mov	x0, #1
 	ret
+
+	/* splhi/spllo return the previous DAIF state for splx. */
+	.globl splhi
+	.type splhi, %function
+splhi:
+	mrs	x0, daif
+	msr	daifset, #2
+	isb
+	ret
+
+	.globl spllo
+	.type spllo, %function
+spllo:
+	mrs	x0, daif
+	msr	daifclr, #3
+	isb
+	ret
+
+	.globl splx
+	.type splx, %function
+splx:
+	msr	daif, x0
+	isb
+	ret
+
+	.globl islo
+	.type islo, %function
+islo:
+	mrs	x0, daif
+	tst	x0, #0x80
+	cset	w0, eq
+	ret
+
+	.globl coherence
+	.type coherence, %function
+coherence:
+	dmb	ish
+	ret
