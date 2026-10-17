@@ -49,9 +49,7 @@ SDifc* sdifc[] = {
 	nil,
 };
 
-extern PhysUart i8250physuart;
 PhysUart* physuart[] = {
-	&i8250physuart,
 	nil,
 };
 

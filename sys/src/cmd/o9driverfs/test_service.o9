@@ -1,0 +1,54 @@
+import "service.o9";
+import "stdlib/file.o9";
+import "stdlib/namespace.o9";
+import "stdlib/time.o9";
+
+class DriverProbe {
+    method int64 write(string path, string text) {
+        File file = new File(path);
+        return file.append(text);
+    }
+}
+
+main {
+    DriverProbe probe = new DriverProbe();
+    File backendDir = new File("/mnt");
+    bool tmp = backendDir.mkdirAll();
+    File backend = new File("/mnt/o9driverfs-backend");
+    File mountpoint = new File("/mnt/o9driverfs-test");
+    int64 initialWrite = backend.write("ready\n");
+    bool madeMount = mountpoint.mkdirAll();
+    bool ok = tmp && initialWrite == 0 && madeMount;
+    DriverFs drivers = new DriverFs();
+    ok = ok && drivers.add("serial0", "/mnt/o9driverfs-backend");
+    ok = ok && !drivers.add("serial0", "/mnt/o9driverfs-backend");
+    ok = ok && !drivers.add("../bad", "/mnt/o9driverfs-backend");
+    ok = ok && !drivers.add("bad", "relative/path");
+    ok = ok && !drivers.add("missing", "/mnt/o9driverfs-absent");
+    viewController(drivers);
+    File service = new File("/srv/DriverProbe");
+    int64 tries = 0;
+    while(!service.exists() && tries < 20) {
+        Task<int64> pause = spawn TimeSleepRaw(25);
+        pause.await();
+        tries = tries + 1;
+    }
+    Namespace mounts = new Namespace();
+    bool posted = service.exists();
+    bool root = mounts.root("/mnt");
+    bool attached = mounts.mountsrvReplace("/srv/DriverProbe", "o9driverfs-test", "");
+    bool applied = mounts.apply();
+    ok = ok && posted && root && attached && applied;
+    File protocol = new File("/mnt/o9driverfs-test/view/protocol");
+    File data = new File("/mnt/o9driverfs-test/view/drivers/serial0/data");
+    ok = ok && cmp(protocol.read(), "o9driverfs 1\n") == 0;
+    ok = ok && cmp(data.read(), "ready\n") == 0;
+    int64 written = probe.write("/mnt/o9driverfs-test/view/drivers/serial0/data", "newer\n");
+    ok = ok && written == 6;
+    ok = ok && cmp(backend.read(), "newer\n") == 0;
+    mounts.unmount("/mnt/o9driverfs-test");
+    mounts.close();
+    backend.remove();
+    if(ok) { print("O9DRIVERFS-9P PASS\n"); }
+    else { print("O9DRIVERFS-9P FAIL\n"); }
+}

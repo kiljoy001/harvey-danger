@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Link every ARM64 kernel source and boot the linked image in QEMU virt."""
+"""Link the ARM64 microkernel and boot the image in QEMU virt."""
 
 from pathlib import Path
 import subprocess
@@ -11,7 +11,7 @@ from test_virt import boot_until
 ROOT = Path(__file__).resolve().parents[2]
 IMAGE = ROOT / "build/arm64-kernel/harvey.img"
 ELF = ROOT / "build/arm64-kernel/harvey.elf"
-MARKER = "HARVEY-ARM64 SERIAL-CONSOLE PASS"
+MARKER = "HARVEY-ARM64 ROOT-WALK PASS"
 
 
 def main() -> None:
@@ -31,12 +31,11 @@ def main() -> None:
                 "HARVEY-ARM64 PAGE-ALLOC PASS",
                 "HARVEY-ARM64 SCHEDULER PASS",
                 "HARVEY-ARM64 CLOCK PASS",
-                "HARVEY-ARM64 ROOT-WALK PASS",
-                "HARVEY-ARM64 UART-IO PASS", MARKER)) or \
+                MARKER)) or \
                 "failed" in transcript or \
                 "ARM64 exception" in transcript:
             raise RuntimeError(f"full kernel boot failed at {memory} MiB:\n{transcript}")
-        print(f"ARM64 linked kernel, QEMU virt {memory} MiB: devices, pages, scheduler, clock, root, UART, console PASS")
+        print(f"ARM64 linked kernel, QEMU virt {memory} MiB: devices, pages, scheduler, clock, root PASS")
 
 
 if __name__ == "__main__":

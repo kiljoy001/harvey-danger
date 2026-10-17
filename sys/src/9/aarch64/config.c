@@ -1,4 +1,4 @@
-/* ARM64 kernel configuration for the shared Plan 9 devices and IP stack. */
+/* ARM64 microkernel: only core namespace devices and 9P transports. */
 #include <u.h>
 #include "../port/lib.h"
 #include "mem.h"
@@ -9,30 +9,26 @@
 
 extern Dev rootdevtab, consdevtab, envdevtab, pipedevtab, procdevtab;
 extern Dev mntdevtab, srvdevtab, dupdevtab, capdevtab, segmentdevtab;
-extern Dev ramdevtab, ipdevtab, sddevtab, uartdevtab, tlsdevtab;
-extern Dev ssldevtab, kprofdevtab, wddevtab;
-extern Dev ringdevtab;
-extern Dev fdmuxdevtab, mntndevtab, tracedevtab, wsdevtab;
-extern Dev regressdevtab, kbindevtab;
-extern void tcpinit(Fs *), udpinit(Fs *), icmpinit(Fs *), icmp6init(Fs *);
-extern void greinit(Fs *), ipifcinit(Fs *);
+extern Dev ramdevtab, ringdevtab;
 
 Dev *devtab[] = {
 	&rootdevtab, &consdevtab, &envdevtab, &pipedevtab,
 	&procdevtab, &mntdevtab, &srvdevtab, &dupdevtab,
-	&capdevtab, &segmentdevtab, &ramdevtab, &ipdevtab,
-	&sddevtab, &uartdevtab, &tlsdevtab, &ssldevtab,
-	&kprofdevtab, &wddevtab, &ringdevtab, &fdmuxdevtab,
-	&mntndevtab, &tracedevtab, &wsdevtab, &regressdevtab,
-	&kbindevtab, nil,
+	&capdevtab, &segmentdevtab, &ramdevtab, &ringdevtab,
+	nil,
 };
 
-void (*ipprotoinit[])(Fs *) = {
-	tcpinit, udpinit, icmpinit, icmp6init, greinit, ipifcinit, nil,
-};
+/* The shared port objects still refer to these registration tables. */
+void (*ipprotoinit[])(Fs *) = { nil };
 SDifc *sdifc[] = { nil };
-extern PhysUart pl011physuart;
-PhysUart *physuart[] = { &pl011physuart, nil };
+PhysUart *physuart[] = { nil };
+
+/* Profiling is a user-space service, so the shared clock has no profiler. */
+void
+oprof_alarm_handler(Ureg *u)
+{
+	USED(u);
+}
 Physseg physseg[8] = {
 	{ .attr = SG_SHARED|SG_READ|SG_WRITE, .name = "shared", .size = SEGMAXPG },
 	{ .attr = SG_BSS|SG_READ|SG_WRITE, .name = "memory", .size = SEGMAXPG },

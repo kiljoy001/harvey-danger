@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Build the AArch64 Harvey kernel with every shared port and IP source.
+"""Build the AArch64 Harvey microkernel with core 9P namespace services.
 
 The build fails on any compile or link error. It does not substitute stubs for
-shared kernel services. Device drivers and entry code remain architecture
-specific; the source inventory is read from the kernel's own JSON manifests.
+shared kernel services. The architecture entry code is ARM64 specific; the
+shared source inventory is read from the kernel's own JSON manifest.
 """
 
 from pathlib import Path
@@ -117,8 +117,6 @@ def main() -> None:
         "-Wno-unused-function", "-Wno-unused-variable",
         "-Wno-unused-parameter",
     ]
-    if os.environ.get("ARM64_TEST_CONSOLE_RX") == "1":
-        flags.append("-DARM64_TEST_CONSOLE_RX")
     for path in (OUT, ARCH, ROOT / "sys/src/9/port", ROOT / "sys/src/9/ip",
                  ROOT / "aarch64/include", ROOT / "sys/include",
                  ROOT / "sys/src/libc/9syscall"):
@@ -127,11 +125,15 @@ def main() -> None:
     sources = [ARCH / name for name in
                ("l.S", "user.S", "context.S", "return.S", "main.c", "fdt.c", "timer.c",
                 "phys.c", "mmu.c", "user.c", "context.c", "arch.c",
-                "config.c", "qmalloc.c", "platform.c", "procarch.c", "boot.c",
-                "pl011.c")]
-    sources.extend(manifest_sources("port"))
+                "config.c", "qmalloc.c", "platform.c", "procarch.c", "boot.c")]
+    core_devices = {
+        "dev.c", "devcap.c", "devcons.c", "devdup.c", "devenv.c",
+        "devmnt.c", "devpipe.c", "devproc.c", "devramfs.c",
+        "devroot.c", "devsegment.c", "devsrv.c", "devtab.c",
+    }
+    sources.extend(source for source in manifest_sources("port")
+                   if not source.name.startswith("dev") or source.name in core_devices)
     sources.append(ROOT / "sys/src/9/port/dev9ring.c")
-    sources.extend(manifest_sources("ip"))
     sources.append(OUT / "systab.c")
     objects = []
     failures = []

@@ -43,6 +43,18 @@ memory. The kernel limits local connections to 16, with eight message buffers
 per connection. One buffer is reserved for `Tflush` when ordinary requests
 fill the others.
 
+## Driver boundary
+
+The kernel keeps process, memory, namespace, and 9P mount mechanisms. Its
+external I/O transports are `#~` (9ring) and `#9` (virtio-9P). Serial, disk,
+network, display, and input device policy belongs to user-space 9P services.
+`sys/src/cmd/o9driverfs` is the Objective-9C device namespace: a trusted
+launcher maps named backend files into per-attach `view/drivers` trees. The
+x86 VM test verifies this filesystem over a real 9P mount. Device-specific
+services still need to be built on this interface. The ARM64 kernel currently
+links only `#~`; its `#9` virtio transport and user process launch remain
+bring-up tasks. ARM64 PL011 use is restricted to early boot diagnostics.
+
 The named service contract is:
 
 1. A service opens `#~!name/announce` and keeps that descriptor open.

@@ -1,0 +1,180 @@
+// A user-space 9P driver filesystem. The privileged launcher selects the
+// backend files; clients only see names inside this service's view.
+import "stdlib/view.o9";
+import "stdlib/process.o9";
+import "bytes.o9";
+
+function DriverExistsRaw(string path) int64 {
+    int64 out;
+    c {
+        char *name;
+        Dir *d;
+
+        out = 0;
+        name = o9_string_cstr(path);
+        if(name != nil){
+            d = dirstat(name);
+            if(d != nil){
+                out = 1;
+                free(d);
+            }
+            free(name);
+        }
+    }
+    return out;
+}
+
+function DriverReadRaw(string path) string {
+    string out;
+    c {
+        char *name, *buf;
+        int fd, n;
+
+        out = nil;
+        name = o9_string_cstr(path);
+        if(name != nil){
+            fd = open(name, OREAD);
+            buf = malloc(65536);
+            if(fd >= 0 && buf != nil){
+                n = read(fd, buf, 65536);
+                if(n > 0)
+                    out = o9_string_new(buf, n);
+            }
+            if(fd >= 0)
+                close(fd);
+            free(buf);
+            free(name);
+        }
+        if(out == nil)
+            out = o9_string_new("", 0);
+    }
+    return out;
+}
+
+function DriverWriteRaw(string path, string data) int64 {
+    int64 out;
+    c {
+        char *name;
+        int fd;
+        vlong n;
+
+        out = -1;
+        name = o9_string_cstr(path);
+        if(name != nil){
+            fd = open(name, OWRITE);
+            if(fd >= 0){
+                n = o9_string_len(data);
+                if(n <= 65536)
+                    out = write(fd, o9_string_data(data), n);
+                close(fd);
+            }
+            free(name);
+        }
+    }
+    return out;
+}
+
+class DriverFs {
+    ViewController;
+    private string[] names;
+    private string[] backends;
+    private int64 count;
+
+    method DriverFs() { count = 0; }
+
+    private method bool validName(string name) {
+        if(len(name) == 0 || len(name) > 32) { return false; }
+        int64 i = 0;
+        while(i < len(name)) {
+            Task<byte> ch = spawn BytesGetRaw(name, i);
+            int64 c = ch.await();
+            if(!((c >= 48 && c <= 57) || (c >= 65 && c <= 90) ||
+                 (c >= 97 && c <= 122) || c == 45 || c == 95)) {
+                return false;
+            }
+            i = i + 1;
+        }
+        return true;
+    }
+
+    method bool add(string name, string backend) {
+        if(count >= 16 || !validName(name) || len(backend) < 2 ||
+           len(backend) > 256 || cmp(backend, "/") == 0) { return false; }
+        Task<byte> first = spawn BytesGetRaw(backend, 0);
+        if(first.await() != 47) { return false; }
+        Task<int64> exists = spawn DriverExistsRaw(backend);
+        if(exists.await() == 0) { return false; }
+        int64 i = 0;
+        while(i < count) {
+            if(cmp(names[i], name) == 0) { return false; }
+            i = i + 1;
+        }
+        names[count] = cat(name, "");
+        backends[count] = cat(backend, "");
+        count = count + 1;
+        return true;
+    }
+
+    private method int64 findDriver(string path) {
+        int64 i = 0;
+        while(i < count) {
+            if(cmp(path, cat(cat("drivers/", names[i]), "/data")) == 0) {
+                return i;
+            }
+            i = i + 1;
+        }
+        return -1;
+    }
+
+    internal method FileTree display(string id, string caller) {
+        FileTree tree = new FileTree();
+        tree.text("protocol", "o9driverfs 1\n", false);
+        tree.dir("drivers");
+        int64 i = 0;
+        while(i < count) {
+            string base = cat("drivers/", names[i]);
+            if(tree.dir(base) < 0 ||
+               tree.live(cat(base, "/data"), true) < 0) { return nil; }
+            i = i + 1;
+        }
+        return tree;
+    }
+
+    internal method string readText(string id, string path) {
+        int64 index = findDriver(path);
+        if(index < 0) { return ""; }
+        Task<string> result = spawn DriverReadRaw(backends[index]);
+        return result.await();
+    }
+
+    internal method int64 writeText(string id, string path, int64 offset,
+                                   string data, bool truncate) {
+        int64 index = findDriver(path);
+        if(index < 0 || offset != 0 || len(data) > 65536) { return -1; }
+        Task<int64> result = spawn DriverWriteRaw(backends[index], data);
+        return result.await();
+    }
+}
+
+main {
+    Process process = new Process();
+    DriverFs drivers = new DriverFs();
+    if(process.argc() < 3 || process.argc() % 2 == 0) {
+        print("usage: o9driverfs name /absolute/backend [name /absolute/backend ...]\n");
+    } else {
+        bool valid = true;
+        int64 i = 1;
+        while(i + 1 < process.argc()) {
+            if(!drivers.add(process.arg(i), process.arg(i + 1))) {
+                valid = false;
+            }
+            i = i + 2;
+        }
+        if(valid) {
+            viewController(drivers);
+            serve();
+        } else {
+            print("o9driverfs: invalid or duplicate driver\n");
+        }
+    }
+}
