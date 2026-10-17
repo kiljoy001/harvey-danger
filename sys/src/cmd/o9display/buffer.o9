@@ -1,5 +1,68 @@
 import "string.o9";
 import "bytes.o9";
+// Keep each upload to one new snapshot. A DisplayBuffer actor is reused for
+// every write; helper tasks are consumed with take() after one result.
+function DisplayBufferBlankRaw(int64 size) string {
+    string out;
+    c {
+        out = nil;
+        if(size > 0 && size <= 512*512*4) {
+            out = o9_string_new(nil, size);
+            if(out != nil)
+                memset(o9_string_data(out), 0, size);
+        }
+    }
+    return out;
+}
+
+function DisplayBufferPatchRaw(string current, int64 offset, string patch) string {
+    string out;
+    c {
+        vlong total, count;
+        char *dst, *src;
+
+        out = nil;
+        total = o9_string_len(current);
+        count = o9_string_len(patch);
+        if(current != nil && patch != nil && offset >= 0 &&
+           count <= 65536 && offset <= total && count <= total-offset) {
+            out = o9_string_new(nil, total);
+            if(out != nil) {
+                dst = o9_string_data(out);
+                src = o9_string_data(current);
+                memmove(dst, src, offset);
+                memmove(dst+offset, o9_string_data(patch), count);
+                memmove(dst+offset+count, src+offset+count,
+                        total-offset-count);
+            }
+        }
+    }
+    return out;
+}
+
+function DisplayBufferFillRaw(int64 count, int64 rgb) string {
+    string out;
+    c {
+        vlong i, size;
+        uchar *dst;
+
+        out = nil;
+        if(count > 0 && count <= 512*512 && rgb >= 0 && rgb <= 0xffffff) {
+            size = count*4;
+            out = o9_string_new(nil, size);
+            if(out != nil) {
+                dst = (uchar*)o9_string_data(out);
+                for(i = 0; i < size; i += 4) {
+                    dst[i] = rgb;
+                    dst[i+1] = rgb >> 8;
+                    dst[i+2] = rgb >> 16;
+                    dst[i+3] = 255;
+                }
+            }
+        }
+    }
+    return out;
+}
 
 // Native XRGB8888 image storage. The 9P service owns buffers, including
 // offscreen images; surfaces only refer to these buffers when presenting.
@@ -18,10 +81,8 @@ class DisplayBuffer {
         pixels = "";
         if(id > 0 && owner > 0 && width > 0 && height > 0 &&
            width <= 512 && height <= 512) {
-            Bytes zero = new Bytes("");
-            zero.append(0);
-            Task<string> repeated = spawn StringRepeatRaw(zero.text(), width * height * 4);
-            pixels = repeated.await();
+            Task<string> blank = spawn DisplayBufferBlankRaw(width * height * 4);
+            pixels = blank.take();
         }
     }
 
@@ -35,14 +96,33 @@ class DisplayBuffer {
     method int64 width() { return pixelWidth; }
     method int64 height() { return pixelHeight; }
     method int64 size() { return len(pixels); }
-    method string data() { return pixels; }
+    // The reader owns its snapshot after subsequent writes replace pixels.
+    method string data() { return cat(pixels, ""); }
+
+    method bool reset(int64 id, int64 owner, int64 width, int64 height) {
+        if(bufferId != 0 || id <= 0 || owner <= 0 ||
+           width <= 0 || height <= 0 || width > 512 || height > 512) {
+            return false;
+        }
+        Task<string> blank = spawn DisplayBufferBlankRaw(width * height * 4);
+        string next = blank.take();
+        if(len(next) != width * height * 4) { return false; }
+        pixels.dispose();
+        pixels = next;
+        bufferId = id;
+        ownerId = owner;
+        pixelWidth = width;
+        pixelHeight = height;
+        return true;
+    }
 
     method bool zero() {
         if(!valid()) { return false; }
-        Bytes zero = new Bytes("");
-        zero.append(0);
-        Task<string> repeated = spawn StringRepeatRaw(zero.text(), pixelWidth * pixelHeight * 4);
-        pixels = repeated.await();
+        Task<string> blank = spawn DisplayBufferBlankRaw(pixelWidth * pixelHeight * 4);
+        string next = blank.take();
+        if(len(next) != len(pixels)) { return false; }
+        pixels.dispose();
+        pixels = next;
         return valid();
     }
 
@@ -53,24 +133,28 @@ class DisplayBuffer {
         int64 total = len(pixels);
         if(!valid() || offset < 0 || count > 65536 ||
            offset > total || count > total - offset) { return false; }
-        Task<string> headTask = spawn StringSliceRaw(pixels, 0, offset);
-        Task<string> tailTask = spawn StringSliceRaw(pixels, offset + count,
-                                                     total - offset - count);
-        string head = headTask.await();
-        string tail = tailTask.await();
-        pixels = cat(cat(head, bytes), tail);
+        Task<string> patchTask = spawn DisplayBufferPatchRaw(pixels, offset, bytes);
+        string next = patchTask.take();
+        if(len(next) != total) { return false; }
+        pixels.dispose();
+        pixels = next;
         return len(pixels) == total;
     }
 
     method bool clear(int64 rgb) {
         if(!valid() || rgb < 0 || rgb > 16777215) { return false; }
-        Bytes pixel = new Bytes("");
-        pixel.append(cast<byte>(rgb % 256));
-        pixel.append(cast<byte>((rgb / 256) % 256));
-        pixel.append(cast<byte>((rgb / 65536) % 256));
-        pixel.append(255);
-        Task<string> repeated = spawn StringRepeatRaw(pixel.text(), pixelWidth * pixelHeight);
-        pixels = repeated.await();
+        Task<string> fill = spawn DisplayBufferFillRaw(pixelWidth * pixelHeight, rgb);
+        string next = fill.take();
+        if(len(next) != len(pixels)) { return false; }
+        pixels.dispose();
+        pixels = next;
         return len(pixels) == pixelWidth * pixelHeight * 4;
+    }
+
+    method void close() {
+        pixels.dispose();
+        pixels = "";
+        bufferId = 0;
+        ownerId = 0;
     }
 }

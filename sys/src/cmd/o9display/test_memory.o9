@@ -1,0 +1,30 @@
+import "buffer.o9";
+
+// A small upload must not retain one full image for every prior frame.
+// This would exhaust a 512 MiB guest with the former snapshot path.
+main {
+    DisplayBuffer image = new DisplayBuffer(1, 1, 512, 512);
+    Bytes pixel = new Bytes("");
+    pixel.append(11);
+    pixel.append(22);
+    pixel.append(33);
+    pixel.append(255);
+    bool ok = image.valid();
+    int64 i = 0;
+    while(ok && i < 600) {
+        ok = image.write(0, pixel.text());
+        if(i % 10 == 0) {
+            ok = ok && image.clear(0x334455);
+            ok = ok && image.write(0, pixel.text());
+        }
+        i = i + 1;
+    }
+    Bytes result = new Bytes(image.data());
+    ok = ok && result.length() == 1048576 &&
+         result.get(0) == 11 && result.get(1) == 22 &&
+         result.get(2) == 33 && result.get(3) == 255;
+    image.close();
+    ok = ok && !image.valid() && image.size() == 0;
+    if(ok) { print("O9DISPLAY-MEMORY PASS\n"); }
+    else { print("O9DISPLAY-MEMORY FAIL\n"); }
+}

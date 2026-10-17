@@ -1,0 +1,33 @@
+import "service.o9";
+
+// Exceed the generated actor registry's 128-instance limit while keeping
+// only one live buffer and one live view. Repeated opens must reuse actors.
+main {
+    DisplayState model = new DisplayState();
+    DisplayViews views = new DisplayViews(model);
+    DisplayCodec codec = new DisplayCodec();
+    bool ok = true;
+    int64 i = 1;
+    while(ok && i <= 180) {
+        string id = codec.number(i);
+        FileTree tree = views.display(id, "test");
+        ok = tree != nil;
+        if(ok) {
+            if(i == 1) {
+                int64 j = 1;
+                while(ok && j <= 180) {
+                    ok = views.writeText(id, "ctl", 0, "buffer 2 2\n", false) == 11;
+                    if(ok) {
+                        string drop = cat(cat("drop-buffer ", codec.number(j)), "\n");
+                        ok = views.writeText(id, "ctl", 0, drop, false) == len(drop);
+                    }
+                    j = j + 1;
+                }
+            }
+            views.closeView(id);
+        }
+        i = i + 1;
+    }
+    if(ok) { print("O9DISPLAY-POOL PASS\n"); }
+    else { print("O9DISPLAY-POOL FAIL\n"); }
+}

@@ -21,6 +21,8 @@ PRISM = ROOT / "util/9vm/prism.py"
 CASES = (
     ("state", 512),
     ("buffer", 512),
+    ("memory", 512),
+    ("pool", 512),
     ("property", 512),
     ("service", 512),
 )
@@ -38,13 +40,14 @@ MUTANTS = (
 
 
 def guest_run(source: Path, name: str, ram: int) -> str:
+    timeout = 60 if name in ("memory", "pool") else 25
     cmd = [sys.executable, str(PRISM), "run", str(source),
-           "--ram", str(ram), "--timeout", "25"]
+           "--ram", str(ram), "--timeout", str(timeout)]
     process = subprocess.Popen(cmd, cwd=ROOT, stdout=subprocess.PIPE,
                                stderr=subprocess.STDOUT, text=True,
                                start_new_session=True)
     try:
-        output, _ = process.communicate(timeout=35)
+        output, _ = process.communicate(timeout=timeout + 10)
     except subprocess.TimeoutExpired:
         os.killpg(process.pid, signal.SIGKILL)
         process.communicate()
