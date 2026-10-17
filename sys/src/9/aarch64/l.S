@@ -8,11 +8,7 @@ _start:
 	.word	0
 	.quad	0x80000		/* load offset from the start of RAM */
 	.quad	__image_end - _start
-#ifdef ARM64_BOARD_RK3566
-	.quad	8		/* kernel may stay at its 2 MiB aligned load base */
-#else
-	.quad	0		/* little endian, 4 KiB pages */
-#endif
+	.quad	8		/* little endian; firmware may retain the load base */
 	.quad	0
 	.quad	0
 	.quad	0

@@ -1,8 +1,5 @@
 /* Bounded early device-tree discovery for the ARM64 kernel. */
 #include "fdt.h"
-#ifdef ARM64_RK3566_TRACE_FDT
-extern void arm64uartputs(char *);
-#endif
 
 enum {
 	Fdtmagic = 0xd00dfeed,
@@ -14,6 +11,9 @@ enum {
 	Fdtnop = 4,
 	Fdtend = 9,
 	Maxdepth = 32,
+	Maxpath = 256,
+	Maxaliases = 64,
+	Maxconsoles = 16,
 };
 
 typedef struct Fdtnode Fdtnode;
@@ -24,8 +24,22 @@ struct Fdtnode {
 	u32 reglen;
 	u8 *intr;
 	u32 intrlen;
+	u32 pathlen, uarttype, gicversion;
 	int memory, uart, gic, timer, virtio;
-	int reservedir, reserve;
+	int reservedir, reserve, enabled;
+};
+
+typedef struct Fdtalias Fdtalias;
+struct Fdtalias {
+	u8 *name, *path;
+	u32 namelen, pathlen;
+};
+
+typedef struct Fdtconsole Fdtconsole;
+struct Fdtconsole {
+	char path[Maxpath];
+	u64 base;
+	u32 type;
 };
 
 static u32
@@ -61,6 +75,28 @@ same(char *a, char *b)
 		b++;
 	}
 	return *a == *b;
+}
+
+static int
+samelen(u8 *a, u32 n, char *b)
+{
+	u32 i;
+
+	for(i = 0; i < n && b[i] != 0; i++)
+		if(a[i] != b[i])
+			return 0;
+	return i == n && b[i] == 0;
+}
+
+static int
+strnlen0(u8 *p, u32 n)
+{
+	u32 i;
+
+	for(i = 0; i < n; i++)
+		if(p[i] == 0)
+			return i;
+	return -1;
 }
 
 static int
@@ -112,23 +148,51 @@ regpair(Fdtnode *node, u32 index, u64 *base, u64 *size)
 }
 
 int
+fdtselectram(Fdtinfo *info, u64 imagebase, u64 imageend)
+{
+	u64 base, end, stop;
+	u32 i;
+
+	if(info == nil || imageend <= imagebase)
+		return -1;
+	for(i = 0; i < info->nmemory; i++){
+		end = info->memory[i].base + info->memory[i].size;
+		if(end < info->memory[i].base ||
+		   imagebase < info->memory[i].base || imageend > end)
+			continue;
+		if(info->memory[i].base > ~(u64)0 - ((1<<21)-1))
+			continue;
+		base = (info->memory[i].base + (1<<21)-1) & ~((u64)(1<<21)-1);
+		if(base > imagebase)
+			continue;
+		stop = end;
+		stop &= ~((u64)(1<<21)-1);
+		if(stop < imageend || stop-base < (1<<21))
+			continue;
+		info->rambase = base;
+		info->ramsize = stop-base;
+		return 0;
+	}
+	return -1;
+}
+
+int
 fdtparse(void *blob, usize bytes, Fdtinfo *out)
 {
 	u8 *p, *s, *str, *value;
 	u32 total, soff, ssize, stroff, strsize, rsv, pos, token, namelen, len, depth;
-	u32 i, off, stride;
+	u32 i, off, stride, oldlen, naliases, nconsoles, wantlen;
 	u64 base, size;
 	Fdtnode nodes[Maxdepth], *node;
+	Fdtalias aliases[Maxaliases];
+	Fdtconsole consoles[Maxconsoles];
+	u8 *stdoutpath, *want;
+	u32 stdoutlen;
+	char path[Maxpath];
 	int ended;
-#ifdef ARM64_RK3566_TRACE_FDT
-	u32 tracecount;
-#endif
 
 	if(blob == nil || out == nil || bytes < Fdtmin)
 		return -1;
-#ifdef ARM64_RK3566_TRACE_FDT
-	arm64uartputs("FDT A ");
-#endif
 	p = blob;
 	total = get4(p+4);
 	if(get4(p) != Fdtmagic || total < Fdtmin || total > Fdtmax || total > bytes)
@@ -143,16 +207,13 @@ fdtparse(void *blob, usize bytes, Fdtinfo *out)
 	   strsize > total-stroff || (soff&3) != 0 ||
 	   rsv < Fdtmin || rsv > soff || (rsv&7) != 0)
 		return -1;
-#ifdef ARM64_RK3566_TRACE_FDT
-	arm64uartputs("B ");
-#endif
 	s = p+soff;
 	str = p+stroff;
 	out->rambase = out->ramsize = out->uartbase = 0;
+	out->uarttype = out->gicversion = 0;
 	out->gicdist = out->giccpu = 0;
 	out->timerirq = 0;
-	out->nreserve = 0;
-	out->nvirtio = 0;
+	out->nmemory = out->nreserve = out->nvirtio = 0;
 	for(; rsv <= soff && soff-rsv >= 16; rsv += 16){
 		base = get8(p+rsv);
 		size = get8(p+rsv+8);
@@ -163,18 +224,11 @@ fdtparse(void *blob, usize bytes, Fdtinfo *out)
 	}
 	if(rsv > soff || soff-rsv < 16)
 		return -1;
-#ifdef ARM64_RK3566_TRACE_FDT
-	arm64uartputs("C ");
-#endif
 	pos = depth = ended = 0;
-#ifdef ARM64_RK3566_TRACE_FDT
-	tracecount = 0;
-#endif
+	stdoutpath = nil;
+	stdoutlen = naliases = nconsoles = 0;
+	path[0] = 0;
 	while(pos <= ssize && ssize-pos >= 4){
-#ifdef ARM64_RK3566_TRACE_FDT
-		if((tracecount++ & 63) == 0)
-			arm64uartputs(".");
-#endif
 		token = get4(s+pos);
 		pos += 4;
 		switch(token){
@@ -186,6 +240,19 @@ fdtparse(void *blob, usize bytes, Fdtinfo *out)
 			if(i == ssize)
 				return -1;
 			node = &nodes[depth];
+			oldlen = depth == 0 ? 0 : nodes[depth-1].pathlen;
+			if(depth == 0){
+				if(i != pos)
+					return -1;
+				node->pathlen = 0;
+			}else if(oldlen < Maxpath && i-pos < Maxpath-oldlen-1){
+				path[oldlen] = '/';
+				for(off = pos; off < i; off++)
+					path[oldlen+1+off-pos] = s[off];
+				node->pathlen = oldlen+1+i-pos;
+				path[node->pathlen] = 0;
+			}else
+				node->pathlen = Maxpath;
 			node->parentaddr = depth == 0 ? 2 : nodes[depth-1].addr;
 			node->parentsize = depth == 0 ? 1 : nodes[depth-1].size;
 			node->addr = node->parentaddr;
@@ -194,12 +261,14 @@ fdtparse(void *blob, usize bytes, Fdtinfo *out)
 			node->reglen = 0;
 			node->intr = nil;
 			node->intrlen = 0;
-			node->memory = depth == 1 && i-pos >= 7 &&
+			node->memory = depth == 1 && i-pos >= 6 &&
 			               s[pos] == 'm' && s[pos+1] == 'e' &&
 			               s[pos+2] == 'm' && s[pos+3] == 'o' &&
 			               s[pos+4] == 'r' && s[pos+5] == 'y' &&
 			               (s[pos+6] == '@' || s[pos+6] == 0);
 			node->uart = node->gic = node->timer = node->virtio = 0;
+			node->uarttype = node->gicversion = 0;
+			node->enabled = depth == 0 || nodes[depth-1].enabled;
 			node->reservedir = depth == 1 && same((char *)s+pos, "reserved-memory");
 			node->reserve = depth != 0 && nodes[depth-1].reservedir;
 			pos = (i+4)&~3U;
@@ -227,21 +296,48 @@ fdtparse(void *blob, usize bytes, Fdtinfo *out)
 				node->addr = get4(value);
 			else if(same((char *)str+off, "#size-cells") && len == 4)
 				node->size = get4(value);
-			else if(same((char *)str+off, "reg")){
+			else if(same((char *)str+off, "status")){
+				if(strnlen0(value, len) < 0)
+					return -1;
+				if(!same((char *)value, "okay") &&
+				   !same((char *)value, "ok"))
+					node->enabled = 0;
+			}else if(depth == 2 && node->pathlen < Maxpath &&
+			         same(path, "/chosen") &&
+			         (same((char *)str+off, "stdout-path") ||
+			          (stdoutpath == nil && same((char *)str+off, "linux,stdout-path")))){
+				if(len == 0 || strnlen0(value, len) < 0)
+					return -1;
+				stdoutpath = value;
+				stdoutlen = strnlen0(value, len);
+			}else if(depth == 2 && node->pathlen < Maxpath &&
+			         same(path, "/aliases")){
+				if(len == 0 || strnlen0(value, len) < 0)
+					return -1;
+				if(naliases < Maxaliases){
+					aliases[naliases].name = str+off;
+					aliases[naliases].namelen = namelen-off;
+					aliases[naliases].path = value;
+					aliases[naliases].pathlen = strnlen0(value, len);
+					naliases++;
+				}
+			}else if(same((char *)str+off, "reg")){
 				node->reg = value;
 				node->reglen = len;
 			}else if(same((char *)str+off, "device_type") && len >= 7 &&
 			         value[6] == 0 && same((char *)value, "memory"))
 				node->memory = 1;
 			else if(same((char *)str+off, "compatible")){
-				if(depth == 1 &&
-				   (hascompat(value, len, "rockchip,rk3568") ||
-				    hascompat(value, len, "rockchip,rk3566") ||
-				    hascompat(value, len, "rockchip,rk3566-orangepi-3b")))
-					ended |= 2;
-				node->uart = hascompat(value, len, "arm,pl011") ||
-				             hascompat(value, len, "snps,dw-apb-uart") ||
-				             hascompat(value, len, "rockchip,rk3568-uart");
+				if(hascompat(value, len, "arm,pl011"))
+					node->uarttype = Fdtpl011;
+				else if(hascompat(value, len, "snps,dw-apb-uart") ||
+				        hascompat(value, len, "rockchip,rk3568-uart"))
+					node->uarttype = Fdtdwuart;
+				node->uart = node->uarttype != 0;
+				if(hascompat(value, len, "arm,gic-v3"))
+					node->gicversion = 3;
+				else if(hascompat(value, len, "arm,cortex-a15-gic"))
+					node->gicversion = 2;
 				node->gic = hascompat(value, len, "arm,cortex-a15-gic") ||
 				            hascompat(value, len, "arm,gic-v3");
 				node->timer = hascompat(value, len, "arm,armv8-timer");
@@ -268,19 +364,47 @@ fdtparse(void *blob, usize bytes, Fdtinfo *out)
 						return -1;
 				}
 			}
-			if(node->timer && node->intrlen >= 36 &&
+			if(node->enabled && node->timer && node->intrlen >= 36 &&
 			   get4(node->intr+24) == 1)
 				out->timerirq = get4(node->intr+28)+16;
-			if(node->reg != nil && regpair(node, 0, &base, &size) == 0){
-				if(node->memory && out->ramsize == 0){
-					out->rambase = base;
-					out->ramsize = size;
+			if(node->enabled && node->reg != nil &&
+			   regpair(node, 0, &base, &size) == 0){
+				if(node->memory){
+					if(node->parentaddr == 0 || node->parentaddr > 2 ||
+					   node->parentsize == 0 || node->parentsize > 2)
+						return -1;
+					stride = (node->parentaddr+node->parentsize)*4;
+					if(node->reglen % stride != 0)
+						return -1;
+					for(i = 0; i < node->reglen/stride; i++){
+						if(regpair(node, i, &base, &size) < 0 ||
+						   base+size < base || out->nmemory == Maxfdtmemory)
+							return -1;
+						if(size == 0)
+							continue;
+						out->memory[out->nmemory].base = base;
+						out->memory[out->nmemory].size = size;
+						out->nmemory++;
+						if(out->ramsize == 0){
+							out->rambase = base;
+							out->ramsize = size;
+						}
+					}
 				}
-				if(node->uart && out->uartbase == 0)
-					out->uartbase = base;
+				if(node->uart && node->pathlen < Maxpath){
+					if(nconsoles == Maxconsoles)
+						return -1;
+					for(i = 0; i <= node->pathlen; i++)
+						consoles[nconsoles].path[i] = path[i];
+					consoles[nconsoles].base = base;
+					consoles[nconsoles].type = node->uarttype;
+					nconsoles++;
+				}
 				if(node->gic && out->gicdist == 0 &&
-				   regpair(node, 1, &out->giccpu, &size) == 0)
+				   regpair(node, 1, &out->giccpu, &size) == 0){
 					out->gicdist = base;
+					out->gicversion = node->gicversion;
+				}
 				if(node->virtio){
 					if(out->nvirtio == Maxfdtvirtio || size < 0x200 ||
 					   base+size < base)
@@ -290,29 +414,53 @@ fdtparse(void *blob, usize bytes, Fdtinfo *out)
 					out->nvirtio++;
 				}
 			}
+			if(depth != 0 && nodes[depth-1].pathlen < Maxpath)
+				path[nodes[depth-1].pathlen] = 0;
+			else
+				path[0] = 0;
 			break;
 		case Fdtnop:
 			break;
 		case Fdtend:
 			if(depth != 0)
 				return -1;
-			ended |= 1;
+			ended = 1;
 			goto done;
 		default:
 			return -1;
 		}
 	}
 done:
-	if(ended & 2){
-		out->rambase = 0x40000000ULL;
-		out->ramsize = 0x40000000ULL;
-		out->uartbase = 0xfe660000ULL;
-		if(out->gicdist == 0){
-			out->gicdist = 0xfd400000ULL;
-			out->giccpu = 0xfd460000ULL;
+	if(!ended || out->nmemory == 0)
+		return -1;
+	if(stdoutpath != nil){
+		want = stdoutpath;
+		for(wantlen = 0; wantlen < stdoutlen && want[wantlen] != ':'; wantlen++)
+			;
+		if(wantlen == 0)
+			return -1;
+		if(want[0] != '/'){
+			for(i = 0; i < naliases; i++)
+				if(samelen(want, wantlen, (char *)aliases[i].name)){
+					want = aliases[i].path;
+					wantlen = aliases[i].pathlen;
+					break;
+				}
+			if(i == naliases)
+				return -1;
 		}
-		if(out->timerirq == 0)
-			out->timerirq = 27;
+		for(i = 0; i < nconsoles; i++)
+			if(samelen(want, wantlen, consoles[i].path)){
+				out->uartbase = consoles[i].base;
+				out->uarttype = consoles[i].type;
+				break;
+			}
+		if(i == nconsoles)
+			return -1;
+	}else if(nconsoles == 1){
+		out->uartbase = consoles[0].base;
+		out->uarttype = consoles[0].type;
 	}
-	return (ended & 1) && out->ramsize != 0 && out->uartbase != 0 ? 0 : -1;
+	return out->ramsize != 0 && out->uartbase != 0 && out->gicdist != 0 &&
+	       out->gicversion != 0 && out->timerirq != 0 ? 0 : -1;
 }

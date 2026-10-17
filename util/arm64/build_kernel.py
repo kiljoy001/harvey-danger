@@ -118,14 +118,8 @@ def main() -> None:
         "-Wno-unused-function", "-Wno-unused-variable",
         "-Wno-unused-parameter",
     ]
-    if os.environ.get("ARM64_BOARD_RK3566") == "1":
-        flags.append("-DARM64_BOARD_RK3566")
     if os.environ.get("ARM64_RK3566_NPU_PROBE") == "1":
         flags.append("-DARM64_RK3566_NPU_PROBE")
-    if os.environ.get("ARM64_RK3566_SKIP_FDT") == "1":
-        flags.append("-DARM64_RK3566_SKIP_FDT")
-    if os.environ.get("ARM64_RK3566_TRACE_FDT") == "1":
-        flags.append("-DARM64_RK3566_TRACE_FDT")
     for path in (OUT, ARCH, ROOT / "sys/src/9/port", ROOT / "sys/src/9/ip",
                  ROOT / "aarch64/include", ROOT / "sys/include",
                  ROOT / "sys/src/libc/9syscall"):

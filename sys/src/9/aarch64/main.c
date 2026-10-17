@@ -3,8 +3,7 @@
  * license terms of the GNU GPL v2 in LICENSE.gpl found in the top-level
  * directory of this distribution at http://www.gnu.org/licenses/gpl-2.0.txt
  *
- * Early ARM64 boot entry.  The fixed QEMU UART is used only until the
- * device tree has supplied the actual UART address.
+ * Early ARM64 boot entry.  Firmware supplies the device tree in x0.
  */
 
 #include "user.h"
@@ -15,13 +14,9 @@ void arm64kernelstart(Fdtinfo *);
 
 int arm64contextprobe(void);
 extern char arm64vectors[];
-
-#ifdef ARM64_TEST_RESERVE
-extern char __image_end[];
-#endif
+extern char _start[], __image_end[];
 
 enum {
-	Uartbase = 0x09000000,
 	Uartdr = 0x00 / 4,
 	Uartfr = 0x18 / 4,
 	Uarttxff = 1 << 5,
@@ -30,22 +25,26 @@ enum {
 	Fdtmax = 16 * 1024 * 1024,
 };
 
-static usize uartbase = Uartbase;
+static usize uartbase;
+static u32 uarttype;
 
 static void
 uartputc(int c)
 {
 	volatile u32 *uart;
 
+	if(uartbase == 0)
+		return;
 	uart = (volatile u32 *)uartbase;
-	if(uartbase >= 0xf0000000ULL){
+	if(uarttype == Fdtdwuart){
 		/* DW UART: USR.TFNF reports room in the transmit FIFO. */
 		while((uart[0x7c/4] & (1<<1)) == 0)
 			;
-	}else{
+	}else if(uarttype == Fdtpl011){
 		while(uart[Uartfr] & Uarttxff)
 			;
-	}
+	}else
+		return;
 	uart[Uartdr] = c;
 }
 
@@ -170,57 +169,29 @@ arm64main(usize dtb)
 	u64 blocked;
 #endif
 
-#ifdef ARM64_BOARD_RK3566
-	uartbase = 0xfe660000ULL;
-#endif
 	__asm__ volatile("msr vbar_el1, %0; isb" :: "r"(arm64vectors) : "memory");
-	uartputs("HARVEY-ARM64 ENTRY\n");
-	if(dtb == 0 || (dtb & 7) != 0){
-		uartputs("dtb: missing or unaligned\n");
+	if(dtb == 0 || (dtb & 7) != 0)
 		return;
-	}
 	p = (u8 *)dtb;
 	size = beget4(p + 4);
-	if(beget4(p) != Fdtmagic || size < Fdtmin || size > Fdtmax){
-		uartputs("dtb: invalid header\n");
+	if(beget4(p) != Fdtmagic || size < Fdtmin || size > Fdtmax)
 		return;
-	}
+	if(fdtparse(p, size, &info) < 0 ||
+	   fdtselectram(&info, (u64)_start, (u64)__image_end) < 0)
+		return;
+	uartbase = info.uartbase;
+	uarttype = info.uarttype;
+	uartputs("HARVEY-ARM64 ENTRY\n");
 	uartputs("dtb: valid at ");
 	uarthex(dtb);
 	uartputs(", bytes ");
 	uarthex(size);
-#ifdef ARM64_RK3566_TRACE_FDT
-	uartputs("\nRK3566 FDT parse begin\n");
-#endif
-#ifdef ARM64_RK3566_SKIP_FDT
-	uartputs("RK3566 first FDT token ");
-	uarthex(beget4(p + beget4(p + 8)));
-	uartputs("\n");
-	info.rambase = 0x40000000ULL;
-	info.ramsize = 0x40000000ULL;
-	info.uartbase = 0xfe660000ULL;
-	info.gicdist = 0xfd400000ULL;
-	info.giccpu = 0xfd460000ULL;
-	info.timerirq = 27;
-	info.nreserve = 0;
-	info.nvirtio = 0;
-	uartputs("RK3566 diagnostic FDT bypass\n");
-#else
-	if(fdtparse(p, size, &info) < 0){
-		uartputs("\ndtb: cannot discover RAM and UART\n");
-		return;
-	}
-#endif
-#ifdef ARM64_RK3566_TRACE_FDT
-	uartputs("RK3566 FDT parse done\n");
-#endif
 	uartputs("\nram: ");
 	uarthex(info.rambase);
 	uartputs(" bytes ");
 	uarthex(info.ramsize);
 	uartputs("\nuart: ");
 	uarthex(info.uartbase);
-	uartbase = info.uartbase;
 	uartputs("\ngic: ");
 	uarthex(info.gicdist);
 	uartputs(" cpu ");

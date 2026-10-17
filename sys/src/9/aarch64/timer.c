@@ -47,7 +47,7 @@ arm64timerinit(Fdtinfo *info)
 	gicdist = dist;
 	giccpu = (volatile u32 *)info->giccpu;
 	timerirq = info->timerirq;
-	isgicv3 = (info->giccpu - info->gicdist) >= 0x40000ULL;
+	isgicv3 = info->gicversion == 3;
 	mask = 1U << timerirq;
 	__asm__ volatile("mrs %0, cntfrq_el0" : "=r"(freq));
 	if(freq < 100 || freq/100 > 0x7fffffff)

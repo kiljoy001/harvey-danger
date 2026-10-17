@@ -48,7 +48,7 @@ main(int argc, char **argv)
 	u32 structure, strings, strsize, i, x;
 	Fdtinfo info;
 
-	if(argc != 2 || (f = fopen(argv[1], "rb")) == nil)
+	if((argc != 2 && argc != 3) || (f = fopen(argv[1], "rb")) == nil)
 		return 2;
 	original = malloc(Maxdtb);
 	work = malloc(Maxdtb);
@@ -56,11 +56,41 @@ main(int argc, char **argv)
 		return 2;
 	n = fread(original, 1, Maxdtb, f);
 	fclose(f);
-	if(n < 80 || fdtparse(original, n, &info) < 0 ||
-	   info.rambase != 0x40000000 || info.ramsize != 0x20000000 ||
-	   info.uartbase != 0x09000000 || info.gicdist != 0x08000000 ||
-	   info.giccpu != 0x08010000 || info.timerirq != 27 ||
-	   info.nvirtio != 32 || info.virtio[0].size != 0x200)
+	if(n < 80 || fdtparse(original, n, &info) < 0)
+		return 1;
+	if(argc == 3){
+		if(strcmp(argv[2], "board") != 0 ||
+		   info.nmemory != 2 || info.memory[0].base != 0x20000000 ||
+		   info.memory[0].size != 0x10000000 ||
+		   info.memory[1].base != 0x40000000 ||
+		   info.memory[1].size != 0x80000000 ||
+		   info.uartbase != 0xfe660000 || info.uarttype != Fdtdwuart ||
+		   info.gicdist != 0xfd400000 || info.giccpu != 0xfd460000 ||
+		   info.gicversion != 3 || info.timerirq != 27 ||
+		   fdtselectram(&info, 0x40080000, 0x40400000) < 0 ||
+		   info.rambase != 0x40000000 || info.ramsize != 0x80000000 ||
+		   fdtselectram(&info, 0x30000000, 0x40000000) == 0){
+			fprintf(stderr, "board: memory %u selected %#llx/%#llx uart %#llx/%u gic %#llx/%#llx/%u timer %u\n",
+			        info.nmemory,
+			        (unsigned long long)info.rambase,
+			        (unsigned long long)info.ramsize,
+			        (unsigned long long)info.uartbase, info.uarttype,
+			        (unsigned long long)info.gicdist,
+			        (unsigned long long)info.giccpu,
+			        info.gicversion, info.timerirq);
+			return 1;
+		}
+		free(work);
+		free(original);
+		puts("FDT alternate board discovery PASS");
+		return 0;
+	}else if(info.rambase != 0x40000000 || info.ramsize != 0x20000000 ||
+	         info.uartbase != 0x09000000 || info.uarttype != Fdtpl011 ||
+	         info.gicdist != 0x08000000 || info.giccpu != 0x08010000 ||
+	         info.gicversion != 2 || info.timerirq != 27 ||
+	         info.nvirtio != 32 || info.virtio[0].size != 0x200 ||
+	         fdtselectram(&info, 0x40080000, 0x40400000) < 0 ||
+	         info.rambase != 0x40000000 || info.ramsize != 0x20000000)
 		return 1;
 	structure = get4(original+8);
 	strings = get4(original+12);

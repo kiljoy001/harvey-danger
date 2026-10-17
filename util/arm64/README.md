@@ -2,7 +2,7 @@
 
 The ARM64 Image boots directly on QEMU `virt`. It enters Harvey's ARM64
 assembly and C, clears BSS, sets a stack, parses the device tree to discover
-RAM, PL011, GICv2 and the timer PPI. A monotonic early allocator excludes the
+RAM, the chosen PL011 or DesignWare UART, GICv2 or GICv3, and the timer PPI. A monotonic early allocator excludes the
 kernel image, DTB, firmware memory reservations and `/reserved-memory` `reg`
 ranges. An identity map enables the MMU and caches with normal attributes for
 RAM and device attributes for MMIO. The guest then receives three virtual timer
@@ -29,7 +29,7 @@ clock from the ARM generic timer, walks into the root device's `dev`
 directory, and exchanges a tagged 9P request and response over a named `#~`
 connection. With a virtio-9P device present, it also negotiates 9P over `#9/0`.
 There is no `#t/eia0` UART device in the kernel. Early boot and
-fault diagnostics still write directly to QEMU's PL011 before user space is
+fault diagnostics write to the UART selected by `/chosen/stdout-path` before user space is
 available; this temporary bootstrap console is not a serial service.
 It does **not** yet offer an interactive shell.
 
@@ -53,29 +53,41 @@ qemu-system-aarch64 -machine virt -cpu cortex-a57 -m 512M -smp 1 \
     -nographic -monitor none -kernel build/arm64-kernel/harvey.img
 ```
 
-For the Orange Pi 3B RK3566 bring-up image, build separately so the QEMU
-image remains available for regression tests:
+The **same** `build/arm64-kernel/harvey.img` is used with QEMU `virt` and the
+Orange Pi 3B. No board flag or separate kernel build is needed. The firmware
+passes a device tree in `x0`; the kernel chooses its console, timer controller,
+MMIO ranges, and a RAM bank containing the loaded Image from that tree. The
+current Image is linked at `0x40080000`, so firmware must place it there. A
+board whose RAM does not cover that address still needs a relocatable Image
+before it can use this kernel. The Image header allows firmware to retain the
+load address, but the kernel itself has no relocation support yet.
+
+For another board, the boot contract is: load this Image at `0x40080000`, pass
+an FDT in `x0` with `/memory`, `/chosen/stdout-path`, a supported UART, an ARM
+GICv2 or GICv3, and an ARMv8 timer. The parser accepts an alias in
+`stdout-path` and chooses the RAM bank containing the Image. Hardware not
+needed for early boot belongs in a user-space driver filesystem; adding that
+driver should not alter the kernel image. A future relocation stage must remove
+the fixed load address before this is a general ARM64 distribution image.
+
+For the Orange Pi 3B RK3566 bring-up:
 
 ```sh
-ARM64_BOARD_RK3566=1 ARM64_KERNEL_OUT=build/arm64-rk3566 \
-    python3 util/arm64/build_kernel.py
+python3 util/arm64/build_kernel.py
 ```
 
-This image is linked and loaded at `0x40080000`. Its ARM64 Image header sets
-the relocatable-kernel flag so U-Boot's `booti` path can retain that address.
 Boot it with the board DTB as `booti 0x40080000 - <fdt address>` after loading
-the Image into RAM. The board build selects UART2 at `0xfe660000` before its
-first diagnostic, and its early allocator uses a conservative 1 GiB RAM window
-starting at `0x40000000`. The NPU register/DMA probe is excluded from normal
+the Image into RAM. U-Boot must add a valid `/memory` node. The early parser
+uses `/chosen/stdout-path` (including `/aliases`) to select UART2 on this board,
+and chooses the RAM bank containing the Image. The NPU register/DMA probe is excluded from normal
 boot; set `ARM64_RK3566_NPU_PROBE=1` only for a separate NPU experiment. The
 board boot remains a hardware bring-up test, not an interactive userland.
-For parser diagnosis, `ARM64_RK3566_TRACE_FDT=1` prints short UART milestones.
-`ARM64_RK3566_SKIP_FDT=1` builds a temporary diagnostic image with fixed board
-addresses; it must not be used as the normal boot image because it ignores the
-DTB's reserved-memory entries. On an Orange Pi 3B v1.1, U-Boot `booti` has
-loaded the Image over TFTP and the vendor DTB has parsed successfully. The
-board passed the early memory, MMU, timer, EL0 isolation, scheduler, root walk,
-and `#~` boot checks. Early code is built with `-mstrict-align`: before the MMU
+On an Orange Pi 3B v1.1, U-Boot `booti` loaded the preceding board-specific
+Image over TFTP and the vendor DTB parsed successfully. That image passed the
+early memory, MMU, timer, EL0 isolation, scheduler, root walk, and `#~` boot
+checks. The common Image has passed QEMU boot tests and a parser test using
+the vendor DTB with a firmware-style `/memory` node, but still needs a board
+boot retest. Early code is built with `-mstrict-align`: before the MMU
 is enabled, the RK3566 traps on unaligned multi-byte stores even with
 `SCTLR_EL1.A` clear. Replacing EL0 test code at an identity-mapped address
 also requires invalidating the instruction-cache alias used by its user
@@ -104,10 +116,11 @@ after TFTP reports an image error; the explicit `booti` command is required.
 
 This uses QEMU's direct ARM64 Image loading. No UEFI or Limine is involved.
 The Image header and x0 device tree handoff also match U-Boot's `booti`
-interface. Board builds select an Orange Pi link address and UART; the default
-build uses QEMU `virt`. The early parser supports root-level 1- or 2-cell
-`reg` addresses, a single RAM range, PL011 or DesignWare UART, and GICv2 or
-GICv3. The GICv3 timer path has passed its boot probes on the RK3566; broader
+interface. The early parser supports root-level 1- or 2-cell
+`reg` addresses, multiple RAM ranges, PL011 or DesignWare UART, and GICv2 or
+GICv3. It currently manages only the contiguous RAM bank containing the Image
+and requires device registers to have direct physical `reg` addresses; bus
+`ranges` translation and runtime kernel relocation are future work. The GICv3 timer path has passed its boot probes on the RK3566; broader
 device interrupt routing still needs work. The early allocator hands out
 zeroed 4 KiB pages; the full build also
 has a free-list allocator for process pages and page tables.

@@ -1,4 +1,4 @@
-/* Temporary identity map for QEMU virt.  Later process maps replace it. */
+/* Temporary identity map for RAM and device-tree-discovered MMIO. */
 #include "mmu.h"
 #ifdef ARM64_FULL_KERNEL
 #include "../port/lib.h"
@@ -76,51 +76,71 @@ blockpte(u64 pa, int ram)
 u64
 arm64mmubuild(Fdtinfo *info)
 {
-	u64 rootpa, l2pa, ramend, n, pa, stop;
+	u64 rootpa, l2pa, ramend, pa, start, end;
 	u64 *root, *l2;
-	u32 i, j;
-	int highmmio;
+	u32 i, j, k, regions;
+	Fdtvirtio device[Maxfdtvirtio+7];
 
 	if(info->rambase == 0 || info->ramsize == 0 ||
 	   (info->rambase | info->ramsize) & (L2blocksz-1))
 		return 0;
 	ramend = info->rambase + info->ramsize;
-	highmmio = info->uartbase >= 0xf0000000ULL;
 	if(ramend < info->rambase || ramend > Maxidentity ||
-	   (!highmmio && (info->uartbase >= info->rambase ||
-	                  info->gicdist >= info->rambase ||
-	                  info->giccpu >= info->rambase)))
+	   info->nvirtio > Maxfdtvirtio)
 		return 0;
 	rootpa = arm64physpage();
 	if(rootpa == 0)
 		return 0;
 	root = (u64 *)rootpa;
-	n = (ramend+L1blocksz-1)/L1blocksz;
-	for(i = 0; i < n; i++){
-		l2pa = arm64physpage();
-		if(l2pa == 0)
-			return 0;
-		l2 = (u64 *)l2pa;
-		root[i] = l2pa | Ptevalid | Ptetable;
-		stop = (u64)(i+1)*L1blocksz;
-		if(stop > ramend)
-			stop = ramend;
-		for(j = 0; j < L1blocksz/L2blocksz; j++){
-			pa = (u64)i*L1blocksz + (u64)j*L2blocksz;
-			if(pa >= stop)
-				break;
-			l2[j] = blockpte(pa, pa >= info->rambase);
+	for(pa = info->rambase; pa < ramend; pa += L2blocksz){
+		i = pa/L1blocksz;
+		j = (pa%L1blocksz)/L2blocksz;
+		if(root[i] == 0){
+			l2pa = arm64physpage();
+			if(l2pa == 0)
+				return 0;
+			root[i] = l2pa | Ptevalid | Ptetable;
 		}
+		l2 = (u64 *)(root[i] & ~(u64)(Pagesz-1));
+		l2[j] = blockpte(pa, 1);
 	}
-	if(highmmio && root[3] == 0){
-		l2pa = arm64physpage();
-		if(l2pa == 0)
+	device[0].base = info->uartbase;
+	device[0].size = Pagesz;
+	device[1].base = info->gicdist;
+	device[1].size = 0x10000;
+	device[2].base = info->giccpu;
+	device[2].size = 0x20000;
+	regions = 3;
+	for(k = 0; k < info->nvirtio; k++)
+		device[regions++] = info->virtio[k];
+#ifdef ARM64_RK3566_NPU_PROBE
+	/* Temporary register probe; a user-space driver will own these later. */
+	device[regions++] = (Fdtvirtio){0xfdd90000ULL, Pagesz};
+	device[regions++] = (Fdtvirtio){0xfdd20000ULL, Pagesz};
+	device[regions++] = (Fdtvirtio){0xfde40000ULL, Pagesz};
+	device[regions++] = (Fdtvirtio){0xfde4b000ULL, Pagesz};
+#endif
+	for(k = 0; k < regions; k++){
+		pa = device[k].base;
+		if(pa == 0 || device[k].size == 0 ||
+		   pa >= Maxidentity || device[k].size > Maxidentity-pa ||
+		   (pa < ramend && pa+device[k].size > info->rambase))
 			return 0;
-		l2 = (u64 *)l2pa;
-		root[3] = l2pa | Ptevalid | Ptetable;
-		for(j = 0; j < L1blocksz/L2blocksz; j++){
-			pa = 3ULL*L1blocksz + (u64)j*L2blocksz;
-			l2[j] = blockpte(pa, pa < 0xf0000000ULL);
+		start = pa & ~(u64)(L2blocksz-1);
+		end = (pa+device[k].size+L2blocksz-1) & ~(u64)(L2blocksz-1);
+		if(end > Maxidentity)
+			return 0;
+		for(pa = start; pa < end; pa += L2blocksz){
+			i = pa/L1blocksz;
+			j = (pa%L1blocksz)/L2blocksz;
+			if(root[i] == 0){
+				l2pa = arm64physpage();
+				if(l2pa == 0)
+					return 0;
+				root[i] = l2pa | Ptevalid | Ptetable;
+			}
+			l2 = (u64 *)(root[i] & ~(u64)(Pagesz-1));
+			l2[j] = blockpte(pa, 0);
 		}
 	}
 	return rootpa;
