@@ -23,6 +23,7 @@ CASES = (
     ("buffer", 512),
     ("memory", 512),
     ("pool", 512),
+    ("treegc", 512),
     ("property", 512),
     ("service", 512),
 )

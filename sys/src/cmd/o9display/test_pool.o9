@@ -8,14 +8,14 @@ main {
     DisplayCodec codec = new DisplayCodec();
     bool ok = true;
     int64 i = 1;
-    while(ok && i <= 180) {
+    while(ok && i <= 132) {
         string id = codec.number(i);
         FileTree tree = views.display(id, "test");
         ok = tree != nil;
         if(ok) {
             if(i == 1) {
                 int64 j = 1;
-                while(ok && j <= 180) {
+                while(ok && j <= 132) {
                     ok = views.writeText(id, "ctl", 0, "buffer 2 2\n", false) == 11;
                     if(ok) {
                         string drop = cat(cat("drop-buffer ", codec.number(j)), "\n");

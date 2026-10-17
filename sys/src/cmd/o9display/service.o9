@@ -373,6 +373,9 @@ class DisplayViews {
             session.close();
             FileTree tree = trees[index];
             tree.close();
+            if(tree.destroy() < 0) {
+                print("o9display: FileTree destroy failed\n");
+            }
             ids[index] = "";
         }
     }

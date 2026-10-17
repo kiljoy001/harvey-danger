@@ -1,0 +1,24 @@
+// A closed tree owns its removed entries until explicitly destroyed.
+// A mounted source remains live storage for the target and must be retained.
+main {
+    FileTree source = new FileTree();
+    FileTree target = new FileTree();
+    bool ok = source.text("leaf", "value", false) == 0;
+    ok = ok && source.destroy() < 0;
+    ok = ok && source.register("treegc-source") == 0;
+    MountTable mount = new MountTable();
+    ok = ok && mount.view(".", "treegc-source", 0) == 0;
+    ok = ok && target.apply(mount) == 0;
+    source.close();
+    ok = ok && source.destroy() < 0;
+    MountTable unmount = new MountTable();
+    ok = ok && unmount.unmount(".") == 0;
+    ok = ok && target.apply(unmount) == 0;
+    ok = ok && source.destroy() == 0;
+    target.close();
+    ok = ok && target.destroy() == 0;
+    mount.close();
+    unmount.close();
+    if(ok) { print("O9DISPLAY-TREEGC PASS\n"); }
+    else { print("O9DISPLAY-TREEGC FAIL\n"); }
+}
