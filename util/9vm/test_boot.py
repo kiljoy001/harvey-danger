@@ -153,7 +153,24 @@ def run_test(use_ring):
         return 1
 
 if __name__ == "__main__":
-    if len(os.sched_getaffinity(0)) < 2:
-        print("[test] Ring case skipped: fewer than two CPUs available")
-        sys.exit(run_test(False))
-    sys.exit(run_test(True) | run_test(False))
+    # hostfs serves this checkout as /. Git does not preserve empty directories,
+    # so provide the namespace mount targets for a fresh checkout during tests.
+    created = []
+    for name in ("dev", "proc", "srv", "env", "n", "n/host", "net"):
+        path = os.path.join(REPO_ROOT, name)
+        if not os.path.isdir(path):
+            os.mkdir(path)
+            created.append(path)
+    try:
+        if len(os.sched_getaffinity(0)) < 2:
+            print("[test] Ring case skipped: fewer than two CPUs available")
+            result = run_test(False)
+        else:
+            result = run_test(True) | run_test(False)
+    finally:
+        for path in reversed(created):
+            try:
+                os.rmdir(path)
+            except OSError:
+                pass
+    sys.exit(result)
