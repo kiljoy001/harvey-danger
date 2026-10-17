@@ -13,7 +13,11 @@
 #include "mem.h"
 #include "dat.h"
 #include "fns.h"
+#ifdef __aarch64__
+#include "fdt.h"
+#else
 #include "io.h"
+#endif
 #include "../port/error.h"
 
 typedef struct Vconfig Vconfig;
@@ -47,6 +51,7 @@ enum {
 	Maxslot     = 64,       /* cap on outstanding RPCs per device */
 };
 
+#ifndef __aarch64__
 struct Vconfig {                /* common configuration (cap type 1) */
 	u32 devfeatsel;
 	u32 devfeat;
@@ -70,6 +75,7 @@ struct Vconfig {                /* common configuration (cap type 1) */
 	u64 queueavail;
 	u64 queueused;
 };
+#endif
 
 struct V9cfg {                  /* device configuration (cap type 4) */
 	u16 taglen;
@@ -129,11 +135,16 @@ struct Slot {
 };
 
 struct Ctlr {
+#ifdef __aarch64__
+	volatile u8 *mmio;
+	int version;
+#else
 	Pcidev  *pci;
 	Vconfig *cfg;
 	u8      *isr;
 	u8      *notify;
 	u32     notifyoffmult;
+#endif
 	u32     feat[2];
 
 	Vqueue  *vq;            /* single request queue */
@@ -158,31 +169,35 @@ struct Ctlr {
 static Ctlr *ctlrs;
 static int  probed;
 
+#ifndef __aarch64__
 static void v9interrupt(Ureg*, void*);
+#endif
 
 static Vqueue*
 mkvqueue(int size)
 {
 	Vqueue *q;
 	u8 *p;
+	usize bytes;
 	int i;
 
-	q = malloc(sizeof(*q) + sizeof(void*) * size);
-	p = mallocalign(
-		PGROUND(sizeof(Vdesc) * size +
+	bytes = PGROUND(sizeof(Vdesc) * size +
 			VringSize +
 			sizeof(u16) * size +
 			sizeof(u16)) +
 		PGROUND(VringSize +
 			sizeof(Vused) * size +
-			sizeof(u16)),
-		PGSZ, 0, 0);
+			sizeof(u16));
+	q = malloc(sizeof(*q) + sizeof(void*) * size);
+	p = mallocalign(bytes, PGSZ, 0, 0);
 	if(p == nil || q == nil){
 		print("virtio9p: no memory for Vqueue\n");
 		free(p);
 		free(q);
 		return nil;
 	}
+	memset(q, 0, sizeof(*q) + sizeof(void*) * size);
+	memset(p, 0, bytes);
 
 	q->desc = (void*)p;
 	p += sizeof(Vdesc) * size;
@@ -210,6 +225,213 @@ mkvqueue(int size)
 	return q;
 }
 
+#ifdef __aarch64__
+/* VirtIO 1.x MMIO registers on QEMU virt. The FDT supplies every aperture. */
+enum {
+	Vmagic = 0x000,
+	Vversion = 0x004,
+	Vdevice = 0x008,
+	Vdevfeatures = 0x010,
+	Vdevselect = 0x014,
+	Vdrvfeatures = 0x020,
+	Vdrvselect = 0x024,
+	Vguestpagesize = 0x028,
+	Vqueuesel = 0x030,
+	Vqueuemax = 0x034,
+	Vqueuenum = 0x038,
+	Vqueuealign = 0x03c,
+	Vqueuepfn = 0x040,
+	Vqueueready = 0x044,
+	Vnotify = 0x050,
+	Vinterrupt = 0x060,
+	Vinterruptack = 0x064,
+	Vstatus = 0x070,
+	Vdescaddr = 0x080,
+	Vavailaddr = 0x090,
+	Vusedaddr = 0x0a0,
+	Vconfigbase = 0x100,
+};
+
+static Fdtvirtio virtioaperture[Maxfdtvirtio];
+static int nvirtioaperture;
+
+void
+arm64virtio9pconfigure(Fdtinfo *info)
+{
+	int i;
+
+	nvirtioaperture = info->nvirtio;
+	for(i = 0; i < nvirtioaperture; i++)
+		virtioaperture[i] = info->virtio[i];
+}
+
+static u32
+mmread(Ctlr *c, int off)
+{
+	return *(volatile u32 *)(c->mmio + off);
+}
+
+static void
+mmwrite(Ctlr *c, int off, u32 value)
+{
+	*(volatile u32 *)(c->mmio + off) = value;
+}
+
+static void
+mmaddr(Ctlr *c, int off, u64 addr)
+{
+	mmwrite(c, off, (u32)addr);
+	mmwrite(c, off+4, (u32)(addr>>32));
+}
+
+static void
+readtag(Ctlr *c)
+{
+	u16 n;
+	int i;
+
+	c->tag[0] = 0;
+	if((c->feat[0] & Fmounttag) == 0)
+		return;
+	n = c->mmio[Vconfigbase] | c->mmio[Vconfigbase+1]<<8;
+	if(n >= sizeof(c->tag))
+		n = sizeof(c->tag)-1;
+	for(i = 0; i < n; i++)
+		c->tag[i] = c->mmio[Vconfigbase+2+i];
+	c->tag[n] = 0;
+}
+
+static void
+v9probe(void)
+{
+	Ctlr *c, **tail;
+	Vqueue *q;
+	Slot *s;
+	int i, j, n, ndev;
+	u64 base;
+
+	if(probed)
+		return;
+	probed = 1;
+	ndev = 0;
+	tail = &ctlrs;
+	for(i = 0; i < nvirtioaperture; i++){
+		base = virtioaperture[i].base;
+		if(base == 0 || virtioaperture[i].size < 0x200)
+			continue;
+		c = malloc(sizeof(*c));
+		if(c == nil)
+			break;
+		memset(c, 0, sizeof(*c));
+		c->mmio = (volatile u8 *)(usize)base;
+		c->version = mmread(c, Vversion);
+		if(mmread(c, Vmagic) != 0x74726976 ||
+		   (c->version != 1 && c->version != 2) ||
+		   mmread(c, Vdevice) != Typ9p){
+			free(c);
+			continue;
+		}
+		mmwrite(c, Vstatus, 0);
+		mmwrite(c, Vstatus, Acknowledge | Driver);
+		if(c->version == 2){
+			mmwrite(c, Vdevselect, 1);
+			c->feat[1] = mmread(c, Vdevfeatures);
+		}
+		mmwrite(c, Vdevselect, 0);
+		c->feat[0] = mmread(c, Vdevfeatures);
+		if(c->version == 2 && (c->feat[1] & 1) == 0){
+			mmwrite(c, Vstatus, Failed);
+			free(c);
+			continue;
+		}
+		if(c->version == 2){
+			mmwrite(c, Vdrvselect, 1);
+			mmwrite(c, Vdrvfeatures, 1);
+			mmwrite(c, Vdrvselect, 0);
+		}
+		mmwrite(c, Vdrvfeatures, c->feat[0] & Fmounttag);
+		if(c->version == 2)
+			mmwrite(c, Vstatus, Acknowledge | Driver | FeaturesOk);
+		if(c->version == 2 && (mmread(c, Vstatus) & FeaturesOk) == 0){
+			mmwrite(c, Vstatus, Failed);
+			free(c);
+			continue;
+		}
+		mmwrite(c, Vqueuesel, 0);
+		if((c->version == 2 && mmread(c, Vqueueready) != 0) ||
+		   (c->version == 1 && mmread(c, Vqueuepfn) != 0)){
+			mmwrite(c, Vstatus, Failed);
+			free(c);
+			continue;
+		}
+		n = mmread(c, Vqueuemax);
+		if(n > 64)
+			n = 64;
+		for(j = 1; j*2 <= n; j *= 2)
+			;
+		n = j;
+		if(n < 2){
+			mmwrite(c, Vstatus, Failed);
+			free(c);
+			continue;
+		}
+		q = mkvqueue(n);
+		if(q == nil){
+			mmwrite(c, Vstatus, Failed);
+			free(c);
+			continue;
+		}
+		q->idx = 0;
+		q->notify = (void *)(c->mmio + Vnotify);
+		c->vq = q;
+		mmwrite(c, Vqueuenum, n);
+		coherence();
+		if(c->version == 2){
+			mmaddr(c, Vdescaddr, PADDR(q->desc));
+			mmaddr(c, Vavailaddr, PADDR(q->avail));
+			mmaddr(c, Vusedaddr, PADDR(q->used));
+			mmwrite(c, Vqueueready, 1);
+		}else{
+			mmwrite(c, Vguestpagesize, PGSZ);
+			mmwrite(c, Vqueuealign, PGSZ);
+			mmwrite(c, Vqueuepfn, PADDR(q->desc)/PGSZ);
+		}
+		readtag(c);
+		c->nslot = n/2;
+		if(c->nslot > Maxslot)
+			c->nslot = Maxslot;
+		c->slot = malloc(sizeof(Slot) * c->nslot);
+		if(c->slot == nil)
+			panic("virtio9p: no memory for slots");
+		memset(c->slot, 0, sizeof(Slot) * c->nslot);
+		for(j = 0; j < c->nslot; j++){
+			s = &c->slot[j];
+			s->out = malloc(Msize+64);
+			s->in = malloc(Msize);
+			if(s->out == nil || s->in == nil)
+				panic("virtio9p: no memory for slot buffers");
+			s->next = c->sfree;
+			c->sfree = s;
+		}
+		*tail = c;
+		tail = &c->next;
+		print("#9/%d: virtio-mmio v%d 9p tag \"%s\" nslot %d msize %d\n",
+			ndev++, c->version, c->tag, c->nslot, Msize);
+	}
+}
+
+static void
+v9start(Ctlr *c)
+{
+	if(c->started)
+		return;
+	coherence();
+	mmwrite(c, Vstatus, Acknowledge | Driver |
+		(c->version == 2 ? FeaturesOk : 0) | DriverOk);
+	c->started = 1;
+}
+
+#else
 static Pcicap*
 findvirtiocap(Pcidev *p, int typ)
 {
@@ -395,6 +617,7 @@ v9start(Ctlr *c)
 	c->cfg->status |= DriverOk;
 	c->started = 1;
 }
+#endif
 
 static void
 vqharvest(Ctlr *c)
@@ -405,6 +628,10 @@ vqharvest(Ctlr *c)
 
 	q = c->vq;
 	m = q->size - 1;
+#ifdef __aarch64__
+	if(mmread(c, Vinterrupt) != 0)
+		mmwrite(c, Vinterruptack, mmread(c, Vinterrupt));
+#endif
 	ilock(&q->l);
 	while((q->lastused ^ q->used->idx) & 0xFFFF){
 		ix = q->lastused & m;
@@ -434,6 +661,7 @@ vqharvest(Ctlr *c)
 	wakeup(&c->rwait);
 }
 
+#ifndef __aarch64__
 static void
 v9interrupt(Ureg *ur, void *arg)
 {
@@ -442,6 +670,7 @@ v9interrupt(Ureg *ur, void *arg)
 	if(c->isr[0] & 1)
 		vqharvest(c);
 }
+#endif
 
 static int
 havereply(void *arg)
@@ -506,7 +735,12 @@ getreply(Ctlr *c)
 		iunlock(&q->l);
 		while(waserror())
 			;
-		tsleep(&c->rwait, havereply, c, 1000);
+		tsleep(&c->rwait, havereply, c,
+#ifdef __aarch64__
+		       1);
+#else
+		       1000);
+#endif
 		poperror();
 		if(c->donehd == nil)
 			vqharvest(c);
@@ -546,8 +780,13 @@ submit(Ctlr *c, Slot *s, long outlen)
 	coherence();
 	q->avail->idx++;
 	iunlock(&q->l);
-	if((q->used->flags & 1) == 0)
+	if((q->used->flags & 1) == 0){
+#ifdef __aarch64__
+		mmwrite(c, Vnotify, q->idx);
+#else
 		*((u16*)q->notify) = q->idx;
+#endif
+	}
 }
 
 static void

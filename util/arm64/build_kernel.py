@@ -134,6 +134,7 @@ def main() -> None:
     sources.extend(source for source in manifest_sources("port")
                    if not source.name.startswith("dev") or source.name in core_devices)
     sources.append(ROOT / "sys/src/9/port/dev9ring.c")
+    sources.append(ROOT / "sys/src/9/port/devvirtio9p.c")
     sources.append(OUT / "systab.c")
     objects = []
     failures = []

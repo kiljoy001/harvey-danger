@@ -9,12 +9,13 @@
 
 extern Dev rootdevtab, consdevtab, envdevtab, pipedevtab, procdevtab;
 extern Dev mntdevtab, srvdevtab, dupdevtab, capdevtab, segmentdevtab;
-extern Dev ramdevtab, ringdevtab;
+extern Dev ramdevtab, ringdevtab, virtio9pdevtab;
 
 Dev *devtab[] = {
 	&rootdevtab, &consdevtab, &envdevtab, &pipedevtab,
 	&procdevtab, &mntdevtab, &srvdevtab, &dupdevtab,
 	&capdevtab, &segmentdevtab, &ramdevtab, &ringdevtab,
+	&virtio9pdevtab,
 	nil,
 };
 

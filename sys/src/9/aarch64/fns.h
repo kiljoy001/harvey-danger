@@ -12,6 +12,7 @@
 #define KADDR(pa) ((void *)(usize)(pa))
 #define evenaddr(x) ((void)0)
 #define kmapinval() ((void)0)
+u64 PADDR(void *);
 
 KMap *kmap(Page *);
 Mach *getac(Proc *, int);

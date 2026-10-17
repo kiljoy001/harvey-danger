@@ -9,6 +9,13 @@
 
 extern void arm64uartputs(char *);
 
+u64
+PADDR(void *p)
+{
+	/* The ARM64 bring-up kernel still uses an identity-mapped DMA window. */
+	return (u64)(usize)p;
+}
+
 KMap *
 kmap(Page *page)
 {

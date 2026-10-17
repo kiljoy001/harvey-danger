@@ -5,12 +5,18 @@
 
 typedef struct Fdtinfo Fdtinfo;
 typedef struct Fdtreserve Fdtreserve;
+typedef struct Fdtvirtio Fdtvirtio;
 struct Fdtreserve {
 	u64 base;
 	u64 size;
 };
 
-enum { Maxfdtreserve = 32 };
+struct Fdtvirtio {
+	u64 base;
+	u64 size;
+};
+
+enum { Maxfdtreserve = 32, Maxfdtvirtio = 32 };
 struct Fdtinfo {
 	u64 rambase;
 	u64 ramsize;
@@ -20,6 +26,8 @@ struct Fdtinfo {
 	u32 timerirq;
 	u32 nreserve;
 	Fdtreserve reserve[Maxfdtreserve];
+	u32 nvirtio;
+	Fdtvirtio virtio[Maxfdtvirtio];
 };
 
 int fdtparse(void *, usize, Fdtinfo *);

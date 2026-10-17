@@ -21,7 +21,7 @@ struct Fdtnode {
 	u32 reglen;
 	u8 *intr;
 	u32 intrlen;
-	int memory, uart, gic, timer;
+	int memory, uart, gic, timer, virtio;
 	int reservedir, reserve;
 };
 
@@ -140,6 +140,7 @@ fdtparse(void *blob, usize bytes, Fdtinfo *out)
 	out->gicdist = out->giccpu = 0;
 	out->timerirq = 0;
 	out->nreserve = 0;
+	out->nvirtio = 0;
 	for(; rsv <= soff && soff-rsv >= 16; rsv += 16){
 		base = get8(p+rsv);
 		size = get8(p+rsv+8);
@@ -176,7 +177,7 @@ fdtparse(void *blob, usize bytes, Fdtinfo *out)
 			               s[pos+2] == 'm' && s[pos+3] == 'o' &&
 			               s[pos+4] == 'r' && s[pos+5] == 'y' &&
 			               (s[pos+6] == '@' || s[pos+6] == 0);
-			node->uart = node->gic = node->timer = 0;
+			node->uart = node->gic = node->timer = node->virtio = 0;
 			node->reservedir = depth == 1 && same((char *)s+pos, "reserved-memory");
 			node->reserve = depth != 0 && nodes[depth-1].reservedir;
 			pos = (i+4)&~3U;
@@ -214,6 +215,7 @@ fdtparse(void *blob, usize bytes, Fdtinfo *out)
 				node->uart = hascompat(value, len, "arm,pl011");
 				node->gic = hascompat(value, len, "arm,cortex-a15-gic");
 				node->timer = hascompat(value, len, "arm,armv8-timer");
+				node->virtio = hascompat(value, len, "virtio,mmio");
 			}else if(same((char *)str+off, "interrupts")){
 				node->intr = value;
 				node->intrlen = len;
@@ -249,6 +251,14 @@ fdtparse(void *blob, usize bytes, Fdtinfo *out)
 				if(node->gic && out->gicdist == 0 &&
 				   regpair(node, 1, &out->giccpu, &size) == 0)
 					out->gicdist = base;
+				if(node->virtio){
+					if(out->nvirtio == Maxfdtvirtio || size < 0x200 ||
+					   base+size < base)
+						return -1;
+					out->virtio[out->nvirtio].base = base;
+					out->virtio[out->nvirtio].size = size;
+					out->nvirtio++;
+				}
 			}
 			break;
 		case Fdtnop:

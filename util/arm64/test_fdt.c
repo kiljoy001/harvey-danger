@@ -59,7 +59,8 @@ main(int argc, char **argv)
 	if(n < 80 || fdtparse(original, n, &info) < 0 ||
 	   info.rambase != 0x40000000 || info.ramsize != 0x20000000 ||
 	   info.uartbase != 0x09000000 || info.gicdist != 0x08000000 ||
-	   info.giccpu != 0x08010000 || info.timerirq != 27)
+	   info.giccpu != 0x08010000 || info.timerirq != 27 ||
+	   info.nvirtio != 32 || info.virtio[0].size != 0x200)
 		return 1;
 	structure = get4(original+8);
 	strings = get4(original+12);
