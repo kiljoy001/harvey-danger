@@ -7,6 +7,7 @@ int arm64physinit(Fdtinfo *, usize, usize);
 u64 arm64physpage(void);
 #ifdef ARM64_FULL_KERNEL
 int arm64physprobe(void);
+u64 arm64physfreepages(void);
 #endif
 
 #endif

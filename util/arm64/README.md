@@ -11,8 +11,8 @@ serial. It enters EL0, resumes after a test syscall, and switches between two
 page-table roots whose user mappings point to different physical pages. The
 boot check confirms that EL0 cannot read kernel memory, write its code page,
 or execute its stack. A timer interrupt can arrive from EL0 and return to the
-interrupted instruction. It does **not** yet start the Plan 9 scheduler or load
-user programs. The ARM64 `Label` save/restore routines now match the calling
+interrupted instruction. The full kernel starts the shared Plan 9 scheduler;
+it does **not** yet load user programs. The ARM64 `Label` save/restore routines match the calling
 convention used by Harvey's shared scheduler in `sys/src/9/port/proc.c`. QEMU
 tests switch between two independent kernel stacks and check callee-saved
 register preservation while the timer is active. Interrupt masking is also
@@ -21,8 +21,13 @@ checked across two timer periods.
 `build_kernel.py` now compiles and links the shared port and IP kernel sources,
 the local `#~` ring device, ARM64 architecture sources, and ARM64 builds of
 kernel libc, libip, and libsec. The output is an AArch64 ELF and direct-boot
-Image. This is a link milestone: the Image enters the same boot diagnostic and
-then waits; it does not yet enter Harvey's scheduler or load a user program.
+Image. After the boot diagnostics, the full Image initializes process and image
+allocation, resets the device tables, primes the page allocator, and starts
+Harvey's shared scheduler with two kernel processes. It drives the shared
+clock from the ARM generic timer and walks into the root device's `dev`
+directory. A polled PL011 backend registers the boot UART as `#t/eia0`; the
+boot check opens that file and sends a line through the shared UART driver.
+It does **not** yet offer an interactive shell.
 
 ```sh
 python3 util/arm64/test_virt.py
@@ -49,29 +54,34 @@ interface. The link address and initial diagnostic UART are specific to QEMU
 `virt`. The early parser supports root-level 1- or 2-cell `reg` addresses, a
 single RAM range, PL011 and GICv2. The GIC path has only been exercised with
 QEMU's default GICv2; GICv3 and real board interrupt routing need separate
-drivers. The early allocator hands out zeroed 4 KiB pages; the full build also
+drivers. The PL011 backend currently assumes QEMU `virt`'s 24 MHz UART clock
+and polls receive data from the shared clock. Board ports need to obtain the
+UART clock from firmware. The early allocator hands out zeroed 4 KiB pages; the full build also
 has a free-list allocator for process pages and page tables.
 The identity map remains writable and executable in EL1, while its entries are
 inaccessible to EL0. Separate user roots and a complete general-register trap
 frame are in place, but the current trap handler is still a boot check. The
 linked kernel has `Proc`/`Mach`, page mapping, the shared scheduler and core
-devices, but its runtime handoff has not been wired to `procinit0()` and
-`schedinit()`. Before launching untrusted processes, it also needs a separate
+devices. The runtime handoff runs `procinit0()`, `psinit()`, `devtabreset()`,
+`pageinit()`, `timersinit()`, and `schedinit()`. The test kernel processes exit
+after the UART write. Before launching untrusted processes, it needs a separate
 high address kernel mapping: the bootstrap identity map overlaps the range
 used for user addresses. Normal syscall dispatch, demand-fault handling,
-timer-driven `hzsched`, executable loading, and an ARM64 init binary follow.
+executable loading, and an ARM64 init binary follow.
 The existing virtio-9P transport uses x86 PCI and requires an ARM64 virtio
 transport; `#~` is linked for local endpoints. Storage, networking and display
 drivers follow after the serial userland boot path works.
 
 The build uses `clang-23` if present because this host's default `clang` only
-contains the x86 backend. Kernel sources use `-mgeneral-regs-only`. Kernel
-libc includes floating-point formatting and math and uses the standard ARM64
-ABI; those routines must stay unused until per-process FP state is managed.
+contains the x86 backend. Kernel sources and integer/text kernel libc use
+`-mgeneral-regs-only`. Floating-point libc routines retain the standard ARM64
+ABI; they must stay unused until per-process FP state is managed.
 Set `ARM64_CC`, `ARM64_LD` and `ARM64_OBJCOPY` to override the tools.
 
 `check_port.py` remains a fast compile-only check. `test_full_kernel.py` checks
 the complete link for undefined symbols and boots that linked Image under QEMU
 with 256 and 512 MiB of RAM. It exercises physical allocation and free after
-the early MMU and trap probes. The 32 MiB static kernel heap is a bring-up
+the early MMU and trap probes, then checks device reset, page allocation,
+process scheduling, clock ticks, the root walk, and a write through `#t/eia0`.
+The 32 MiB static kernel heap is a bring-up
 limit; it will need growth and accounting before general use.

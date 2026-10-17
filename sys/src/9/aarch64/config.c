@@ -31,7 +31,8 @@ void (*ipprotoinit[])(Fs *) = {
 	tcpinit, udpinit, icmpinit, icmp6init, greinit, ipifcinit, nil,
 };
 SDifc *sdifc[] = { nil };
-PhysUart *physuart[] = { nil };
+extern PhysUart pl011physuart;
+PhysUart *physuart[] = { &pl011physuart, nil };
 Physseg physseg[8] = {
 	{ .attr = SG_SHARED|SG_READ|SG_WRITE, .name = "shared", .size = SEGMAXPG },
 	{ .attr = SG_BSS|SG_READ|SG_WRITE, .name = "memory", .size = SEGMAXPG },

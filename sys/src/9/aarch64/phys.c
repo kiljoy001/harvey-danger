@@ -251,6 +251,22 @@ seprintphysstats(char *s, char *e)
 	return seprint(s, e, "%lluK physical memory free\n", bytes/KiB);
 }
 
+u64
+arm64physfreepages(void)
+{
+	u64 pages;
+	int i;
+	Mpl pl;
+
+	pl = splhi();
+	startfree();
+	pages = 0;
+	for(i = 0; i < nfreeext; i++)
+		pages += freeext[i].size / Pagesz;
+	splx(pl);
+	return pages;
+}
+
 int
 arm64physprobe(void)
 {

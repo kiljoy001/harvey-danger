@@ -9,6 +9,10 @@
 
 #include "user.h"
 
+#ifdef ARM64_FULL_KERNEL
+void arm64kernelstart(Fdtinfo *);
+#endif
+
 int arm64contextprobe(void);
 
 #ifdef ARM64_TEST_RESERVE
@@ -254,6 +258,7 @@ arm64main(usize dtb)
 		return;
 	}
 	uartputs("HARVEY-ARM64 FULL-KERNEL-LINK PASS\n");
+	arm64kernelstart(&info);
 #endif
 #ifdef ARM64_TEST_FAULT
 	__asm__ volatile("brk #0");

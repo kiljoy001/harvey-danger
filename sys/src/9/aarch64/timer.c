@@ -1,5 +1,13 @@
 /* QEMU virt GICv2 and ARM generic virtual timer bring-up. */
 #include "fdt.h"
+#ifdef ARM64_FULL_KERNEL
+#include <u.h>
+#include "../port/lib.h"
+#include "mem.h"
+#include "dat.h"
+#include "fns.h"
+#include "ureg.h"
+#endif
 
 extern u64 splhi(void);
 extern void splx(u64);
@@ -13,6 +21,15 @@ static u32 period;
 volatile u32 arm64ticks;
 volatile u32 arm64el0irqs;
 static volatile u32 lastirq;
+#ifdef ARM64_FULL_KERNEL
+static int clockready;
+
+void
+arm64clockready(void)
+{
+	clockready = 1;
+}
+#endif
 
 int
 arm64timerinit(Fdtinfo *info)
@@ -57,10 +74,20 @@ arm64timerinit(Fdtinfo *info)
 }
 
 void
-arm64irq(void)
+arm64irq(
+#ifdef ARM64_FULL_KERNEL
+	Ureg *ureg
+#else
+	void *ureg
+#endif
+)
 {
 	u32 irq;
 	u64 spsr;
+
+#ifndef ARM64_FULL_KERNEL
+	(void)ureg;
+#endif
 
 	__asm__ volatile("mrs %0, spsr_el1" : "=r"(spsr));
 	irq = giccpu[0x00c/4] & 0x3ff;
@@ -71,6 +98,10 @@ arm64irq(void)
 			arm64el0irqs++;
 		__asm__ volatile("msr cntv_tval_el0, %0; isb" :: "r"((u64)period) : "memory");
 		giccpu[0x010/4] = irq;
+#ifdef ARM64_FULL_KERNEL
+		if(clockready)
+			timerintr(ureg, 0);
+#endif
 	}else{
 		giccpu[0x000/4] = 0;
 		gicdist[0x000/4] = 0;

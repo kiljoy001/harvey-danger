@@ -35,17 +35,21 @@ def build_klibc(flags: list[str]) -> Path:
     entries = json.loads((libc / "klibc.json").read_text())[0]["SourceFiles"]
     objects = []
     failures = []
-    # The upstream libc contains floating-point formatting and math. The
-    # kernel sources themselves stay on general registers only; FP state in
-    # libc must be addressed before these routines can run in process context.
-    libcflags = [flag for flag in flags
-                 if flag not in ("-D__HARVEY__", "-mgeneral-regs-only")]
+    # Kernel libc must not emit SIMD moves for plain integer/text routines.
+    # Arithmetic routines with a floating-point ABI still need FP enabled and
+    # state management before they can safely be called from kernel context.
+    libcflags = [flag for flag in flags if flag != "-D__HARVEY__"]
     for source_name in entries:
         source = libc / source_name
         obj = OUT / ("libc_" + source_name.replace("/", "_") + ".o")
         result = subprocess.run([CC, *libcflags, "-I", str(libc),
                                  "-c", str(source), "-o", str(obj)],
                                 text=True, capture_output=True)
+        if result.returncode and "requires 'double' type support" in result.stderr:
+            fpflags = [flag for flag in libcflags if flag != "-mgeneral-regs-only"]
+            result = subprocess.run([CC, *fpflags, "-I", str(libc),
+                                     "-c", str(source), "-o", str(obj)],
+                                    text=True, capture_output=True)
         if result.returncode:
             failures.append((source_name, result.stderr))
         else:
@@ -67,6 +71,7 @@ def build_library(name: str, flags: list[str]) -> Path:
     objects = []
     failures = []
     libflags = ["--target=aarch64-none-elf", "-ffreestanding", "-fno-builtin",
+                "-mgeneral-regs-only",
                 "-fno-stack-protector", "-fcommon", "-O2", "-g",
                 "-Wno-parentheses", "-Wno-missing-braces",
                 "-I", str(ROOT / "aarch64/include"),
@@ -120,7 +125,8 @@ def main() -> None:
     sources = [ARCH / name for name in
                ("l.S", "user.S", "context.S", "return.S", "main.c", "fdt.c", "timer.c",
                 "phys.c", "mmu.c", "user.c", "context.c", "arch.c",
-                "config.c", "qmalloc.c", "platform.c", "procarch.c")]
+                "config.c", "qmalloc.c", "platform.c", "procarch.c", "boot.c",
+                "pl011.c")]
     sources.extend(manifest_sources("port"))
     sources.append(ROOT / "sys/src/9/port/dev9ring.c")
     sources.extend(manifest_sources("ip"))
