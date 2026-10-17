@@ -38,8 +38,8 @@ uartputc(int c)
 	uart[Uartdr] = c;
 }
 
-static void
-uartputs(char *s)
+void
+arm64uartputs(char *s)
 {
 	for(; *s != 0; s++){
 		if(*s == '\n')
@@ -47,6 +47,7 @@ uartputs(char *s)
 		uartputc(*s);
 	}
 }
+#define uartputs arm64uartputs
 
 static u32
 beget4(u8 *p)
@@ -247,6 +248,13 @@ arm64main(usize dtb)
 	uartputs("HARVEY-ARM64 EL0-PERMISSIONS PASS\n");
 	uartputs("HARVEY-ARM64 ADDRESS-SPACE SWITCH PASS\n");
 	uartputs("HARVEY-ARM64 EL0-TIMER-IRQ PASS\n");
+#ifdef ARM64_FULL_KERNEL
+	if(arm64physprobe() < 0){
+		uartputs("ARM64 full-kernel physical allocator failed\n");
+		return;
+	}
+	uartputs("HARVEY-ARM64 FULL-KERNEL-LINK PASS\n");
+#endif
 #ifdef ARM64_TEST_FAULT
 	__asm__ volatile("brk #0");
 #endif

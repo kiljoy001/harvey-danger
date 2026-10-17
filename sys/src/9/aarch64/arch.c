@@ -14,6 +14,8 @@ static Mach bootmach;
 static Sys bootsys = {
 	.nmach = 1,
 	.machptr = {&bootmach},
+	.npgsz = NPGSZ,
+	.pgsz = { PGSZ, BIGPGSZ },
 };
 Sys *sys = &bootsys;
 Active active;
@@ -95,6 +97,7 @@ void
 mmuprocinit(Proc *p)
 {
 	p->MMU.rootpa = 0;
+	p->MMU.ptpages = nil;
 }
 
 void
@@ -113,8 +116,7 @@ mmuswitch(Proc *p)
 void
 mmurelease(Proc *p)
 {
-	if(p->MMU.rootpa != 0)
-		panic("mmurelease: ARM64 page-table reclaim not implemented");
+	arm64mmurelease(p);
 }
 
 int

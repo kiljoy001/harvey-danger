@@ -1,5 +1,11 @@
 /* Temporary identity map for QEMU virt.  Later process maps replace it. */
 #include "mmu.h"
+#ifdef ARM64_FULL_KERNEL
+#include "../port/lib.h"
+#include "mem.h"
+#include "dat.h"
+#include "fns.h"
+#endif
 
 enum {
 	Pagesz = 4096,
@@ -165,3 +171,117 @@ arm64mmutranslate(u64 va, u64 *pa)
 	*pa = (par & 0x0000fffffffff000ULL) | (va & 4095);
 	return 0;
 }
+
+#ifdef ARM64_FULL_KERNEL
+struct Ptpage {
+	Ptpage *next;
+	u64 pa;
+};
+
+static u64
+ptalloc(Proc *p)
+{
+	Ptpage *node;
+	u64 pa;
+	int color;
+
+	color = 0;
+	pa = physalloc(PGSZ, &color, p);
+	if(pa == 0)
+		panic("ARM64 page-table memory exhausted");
+	node = malloc(sizeof(*node));
+	if(node == nil){
+		physfree(pa, PGSZ);
+		panic("ARM64 page-table metadata exhausted");
+	}
+	memset(KADDR(pa), 0, PGSZ);
+	node->pa = pa;
+	node->next = p->MMU.ptpages;
+	p->MMU.ptpages = node;
+	return pa;
+}
+
+void
+mmuput(usize va, Page *page, u32 attr)
+{
+	Proc *p;
+	u64 *root, *l2, *l3, *kernel, pa, entry;
+	u32 i1, i2, i3, size;
+
+	p = externup();
+	if(p == nil || page == nil || va >= USTKTOP ||
+	   page->pgszi < 0 || page->pgszi >= NPGSZ)
+		panic("ARM64 mmuput: invalid process or address");
+	size = sys->pgsz[page->pgszi];
+	if(size != PGSZ && size != BIGPGSZ)
+		panic("ARM64 mmuput: unsupported page size");
+	if((va | page->pa) & (size - 1))
+		panic("ARM64 mmuput: unaligned mapping");
+	kernel = (u64 *)arm64mmukernelroot();
+	if(kernel == nil)
+		panic("ARM64 mmuput: no kernel root");
+	if(p->MMU.rootpa == 0){
+		pa = ptalloc(p);
+		memmove(KADDR(pa), kernel, PGSZ);
+		p->MMU.rootpa = pa;
+	}
+	root = (u64 *)p->MMU.rootpa;
+	i1 = (va >> 30) & 511;
+	i2 = (va >> 21) & 511;
+	i3 = (va >> 12) & 511;
+	if(root[i1] == kernel[i1]){
+		pa = ptalloc(p);
+		if(root[i1] & Ptevalid)
+			memmove(KADDR(pa), KADDR(root[i1] & ~(u64)(PGSZ - 1)), PGSZ);
+		root[i1] = pa | Ptevalid | Ptetable;
+	}
+	l2 = (u64 *)(root[i1] & ~(u64)(PGSZ - 1));
+	if(size == PGSZ){
+		if((l2[i2] & (Ptevalid | Ptetable)) != (Ptevalid | Ptetable)){
+			pa = ptalloc(p);
+			l2[i2] = pa | Ptevalid | Ptetable;
+		}
+		l3 = (u64 *)(l2[i2] & ~(u64)(PGSZ - 1));
+	}
+	entry = 0;
+	if(attr & PTEVALID){
+		entry = page->pa | Ptevalid | Pteaccessed | Pteinnershare |
+			(1ULL << 53);
+		if(size == PGSZ)
+			entry |= Ptetable;
+		if(attr & PTEWRITE)
+			entry |= 1ULL << 6;
+		else
+			entry |= 3ULL << 6;
+		if(attr & PTENOEXEC)
+			entry |= 1ULL << 54;
+		if(attr & PTEUNCACHED)
+			entry |= Pteattrdevice;
+	}
+	if(size == PGSZ)
+		l3[i3] = entry;
+	else
+		l2[i2] = entry;
+	__asm__ volatile("dsb ishst" ::: "memory");
+	if(machp()->proc == p)
+		arm64mmuswitch(p->MMU.rootpa);
+}
+
+void
+arm64mmurelease(Proc *p)
+{
+	Ptpage *node, *next;
+
+	if(p->MMU.rootpa == 0)
+		return;
+	if(machp()->proc == p)
+		arm64mmuswitch(arm64mmukernelroot());
+	for(node = p->MMU.ptpages; node != nil; node = next){
+		next = node->next;
+		physfree(node->pa, PGSZ);
+		free(node);
+	}
+	p->MMU.ptpages = nil;
+	p->MMU.rootpa = 0;
+}
+#endif

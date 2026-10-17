@@ -132,7 +132,12 @@ regresswrite(Chan *c, void *a, i32 n, i64 offset)
 	case Qwalk:
 		p = a;
 		addr = strtoull(p, 0, 0);
+#if defined(__aarch64__)
+		/* The x86 page-table walker has no ARM64 equivalent yet. */
+		error("ARM64 page-table walk is unavailable");
+#else
 		dumpmmuwalk(KADDR(cr3get()), addr);
+#endif
 		return n;
 
 	default:

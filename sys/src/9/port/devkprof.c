@@ -47,10 +47,17 @@ void
 oprof_alarm_handler(Ureg *u)
 {
 	//int coreid = machp()->machno;
+#if defined(__aarch64__)
+	if(u->pc > KTZERO)
+		oprofile_add_backtrace(u->pc, u->fp);
+	else
+		oprofile_add_userpc(u->pc);
+#else
 	if(u->ip > KTZERO)
 		oprofile_add_backtrace(u->ip, u->bp);
 	else
 		oprofile_add_userpc(u->ip);
+#endif
 }
 
 static Chan *
@@ -90,8 +97,10 @@ _kproftimer(usize pc)
 	 *  if the pc is coming out of spllo or splx,
 	 *  use the pc saved when we went splhi.
 	 */
+#if !defined(__aarch64__)
 	if(pc >= PTR2UINT(spllo) && pc <= PTR2UINT(spldone))
 		pc = machp()->splpc;
+#endif
 
 	ilock(&kprof.l);
 	kprof.buf[0] += TK2MS(1);

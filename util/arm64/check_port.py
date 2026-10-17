@@ -42,7 +42,7 @@ def main() -> None:
         CC, *flags, "-c", str(ROOT / "sys/src/9/aarch64/arch.c"),
         "-o", str(OUT / "arch.o"),
     ], check=True)
-    print("AArch64 shared process, EDF, lock and architecture hooks compile PASS (link and boot pending)")
+    print("AArch64 shared process, EDF, lock and architecture hooks compile PASS")
 
 
 if __name__ == "__main__":

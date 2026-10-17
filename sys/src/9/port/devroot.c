@@ -56,9 +56,11 @@ static Dirlist bootlist =
 		1,
 		Nbootfiles};
 
+#if !defined(__aarch64__)
 extern u8 aspera_gefs_init_start[], aspera_gefs_init_end[];
 extern u8 aspera_gefs_server_start[], aspera_gefs_server_end[];
 extern u8 aspera_gefs_o9irc_start[], aspera_gefs_o9irc_end[];
+#endif
 
 /*
  *  add a file to the list
@@ -104,12 +106,14 @@ addrootdir(char *name)
 static void
 rootreset(void)
 {
+#if !defined(__aarch64__)
 	addbootfile("gefsinit", aspera_gefs_init_start,
 		aspera_gefs_init_end - aspera_gefs_init_start);
 	addbootfile("gefs", aspera_gefs_server_start,
 		aspera_gefs_server_end - aspera_gefs_server_start);
 	addbootfile("o9irc-ircfs", aspera_gefs_o9irc_start,
 		aspera_gefs_o9irc_end - aspera_gefs_o9irc_start);
+#endif
 	addrootdir("bin");
 	addrootdir("dev");
 	addrootdir("env");

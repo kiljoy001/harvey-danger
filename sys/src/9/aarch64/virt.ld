@@ -4,6 +4,7 @@ SECTIONS
 {
 	. = 0x40080000;
 	.text : { KEEP(*(.text.head)) *(.text .text.*) }
+	etext = .;
 	.rodata : { *(.rodata .rodata.*) }
 	.data : { *(.data .data.*) }
 	. = ALIGN(16);
@@ -12,5 +13,6 @@ SECTIONS
 	. = ALIGN(16);
 	__bss_end = .;
 	__image_end = .;
+	end = .;
 	/DISCARD/ : { *(.comment) *(.note*) *(.eh_frame*) }
 }
