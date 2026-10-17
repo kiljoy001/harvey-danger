@@ -15,6 +15,7 @@ struct Arm64ureg {
 
 int arm64userprobe(u64, u64, u64);
 u64 arm64userdiag(void);
+u64 arm64userdiagdetails(void);
 void arm64usertrap(Arm64ureg *);
 
 #endif

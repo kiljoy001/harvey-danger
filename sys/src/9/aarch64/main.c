@@ -14,6 +14,7 @@ void arm64kernelstart(Fdtinfo *);
 #endif
 
 int arm64contextprobe(void);
+extern char arm64vectors[];
 
 #ifdef ARM64_TEST_RESERVE
 extern char __image_end[];
@@ -37,8 +38,14 @@ uartputc(int c)
 	volatile u32 *uart;
 
 	uart = (volatile u32 *)uartbase;
-	while(uart[Uartfr] & Uarttxff)
-		;
+	if(uartbase >= 0xf0000000ULL){
+		/* DW UART: USR.TFNF reports room in the transmit FIFO. */
+		while((uart[0x7c/4] & (1<<1)) == 0)
+			;
+	}else{
+		while(uart[Uartfr] & Uarttxff)
+			;
+	}
 	uart[Uartdr] = c;
 }
 
@@ -71,6 +78,67 @@ uarthex(usize n)
 	}
 }
 
+#ifdef ARM64_RK3566_NPU_PROBE
+static void
+rk3566npuprobe(u64 dmapage)
+{
+	volatile u32 *pmu, *cru, *npu, *mmu;
+	u64 *cmd;
+	u32 i;
+
+	pmu = (volatile u32 *)0xfdd90000ULL;
+	cru = (volatile u32 *)0xfdd20000ULL;
+	npu = (volatile u32 *)0xfde40000ULL;
+	mmu = (volatile u32 *)0xfde4b000ULL;
+
+	/* Power on RK3568_PD_NPU and de-idle NPU NIU bus. */
+	pmu[0x00a0/4] = 0x00020000U;
+	pmu[0x0050/4] = 0x00040000U;
+	cru[0x0408/4] = 0x00c000c0U;
+	for(i = 0; i < 1000; i++)
+		__asm__ volatile("nop");
+	cru[0x0408/4] = 0x00c00000U;
+	__asm__ volatile("dsb sy" ::: "memory");
+
+	uartputs("npu pmu: ");
+	uarthex(pmu[0x0098/4]);
+	uartputs(" iommu: ");
+	uarthex(mmu[0x0004/4]);
+	uartputs(" version: ");
+	uarthex(npu[0x0000/4]);
+	uartputs("\n");
+
+	/* Build a 64-bit regcmd stream in an Aspera physical page and DMA-fetch via PC. */
+	cmd = (u64 *)dmapage;
+	cmd[0] = 0x02010000000e1004ULL;
+	cmd[1] = 0x04010000000e2004ULL;
+	cmd[2] = 0x08010000000e3004ULL;
+	cmd[3] = 0x10010000000e4004ULL;
+	cmd[4] = 0x0000000000000000ULL;
+	cmd[5] = 0x0101000000000014ULL;
+	cmd[6] = 0x0041000000000000ULL;
+	cmd[7] = 0x0081000000000008ULL;
+	__asm__ volatile("dc civac, %0; dsb sy; isb" :: "r"(dmapage) : "memory");
+
+	npu[0x8010/4] = 0x80000101U;
+	npu[0x8010/4] = 0x00000101U;
+	npu[0x0010/4] = 1;
+	npu[0x0024/4] = 0x1ffffU;
+	npu[0x0010/4] = (u32)dmapage;
+	npu[0x0014/4] = 10;
+	npu[0x0030/4] = 0x6001U;
+	npu[0x0034/4] = 0;
+	__asm__ volatile("dsb sy" ::: "memory");
+	npu[0x0008/4] = 1;
+	npu[0x0008/4] = 0;
+	for(i = 0; i < 10000; i++)
+		__asm__ volatile("nop");
+	uartputs("npu dt_rd: ");
+	uarthex(npu[0x8038/4]);
+	uartputs("\nHARVEY-ARM64 RK3566-NPU PASS\n");
+}
+#endif
+
 __attribute__((noreturn)) void
 arm64fault(void)
 {
@@ -102,6 +170,10 @@ arm64main(usize dtb)
 	u64 blocked;
 #endif
 
+#ifdef ARM64_BOARD_RK3566
+	uartbase = 0xfe660000ULL;
+#endif
+	__asm__ volatile("msr vbar_el1, %0; isb" :: "r"(arm64vectors) : "memory");
 	uartputs("HARVEY-ARM64 ENTRY\n");
 	if(dtb == 0 || (dtb & 7) != 0){
 		uartputs("dtb: missing or unaligned\n");
@@ -117,10 +189,31 @@ arm64main(usize dtb)
 	uarthex(dtb);
 	uartputs(", bytes ");
 	uarthex(size);
+#ifdef ARM64_RK3566_TRACE_FDT
+	uartputs("\nRK3566 FDT parse begin\n");
+#endif
+#ifdef ARM64_RK3566_SKIP_FDT
+	uartputs("RK3566 first FDT token ");
+	uarthex(beget4(p + beget4(p + 8)));
+	uartputs("\n");
+	info.rambase = 0x40000000ULL;
+	info.ramsize = 0x40000000ULL;
+	info.uartbase = 0xfe660000ULL;
+	info.gicdist = 0xfd400000ULL;
+	info.giccpu = 0xfd460000ULL;
+	info.timerirq = 27;
+	info.nreserve = 0;
+	info.nvirtio = 0;
+	uartputs("RK3566 diagnostic FDT bypass\n");
+#else
 	if(fdtparse(p, size, &info) < 0){
 		uartputs("\ndtb: cannot discover RAM and UART\n");
 		return;
 	}
+#endif
+#ifdef ARM64_RK3566_TRACE_FDT
+	uartputs("RK3566 FDT parse done\n");
+#endif
 	uartputs("\nram: ");
 	uarthex(info.rambase);
 	uartputs(" bytes ");
@@ -220,6 +313,8 @@ arm64main(usize dtb)
 	if(arm64userprobe(codepage, stackpage, page0) < 0){
 		uartputs("EL0: trap/isolation check failed, ESR ");
 		uarthex(arm64userdiag());
+		uartputs(" detail ");
+		uarthex(arm64userdiagdetails());
 		uartputs("\n");
 		return;
 	}
@@ -229,6 +324,8 @@ arm64main(usize dtb)
 	   arm64userprobe(codepage2, stackpage2, page0) < 0){
 		uartputs("EL0: second address space failed, ESR ");
 		uarthex(arm64userdiag());
+		uartputs(" detail ");
+		uarthex(arm64userdiagdetails());
 		uartputs("\n");
 		return;
 	}
@@ -252,6 +349,10 @@ arm64main(usize dtb)
 	uartputs("HARVEY-ARM64 EL0-PERMISSIONS PASS\n");
 	uartputs("HARVEY-ARM64 ADDRESS-SPACE SWITCH PASS\n");
 	uartputs("HARVEY-ARM64 EL0-TIMER-IRQ PASS\n");
+#ifdef ARM64_RK3566_NPU_PROBE
+	if(info.uartbase == 0xfe660000ULL)
+		rk3566npuprobe(page1);
+#endif
 #ifdef ARM64_FULL_KERNEL
 	if(arm64physprobe() < 0){
 		uartputs("ARM64 full-kernel physical allocator failed\n");

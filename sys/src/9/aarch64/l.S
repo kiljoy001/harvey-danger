@@ -8,7 +8,11 @@ _start:
 	.word	0
 	.quad	0x80000		/* load offset from the start of RAM */
 	.quad	__image_end - _start
+#ifdef ARM64_BOARD_RK3566
+	.quad	8		/* kernel may stay at its 2 MiB aligned load base */
+#else
 	.quad	0		/* little endian, 4 KiB pages */
+#endif
 	.quad	0
 	.quad	0
 	.quad	0
@@ -17,6 +21,34 @@ _start:
 
 _startcode:
 	/* x0 holds the device tree address.  Do not touch it before main. */
+	mrs	x1, CurrentEL
+	cmp	x1, #(2 << 2)
+	b.ne	0f
+	mov	x1, #3
+	msr	cnthctl_el2, x1
+	msr	cntvoff_el2, xzr
+	mrs	x1, id_aa64pfr0_el1
+	ubfx	x1, x1, #24, #4
+	cbz	x1, 4f
+	mov	x1, #0xf
+	msr	S3_4_C12_C9_5, x1	/* icc_sre_el2: allow EL1 GICv3 sysregs */
+4:
+	msr	cptr_el2, xzr
+	mov	x1, #(1 << 31)
+	msr	hcr_el2, x1
+	mov	x1, #0x3c5		/* EL1h, DAIF masked */
+	msr	spsr_el2, x1
+	adr	x1, 0f
+	msr	elr_el2, x1
+	isb
+	eret
+0:
+	/* Establish the EL1 alignment policy after U-Boot.  The build also
+	 * uses -mstrict-align because pre-MMU unaligned accesses still fault. */
+	mrs	x1, sctlr_el1
+	bic	x1, x1, #(1 << 1)
+	msr	sctlr_el1, x1
+	isb
 	adrp	x1, __bss_start
 	add	x1, x1, :lo12:__bss_start
 	adrp	x2, __bss_end

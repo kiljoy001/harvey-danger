@@ -153,6 +153,7 @@ worker(void *arg)
 		}
 		ringprobe();
 		virtio9pprobe();
+		arm64uartputs("HARVEY-ARM64 BOOT-PROBES PASS\n");
 	}else{
 		workerphase |= 2;
 	}

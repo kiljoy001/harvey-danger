@@ -11,7 +11,7 @@ from test_virt import boot_until
 ROOT = Path(__file__).resolve().parents[2]
 IMAGE = ROOT / "build/arm64-kernel/harvey.img"
 ELF = ROOT / "build/arm64-kernel/harvey.elf"
-MARKER = "HARVEY-ARM64 9RING PASS"
+MARKER = "HARVEY-ARM64 BOOT-PROBES PASS"
 
 
 def main() -> None:
@@ -32,6 +32,7 @@ def main() -> None:
                 "HARVEY-ARM64 SCHEDULER PASS",
                 "HARVEY-ARM64 CLOCK PASS",
                 "HARVEY-ARM64 ROOT-WALK PASS",
+                "HARVEY-ARM64 9RING PASS",
                 MARKER)) or \
                 "failed" in transcript or \
                 "ARM64 exception" in transcript:

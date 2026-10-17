@@ -53,13 +53,63 @@ qemu-system-aarch64 -machine virt -cpu cortex-a57 -m 512M -smp 1 \
     -nographic -monitor none -kernel build/arm64-kernel/harvey.img
 ```
 
+For the Orange Pi 3B RK3566 bring-up image, build separately so the QEMU
+image remains available for regression tests:
+
+```sh
+ARM64_BOARD_RK3566=1 ARM64_KERNEL_OUT=build/arm64-rk3566 \
+    python3 util/arm64/build_kernel.py
+```
+
+This image is linked and loaded at `0x40080000`. Its ARM64 Image header sets
+the relocatable-kernel flag so U-Boot's `booti` path can retain that address.
+Boot it with the board DTB as `booti 0x40080000 - <fdt address>` after loading
+the Image into RAM. The board build selects UART2 at `0xfe660000` before its
+first diagnostic, and its early allocator uses a conservative 1 GiB RAM window
+starting at `0x40000000`. The NPU register/DMA probe is excluded from normal
+boot; set `ARM64_RK3566_NPU_PROBE=1` only for a separate NPU experiment. The
+board boot remains a hardware bring-up test, not an interactive userland.
+For parser diagnosis, `ARM64_RK3566_TRACE_FDT=1` prints short UART milestones.
+`ARM64_RK3566_SKIP_FDT=1` builds a temporary diagnostic image with fixed board
+addresses; it must not be used as the normal boot image because it ignores the
+DTB's reserved-memory entries. On an Orange Pi 3B v1.1, U-Boot `booti` has
+loaded the Image over TFTP and the vendor DTB has parsed successfully. The
+board passed the early memory, MMU, timer, EL0 isolation, scheduler, root walk,
+and `#~` boot checks. Early code is built with `-mstrict-align`: before the MMU
+is enabled, the RK3566 traps on unaligned multi-byte stores even with
+`SCTLR_EL1.A` clear. Replacing EL0 test code at an identity-mapped address
+also requires invalidating the instruction-cache alias used by its user
+virtual address. A local `ic iallu` currently handles that single-core boot
+probe; SMP code replacement will need cross-core synchronization. The board
+has no virtio-9P device attached, so the optional `#9` exchange is skipped.
+
+For the tested v1.1 board, U-Boot's current Ethernet setup needed a 100 Mbps
+PHY workaround before the TFTP transfer. With a TFTP server at `192.168.2.1`
+serving the board Image, the serial console sequence was:
+
+```text
+setenv ipaddr 192.168.2.250; setenv netmask 255.255.255.0; setenv serverip 192.168.2.1
+ping 192.168.2.1
+<interrupt the first failed ping with Ctrl-C>
+mii write 0 9 0; mii write 0 0 0x1200; mii write 0 1e 0xa003; mii write 0 1f 0x40f1
+ping 192.168.2.1
+tftpboot 0x40080000 aspera-rk3566.img
+booti 0x40080000 - 0xeb9f5e30
+```
+
+The `0xeb9f5e30` address is the vendor DTB address observed in this U-Boot
+session and must be checked after each reboot. This probe reached the 9ring
+test at roughly 3.6 MiB/s TFTP throughput. U-Boot's automatic `bootm` attempt
+after TFTP reports an image error; the explicit `booti` command is required.
+
 This uses QEMU's direct ARM64 Image loading. No UEFI or Limine is involved.
 The Image header and x0 device tree handoff also match U-Boot's `booti`
-interface. The link address and initial diagnostic UART are specific to QEMU
-`virt`. The early parser supports root-level 1- or 2-cell `reg` addresses, a
-single RAM range, PL011 and GICv2. The GIC path has only been exercised with
-QEMU's default GICv2; GICv3 and real board interrupt routing need separate
-drivers. The early allocator hands out zeroed 4 KiB pages; the full build also
+interface. Board builds select an Orange Pi link address and UART; the default
+build uses QEMU `virt`. The early parser supports root-level 1- or 2-cell
+`reg` addresses, a single RAM range, PL011 or DesignWare UART, and GICv2 or
+GICv3. The GICv3 timer path has passed its boot probes on the RK3566; broader
+device interrupt routing still needs work. The early allocator hands out
+zeroed 4 KiB pages; the full build also
 has a free-list allocator for process pages and page tables.
 The identity map remains writable and executable in EL1, while its entries are
 inaccessible to EL0. Separate user roots and a complete general-register trap

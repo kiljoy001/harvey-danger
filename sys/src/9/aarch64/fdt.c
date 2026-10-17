@@ -1,5 +1,8 @@
 /* Bounded early device-tree discovery for the ARM64 kernel. */
 #include "fdt.h"
+#ifdef ARM64_RK3566_TRACE_FDT
+extern void arm64uartputs(char *);
+#endif
 
 enum {
 	Fdtmagic = 0xd00dfeed,
@@ -117,9 +120,15 @@ fdtparse(void *blob, usize bytes, Fdtinfo *out)
 	u64 base, size;
 	Fdtnode nodes[Maxdepth], *node;
 	int ended;
+#ifdef ARM64_RK3566_TRACE_FDT
+	u32 tracecount;
+#endif
 
 	if(blob == nil || out == nil || bytes < Fdtmin)
 		return -1;
+#ifdef ARM64_RK3566_TRACE_FDT
+	arm64uartputs("FDT A ");
+#endif
 	p = blob;
 	total = get4(p+4);
 	if(get4(p) != Fdtmagic || total < Fdtmin || total > Fdtmax || total > bytes)
@@ -134,6 +143,9 @@ fdtparse(void *blob, usize bytes, Fdtinfo *out)
 	   strsize > total-stroff || (soff&3) != 0 ||
 	   rsv < Fdtmin || rsv > soff || (rsv&7) != 0)
 		return -1;
+#ifdef ARM64_RK3566_TRACE_FDT
+	arm64uartputs("B ");
+#endif
 	s = p+soff;
 	str = p+stroff;
 	out->rambase = out->ramsize = out->uartbase = 0;
@@ -151,8 +163,18 @@ fdtparse(void *blob, usize bytes, Fdtinfo *out)
 	}
 	if(rsv > soff || soff-rsv < 16)
 		return -1;
+#ifdef ARM64_RK3566_TRACE_FDT
+	arm64uartputs("C ");
+#endif
 	pos = depth = ended = 0;
+#ifdef ARM64_RK3566_TRACE_FDT
+	tracecount = 0;
+#endif
 	while(pos <= ssize && ssize-pos >= 4){
+#ifdef ARM64_RK3566_TRACE_FDT
+		if((tracecount++ & 63) == 0)
+			arm64uartputs(".");
+#endif
 		token = get4(s+pos);
 		pos += 4;
 		switch(token){
@@ -212,8 +234,16 @@ fdtparse(void *blob, usize bytes, Fdtinfo *out)
 			         value[6] == 0 && same((char *)value, "memory"))
 				node->memory = 1;
 			else if(same((char *)str+off, "compatible")){
-				node->uart = hascompat(value, len, "arm,pl011");
-				node->gic = hascompat(value, len, "arm,cortex-a15-gic");
+				if(depth == 1 &&
+				   (hascompat(value, len, "rockchip,rk3568") ||
+				    hascompat(value, len, "rockchip,rk3566") ||
+				    hascompat(value, len, "rockchip,rk3566-orangepi-3b")))
+					ended |= 2;
+				node->uart = hascompat(value, len, "arm,pl011") ||
+				             hascompat(value, len, "snps,dw-apb-uart") ||
+				             hascompat(value, len, "rockchip,rk3568-uart");
+				node->gic = hascompat(value, len, "arm,cortex-a15-gic") ||
+				            hascompat(value, len, "arm,gic-v3");
 				node->timer = hascompat(value, len, "arm,armv8-timer");
 				node->virtio = hascompat(value, len, "virtio,mmio");
 			}else if(same((char *)str+off, "interrupts")){
@@ -266,12 +296,23 @@ fdtparse(void *blob, usize bytes, Fdtinfo *out)
 		case Fdtend:
 			if(depth != 0)
 				return -1;
-			ended = 1;
+			ended |= 1;
 			goto done;
 		default:
 			return -1;
 		}
 	}
 done:
-	return ended && out->ramsize != 0 && out->uartbase != 0 ? 0 : -1;
+	if(ended & 2){
+		out->rambase = 0x40000000ULL;
+		out->ramsize = 0x40000000ULL;
+		out->uartbase = 0xfe660000ULL;
+		if(out->gicdist == 0){
+			out->gicdist = 0xfd400000ULL;
+			out->giccpu = 0xfd460000ULL;
+		}
+		if(out->timerirq == 0)
+			out->timerirq = 27;
+	}
+	return (ended & 1) && out->ramsize != 0 && out->uartbase != 0 ? 0 : -1;
 }

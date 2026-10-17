@@ -79,14 +79,17 @@ arm64mmubuild(Fdtinfo *info)
 	u64 rootpa, l2pa, ramend, n, pa, stop;
 	u64 *root, *l2;
 	u32 i, j;
+	int highmmio;
 
 	if(info->rambase == 0 || info->ramsize == 0 ||
 	   (info->rambase | info->ramsize) & (L2blocksz-1))
 		return 0;
 	ramend = info->rambase + info->ramsize;
+	highmmio = info->uartbase >= 0xf0000000ULL;
 	if(ramend < info->rambase || ramend > Maxidentity ||
-	   info->uartbase >= info->rambase || info->gicdist >= info->rambase ||
-	   info->giccpu >= info->rambase)
+	   (!highmmio && (info->uartbase >= info->rambase ||
+	                  info->gicdist >= info->rambase ||
+	                  info->giccpu >= info->rambase)))
 		return 0;
 	rootpa = arm64physpage();
 	if(rootpa == 0)
@@ -107,6 +110,17 @@ arm64mmubuild(Fdtinfo *info)
 			if(pa >= stop)
 				break;
 			l2[j] = blockpte(pa, pa >= info->rambase);
+		}
+	}
+	if(highmmio && root[3] == 0){
+		l2pa = arm64physpage();
+		if(l2pa == 0)
+			return 0;
+		l2 = (u64 *)l2pa;
+		root[3] = l2pa | Ptevalid | Ptetable;
+		for(j = 0; j < L1blocksz/L2blocksz; j++){
+			pa = 3ULL*L1blocksz + (u64)j*L2blocksz;
+			l2[j] = blockpte(pa, pa < 0xf0000000ULL);
 		}
 	}
 	return rootpa;

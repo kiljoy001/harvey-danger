@@ -71,7 +71,7 @@ def build_library(name: str, flags: list[str]) -> Path:
     objects = []
     failures = []
     libflags = ["--target=aarch64-none-elf", "-ffreestanding", "-fno-builtin",
-                "-mgeneral-regs-only",
+                "-mgeneral-regs-only", "-mstrict-align",
                 "-fno-stack-protector", "-fcommon", "-O2", "-g",
                 "-Wno-parentheses", "-Wno-missing-braces",
                 "-I", str(ROOT / "aarch64/include"),
@@ -110,6 +110,7 @@ def main() -> None:
         "--target=aarch64-none-elf", "-ffreestanding", "-fno-builtin",
         "-fno-stack-protector", "-fno-unwind-tables",
         "-fno-asynchronous-unwind-tables", "-mgeneral-regs-only",
+        "-mstrict-align",
         "-fcommon", "-fno-omit-frame-pointer", "-O2", "-g", "-D__HARVEY__",
         "-DARM64_FULL_KERNEL",
         "-DKERNDATE=1433623937", "-Wall", "-Wno-parentheses",
@@ -117,6 +118,14 @@ def main() -> None:
         "-Wno-unused-function", "-Wno-unused-variable",
         "-Wno-unused-parameter",
     ]
+    if os.environ.get("ARM64_BOARD_RK3566") == "1":
+        flags.append("-DARM64_BOARD_RK3566")
+    if os.environ.get("ARM64_RK3566_NPU_PROBE") == "1":
+        flags.append("-DARM64_RK3566_NPU_PROBE")
+    if os.environ.get("ARM64_RK3566_SKIP_FDT") == "1":
+        flags.append("-DARM64_RK3566_SKIP_FDT")
+    if os.environ.get("ARM64_RK3566_TRACE_FDT") == "1":
+        flags.append("-DARM64_RK3566_TRACE_FDT")
     for path in (OUT, ARCH, ROOT / "sys/src/9/port", ROOT / "sys/src/9/ip",
                  ROOT / "aarch64/include", ROOT / "sys/include",
                  ROOT / "sys/src/libc/9syscall"):

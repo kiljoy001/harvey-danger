@@ -31,10 +31,12 @@ arm64clockready(void)
 }
 #endif
 
+static int isgicv3;
+
 int
 arm64timerinit(Fdtinfo *info)
 {
-	volatile u32 *dist;
+	volatile u32 *dist, *sgi;
 	u64 freq;
 	u32 mask, reg, shift;
 
@@ -45,6 +47,7 @@ arm64timerinit(Fdtinfo *info)
 	gicdist = dist;
 	giccpu = (volatile u32 *)info->giccpu;
 	timerirq = info->timerirq;
+	isgicv3 = (info->giccpu - info->gicdist) >= 0x40000ULL;
 	mask = 1U << timerirq;
 	__asm__ volatile("mrs %0, cntfrq_el0" : "=r"(freq));
 	if(freq < 100 || freq/100 > 0x7fffffff)
@@ -54,18 +57,37 @@ arm64timerinit(Fdtinfo *info)
 	arm64el0irqs = 0;
 
 	__asm__ volatile("msr vbar_el1, %0; isb" :: "r"(arm64vectors) : "memory");
-	dist[0x000/4] = 0;
-	dist[0x180/4] = 0xffffffff;
-	dist[0x280/4] = 0xffffffff;
-	/* QEMU's default GICv2 accepts this PPI through Group 0. */
-	dist[0x080/4] &= ~mask;
-	reg = 0x400/4 + timerirq/4;
-	shift = (timerirq%4)*8;
-	dist[reg] = (dist[reg] & ~(0xffU<<shift)) | (0x80U<<shift);
-	dist[0x100/4] = mask;
-	giccpu[0x004/4] = 0xff;
-	giccpu[0x000/4] = 1;
-	dist[0x000/4] = 1;
+	if(isgicv3){
+		sgi = (volatile u32 *)(info->giccpu + 0x10000ULL);
+		dist[0x000/4] = 0x37;
+		giccpu[0x014/4] &= ~(1U<<1);
+		while(giccpu[0x014/4] & (1U<<2))
+			;
+		sgi[0x180/4] = 0xffffffff;
+		sgi[0x280/4] = 0xffffffff;
+		sgi[0x080/4] |= mask;
+		sgi[0xd00/4] &= ~mask;
+		reg = 0x400/4 + timerirq/4;
+		shift = (timerirq%4)*8;
+		sgi[reg] = (sgi[reg] & ~(0xffU<<shift)) | (0x80U<<shift);
+		sgi[0x100/4] = mask;
+		__asm__ volatile("msr S3_0_C12_C12_5, %0; isb" :: "r"((u64)7) : "memory");
+		__asm__ volatile("msr S3_0_C4_C6_0, %0; isb" :: "r"((u64)0xff) : "memory");
+		__asm__ volatile("msr S3_0_C12_C12_7, %0; isb" :: "r"((u64)1) : "memory");
+	}else{
+		dist[0x000/4] = 0;
+		dist[0x180/4] = 0xffffffff;
+		dist[0x280/4] = 0xffffffff;
+		/* QEMU's default GICv2 accepts this PPI through Group 0. */
+		dist[0x080/4] &= ~mask;
+		reg = 0x400/4 + timerirq/4;
+		shift = (timerirq%4)*8;
+		dist[reg] = (dist[reg] & ~(0xffU<<shift)) | (0x80U<<shift);
+		dist[0x100/4] = mask;
+		giccpu[0x004/4] = 0xff;
+		giccpu[0x000/4] = 1;
+		dist[0x000/4] = 1;
+	}
 	__asm__ volatile("dsb sy; isb" ::: "memory");
 	__asm__ volatile("msr cntv_tval_el0, %0; msr cntv_ctl_el0, %1; isb"
 	                 :: "r"((u64)period), "r"((u64)1) : "memory");
@@ -83,26 +105,34 @@ arm64irq(
 )
 {
 	u32 irq;
-	u64 spsr;
+	u64 spsr, iar;
 
 #ifndef ARM64_FULL_KERNEL
 	(void)ureg;
 #endif
 
 	__asm__ volatile("mrs %0, spsr_el1" : "=r"(spsr));
-	irq = giccpu[0x00c/4] & 0x3ff;
+	if(isgicv3){
+		__asm__ volatile("mrs %0, S3_0_C12_C12_0" : "=r"(iar));
+		irq = iar & 0x3ff;
+	}else{
+		irq = giccpu[0x00c/4] & 0x3ff;
+	}
 	lastirq = irq;
 	if(irq == timerirq){
 		arm64ticks++;
 		if((spsr&15) == 0)
 			arm64el0irqs++;
 		__asm__ volatile("msr cntv_tval_el0, %0; isb" :: "r"((u64)period) : "memory");
-		giccpu[0x010/4] = irq;
+		if(isgicv3)
+			__asm__ volatile("msr S3_0_C12_C12_1, %0; isb" :: "r"((u64)irq) : "memory");
+		else
+			giccpu[0x010/4] = irq;
 #ifdef ARM64_FULL_KERNEL
 		if(clockready)
 			timerintr(ureg, 0);
 #endif
-	}else{
+	}else if(!isgicv3){
 		giccpu[0x000/4] = 0;
 		gicdist[0x000/4] = 0;
 	}
