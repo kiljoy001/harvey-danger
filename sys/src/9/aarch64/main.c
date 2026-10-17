@@ -9,6 +9,8 @@
 
 #include "user.h"
 
+int arm64contextprobe(void);
+
 #ifdef ARM64_TEST_RESERVE
 extern char __image_end[];
 #endif
@@ -225,6 +227,11 @@ arm64main(usize dtb)
 		uartputs("EL0: user mapping visible in kernel root\n");
 		return;
 	}
+	if(arm64contextprobe() < 0){
+		uartputs("ARM64 context switch failed\n");
+		return;
+	}
+	uartputs("HARVEY-ARM64 CONTEXT-SWITCH PASS\n");
 	arm64timerstop();
 	if(arm64el0irqs == 0){
 		uartputs("EL0: timer did not interrupt user code\n");

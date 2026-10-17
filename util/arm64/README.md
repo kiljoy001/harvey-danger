@@ -12,7 +12,11 @@ page-table roots whose user mappings point to different physical pages. The
 boot check confirms that EL0 cannot read kernel memory, write its code page,
 or execute its stack. A timer interrupt can arrive from EL0 and return to the
 interrupted instruction. It does **not** yet start the Plan 9 scheduler or load
-user programs.
+user programs. The ARM64 `Label` save/restore routines now match the calling
+convention used by Harvey's shared scheduler in `sys/src/9/port/proc.c`. QEMU
+tests switch between two independent kernel stacks and check callee-saved
+register preservation while the timer is active. The build still links only
+the boot probe; it does not yet link `port/proc.c`.
 
 ```sh
 python3 util/arm64/test_virt.py
@@ -37,9 +41,10 @@ drivers. The allocator hands out zeroed 4 KiB pages but has no free operation.
 The identity map remains writable and executable in EL1, while its entries are
 inaccessible to EL0. Separate user roots and a complete general-register trap
 frame are in place, but the current syscall handler is a boot check. The next
-milestones are runnable process state and scheduling, normal syscall dispatch,
-executable loading and userland. Storage, networking and display follow after
-a serial shell boots.
+milestones are ARM64 `Proc`/`Mach` definitions, process MMU hooks, timer-driven
+`hzsched`, and linking Harvey's existing `port/proc.c`, followed by normal
+syscall dispatch, executable loading and userland. Storage, networking and
+display follow after a serial shell boots.
 
 The build uses `clang-23` if present because this host's default `clang` only
 contains the x86 backend. `-mgeneral-regs-only` prevents use of SIMD registers

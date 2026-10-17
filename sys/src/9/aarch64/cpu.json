@@ -74,6 +74,7 @@
 		},
 		"Program": "harvey",
 		"SourceFiles": [
+			"context.S",
 			"l.S",
 			"main.c"
 		]

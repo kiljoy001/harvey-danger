@@ -62,6 +62,7 @@ def main() -> None:
                     "HARVEY-ARM64 EL0-ISOLATION PASS",
                     "HARVEY-ARM64 EL0-PERMISSIONS PASS",
                     "HARVEY-ARM64 ADDRESS-SPACE SWITCH PASS",
+                    "HARVEY-ARM64 CONTEXT-SWITCH PASS",
                     "HARVEY-ARM64 EL0-TIMER-IRQ PASS")
         if any(marker not in transcript for marker in expected) or \
                 "ARM64 exception" in transcript or "failed" in transcript:
@@ -81,6 +82,7 @@ def main() -> None:
     if "HARVEY-ARM64 RESERVED-PAGE PASS" not in transcript or \
             "HARVEY-ARM64 MMU-ON PASS" not in transcript or \
             "HARVEY-ARM64 TIMER-IRQ PASS" not in transcript or \
+            "HARVEY-ARM64 CONTEXT-SWITCH PASS" not in transcript or \
             "HARVEY-ARM64 EL0-TIMER-IRQ PASS" not in transcript or \
             transcript.count("ARM64 exception esr 0x00000000f2000000") != 1:
         raise RuntimeError("ARM64 exception vector failed:\n" + transcript)
