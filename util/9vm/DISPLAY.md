@@ -76,6 +76,61 @@ the guest wire protocol. Text shaping, bidirectional layout, accessibility,
 and touch gestures belong primarily in Objective-9C client libraries and
 Aspera's window/input service.
 
+## Damage and presentation strategy
+
+Damage is part of a surface commit, not a scanout command. A client writes a
+buffer and adds one or more rectangles in buffer coordinates; `commit` freezes
+the buffer ID, serial, and damage together. The first commit, resize, or
+unknown prior contents damages the whole surface. The compositor releases a
+buffer only after it no longer reads it. A frame acknowledgement gives clients
+backpressure, so queued typing or animation can produce one composed frame
+instead of a frame for every input record. These follow the
+[Wayland surface contract](https://wayland.freedesktop.org/docs/html/apa.html)
+for damage, atomic commit, buffer release, and frame callbacks.
+
+The compositor keeps a persistent output image. It maps committed surface
+damage into output coordinates, clips it to visible surfaces, and adds both
+old and new bounds for moves, resize, focus decoration, show, hide, and
+workspace changes. Overlapping rectangles are merged before composition;
+when the region gets too large or fragmented, it becomes a full-screen
+update. Only that output region is recomposed. `o9display` must therefore
+record damage in `DisplaySurface` and stop rebuilding immutable whole-buffer
+strings on every small `DisplayBuffer.write`.
+
+The 9vm output backend sends a complete first frame, then bounded pixel
+rectangles or tiles with one atomic frame serial. Fixed tiles are a simple
+encoding for callers that cannot report damage; they are not the primary
+damage model. The host retains the last frame. A viewer that missed an update
+gets accumulated damage since its last serial or a complete frame, never a
+delta against an unknown base. For scrolling, a later copy-rectangle command
+can avoid retransmitting pixels already in the host image. The
+[RFB specification](https://github.com/rfbproto/rfbproto/blob/master/rfbproto.rst)
+uses incremental updates, bounded rectangles, and CopyRect for these cases.
+The
+[DRM damage-clips contract](https://docs.kernel.org/gpu/drm-kms.html#damage-tracking-properties)
+also makes an important rule explicit: an incomplete damage list can leave
+stale pixels, so uncertain updates must fall back to the full frame.
+
+SDL can upload only changed regions of its persistent texture. For frequent
+updates, lock each damaged region of the streaming texture and fill every
+pixel in that region from the host's retained image; the locked memory is
+write-only and may not contain prior pixels. `SDL_UpdateTexture` also accepts
+a rectangle and can be benchmarked as a simpler path. Both still require one
+full-window `SDL_RenderCopy` before `SDL_RenderPresent`, because SDL says the
+render backbuffer is invalid after present. See the SDL
+[`LockTexture`](https://wiki.libsdl.org/SDL2/SDL_LockTexture),
+[`UpdateTexture`](https://wiki.libsdl.org/SDL2/SDL_UpdateTexture), and
+[`RenderPresent`](https://wiki.libsdl.org/SDL2/SDL_RenderPresent) contracts.
+Damage can thus reduce guest rendering, 9P writes, host copies, and texture
+uploads, while SDL presentation retains its required full-scene draw.
+
+Implementation order: add surface damage and release events to `o9display`;
+compose damaged output regions; pass the region and serial through 9vm;
+teach the SDL consumer to patch its retained texture; then add optional
+CopyRect and remote viewer transport. Test initial frames, overlapping and
+moving windows, clipped rectangles, dropped frames, buffer reuse, and a
+rapid input burst before benchmarking the byte count and key-to-frame time.
+
 ## Optional draw compatibility service
 
 `drawcompat` implements the 9front `draw(3)` lifecycle and binary command
@@ -179,7 +234,21 @@ pass through a bounded
 9P display device under `build/aspera-live/dev`. Its payload lives in two
 shared-memory frame slots and an input queue; the files are device endpoints,
 not frame snapshots. The SDL bridge consumes committed slots and releases
-them before the guest reuses them. This is an operational VM display path,
+them before the guest reuses them.
+The first frame uses the full screen file. Later frames can use
+`begin-delta` on the control file: the host copies the last committed frame
+into a free slot, then accepts 32 by 16 pixel tile records on the screen
+file. Each record has four little-endian 16-bit fields (`x`, `y`, `width`,
+`height`) followed by 2048 bytes of row-major pixels. The guest sends only
+tiles whose pixels differ from its last committed frame. Large changes use
+the full-frame path. A commit makes the resulting frame visible atomically.
+The host SDL loop repaints only for new frames or window exposure.
+This keeps small changes, such as terminal typing, to a few kilobytes over
+9P rather than a 3 MiB frame.
+Aspera also redraws only the front terminal window when its text changes;
+window moves, theme changes, and other desktop actions still recompose the
+whole scene. The tile comparison covers those full redraws as well.
+This is an operational VM display path,
 but the `o9display` service is not yet wired to Aspera. The desktop uses a fixed 1024 by 768 output
 and one trusted guest display producer. Notes currently renders printable
 ASCII with its built-in 8 by 14 font. It is therefore still a desktop

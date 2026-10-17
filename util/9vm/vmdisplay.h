@@ -7,6 +7,8 @@ enum {
     VMDISPLAY_WIDTH = 1024,
     VMDISPLAY_HEIGHT = 768,
     VMDISPLAY_SLOTS = 2,
+    VMDISPLAY_TILE_WIDTH = 32,
+    VMDISPLAY_TILE_HEIGHT = 16,
     VMDISPLAY_EVENTS = 256,
     VMDISPLAY_EVENT_BYTES = 96,
     VMDISPLAY_FREE = 0,
@@ -17,6 +19,8 @@ enum {
 
 #define VMDISPLAY_MAGIC 0x56444c39U
 #define VMDISPLAY_FRAME_BYTES (VMDISPLAY_WIDTH * VMDISPLAY_HEIGHT * 4)
+/* written[] uses this sentinel while a slot holds a copy of the last frame. */
+#define VMDISPLAY_DELTA_WRITES 0x80000000U
 
 struct vmdisplay {
     uint32_t magic;

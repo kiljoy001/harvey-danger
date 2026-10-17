@@ -56,8 +56,12 @@ main(int argc, char **argv)
     uint64_t terminal_frame = 0;
     uint32_t deadline;
     uint32_t terminal_start = 0;
+    uint32_t key_sent_at = 0, max_key_latency = 0;
+    uint64_t key_latency_total = 0;
+    int key_samples = 0;
     size_t terminal_sent = 0;
     int running = 1, failed = 0, dragging = 0, smoke, stage = 0, changed;
+    int repaint = 1;
     char line[96];
     size_t i;
 
@@ -108,7 +112,10 @@ main(int argc, char **argv)
         }
         while(SDL_PollEvent(&event)){
             line[0] = '\0';
-            if(event.type == SDL_QUIT){
+            if(event.type == SDL_WINDOWEVENT &&
+               event.window.event == SDL_WINDOWEVENT_EXPOSED){
+                repaint = 1;
+            }else if(event.type == SDL_QUIT){
                 snprintf(line, sizeof line, "quit\n");
                 running = 0;
             }else if(event.type == SDL_MOUSEBUTTONDOWN &&
@@ -169,9 +176,12 @@ main(int argc, char **argv)
                 argb[i] |= 0xff000000U;
             SDL_UpdateTexture(texture, NULL, argb, VMDISPLAY_WIDTH * sizeof *argb);
         }
-        SDL_RenderClear(renderer);
-        SDL_RenderCopy(renderer, texture, NULL, NULL);
-        SDL_RenderPresent(renderer);
+        if(changed > 0 || repaint){
+            SDL_RenderClear(renderer);
+            SDL_RenderCopy(renderer, texture, NULL, NULL);
+            SDL_RenderPresent(renderer);
+            repaint = 0;
+        }
         if(smoke && stage == 0 && display.seen > 0){
             smoke_start = display.seen;
             if(vmdisplay_client_input(&display, "down 100 95\n") < 0 ||
@@ -226,12 +236,20 @@ main(int argc, char **argv)
         }
         if(smoke && stage == 8 && display.seen > terminal_frame){
             const char *command_text = "echo VMTERMOK";
+            if(key_sent_at != 0){
+                uint32_t latency = SDL_GetTicks() - key_sent_at;
+                key_latency_total += latency;
+                if(latency > max_key_latency) max_key_latency = latency;
+                key_samples++;
+                key_sent_at = 0;
+            }
             if(command_text[terminal_sent] != '\0'){
                 snprintf(line, sizeof line, "key %u 0\n",
                          (unsigned char)command_text[terminal_sent++]);
                 if(vmdisplay_client_input_wait(&display, line, 1000) < 0)
                     failed = 1;
                 terminal_frame = display.seen;
+                key_sent_at = SDL_GetTicks();
             }else{
                 if(vmdisplay_client_input_wait(&display, "key 13 0\n", 1000) < 0)
                     failed = 1;
@@ -263,12 +281,20 @@ main(int argc, char **argv)
         }
         if(smoke && stage == 12 && display.seen > terminal_frame){
             const char *command_text = "echo REOPENOK";
+            if(key_sent_at != 0){
+                uint32_t latency = SDL_GetTicks() - key_sent_at;
+                key_latency_total += latency;
+                if(latency > max_key_latency) max_key_latency = latency;
+                key_samples++;
+                key_sent_at = 0;
+            }
             if(command_text[terminal_sent] != '\0'){
                 snprintf(line, sizeof line, "key %u 0\n",
                          (unsigned char)command_text[terminal_sent++]);
                 if(vmdisplay_client_input_wait(&display, line, 1000) < 0)
                     failed = 1;
                 terminal_frame = display.seen;
+                key_sent_at = SDL_GetTicks();
             }else{
                 if(vmdisplay_client_input_wait(&display, "key 13 0\n", 1000) < 0)
                     failed = 1;
@@ -278,6 +304,10 @@ main(int argc, char **argv)
         }
         if(smoke && stage == 13 && SDL_GetTicks() - terminal_start >= 750){
             puts("ASPERA-DISPLAY PASS committed frames and input round trip");
+            if(key_samples > 0)
+                printf("terminal key frame latency: mean %llu ms, max %u ms (%d keys)\n",
+                       (unsigned long long)(key_latency_total / key_samples),
+                       max_key_latency, key_samples);
             running = 0;
         }
         if(smoke && (int32_t)(SDL_GetTicks() - deadline) >= 0){

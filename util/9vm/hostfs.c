@@ -178,6 +178,21 @@ static int display_control(struct vmdisplay *d, const uint8_t *data, uint32_t co
             d->written[slot] = 0;
             ok = count;
         }
+    } else if (strcmp(verb, "begin-delta") == 0) {
+        uint32_t source;
+
+        source = __atomic_load_n(&d->latest_slot, __ATOMIC_ACQUIRE);
+        if (__atomic_load_n(&d->latest_serial, __ATOMIC_ACQUIRE) != 0 &&
+            source < VMDISPLAY_SLOTS) {
+            expected = VMDISPLAY_FREE;
+            if (__atomic_compare_exchange_n(&d->state[slot], &expected,
+                    VMDISPLAY_WRITING, 0, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)) {
+                if (source != (uint32_t)slot)
+                    memcpy(d->pixels[slot], d->pixels[source], VMDISPLAY_FRAME_BYTES);
+                d->written[slot] = VMDISPLAY_DELTA_WRITES;
+                ok = count;
+            }
+        }
     } else if (strcmp(verb, "abort") == 0) {
         if (__atomic_load_n(&d->state[slot], __ATOMIC_ACQUIRE) == VMDISPLAY_WRITING) {
             d->written[slot] = 0;
@@ -186,7 +201,8 @@ static int display_control(struct vmdisplay *d, const uint8_t *data, uint32_t co
         }
     } else if (strcmp(verb, "commit") == 0) {
         if (__atomic_load_n(&d->state[slot], __ATOMIC_ACQUIRE) == VMDISPLAY_WRITING &&
-            d->written[slot] == VMDISPLAY_FRAME_BYTES) {
+            (d->written[slot] == VMDISPLAY_FRAME_BYTES ||
+             d->written[slot] == VMDISPLAY_DELTA_WRITES)) {
             serial = __atomic_load_n(&d->latest_serial, __ATOMIC_RELAXED) + 1;
             __atomic_store_n(&d->slot_serial[slot], serial, __ATOMIC_RELEASE);
             __atomic_store_n(&d->state[slot], VMDISPLAY_READY, __ATOMIC_RELEASE);
@@ -205,8 +221,29 @@ static int display_write(struct vmdisplay *d, int slot, const uint8_t *data,
 
     pthread_mutex_lock(&display_lock);
     if (__atomic_load_n(&d->state[slot], __ATOMIC_ACQUIRE) == VMDISPLAY_WRITING &&
-        offset == d->written[slot] && offset <= VMDISPLAY_FRAME_BYTES &&
-        count <= VMDISPLAY_FRAME_BYTES - offset) {
+        d->written[slot] == VMDISPLAY_DELTA_WRITES) {
+        unsigned x, y, width, height;
+
+        if (count >= 8) {
+            x = data[0] | (data[1] << 8);
+            y = data[2] | (data[3] << 8);
+            width = data[4] | (data[5] << 8);
+            height = data[6] | (data[7] << 8);
+            if (width == VMDISPLAY_TILE_WIDTH &&
+                height == VMDISPLAY_TILE_HEIGHT &&
+                x % width == 0 && y % height == 0 &&
+                x + width <= VMDISPLAY_WIDTH &&
+                y + height <= VMDISPLAY_HEIGHT &&
+                count == 8 + width * height * 4) {
+                for (unsigned row = 0; row < height; row++)
+                    memcpy(&d->pixels[slot][(y + row) * VMDISPLAY_WIDTH + x],
+                           data + 8 + row * width * 4, width * 4);
+                ok = count;
+            }
+        }
+    } else if (__atomic_load_n(&d->state[slot], __ATOMIC_ACQUIRE) == VMDISPLAY_WRITING &&
+               offset == d->written[slot] && offset <= VMDISPLAY_FRAME_BYTES &&
+               count <= VMDISPLAY_FRAME_BYTES - offset) {
         memcpy((uint8_t *)d->pixels[slot] + offset, data, count);
         d->written[slot] += count;
         ok = count;

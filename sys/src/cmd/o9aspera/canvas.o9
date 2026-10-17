@@ -601,22 +601,51 @@ function AsperaPresentRaw(int64 ptr, string directory, int64 preferred) int64 {
             int height;
             u32 *pixels;
         } AsperaBuffer;
+        static u8 *prior;
+        static int haveprior;
         AsperaBuffer *b = (AsperaBuffer*)ptr;
         char *base, path[512], command[32];
-        int ctl, fd, slot, attempt, n, sent, total, good, committed;
+        int ctl, fd, slot, attempt, n, sent, total, good, committed, delta;
+        int x, y, row, changed, dirty, width, height;
+        u8 tile[8 + 32*16*sizeof(u32)];
 
         out = -1;
         base = o9_string_cstr(directory);
         if(b != nil && b->pixels != nil && b->width == 1024 && b->height == 768 &&
            base != nil && snprint(path, sizeof path, "%s/dev/ctl", base) < sizeof path){
+            total = b->width * b->height * sizeof(u32);
+            if(prior == nil)
+                prior = malloc(total);
+            dirty = 0;
+            if(haveprior){
+                for(y = 0; y < b->height; y += 16)
+                    for(x = 0; x < b->width; x += 32){
+                        changed = 0;
+                        for(row = 0; row < 16 && !changed; row++)
+                            changed = memcmp(b->pixels + (y + row)*b->width + x,
+                                             prior + ((y + row)*b->width + x)*sizeof(u32),
+                                             32*sizeof(u32)) != 0;
+                        dirty += changed;
+                    }
+            }
             slot = -1;
+            delta = 0;
             for(attempt = 0; attempt < 100 && slot < 0; attempt++){
                 int candidate = (preferred + attempt) % 2;
                 ctl = open(path, OWRITE);
                 if(ctl >= 0){
-                    n = snprint(command, sizeof command, "begin %d\n", candidate);
-                    if(write(ctl, command, n) == n)
-                        slot = candidate;
+                    if(haveprior && dirty <= 128){
+                        n = snprint(command, sizeof command, "begin-delta %d\n", candidate);
+                        if(write(ctl, command, n) == n){
+                            slot = candidate;
+                            delta = 1;
+                        }
+                    }
+                    if(slot < 0){
+                        n = snprint(command, sizeof command, "begin %d\n", candidate);
+                        if(write(ctl, command, n) == n)
+                            slot = candidate;
+                    }
                     close(ctl);
                 }
                 if(slot < 0)
@@ -627,13 +656,41 @@ function AsperaPresentRaw(int64 ptr, string directory, int64 preferred) int64 {
                 fd = open(path, OWRITE);
                 good = fd >= 0;
                 sent = 0;
-                total = b->width * b->height * sizeof(u32);
-                while(good && sent < total){
-                    n = write(fd, (u8*)b->pixels + sent, total - sent);
-                    if(n <= 0)
-                        good = 0;
-                    else
-                        sent += n;
+                if(delta){
+                    width = 32;
+                    height = 16;
+                    for(y = 0; good && y < b->height; y += height)
+                        for(x = 0; good && x < b->width; x += width){
+                            changed = 0;
+                            for(row = 0; row < height && !changed; row++)
+                                changed = memcmp(b->pixels + (y + row)*b->width + x,
+                                                 prior + ((y + row)*b->width + x)*sizeof(u32),
+                                                 width*sizeof(u32)) != 0;
+                            if(!changed)
+                                continue;
+                            tile[0] = x;
+                            tile[1] = x >> 8;
+                            tile[2] = y;
+                            tile[3] = y >> 8;
+                            tile[4] = width;
+                            tile[5] = width >> 8;
+                            tile[6] = height;
+                            tile[7] = height >> 8;
+                            for(row = 0; row < height; row++)
+                                memmove(tile + 8 + row*width*sizeof(u32),
+                                        b->pixels + (y + row)*b->width + x,
+                                        width*sizeof(u32));
+                            if(write(fd, tile, sizeof tile) != sizeof tile)
+                                good = 0;
+                        }
+                }else{
+                    while(good && sent < total){
+                        n = write(fd, (u8*)b->pixels + sent, total - sent);
+                        if(n <= 0)
+                            good = 0;
+                        else
+                            sent += n;
+                    }
                 }
                 if(fd >= 0)
                     close(fd);
@@ -646,6 +703,10 @@ function AsperaPresentRaw(int64 ptr, string directory, int64 preferred) int64 {
                     if(write(ctl, command, n) == n && good){
                         out = slot;
                         committed = 1;
+                        if(prior != nil){
+                            memmove(prior, b->pixels, total);
+                            haveprior = 1;
+                        }
                     }
                     close(ctl);
                 }

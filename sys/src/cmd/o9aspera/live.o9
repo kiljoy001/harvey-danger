@@ -107,6 +107,7 @@ class AsperaLive {
     private WindowActor terminalWindow;
     private AsperaTerminal terminal;
     private bool terminalOpen;
+    private bool terminalOnly;
     private WindowActor dragWindow;
     private bool dragging;
     private int64 dragX;
@@ -145,6 +146,7 @@ class AsperaLive {
         terminalWindow = desk.createWindow("Terminal [rc]", 110, 115, 590, 410);
         terminal = new AsperaTerminal(terminalWindow);
         terminalOpen = terminal.ready();
+        terminalOnly = false;
         if(!terminalOpen) { desk.closeWindow(terminalWindow); }
         dragging = false;
         frame = 0;
@@ -174,7 +176,9 @@ class AsperaLive {
 
     method bool pollTerminal() {
         if(!terminalOpen) { return false; }
-        return terminal.poll();
+        if(!terminal.poll()) { return false; }
+        terminalOnly = true;
+        return true;
     }
 
     method bool updateClock() {
@@ -329,6 +333,8 @@ class AsperaLive {
                 if(terminal.wantsClose()) {
                     desk.closeWindow(terminalWindow);
                     terminalOpen = false;
+                } else if(handled) {
+                    terminalOnly = true;
                 }
                 return handled;
             }
@@ -337,8 +343,20 @@ class AsperaLive {
     }
 
     method bool publish() {
-        desk.renderAll(canvas);
-        shelf.render(canvas, desk);
+        bool local = false;
+        if(terminalOnly && terminalOpen && desk.windowCount() > 0) {
+            WindowActor current = desk.getFocused();
+            local = current.id() == terminalWindow.id() &&
+                    terminalWindow.y() >= 30 &&
+                    terminalWindow.y() + terminalWindow.visibleHeight() <= 668;
+        }
+        terminalOnly = false;
+        if(local) {
+            terminalWindow.renderFrame(canvas);
+        } else {
+            desk.renderAll(canvas);
+            shelf.render(canvas, desk);
+        }
         if(!canvas.present(base, frame % 2)) {
             return false;
         }
