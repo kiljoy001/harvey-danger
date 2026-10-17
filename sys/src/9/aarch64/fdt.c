@@ -431,7 +431,7 @@ fdtparse(void *blob, usize bytes, Fdtinfo *out)
 		}
 	}
 done:
-	if(!ended || out->nmemory == 0)
+	if(!ended)
 		return -1;
 	if(stdoutpath != nil){
 		want = stdoutpath;
@@ -461,6 +461,7 @@ done:
 		out->uartbase = consoles[0].base;
 		out->uarttype = consoles[0].type;
 	}
-	return out->ramsize != 0 && out->uartbase != 0 && out->gicdist != 0 &&
+	return out->nmemory != 0 && out->ramsize != 0 &&
+	       out->uartbase != 0 && out->gicdist != 0 &&
 	       out->gicversion != 0 && out->timerirq != 0 ? 0 : -1;
 }

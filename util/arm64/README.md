@@ -76,18 +76,21 @@ For the Orange Pi 3B RK3566 bring-up:
 python3 util/arm64/build_kernel.py
 ```
 
-Boot it with the board DTB as `booti 0x40080000 - <fdt address>` after loading
-the Image into RAM. U-Boot must add a valid `/memory` node. The early parser
+Boot it with the full **OS** board DTB as `booti 0x40080000 - 0x48000000`
+after loading the Image at `0x40080000` and the DTB at `0x48000000`. The
+installed vendor U-Boot's control DTB at `0xeb9f5e30` is stripped of its GIC
+and timer nodes and cannot be used for this boot. U-Boot adds valid `/memory`
+nodes to the OS DTB during `booti`. The early parser
 uses `/chosen/stdout-path` (including `/aliases`) to select UART2 on this board,
 and chooses the RAM bank containing the Image. The NPU register/DMA probe is excluded from normal
 boot; set `ARM64_RK3566_NPU_PROBE=1` only for a separate NPU experiment. The
 board boot remains a hardware bring-up test, not an interactive userland.
-On an Orange Pi 3B v1.1, U-Boot `booti` loaded the preceding board-specific
-Image over TFTP and the vendor DTB parsed successfully. That image passed the
-early memory, MMU, timer, EL0 isolation, scheduler, root walk, and `#~` boot
-checks. The common Image has passed QEMU boot tests and a parser test using
-the vendor DTB with a firmware-style `/memory` node, but still needs a board
-boot retest. Early code is built with `-mstrict-align`: before the MMU
+On an Orange Pi 3B v1.1, the common Image and the full OS DTB loaded over TFTP
+passed the early memory, MMU, timer, EL0 isolation, scheduler, root walk, and
+`#~` boot checks. The board's 8 GiB appears as two memory banks in U-Boot;
+the kernel currently manages the bank containing the Image (roughly 3.8 GiB)
+and leaves the second bank for later multi-bank allocator work. Early code is
+built with `-mstrict-align`: before the MMU
 is enabled, the RK3566 traps on unaligned multi-byte stores even with
 `SCTLR_EL1.A` clear. Replacing EL0 test code at an identity-mapped address
 also requires invalidating the instruction-cache alias used by its user
@@ -95,9 +98,10 @@ virtual address. A local `ic iallu` currently handles that single-core boot
 probe; SMP code replacement will need cross-core synchronization. The board
 has no virtio-9P device attached, so the optional `#9` exchange is skipped.
 
-For the tested v1.1 board, U-Boot's current Ethernet setup needed a 100 Mbps
-PHY workaround before the TFTP transfer. With a TFTP server at `192.168.2.1`
-serving the board Image, the serial console sequence was:
+For the tested v1.1 board, the installed vendor U-Boot needed a 100 Mbps PHY
+workaround before the TFTP transfer. With a TFTP server at `192.168.2.1`
+serving `aspera-arm64.img` and the full `orangepi-3b-v1.1.dtb`, the serial
+console sequence was:
 
 ```text
 setenv ipaddr 192.168.2.250; setenv netmask 255.255.255.0; setenv serverip 192.168.2.1
@@ -105,14 +109,18 @@ ping 192.168.2.1
 <interrupt the first failed ping with Ctrl-C>
 mii write 0 9 0; mii write 0 0 0x1200; mii write 0 1e 0xa003; mii write 0 1f 0x40f1
 ping 192.168.2.1
-tftpboot 0x40080000 aspera-rk3566.img
-booti 0x40080000 - 0xeb9f5e30
+tftpboot 0x40080000 aspera-arm64.img
+tftpboot 0x48000000 orangepi-3b-v1.1.dtb
+booti 0x40080000 - 0x48000000
 ```
 
-The `0xeb9f5e30` address is the vendor DTB address observed in this U-Boot
-session and must be checked after each reboot. This probe reached the 9ring
-test at roughly 3.6 MiB/s TFTP throughput. U-Boot's automatic `bootm` attempt
-after TFTP reports an image error; the explicit `booti` command is required.
+The first ping initializes the PHY and may need Ctrl-C to return; the MDIO
+changes must follow that initialization. The board then reached the 9ring
+test at roughly 3.8 MiB/s TFTP throughput. U-Boot's automatic `bootm` attempt
+after each TFTP transfer reports an image error; the explicit `booti` command
+is required. The repeatable development path is a serial boot script; the
+durable fix is in the board's U-Boot PHY setup and boot script, keeping these
+MDIO commands out of the common kernel.
 
 This uses QEMU's direct ARM64 Image loading. No UEFI or Limine is involved.
 The Image header and x0 device tree handoff also match U-Boot's `booti`

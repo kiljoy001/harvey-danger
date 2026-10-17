@@ -162,6 +162,7 @@ arm64main(usize dtb)
 {
 	u8 *p;
 	u32 size;
+	int parsed;
 	Fdtinfo info;
 	u64 page0, page1, codepage, stackpage, codepage2, stackpage2;
 	u64 root, userroot, userroot2, translated;
@@ -176,11 +177,19 @@ arm64main(usize dtb)
 	size = beget4(p + 4);
 	if(beget4(p) != Fdtmagic || size < Fdtmin || size > Fdtmax)
 		return;
-	if(fdtparse(p, size, &info) < 0 ||
-	   fdtselectram(&info, (u64)_start, (u64)__image_end) < 0)
-		return;
+	info.uartbase = 0;
+	info.uarttype = 0;
+	parsed = fdtparse(p, size, &info);
 	uartbase = info.uartbase;
 	uarttype = info.uarttype;
+	if(parsed < 0){
+		uartputs("HARVEY-ARM64 FDT-ERROR\n");
+		return;
+	}
+	if(fdtselectram(&info, (u64)_start, (u64)__image_end) < 0){
+		uartputs("HARVEY-ARM64 RAM-ERROR\n");
+		return;
+	}
 	uartputs("HARVEY-ARM64 ENTRY\n");
 	uartputs("dtb: valid at ");
 	uarthex(dtb);
