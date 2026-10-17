@@ -11,8 +11,13 @@ extern void arm64uartputs(char *);
 extern void (*consuartputs)(char *, int);
 extern void arm64clockready(void);
 extern void pl011configure(u64);
+extern int pl011consoleinput(void);
+#ifdef ARM64_TEST_CONSOLE_RX
+extern Queue *pl011inputqueue(void);
+#endif
 extern Dev rootdevtab;
 extern Dev uartdevtab;
+static Chan *bootserial;
 
 static void
 uartwrite(char *buf, int n)
@@ -73,9 +78,21 @@ worker(void *arg)
 			if(uartdevtab.write(walk->clone, marker, sizeof(marker)-1, 0) !=
 			   sizeof(marker)-1)
 				panic("ARM64 PL011 write failed");
-			cclose(walk->clone);
+			if(pl011consoleinput() < 0)
+				panic("ARM64 PL011 console input failed");
+			bootserial = walk->clone;
 			free(walk);
 			cclose(serial);
+			arm64uartputs("HARVEY-ARM64 SERIAL-CONSOLE PASS\n");
+#ifdef ARM64_TEST_CONSOLE_RX
+			{
+				char input;
+
+				if(qread(pl011inputqueue(), &input, 1) != 1 || input != 'Z')
+					panic("ARM64 PL011 console receive failed");
+				arm64uartputs("HARVEY-ARM64 UART-RX PASS\n");
+			}
+#endif
 		}
 	}else{
 		workerphase |= 2;
@@ -114,6 +131,7 @@ arm64kernelstart(Fdtinfo *info)
 	procinit0();
 	psinit(conf.nproc);
 	initimage();
+	printinit();
 	timersinit();
 	pl011configure(info->uartbase);
 	devtabreset();

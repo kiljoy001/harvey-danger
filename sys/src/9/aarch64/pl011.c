@@ -27,6 +27,22 @@ static volatile u32 *regs;
 static Uart pl011uart;
 extern PhysUart pl011physuart;
 
+int
+pl011consoleinput(void)
+{
+	if(pl011uart.iq == nil)
+		return -1;
+	return addkbdq(pl011uart.iq, -1);
+}
+
+#ifdef ARM64_TEST_CONSOLE_RX
+Queue *
+pl011inputqueue(void)
+{
+	return pl011uart.iq;
+}
+#endif
+
 void
 pl011configure(u64 base)
 {

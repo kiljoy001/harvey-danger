@@ -117,6 +117,8 @@ def main() -> None:
         "-Wno-unused-function", "-Wno-unused-variable",
         "-Wno-unused-parameter",
     ]
+    if os.environ.get("ARM64_TEST_CONSOLE_RX") == "1":
+        flags.append("-DARM64_TEST_CONSOLE_RX")
     for path in (OUT, ARCH, ROOT / "sys/src/9/port", ROOT / "sys/src/9/ip",
                  ROOT / "aarch64/include", ROOT / "sys/include",
                  ROOT / "sys/src/libc/9syscall"):

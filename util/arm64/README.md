@@ -27,6 +27,7 @@ Harvey's shared scheduler with two kernel processes. It drives the shared
 clock from the ARM generic timer and walks into the root device's `dev`
 directory. A polled PL011 backend registers the boot UART as `#t/eia0`; the
 boot check opens that file and sends a line through the shared UART driver.
+It keeps the port open and connects its receive queue to `/dev/cons` input.
 It does **not** yet offer an interactive shell.
 
 ```sh
@@ -34,6 +35,7 @@ python3 util/arm64/test_virt.py
 python3 util/arm64/test_fdt.py
 python3 util/arm64/check_port.py
 python3 util/arm64/test_full_kernel.py
+python3 util/arm64/test_uart_rx.py
 ```
 
 For interactive inspection:
@@ -83,5 +85,7 @@ the complete link for undefined symbols and boots that linked Image under QEMU
 with 256 and 512 MiB of RAM. It exercises physical allocation and free after
 the early MMU and trap probes, then checks device reset, page allocation,
 process scheduling, clock ticks, the root walk, and a write through `#t/eia0`.
+`test_uart_rx.py` sends a byte into QEMU's serial input and requires the guest
+to receive it from the queue connected to the console.
 The 32 MiB static kernel heap is a bring-up
 limit; it will need growth and accounting before general use.
