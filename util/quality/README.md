@@ -26,7 +26,7 @@ under ThreadSanitizer. VM verification then exercises `#~` through shared and
 local rings, the amd64 VirtIO fallback, and ARM64 VirtIO-MMIO versions 1 and 2.
 
 CRAP uses `complexity^2 * (1 - coverage)^3 + complexity`. The required gate
-rejects scores above 50 and writes the complete machine-readable report to
+rejects scores above 30 and writes the complete machine-readable report to
 `build/quality/o9drvman/coverage/crap.json`. The report covers the lifecycle
 policy and the host-testable production cores shared with both kernel drivers.
 

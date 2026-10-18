@@ -142,7 +142,7 @@ LLVM_PROFILE_FILE="$profile_dir/kernel-transport.profraw" \
 	-instr-profile="$profile_dir/kernel-transport.profdata" \
 	>"$profile_dir/kernel-transport.json"
 
-python3 "$quality_dir/crap.py" --maximum 50 \
+python3 "$quality_dir/crap.py" --maximum 30 \
 	--source "$source_dir/lifecycle.c" \
 	--source "$include_dir/9ring.h" \
 	--source "$include_dir/virtio9p_core.h" \

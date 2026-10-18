@@ -78,14 +78,133 @@ generationevent(DrvEventType type)
 		type == DrvStoppedEvent;
 }
 
+static int
+activestate(DrvState state)
+{
+	return state == DrvStarting || state == DrvRunning ||
+		state == DrvStopping;
+}
+
+static int
+policyvalid(const DrvPolicy *policy)
+{
+	return policy->startup_timeout_ms != 0 &&
+		policy->heartbeat_timeout_ms != 0 &&
+		policy->base_backoff_ms != 0 && policy->max_backoff_ms != 0 &&
+		policy->base_backoff_ms <= policy->max_backoff_ms;
+}
+
+static DrvResult
+applystart(DrvLifecycle *lifecycle, const DrvEvent *event)
+{
+	if(lifecycle->state == DrvFailed)
+		return DrvIgnored;
+	lifecycle->desired_running = 1;
+	if(lifecycle->state == DrvStopped)
+		return begin(lifecycle, event->now_ms);
+	if(lifecycle->state == DrvBackoff &&
+	   event->now_ms >= lifecycle->retry_at_ms)
+		return begin(lifecycle, event->now_ms);
+	return DrvIgnored;
+}
+
+static DrvResult
+applyready(DrvLifecycle *lifecycle, const DrvEvent *event)
+{
+	if(lifecycle->state != DrvStarting)
+		return DrvIgnored;
+	lifecycle->state = DrvRunning;
+	lifecycle->deadline_ms = addsat(event->now_ms,
+		lifecycle->policy.heartbeat_timeout_ms);
+	return DrvApplied;
+}
+
+static DrvResult
+applyprogress(DrvLifecycle *lifecycle, const DrvEvent *event)
+{
+	if(lifecycle->state != DrvRunning ||
+	   event->progress <= lifecycle->last_progress)
+		return DrvIgnored;
+	lifecycle->last_progress = event->progress;
+	lifecycle->deadline_ms = addsat(event->now_ms,
+		lifecycle->policy.heartbeat_timeout_ms);
+	return DrvApplied;
+}
+
+static DrvResult
+applyexit(DrvLifecycle *lifecycle, const DrvEvent *event)
+{
+	if(!activestate(lifecycle->state))
+		return DrvIgnored;
+	return failed(lifecycle, event->now_ms);
+}
+
+static DrvResult
+applystop(DrvLifecycle *lifecycle, const DrvEvent *event)
+{
+	lifecycle->desired_running = 0;
+	if(lifecycle->state == DrvStarting || lifecycle->state == DrvRunning){
+		lifecycle->state = DrvStopping;
+		lifecycle->deadline_ms = addsat(event->now_ms,
+			lifecycle->policy.startup_timeout_ms);
+		return DrvApplied;
+	}
+	if(lifecycle->state == DrvBackoff || lifecycle->state == DrvFailed){
+		lifecycle->state = DrvStopped;
+		lifecycle->deadline_ms = 0;
+		lifecycle->retry_at_ms = 0;
+		lifecycle->restarts = 0;
+		return DrvApplied;
+	}
+	return DrvIgnored;
+}
+
+static DrvResult
+applystopped(DrvLifecycle *lifecycle, const DrvEvent *event)
+{
+	if(lifecycle->state != DrvStopping)
+		return DrvIgnored;
+	lifecycle->state = DrvStopped;
+	lifecycle->deadline_ms = 0;
+	lifecycle->retry_at_ms = 0;
+	lifecycle->restarts = 0;
+	if(lifecycle->desired_running)
+		return begin(lifecycle, event->now_ms);
+	return DrvApplied;
+}
+
+static DrvResult
+applytick(DrvLifecycle *lifecycle, const DrvEvent *event)
+{
+	if(activestate(lifecycle->state) &&
+	   event->now_ms >= lifecycle->deadline_ms)
+		return failed(lifecycle, event->now_ms);
+	if(lifecycle->state == DrvBackoff && lifecycle->desired_running &&
+	   event->now_ms >= lifecycle->retry_at_ms)
+		return begin(lifecycle, event->now_ms);
+	return DrvIgnored;
+}
+
+static DrvResult
+applyreset(DrvLifecycle *lifecycle)
+{
+	if(lifecycle->state != DrvFailed)
+		return DrvIgnored;
+	lifecycle->state = DrvStopped;
+	lifecycle->restarts = 0;
+	lifecycle->desired_running = 0;
+	lifecycle->deadline_ms = 0;
+	lifecycle->retry_at_ms = 0;
+	lifecycle->last_progress = 0;
+	return DrvApplied;
+}
+
 int
 drv_lifecycle_init(DrvLifecycle *lifecycle, const DrvPolicy *policy)
 {
 	if(lifecycle == NULL || policy == NULL)
 		return -1;
-	if(policy->startup_timeout_ms == 0 || policy->heartbeat_timeout_ms == 0 ||
-	   policy->base_backoff_ms == 0 || policy->max_backoff_ms == 0 ||
-	   policy->base_backoff_ms > policy->max_backoff_ms)
+	if(!policyvalid(policy))
 		return -1;
 	memset(lifecycle, 0, sizeof(*lifecycle));
 	lifecycle->policy = *policy;
@@ -105,81 +224,21 @@ drv_lifecycle_apply(DrvLifecycle *lifecycle, const DrvEvent *event)
 
 	switch(event->type){
 	case DrvStart:
-		if(lifecycle->state == DrvFailed)
-			return DrvIgnored;
-		lifecycle->desired_running = 1;
-		if(lifecycle->state == DrvStopped)
-			return begin(lifecycle, event->now_ms);
-		if(lifecycle->state == DrvBackoff &&
-		   event->now_ms >= lifecycle->retry_at_ms)
-			return begin(lifecycle, event->now_ms);
-		return DrvIgnored;
+		return applystart(lifecycle, event);
 	case DrvReady:
-		if(lifecycle->state != DrvStarting)
-			return DrvIgnored;
-		lifecycle->state = DrvRunning;
-		lifecycle->deadline_ms = addsat(event->now_ms,
-			lifecycle->policy.heartbeat_timeout_ms);
-		return DrvApplied;
+		return applyready(lifecycle, event);
 	case DrvProgress:
-		if(lifecycle->state != DrvRunning ||
-		   event->progress <= lifecycle->last_progress)
-			return DrvIgnored;
-		lifecycle->last_progress = event->progress;
-		lifecycle->deadline_ms = addsat(event->now_ms,
-			lifecycle->policy.heartbeat_timeout_ms);
-		return DrvApplied;
+		return applyprogress(lifecycle, event);
 	case DrvExit:
-		if(lifecycle->state != DrvStarting && lifecycle->state != DrvRunning &&
-		   lifecycle->state != DrvStopping)
-			return DrvIgnored;
-		return failed(lifecycle, event->now_ms);
+		return applyexit(lifecycle, event);
 	case DrvStop:
-		lifecycle->desired_running = 0;
-		if(lifecycle->state == DrvStarting || lifecycle->state == DrvRunning){
-			lifecycle->state = DrvStopping;
-			lifecycle->deadline_ms = addsat(event->now_ms,
-				lifecycle->policy.startup_timeout_ms);
-			return DrvApplied;
-		}
-		if(lifecycle->state == DrvBackoff || lifecycle->state == DrvFailed){
-			lifecycle->state = DrvStopped;
-			lifecycle->deadline_ms = 0;
-			lifecycle->retry_at_ms = 0;
-			lifecycle->restarts = 0;
-			return DrvApplied;
-		}
-		return DrvIgnored;
+		return applystop(lifecycle, event);
 	case DrvStoppedEvent:
-		if(lifecycle->state != DrvStopping)
-			return DrvIgnored;
-		lifecycle->state = DrvStopped;
-		lifecycle->deadline_ms = 0;
-		lifecycle->retry_at_ms = 0;
-		lifecycle->restarts = 0;
-		if(lifecycle->desired_running)
-			return begin(lifecycle, event->now_ms);
-		return DrvApplied;
+		return applystopped(lifecycle, event);
 	case DrvTick:
-		if((lifecycle->state == DrvStarting ||
-		    lifecycle->state == DrvRunning ||
-		    lifecycle->state == DrvStopping) &&
-		   event->now_ms >= lifecycle->deadline_ms)
-			return failed(lifecycle, event->now_ms);
-		if(lifecycle->state == DrvBackoff && lifecycle->desired_running &&
-		   event->now_ms >= lifecycle->retry_at_ms)
-			return begin(lifecycle, event->now_ms);
-		return DrvIgnored;
+		return applytick(lifecycle, event);
 	case DrvReset:
-		if(lifecycle->state != DrvFailed)
-			return DrvIgnored;
-		lifecycle->state = DrvStopped;
-		lifecycle->restarts = 0;
-		lifecycle->desired_running = 0;
-		lifecycle->deadline_ms = 0;
-		lifecycle->retry_at_ms = 0;
-		lifecycle->last_progress = 0;
-		return DrvApplied;
+		return applyreset(lifecycle);
 	case DrvEventCount:
 		break;
 	}
@@ -192,11 +251,7 @@ drv_lifecycle_valid(const DrvLifecycle *lifecycle)
 	if(lifecycle == NULL || lifecycle->state < 0 ||
 	   lifecycle->state >= DrvStateCount)
 		return 0;
-	if(lifecycle->policy.startup_timeout_ms == 0 ||
-	   lifecycle->policy.heartbeat_timeout_ms == 0 ||
-	   lifecycle->policy.base_backoff_ms == 0 ||
-	   lifecycle->policy.max_backoff_ms == 0 ||
-	   lifecycle->policy.base_backoff_ms > lifecycle->policy.max_backoff_ms)
+	if(!policyvalid(&lifecycle->policy))
 		return 0;
 	if(lifecycle->restarts > lifecycle->policy.max_restarts)
 		return 0;
@@ -204,8 +259,7 @@ drv_lifecycle_valid(const DrvLifecycle *lifecycle)
 		return 0;
 	if(lifecycle->state == DrvBackoff && lifecycle->retry_at_ms == 0)
 		return 0;
-	if((lifecycle->state == DrvStarting || lifecycle->state == DrvRunning ||
-	    lifecycle->state == DrvStopping) && lifecycle->generation == 0)
+	if(activestate(lifecycle->state) && lifecycle->generation == 0)
 		return 0;
 	return 1;
 }
