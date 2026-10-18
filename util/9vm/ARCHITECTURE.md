@@ -51,7 +51,13 @@ network, display, and input device policy belongs to user-space 9P services.
 `sys/src/cmd/o9driverfs` is the Objective-9C device namespace: a trusted
 launcher maps named backend files into per-attach `view/drivers` trees. The
 x86 VM test verifies this filesystem over a real 9P mount. Device-specific
-services still need to be built on this interface. The ARM64 kernel links both
+services still need to be built on this interface. `sys/src/cmd/o9drvman`
+owns their generation-safe lifecycle policy. Its Objective-9C 9P service
+publishes tabular state and control records while a portable C core rejects
+stale process events, enforces heartbeat deadlines, and bounds restart
+backoff. The C core must pass unit, generated property, ASan/UBSan,
+libFuzzer, and semantic mutation tests through `bin/aspera quality`.
+The ARM64 kernel links both
 `#~` and `#9`; QEMU `virt` tests exercise a named 9ring request and reply and
 virtio-MMIO 9P version negotiation. ARM64 user process launch remains a
 bring-up task. ARM64 PL011 use is restricted to early boot diagnostics.
@@ -68,7 +74,9 @@ The current VM test mounts two clients concurrently, reads a file through
 both mounts, then unmounts them. The test runs with the shared host ring and
 with the VirtIO fallback. See `boot/test_local_9ring.c` and `test_boot.py`.
 
-For a GEFS-backed VM, Linux holds an opaque image file. The 9front VM
+The present GEFS path is a temporary compatibility bridge, rather than the
+final Aspera storage implementation. Linux holds an opaque image file. The
+9front VM
 formatter in `format_gefs_image.py` creates and checks it, then verifies a
 GEFS file across a 9front reboot. `9vm -gefs-image image` exports exactly
 that file as `image` on a separate VirtIO 9P device, `#9/2`, tagged
@@ -77,8 +85,11 @@ on this export. Image writes use `O_DSYNC`, so each completed write reaches
 the host's synchronous data-write boundary. Linux never mounts or interprets
 GEFS.
 
-`build_gefs_guest.py` compiles a guest GEFS server from the 9front source with
-small Harvey compatibility adapters. The kernel embeds that server and an
+`build_gefs_guest.py` compiles selected GEFS source with Harvey compatibility
+adapters. This is not a complete native port and should not acquire new
+storage features. A later milestone will port the proper 9front GEFS server
+and validate its recovery semantics. The kernel currently embeds the
+compatibility server and an
 Objective-9C bootstrap in its read-only `#/boot`. With `-gefs-image`, the
 bootstrap mounts the image transport, starts GEFS, and mounts its 9P tree at
 `/`. The Linux source tree is not served to the guest in this mode. The adapter

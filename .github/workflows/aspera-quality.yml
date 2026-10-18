@@ -1,0 +1,15 @@
+name: aspera-native-quality
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  native-quality:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install native test toolchain
+        run: sudo apt-get update && sudo apt-get install -y clang
+      - name: Unit, property, sanitizer, fuzz and mutation gate
+        run: ./util/quality/run.sh

@@ -73,6 +73,17 @@ The built guest kernel is `build/harvey.32bit`, the host runner is
 missing inputs. The build instructions and transport tests are in
 [README.md](README.md).
 
+Run both required development gates before packaging:
+
+```sh
+./bin/aspera quality
+./bin/aspera verify
+```
+
+The quality command runs unit, property, sanitizer, coverage-guided fuzzing,
+and mutation tests. `verify` adds the namespace/persistence boot test and the
+Objective-9C driver-manager 9P integration test.
+
 ## Runtime bundle target
 
 The installable package should contain only runtime artifacts:
@@ -82,7 +93,7 @@ bin/aspera                    installed launcher
 libexec/aspera/9vm           KVM runner
 libexec/aspera/display-sdl   host window and input adapter
 libexec/aspera/harvey.32bit  guest kernel
-share/aspera/root.img        pristine GEFS image with desktop and shell
+share/aspera/root.img        temporary compatibility image with desktop and shell
 ```
 
 At first launch, copy the image template to a user-owned data directory and

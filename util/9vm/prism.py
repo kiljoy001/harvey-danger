@@ -67,7 +67,7 @@ LIBS = [
     os.path.join(REPO_ROOT, "build/libc.a"),
 ]
 
-def compile_o9(source_path, output_binary, keep_temps=False):
+def compile_o9(source_path, output_binary, keep_temps=False, extra_sources=None):
     """Transpile and link an Objective-9C file into a Plan 9 AMD64 binary."""
     if not os.path.exists(source_path):
         raise FileNotFoundError(f"Source file not found: {source_path}")
@@ -80,6 +80,8 @@ def compile_o9(source_path, output_binary, keep_temps=False):
     c_file = os.path.join(temporary, f"{base_name}.o9.c")
     obj_file = os.path.join(temporary, f"{base_name}.o9.o")
 
+    if extra_sources is None:
+        extra_sources = []
     try:
         with open(c_file, "w") as f:
             res = subprocess.run([O9C_BIN, source_path], stdout=f,
@@ -93,13 +95,30 @@ def compile_o9(source_path, output_binary, keep_temps=False):
         if res.returncode != 0:
             raise RuntimeError(f"Compilation failed:\n{res.stderr}")
 
+        extra_objects = []
+        for index, source in enumerate(extra_sources):
+            source = os.path.abspath(source)
+            if not os.path.isfile(source):
+                raise FileNotFoundError(f"C source file not found: {source}")
+            extra_object = os.path.join(
+                temporary, f"extra-{index}-{os.path.basename(source)}.o")
+            compile_cmd = ([CC] + CFLAGS +
+                           [f"-I{os.path.dirname(source)}", source,
+                            "-o", extra_object])
+            res = subprocess.run(compile_cmd, capture_output=True, text=True)
+            if res.returncode != 0:
+                raise RuntimeError(
+                    f"C compilation failed for {source}:\n{res.stderr}")
+            extra_objects.append(extra_object)
+
         os.makedirs(os.path.dirname(os.path.abspath(output_binary)), exist_ok=True)
         # libflate is only built for guests that use it (such as o9irc).
         # Resolve this at link time because those builds import prism before
         # creating the archive.
         libs = [lib for lib in LIBS if not lib.endswith("/libflate.a") or
                 os.path.exists(lib)]
-        link_cmd = [LD] + LDFLAGS + [obj_file] + libs + ["-o", output_binary]
+        link_cmd = ([LD] + LDFLAGS + [obj_file] + extra_objects + libs +
+                    ["-o", output_binary])
         res = subprocess.run(link_cmd, capture_output=True, text=True)
         if res.returncode != 0:
             raise RuntimeError(f"Linking failed:\n{res.stderr}")
@@ -110,7 +129,7 @@ def compile_o9(source_path, output_binary, keep_temps=False):
     return output_binary
 
 def run_workload(source_path, ram_mb=512, timeout_sec=10.0, quiet=False,
-                 verbose=False, gefs_image=None):
+                 verbose=False, gefs_image=None, extra_sources=None):
     """Execute an Objective-9C workload under the ephemeral microkernel."""
     build_dir = os.path.join(REPO_ROOT, "build")
     os.makedirs(build_dir, exist_ok=True)
@@ -120,7 +139,7 @@ def run_workload(source_path, ram_mb=512, timeout_sec=10.0, quiet=False,
 
     try:
         t_start_build = time.perf_counter()
-        compile_o9(source_path, guest_binary)
+        compile_o9(source_path, guest_binary, extra_sources=extra_sources)
         t_build = time.perf_counter() - t_start_build
 
         if verbose:
@@ -193,12 +212,16 @@ def main():
     run_parser.add_argument("-q", "--quiet", action="store_true", help="Quiet mode: only show userland stdout")
     run_parser.add_argument("-v", "--verbose", action="store_true", help="Verbose mode: show timings and VM debug info")
     run_parser.add_argument("--gefs-image", help="Attach a GEFS image as #9/2")
+    run_parser.add_argument("--c-source", action="append", default=[],
+                            help="Additional C source to compile and link (repeatable)")
 
     # build command
     build_parser = subparsers.add_parser("build", help="Compile an Objective-9C file into a Plan 9 binary")
     build_parser.add_argument("file", help="Path to .o9 script")
     build_parser.add_argument("-o", "--output", required=True, help="Destination binary path")
     build_parser.add_argument("--keep-temps", action="store_true", help="Keep intermediate C/object files")
+    build_parser.add_argument("--c-source", action="append", default=[],
+                              help="Additional C source to compile and link (repeatable)")
 
     # view command
     view_parser = subparsers.add_parser("view", help="Launch interactive graphical viewer for o9aspera")
@@ -214,6 +237,7 @@ def main():
                 quiet=args.quiet,
                 verbose=args.verbose,
                 gefs_image=args.gefs_image,
+                extra_sources=args.c_source,
             )
             sys.exit(rc)
         except Exception as e:
@@ -221,7 +245,8 @@ def main():
             sys.exit(1)
     elif args.subcommand == "build":
         try:
-            compile_o9(args.file, args.output, keep_temps=args.keep_temps)
+            compile_o9(args.file, args.output, keep_temps=args.keep_temps,
+                       extra_sources=args.c_source)
             print(f"[prism] Created {args.output} ({os.path.getsize(args.output)} bytes)")
         except Exception as e:
             print(f"[prism] Error: {e}", file=sys.stderr)

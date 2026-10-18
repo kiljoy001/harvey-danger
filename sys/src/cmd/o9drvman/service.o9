@@ -1,0 +1,286 @@
+// A generation-safe lifecycle and policy service for user-space drivers.
+// Device-specific Objective-9C services report readiness, progress and exit;
+// this service owns restart state and rejects stale reports.
+import "stdlib/view.o9";
+import "stdlib/process.o9";
+import "stdlib/string.o9";
+import "bytes.o9";
+
+function DrvManagerInitRaw(int64 slot) int64 {
+    int64 out;
+    c {
+        extern int o9drvmaninit(int);
+        out = o9drvmaninit(slot);
+    }
+    return out;
+}
+
+function DrvManagerApplyRaw(int64 slot, int64 event, int64 generation,
+                            int64 now, int64 progress) int64 {
+    int64 out;
+    c {
+        extern int o9drvmanapply(int, int, uvlong, uvlong, uvlong);
+        out = o9drvmanapply(slot, event, generation, now, progress);
+    }
+    return out;
+}
+
+function DrvManagerFieldRaw(int64 slot, int64 field) int64 {
+    int64 out;
+    c {
+        extern vlong o9drvmanfield(int, int);
+        out = o9drvmanfield(slot, field);
+    }
+    return out;
+}
+
+function DrvManagerStateRaw(int64 slot) string {
+    string out;
+    c {
+        extern char *o9drvmanstate(int);
+        out = o9_string_from_c(o9drvmanstate(slot));
+    }
+    return out;
+}
+
+class DriverNumber {
+    method string format(int64 value) {
+        if(value == 0) { return "0"; }
+        if(value < 0) { return ""; }
+        string result = "";
+        int64 n = value;
+        while(n > 0) {
+            Task<string> digit = spawn StringSliceRaw("0123456789", n % 10, 1);
+            result = cat(digit.await(), result);
+            n = n / 10;
+        }
+        return result;
+    }
+
+    method int64 parse(string value) {
+        if(len(value) == 0 || len(value) > 18) { return -1; }
+        int64 n = 0;
+        int64 i = 0;
+        while(i < len(value)) {
+            Task<byte> ch = spawn BytesGetRaw(value, i);
+            int64 digit = ch.await() - 48;
+            if(digit < 0 || digit > 9 || n > (9223372036854775807 - digit) / 10) {
+                return -1;
+            }
+            n = n * 10 + digit;
+            i = i + 1;
+        }
+        return n;
+    }
+}
+
+class DriverManager {
+    private string[] names;
+    private int64 count;
+    private DriverNumber number;
+
+    method DriverManager() {
+        count = 0;
+        number = new DriverNumber();
+    }
+
+    private method bool validName(string name) {
+        if(len(name) == 0 || len(name) > 32) { return false; }
+        int64 i = 0;
+        while(i < len(name)) {
+            Task<byte> ch = spawn BytesGetRaw(name, i);
+            int64 c = ch.await();
+            if(!((c >= 48 && c <= 57) || (c >= 65 && c <= 90) ||
+                 (c >= 97 && c <= 122) || c == 45 || c == 95)) {
+                return false;
+            }
+            i = i + 1;
+        }
+        return true;
+    }
+
+    private method int64 find(string name) {
+        int64 i = 0;
+        while(i < count) {
+            if(cmp(names[i], name) == 0) { return i; }
+            i = i + 1;
+        }
+        return -1;
+    }
+
+    method bool add(string name) {
+        if(count >= 64 || !validName(name) || find(name) >= 0) { return false; }
+        Task<int64> initialized = spawn DrvManagerInitRaw(count);
+        if(initialized.await() != 0) { return false; }
+        names[count] = cat(name, "");
+        count = count + 1;
+        return true;
+    }
+
+    private method int64 field(int64 slot, int64 fieldNumber) {
+        Task<int64> value = spawn DrvManagerFieldRaw(slot, fieldNumber);
+        return value.await();
+    }
+
+    private method string stateName(int64 slot) {
+        Task<string> value = spawn DrvManagerStateRaw(slot);
+        return value.await();
+    }
+
+    method string table() {
+        string result = "name\tstate\tgeneration\trestarts\tdesired\tdeadline_ms\tretry_ms\tprogress\n";
+        int64 slot = 0;
+        while(slot < count) {
+            string row = cat(names[slot], cat("\t", stateName(slot)));
+            int64 column = 1;
+            while(column <= 6) {
+                row = cat(row, cat("\t", number.format(field(slot, column))));
+                column = column + 1;
+            }
+            result = cat(result, cat(row, "\n"));
+            slot = slot + 1;
+        }
+        return result;
+    }
+
+    private method int64 eventType(string verb) {
+        if(cmp(verb, "start") == 0) { return 0; }
+        if(cmp(verb, "ready") == 0) { return 1; }
+        if(cmp(verb, "progress") == 0) { return 2; }
+        if(cmp(verb, "exit") == 0) { return 3; }
+        if(cmp(verb, "stop") == 0) { return 4; }
+        if(cmp(verb, "stopped") == 0) { return 5; }
+        if(cmp(verb, "tick") == 0) { return 6; }
+        if(cmp(verb, "reset") == 0) { return 7; }
+        return -1;
+    }
+
+    method string command(string text) {
+        Task<string> cleanTask = spawn StringTrimRaw(text);
+        string clean = cleanTask.await();
+        Task<string> verbTask = spawn StringFieldRaw(clean, " ", 0);
+        Task<string> nameTask = spawn StringFieldRaw(clean, " ", 1);
+        Task<string> aTask = spawn StringFieldRaw(clean, " ", 2);
+        Task<string> bTask = spawn StringFieldRaw(clean, " ", 3);
+        Task<string> cTask = spawn StringFieldRaw(clean, " ", 4);
+        Task<string> extraTask = spawn StringFieldRaw(clean, " ", 5);
+        string verb = verbTask.await();
+        string name = nameTask.await();
+        string a = aTask.await();
+        string b = bTask.await();
+        string c = cTask.await();
+        if(len(extraTask.await()) != 0) { return ""; }
+        int64 slot = find(name);
+        int64 event = eventType(verb);
+        if(slot < 0 || event < 0) { return ""; }
+        int64 generation = 0;
+        int64 now = 0;
+        int64 progress = 0;
+        if(event == 0 || event == 4 || event == 6 || event == 7) {
+            if(len(a) == 0 || len(b) != 0) { return ""; }
+            now = number.parse(a);
+        } else if(event == 2) {
+            if(len(a) == 0 || len(b) == 0 || len(c) == 0) { return ""; }
+            generation = number.parse(a);
+            now = number.parse(b);
+            progress = number.parse(c);
+        } else {
+            if(len(a) == 0 || len(b) == 0 || len(c) != 0) { return ""; }
+            generation = number.parse(a);
+            now = number.parse(b);
+        }
+        if(generation < 0 || now < 0 || progress < 0) { return ""; }
+        Task<int64> applied = spawn DrvManagerApplyRaw(slot, event, generation,
+                                                       now, progress);
+        int64 status = applied.await();
+        if(status < 0) { return ""; }
+        string disposition = "ignored";
+        if(status == 0) { disposition = "ok"; }
+        return cat(cat(cat(cat(disposition, " "), name), " "),
+                   cat(stateName(slot), cat(" ", cat(number.format(field(slot, 1)), "\n"))));
+    }
+}
+
+class DriverManagerViews {
+    ViewController;
+    private DriverManager manager;
+    private string[] ids;
+    private string[] results;
+    private int64 count;
+
+    method DriverManagerViews(DriverManager lifecycleManager) {
+        manager = lifecycleManager;
+        count = 0;
+    }
+
+    private method int64 find(string id) {
+        int64 i = 0;
+        while(i < count) {
+            if(cmp(ids[i], id) == 0) { return i; }
+            i = i + 1;
+        }
+        return -1;
+    }
+
+    internal method FileTree display(string id, string caller) {
+        int64 slot = 0;
+        while(slot < count && len(ids[slot]) != 0) { slot = slot + 1; }
+        if(slot == count && count >= 64) { return nil; }
+        FileTree tree = new FileTree();
+        tree.text("protocol", "o9drvman 1\n", false);
+        tree.live("drivers.tab", false);
+        tree.live("ctl", true);
+        tree.live("result", false);
+        ids[slot] = cat(id, "");
+        results[slot] = "ready\n";
+        if(slot == count) { count = count + 1; }
+        return tree;
+    }
+
+    internal method void closeView(string id) {
+        int64 slot = find(id);
+        if(slot >= 0) {
+            ids[slot] = "";
+            results[slot] = "";
+        }
+    }
+
+    internal method string readText(string id, string path) {
+        int64 slot = find(id);
+        if(slot < 0) { return ""; }
+        if(cmp(path, "drivers.tab") == 0) { return manager.table(); }
+        if(cmp(path, "result") == 0) { return cat(results[slot], ""); }
+        return "";
+    }
+
+    internal method int64 writeText(string id, string path, int64 offset,
+                                   string text, bool truncate) {
+        int64 slot = find(id);
+        if(slot < 0 || cmp(path, "ctl") != 0 || offset != 0 ||
+           len(text) < 2 || len(text) > 256) { return -1; }
+        string result = manager.command(text);
+        if(len(result) == 0) { return -1; }
+        results[slot] = result;
+        return len(text);
+    }
+}
+
+main {
+    Process process = new Process();
+    DriverManager manager = new DriverManager();
+    bool valid = true;
+    int64 i = 1;
+    while(i < process.argc()) {
+        if(!manager.add(process.arg(i))) { valid = false; }
+        i = i + 1;
+    }
+    if(!valid) {
+        print("o9drvman: invalid or duplicate driver name\n");
+    } else {
+        DriverManagerViews service = new DriverManagerViews(manager);
+        viewController(service);
+        Task<int64> notifications = spawn ViewCloseNotificationsRaw(true);
+        notifications.await();
+        serve();
+    }
+}

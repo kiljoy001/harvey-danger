@@ -5,12 +5,15 @@ import argparse
 import os
 from pathlib import Path
 import shutil
+import subprocess
 import sys
 
 
 ROOT = Path(__file__).resolve().parents[1]
 LIVE = ROOT / "util/9vm/aspera_live.py"
 SYSTEM_TEST = ROOT / "util/9vm/test_system_milestone.py"
+DRIVER_TEST = ROOT / "util/9vm/test_driver_manager.py"
+QUALITY = ROOT / "util/quality/run.sh"
 BUILD = ROOT / "build"
 PREVIEW_FILES = (
     ROOT / "util/9vm/9vm",
@@ -43,8 +46,11 @@ def check(command: str, image: Path) -> list[str]:
     graphical = command in ("start", "preview", "check")
     if graphical and not LIVE.is_file():
         problems.append("missing util/9vm/aspera_live.py")
-    if command == "verify" and not SYSTEM_TEST.is_file():
-        problems.append("missing util/9vm/test_system_milestone.py")
+    if command == "verify":
+        if not SYSTEM_TEST.is_file():
+            problems.append("missing util/9vm/test_system_milestone.py")
+        if not DRIVER_TEST.is_file():
+            problems.append("missing util/9vm/test_driver_manager.py")
     if command == "preview":
         o9_root = Path(os.environ["O9_REPO"])
         if not (o9_root / "o9c/o9c").is_file():
@@ -67,7 +73,7 @@ def check(command: str, image: Path) -> list[str]:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("command", nargs="?",
-                        choices=("start", "preview", "check", "verify"),
+                        choices=("start", "preview", "check", "verify", "quality"),
                         default="start")
     parser.add_argument("--image", type=Path, default=BUILD / "aspera-desktop-gefs.img",
                         help="GEFS disk image for start/check")
@@ -80,6 +86,13 @@ def main() -> int:
         parser.error("--ram must be between 256 and 65536 MiB")
     os.environ["O9_REPO"] = str(Path(os.environ.get(
         "O9_REPO", ROOT.parent / "objective-9c")).expanduser().resolve())
+    if args.command == "quality":
+        if not QUALITY.is_file():
+            print("aspera: missing util/quality/run.sh", file=sys.stderr)
+            return 1
+        os.chdir(ROOT)
+        os.execv(str(QUALITY), [str(QUALITY)])
+        return 1
     image = args.image.expanduser().resolve()
     problems = check(args.command, image)
     if problems:
@@ -92,8 +105,12 @@ def main() -> int:
         return 0
     if args.command == "verify":
         os.chdir(ROOT)
-        os.execv(sys.executable, [sys.executable, str(SYSTEM_TEST)])
-        return 1
+        for test in (SYSTEM_TEST, DRIVER_TEST):
+            result = subprocess.run([sys.executable, str(test)])
+            if result.returncode != 0:
+                return result.returncode
+        print("ASPERA-VERIFY PASS")
+        return 0
     os.chdir(ROOT)
     command = [sys.executable, str(LIVE)]
     if args.smoke:

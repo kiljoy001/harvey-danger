@@ -1,0 +1,65 @@
+import "stdlib/file.o9";
+import "stdlib/namespace.o9";
+import "stdlib/string.o9";
+import "stdlib/time.o9";
+import "service.o9";
+
+class DriverManagerProbe {
+    method int64 identity(int64 value) { return value; }
+}
+
+main {
+    DriverManagerProbe probe = new DriverManagerProbe();
+    DriverManager manager = new DriverManager();
+    bool ok = probe.identity(1) == 1 && manager.add("net0");
+    ok = ok && !manager.add("net0");
+    ok = ok && !manager.add("../bad");
+    string started = manager.command("start net0 100");
+    Task<int64> startText = spawn StringIndexOfRaw(started, "ok net0 starting 1");
+    ok = ok && startText.await() >= 0;
+    string stale = manager.command("ready net0 2 110");
+    Task<int64> staleText = spawn StringIndexOfRaw(stale, "ignored net0 starting 1");
+    ok = ok && staleText.await() >= 0;
+    string ready = manager.command("ready net0 1 110");
+    Task<int64> readyText = spawn StringIndexOfRaw(ready, "ok net0 running 1");
+    ok = ok && readyText.await() >= 0;
+    string progress = manager.command("progress net0 1 120 9");
+    Task<int64> progressText = spawn StringIndexOfRaw(progress, "ok net0 running 1");
+    ok = ok && progressText.await() >= 0;
+    Task<int64> rowText = spawn StringIndexOfRaw(manager.table(),
+        "net0\trunning\t1\t0\t1\t30120\t0\t9");
+    ok = ok && rowText.await() >= 0;
+
+    File mountpoint = new File("/mnt/o9drvman-test");
+    ok = ok && mountpoint.mkdirAll();
+    DriverManagerViews views = new DriverManagerViews(manager);
+    viewController(views);
+    File service = new File("/srv/DriverManagerProbe");
+    int64 tries = 0;
+    while(!service.exists() && tries < 20) {
+        Task<int64> pause = spawn TimeSleepRaw(25);
+        pause.await();
+        tries = tries + 1;
+    }
+    Namespace mounts = new Namespace();
+    bool posted = service.exists();
+    bool rooted = mounts.root("/mnt");
+    bool mounted = mounts.mountsrvReplace("/srv/DriverManagerProbe", "o9drvman-test", "");
+    bool applied = mounts.apply();
+    ok = ok && posted && rooted && mounted && applied;
+    File protocol = new File("/mnt/o9drvman-test/view/protocol");
+    File table = new File("/mnt/o9drvman-test/view/drivers.tab");
+    File ctl = new File("/mnt/o9drvman-test/view/ctl");
+    File result = new File("/mnt/o9drvman-test/view/result");
+    ok = ok && cmp(protocol.read(), "o9drvman 1\n") == 0;
+    Task<int64> mountedRow = spawn StringIndexOfRaw(table.read(), "net0\trunning\t1");
+    ok = ok && mountedRow.await() >= 0;
+    int64 wrote = ctl.append("exit net0 1 130\n");
+    ok = ok && wrote == 16;
+    Task<int64> backoff = spawn StringIndexOfRaw(result.read(), "ok net0 backoff 1");
+    ok = ok && backoff.await() >= 0;
+    mounts.unmount("/mnt/o9drvman-test");
+    mounts.close();
+    if(ok) { print("O9DRVMAN-9P PASS\n"); }
+    else { print("O9DRVMAN-9P FAIL\n"); }
+}
