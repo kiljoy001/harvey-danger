@@ -4,6 +4,7 @@
 import "stdlib/view.o9";
 import "stdlib/process.o9";
 import "stdlib/string.o9";
+import "stdlib/time.o9";
 import "bytes.o9";
 
 function DrvManagerInitRaw(int64 slot) int64 {
@@ -39,6 +40,85 @@ function DrvManagerStateRaw(int64 slot) string {
     c {
         extern char *o9drvmanstate(int);
         out = o9_string_from_c(o9drvmanstate(slot));
+    }
+    return out;
+}
+
+function DrvManagerConfigureRaw(int64 slot, string path) int64 {
+    int64 out;
+    c {
+        char *value;
+
+        out = -1;
+        value = o9_string_cstr(path);
+        if(value != nil){
+            extern int o9drvmanconfigure(int, char *);
+            out = o9drvmanconfigure(slot, value);
+            free(value);
+        }
+    }
+    return out;
+}
+
+function DrvManagerConfiguredRaw(int64 slot) int64 {
+    int64 out;
+    c {
+        extern int o9drvmanconfigured(int);
+        out = o9drvmanconfigured(slot);
+    }
+    return out;
+}
+
+function DrvManagerLaunchRaw(int64 slot, int64 generation) int64 {
+    int64 out;
+    c {
+        extern int o9drvmanlaunch(int, uint);
+        out = o9drvmanlaunch(slot, generation);
+    }
+    return out;
+}
+
+function DrvManagerSignalRaw(int64 slot, int64 generation) int64 {
+    int64 out;
+    c {
+        extern int o9drvmansignal(int, uint);
+        out = o9drvmansignal(slot, generation);
+    }
+    return out;
+}
+
+function DrvManagerReapRaw() int64 {
+    int64 out;
+    c {
+        extern int o9drvmanreapone(void);
+        out = o9drvmanreapone();
+    }
+    return out;
+}
+
+function DrvManagerReapLoopRaw() int64 {
+    int64 out;
+    c {
+        extern int o9drvmanreaploop(void);
+        out = o9drvmanreaploop();
+    }
+    return out;
+}
+
+function DrvManagerSuperviseRaw(int64 now) int64 {
+    int64 out;
+    c {
+        extern int o9drvmansuperviseonce(uvlong);
+        out = o9drvmansuperviseonce(now);
+    }
+    return out;
+}
+
+function DrvManagerSuperviseLoopRaw() int64 {
+    int64 out;
+    c {
+        extern int o9drvmansuperviseloop(void);
+        out = o9drvmansuperviseloop();
     }
     return out;
 }
@@ -117,9 +197,25 @@ class DriverManager {
         return true;
     }
 
+    method bool addProcess(string name, string path) {
+        if(!add(name)) { return false; }
+        Task<int64> configured = spawn DrvManagerConfigureRaw(count - 1, path);
+        if(configured.await() != 0) {
+            count = count - 1;
+            return false;
+        }
+        return true;
+    }
+
     private method int64 field(int64 slot, int64 fieldNumber) {
         Task<int64> value = spawn DrvManagerFieldRaw(slot, fieldNumber);
         return value.await();
+    }
+
+    method int64 value(string name, int64 fieldNumber) {
+        int64 slot = find(name);
+        if(slot < 0 || fieldNumber < 0 || fieldNumber > 8) { return -1; }
+        return field(slot, fieldNumber);
     }
 
     private method string stateName(int64 slot) {
@@ -128,12 +224,12 @@ class DriverManager {
     }
 
     method string table() {
-        string result = "name\tstate\tgeneration\trestarts\tdesired\tdeadline_ms\tretry_ms\tprogress\n";
+        string result = "name\tstate\tgeneration\trestarts\tdesired\tdeadline_ms\tretry_ms\tprogress\tpid\texit_status\n";
         int64 slot = 0;
         while(slot < count) {
             string row = cat(names[slot], cat("\t", stateName(slot)));
             int64 column = 1;
-            while(column <= 6) {
+            while(column <= 8) {
                 row = cat(row, cat("\t", number.format(field(slot, column))));
                 column = column + 1;
             }
@@ -153,6 +249,35 @@ class DriverManager {
         if(cmp(verb, "tick") == 0) { return 6; }
         if(cmp(verb, "reset") == 0) { return 7; }
         return -1;
+    }
+
+    private method bool configured(int64 slot) {
+        Task<int64> value = spawn DrvManagerConfiguredRaw(slot);
+        return value.await() == 1;
+    }
+
+    private method int64 launch(int64 slot) {
+        if(!configured(slot) || field(slot, 0) != 1 || field(slot, 7) != 0) {
+            return -1;
+        }
+        Task<int64> launched = spawn DrvManagerLaunchRaw(slot, field(slot, 1));
+        return launched.await();
+    }
+
+    private method int64 signal(int64 slot, int64 generation) {
+        Task<int64> sent = spawn DrvManagerSignalRaw(slot, generation);
+        return sent.await();
+    }
+
+    private method int64 launchOrFail(int64 slot, int64 now) {
+        int64 generation = field(slot, 1);
+        int64 pid = launch(slot);
+        if(pid <= 0) {
+            Task<int64> failed = spawn DrvManagerApplyRaw(slot, 3,
+                generation, now, 0);
+            failed.await();
+        }
+        return pid;
     }
 
     method string command(string text) {
@@ -194,11 +319,43 @@ class DriverManager {
                                                        now, progress);
         int64 status = applied.await();
         if(status < 0) { return ""; }
+        if(status == 0 && event == 0 && configured(slot) &&
+           launchOrFail(slot, now) <= 0) {
+            return "";
+        }
+        if(status == 0 && event == 4 && field(slot, 7) > 0) {
+            signal(slot, field(slot, 1));
+        }
         string disposition = "ignored";
         if(status == 0) { disposition = "ok"; }
         return cat(cat(cat(cat(disposition, " "), name), " "),
                    cat(stateName(slot), cat(" ", cat(number.format(field(slot, 1)), "\n"))));
     }
+
+    method int64 reapOne() {
+        Task<int64> reaped = spawn DrvManagerReapRaw();
+        return reaped.await();
+    }
+
+    method int64 superviseOnce(int64 now) {
+        Task<int64> supervised = spawn DrvManagerSuperviseRaw(now);
+        return supervised.await();
+    }
+
+    method bool startAll(int64 now) {
+        int64 slot = 0;
+        while(slot < count) {
+            if(configured(slot)) {
+                Task<int64> started = spawn DrvManagerApplyRaw(slot, 0, 0, now, 0);
+                if(started.await() < 0 || launchOrFail(slot, now) <= 0) {
+                    return false;
+                }
+            }
+            slot = slot + 1;
+        }
+        return true;
+    }
+
 }
 
 class DriverManagerViews {
@@ -268,19 +425,24 @@ class DriverManagerViews {
 main {
     Process process = new Process();
     DriverManager manager = new DriverManager();
-    bool valid = true;
+    bool valid = process.argc() >= 3 && process.argc() % 2 == 1;
     int64 i = 1;
-    while(i < process.argc()) {
-        if(!manager.add(process.arg(i))) { valid = false; }
-        i = i + 1;
+    while(i + 1 < process.argc()) {
+        if(!manager.addProcess(process.arg(i), process.arg(i + 1))) { valid = false; }
+        i = i + 2;
     }
     if(!valid) {
-        print("o9drvman: invalid or duplicate driver name\n");
+        print("usage: o9drvman name /absolute/executable [name /absolute/executable ...]\n");
     } else {
         DriverManagerViews service = new DriverManagerViews(manager);
         viewController(service);
         Task<int64> notifications = spawn ViewCloseNotificationsRaw(true);
         notifications.await();
+        Time clock = new Time();
+        bool started = manager.startAll(clock.nsec() / 1000000);
+        if(!started) { print("o9drvman: driver launch failed\n"); }
+        Task<int64> reaper = spawn DrvManagerReapLoopRaw();
+        Task<int64> supervisor = spawn DrvManagerSuperviseLoopRaw();
         serve();
     }
 }

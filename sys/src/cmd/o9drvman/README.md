@@ -3,15 +3,15 @@
 `o9drvman` is the Objective-9C control plane for user-space driver services.
 It exposes a small 9P view:
 
-* `view/drivers.tab` reports every driver lifecycle as tabular data;
+* `view/drivers.tab` reports lifecycle, PID, and last exit status;
 * writes to `view/ctl` submit lifecycle events;
 * `view/result` reports the result for that attach.
 
 Each run gets a monotonically increasing generation. Readiness, progress,
 exit, and stopped events carry that generation. Reports from an old process
 are ignored after a restart, so a delayed exit cannot kill its replacement.
-The manager also owns heartbeat deadlines, bounded exponential backoff, and a
-restart budget.
+The manager also owns heartbeat deadlines, bounded exponential backoff, a
+restart budget, process launch, shutdown notes, and exit collection.
 
 The supported control records are:
 
@@ -26,15 +26,31 @@ tick NAME NOW_MS
 reset NAME NOW_MS
 ```
 
-Driver names are supplied only by the trusted launcher as command-line
-arguments. The writable control view cannot allocate new slots. The manager
-must run in the supervisor's private namespace; a read-only status service can
-be bound into broader namespaces later. AppUser authorization is still needed
-before any control view may be exported over a network.
+Driver names and absolute executable paths are supplied only by the trusted
+launcher as command-line pairs:
 
-This slice implements and tests lifecycle policy. The next slice connects
-these transitions to isolated Objective-9C process launch, notes, and wait
-messages. Device-specific services remain separate 9P programs.
+```
+o9drvman serial /bin/serialfs network /bin/netfs
+```
+
+The writable control view cannot allocate slots or replace executable paths.
+Each driver receives its slot and generation as `argv[1]` and `argv[2]` and
+runs with private descriptor, namespace, environment, rendezvous, and note
+groups. A detached per-driver monitor owns the child wait message and sends a
+fixed exit record to the manager, so it cannot consume Objective-9C runtime
+wait messages. Stop and timeout paths write `shutdown` to the driver's note
+group. The manager restarts desired drivers only after generation-safe
+backoff.
+
+The manager must run in the supervisor's private namespace; a read-only status
+service can be bound into broader namespaces later. AppUser authorization is
+still needed before any control view may be exported over a network.
+
+The VM integration test launches a real Objective-9C driver, verifies that its
+namespace mutation does not escape, reports ready and progress through the 9P
+control view, shuts it down with a note, consumes its exit, and exercises a
+crash/backoff/relaunch generation. Device-specific services remain separate
+9P programs; connecting the first service to `o9driverfs` is the next slice.
 
 Build or test it with the generic Objective-9C C source support:
 

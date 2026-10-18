@@ -12,6 +12,12 @@ main {
     DriverManagerProbe probe = new DriverManagerProbe();
     DriverManager manager = new DriverManager();
     bool ok = probe.identity(1) == 1 && manager.add("net0");
+    File privateMount = new File("/mnt/o9drvman-private");
+    File childMarker = new File("/build/o9drvman-child-started");
+    childMarker.remove();
+    ok = ok && privateMount.mkdirAll();
+    ok = ok && manager.addProcess("probe", "/build/o9drvman-test-child");
+    ok = ok && manager.addProcess("crash", "/build/o9drvman-test-child");
     ok = ok && !manager.add("net0");
     ok = ok && !manager.add("../bad");
     string started = manager.command("start net0 100");
@@ -58,8 +64,48 @@ main {
     ok = ok && wrote == 16;
     Task<int64> backoff = spawn StringIndexOfRaw(result.read(), "ok net0 backoff 1");
     ok = ok && backoff.await() >= 0;
+
+    string processStart = "start probe 200\n";
+    wrote = ctl.append(processStart);
+    ok = ok && wrote == len(processStart);
+    tries = 0;
+    while(!childMarker.exists() && tries < 40) {
+        Task<int64> childPause = spawn TimeSleepRaw(25);
+        childPause.await();
+        tries = tries + 1;
+    }
+    ok = ok && childMarker.exists() && cmp(childMarker.read(), "1") == 0;
+    File leaked = new File("/mnt/o9drvman-private/o9drvman-test-child");
+    ok = ok && !leaked.exists();
+
+    string processReady = "ready probe 1 210\n";
+    string processProgress = "progress probe 1 220 1\n";
+    string processStop = "stop probe 230\n";
+    ok = ok && ctl.append(processReady) == len(processReady);
+    ok = ok && ctl.append(processProgress) == len(processProgress);
+    ok = ok && ctl.append(processStop) == len(processStop);
+    ok = ok && manager.reapOne() > 0;
+    Task<int64> stopped = spawn StringIndexOfRaw(table.read(),
+        "probe\tstopped\t1\t0\t0\t0\t0\t0\t0\t0");
+    ok = ok && stopped.await() >= 0;
+
+    childMarker.remove();
+    string crashStart = "start crash 300\n";
+    ok = ok && ctl.append(crashStart) == len(crashStart);
+    ok = ok && manager.reapOne() > 0;
+    int64 retry = manager.value("crash", 5);
+    ok = ok && retry > 0 && manager.value("crash", 2) == 1;
+    ok = ok && manager.superviseOnce(retry) == 1;
+    ok = ok && manager.value("crash", 1) == 2;
+    ok = ok && manager.reapOne() > 0;
+    ok = ok && manager.value("crash", 2) == 2;
+    Task<int64> restarted = spawn StringIndexOfRaw(table.read(),
+        "crash\tbackoff\t2\t2\t1");
+    ok = ok && restarted.await() >= 0;
     mounts.unmount("/mnt/o9drvman-test");
     mounts.close();
+    childMarker.remove();
+    privateMount.remove();
     if(ok) { print("O9DRVMAN-9P PASS\n"); }
     else { print("O9DRVMAN-9P FAIL\n"); }
 }

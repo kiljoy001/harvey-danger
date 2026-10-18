@@ -1,0 +1,28 @@
+import "stdlib/file.o9";
+import "stdlib/process.o9";
+import "stdlib/string.o9";
+import "stdlib/time.o9";
+
+function DriverPrivateMountRaw() int64 {
+    int64 out;
+    c {
+        out = bind("/build", "/mnt/o9drvman-private", MREPL);
+    }
+    return out;
+}
+
+main {
+    Process process = new Process();
+    File marker = new File("/build/o9drvman-child-started");
+    Task<int64> isolated = spawn DriverPrivateMountRaw();
+    string generation = process.arg(2);
+    int64 isolatedResult = isolated.await();
+    int64 markerResult = -1;
+    if(isolatedResult >= 0) { markerResult = marker.write(generation); }
+    if(markerResult == 0) {
+        if(cmp(process.arg(1), "2") != 0) {
+            Time clock = new Time();
+            clock.sleep(10000);
+        }
+    }
+}

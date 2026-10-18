@@ -9,12 +9,18 @@ import sys
 ROOT = Path(__file__).resolve().parents[2]
 PRISM = ROOT / "util/9vm/prism.py"
 SOURCE = ROOT / "sys/src/cmd/o9drvman/test_service.o9"
+CHILD_SOURCE = ROOT / "sys/src/cmd/o9drvman/test_driver.o9"
+CHILD = ROOT / "build/o9drvman-test-child"
 LIFECYCLE = ROOT / "sys/src/cmd/o9drvman/lifecycle.c"
 BINDING = ROOT / "sys/src/cmd/o9drvman/binding.c"
 MARKER = "O9DRVMAN-9P PASS"
 
 
 def main() -> int:
+    subprocess.run([
+        sys.executable, str(PRISM), "build", str(CHILD_SOURCE),
+        "-o", str(CHILD),
+    ], cwd=ROOT, check=True)
     command = [
         sys.executable, str(PRISM), "run", str(SOURCE),
         "--c-source", str(LIFECYCLE),

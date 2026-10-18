@@ -55,7 +55,10 @@ services still need to be built on this interface. `sys/src/cmd/o9drvman`
 owns their generation-safe lifecycle policy. Its Objective-9C 9P service
 publishes tabular state and control records while a portable C core rejects
 stale process events, enforces heartbeat deadlines, and bounds restart
-backoff. The C core must pass unit, generated property, ASan/UBSan,
+backoff. It now launches Objective-9C driver executables in private namespace,
+environment, descriptor, rendezvous, and note groups. Detached monitors own
+the child wait messages, while PID and exit state remain visible through the
+manager's tabular view. The C core must pass unit, generated property, ASan/UBSan,
 libFuzzer, and semantic mutation tests through `bin/aspera quality`.
 The same gate applies those layers plus ThreadSanitizer stress to the shared
 9ring and VirtIO-9P validation primitives. `bin/aspera verify` boots the real
