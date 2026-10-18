@@ -103,6 +103,23 @@ read and check it, exercises the VirtIO root fallback, and boots 9front to
 read the same file. It then boots the isolated Aspera root twice to check a
 write, sync, and read after reboot. Its write test uses a disposable image.
 
+The common-system milestone test uses a disposable copy of the installed
+Aspera image. On each boot it creates two children with private name groups,
+mounts GEFS only in the first child's namespace, and proves that neither the
+parent nor the second child inherits that mount. It then writes and syncs a
+file before rebooting into a verification pass:
+
+```sh
+python3 util/9vm/build_kernel.py
+./bin/aspera verify
+```
+
+This test covers the current image transport and GEFS service. It is the
+behavioral baseline for moving the image behind a supervised userspace block
+driver; it does not describe the current VirtIO 9P image export as a block
+device. The filesystem is synced before the persistence marker; supervised
+GEFS shutdown and restart remain a separate lifecycle milestone.
+
 ## Include o9irc
 
 Build o9irc and provision its binaries into an existing GEFS image using

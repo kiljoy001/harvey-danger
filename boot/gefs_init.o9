@@ -13,6 +13,7 @@ function start_gefs_root() int64 {
         char *ircargs[] = {"o9irc-ircfs", "o9irc", "", "", "",
                            "/lib/o9irc", "262144", nil};
         char *probe = "Aspera GEFS root probe\n";
+        char *milestone = "Aspera system milestone 1\n";
         char *mode;
         char buf[64];
         Dir *d;
@@ -184,6 +185,129 @@ function start_gefs_root() int64 {
                 goto gefs_done;
             }
             print("ASPERA-GEFS-ROOT-VERIFY PASS\n");
+        }
+        free(mode);
+        mode = getenv("O9_SYSTEM_MILESTONE_TEST");
+        if(mode != nil){
+            Waitmsg *w;
+
+            d = dirstat("/n/nsprobe");
+            if(d == nil){
+                fd = create("/n/nsprobe", OREAD, DMDIR|0775);
+                if(fd < 0){
+                    print("ASPERA-SYSTEM-MILESTONE FAIL mountpoint: %r\n");
+                    free(mode);
+                    goto gefs_done;
+                }
+                close(fd);
+            }else
+                free(d);
+
+            pid = rfork(RFPROC|RFFDG|RFNAMEG);
+            if(pid == 0){
+                fd = open("/srv/asperagefs", OREAD);
+                if(fd < 0 || mount(fd, -1, "/n/nsprobe", MREPL|MCREATE, "") < 0){
+                    print("aspera: namespace child A mount failed: %r\n");
+                    if(fd >= 0) close(fd);
+                    _exits("private mount");
+                }
+                d = dirstat("/n/nsprobe/lib/aspera");
+                if(d == nil){
+                    print("aspera: namespace child A lookup failed: %r\n");
+                    _exits("private lookup");
+                }
+                free(d);
+                print("ASPERA-NAMESPACE-CHILD-A PASS private mount visible\n");
+                _exits(nil);
+            }
+            if(pid < 0){
+                print("ASPERA-SYSTEM-MILESTONE FAIL child A: %r\n");
+                free(mode);
+                goto gefs_done;
+            }
+            w = wait();
+            if(w == nil || w->pid != pid || w->msg[0] != '\0'){
+                if(w == nil)
+                    print("ASPERA-SYSTEM-MILESTONE FAIL child A wait: %r\n");
+                else
+                    print("ASPERA-SYSTEM-MILESTONE FAIL child A status pid=%d want=%d msg=%s\n",
+                          w->pid, pid, w->msg);
+                free(w);
+                free(mode);
+                goto gefs_done;
+            }
+            free(w);
+
+            d = dirstat("/n/nsprobe/lib/aspera");
+            if(d != nil){
+                free(d);
+                print("ASPERA-SYSTEM-MILESTONE FAIL parent mount leak\n");
+                free(mode);
+                goto gefs_done;
+            }
+
+            pid = rfork(RFPROC|RFFDG|RFNAMEG);
+            if(pid == 0){
+                d = dirstat("/n/nsprobe/lib/aspera");
+                if(d != nil){
+                    free(d);
+                    _exits("mount leaked");
+                }
+                print("ASPERA-NAMESPACE-CHILD-B PASS private mount absent\n");
+                _exits(nil);
+            }
+            if(pid < 0){
+                print("ASPERA-SYSTEM-MILESTONE FAIL child B: %r\n");
+                free(mode);
+                goto gefs_done;
+            }
+            w = wait();
+            if(w == nil || w->pid != pid || w->msg[0] != '\0'){
+                if(w == nil)
+                    print("ASPERA-SYSTEM-MILESTONE FAIL child B wait: %r\n");
+                else
+                    print("ASPERA-SYSTEM-MILESTONE FAIL child B status pid=%d want=%d msg=%s\n",
+                          w->pid, pid, w->msg);
+                free(w);
+                free(mode);
+                goto gefs_done;
+            }
+            free(w);
+            print("ASPERA-NAMESPACE-ISOLATION PASS\n");
+            if(strcmp(mode, "write") == 0){
+                fd = create("/lib/aspera/system-milestone.txt", ORDWR, 0600);
+                if(fd < 0 || write(fd, milestone, strlen(milestone)) != strlen(milestone)){
+                    print("ASPERA-SYSTEM-MILESTONE FAIL write: %r\n");
+                    if(fd >= 0) close(fd);
+                    free(mode);
+                    goto gefs_done;
+                }
+                close(fd);
+                fd = open("/srv/asperagefs.cmd", ORDWR);
+                if(fd < 0 || write(fd, "sync\n", 5) != 5){
+                    print("ASPERA-SYSTEM-MILESTONE FAIL sync: %r\n");
+                    if(fd >= 0) close(fd);
+                    free(mode);
+                    goto gefs_done;
+                }
+                close(fd);
+                print("ASPERA-SYSTEM-MILESTONE-WRITE PASS\n");
+            }else if(strcmp(mode, "verify") == 0){
+                fd = open("/lib/aspera/system-milestone.txt", OREAD);
+                n = fd < 0 ? -1 : read(fd, buf, sizeof buf);
+                if(fd >= 0) close(fd);
+                if(n != strlen(milestone) || memcmp(buf, milestone, n) != 0){
+                    print("ASPERA-SYSTEM-MILESTONE FAIL verify: %r\n");
+                    free(mode);
+                    goto gefs_done;
+                }
+                print("ASPERA-SYSTEM-MILESTONE-VERIFY PASS\n");
+            }else{
+                print("ASPERA-SYSTEM-MILESTONE FAIL invalid mode\n");
+                free(mode);
+                goto gefs_done;
+            }
+            print("ASPERA-SYSTEM-MILESTONE PASS\n");
         }
         free(mode);
         d = dirstat("/bin/o9irc-ircfs");

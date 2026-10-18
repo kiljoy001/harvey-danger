@@ -10,6 +10,7 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 LIVE = ROOT / "util/9vm/aspera_live.py"
+SYSTEM_TEST = ROOT / "util/9vm/test_system_milestone.py"
 BUILD = ROOT / "build"
 PREVIEW_FILES = (
     ROOT / "util/9vm/9vm",
@@ -39,8 +40,11 @@ def check(command: str, image: Path) -> list[str]:
             except ValueError:
                 label = str(path)
             problems.append(f"missing {label}")
-    if not LIVE.is_file():
+    graphical = command in ("start", "preview", "check")
+    if graphical and not LIVE.is_file():
         problems.append("missing util/9vm/aspera_live.py")
+    if command == "verify" and not SYSTEM_TEST.is_file():
+        problems.append("missing util/9vm/test_system_milestone.py")
     if command == "preview":
         o9_root = Path(os.environ["O9_REPO"])
         if not (o9_root / "o9c/o9c").is_file():
@@ -48,12 +52,13 @@ def check(command: str, image: Path) -> list[str]:
         for tool in ("clang", "ld.lld", "bison", "llvm-ar"):
             if shutil.which(tool) is None:
                 problems.append(f"missing command {tool}")
-    for tool in ("gcc", "sdl2-config"):
-        if shutil.which(tool) is None:
-            problems.append(f"missing command {tool}")
-    if not os.environ.get("DISPLAY") and not os.environ.get("WAYLAND_DISPLAY") \
-            and os.environ.get("SDL_VIDEODRIVER") != "dummy":
-        problems.append("no graphical display (DISPLAY or WAYLAND_DISPLAY)")
+    if graphical:
+        for tool in ("gcc", "sdl2-config"):
+            if shutil.which(tool) is None:
+                problems.append(f"missing command {tool}")
+        if not os.environ.get("DISPLAY") and not os.environ.get("WAYLAND_DISPLAY") \
+                and os.environ.get("SDL_VIDEODRIVER") != "dummy":
+            problems.append("no graphical display (DISPLAY or WAYLAND_DISPLAY)")
     if not os.access("/dev/kvm", os.R_OK | os.W_OK):
         problems.append("/dev/kvm is unavailable to this user")
     return problems
@@ -61,7 +66,8 @@ def check(command: str, image: Path) -> list[str]:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", nargs="?", choices=("start", "preview", "check"),
+    parser.add_argument("command", nargs="?",
+                        choices=("start", "preview", "check", "verify"),
                         default="start")
     parser.add_argument("--image", type=Path, default=BUILD / "aspera-desktop-gefs.img",
                         help="GEFS disk image for start/check")
@@ -74,9 +80,8 @@ def main() -> int:
         parser.error("--ram must be between 256 and 65536 MiB")
     os.environ["O9_REPO"] = str(Path(os.environ.get(
         "O9_REPO", ROOT.parent / "objective-9c")).expanduser().resolve())
-    mode = "preview" if args.command == "preview" else "start"
     image = args.image.expanduser().resolve()
-    problems = check(mode, image)
+    problems = check(args.command, image)
     if problems:
         for problem in problems:
             print(f"aspera: {problem}", file=sys.stderr)
@@ -85,6 +90,10 @@ def main() -> int:
     if args.command == "check":
         print("GEFS-backed Aspera desktop VM is ready to start")
         return 0
+    if args.command == "verify":
+        os.chdir(ROOT)
+        os.execv(sys.executable, [sys.executable, str(SYSTEM_TEST)])
+        return 1
     os.chdir(ROOT)
     command = [sys.executable, str(LIVE)]
     if args.smoke:
