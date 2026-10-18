@@ -57,6 +57,9 @@ publishes tabular state and control records while a portable C core rejects
 stale process events, enforces heartbeat deadlines, and bounds restart
 backoff. The C core must pass unit, generated property, ASan/UBSan,
 libFuzzer, and semantic mutation tests through `bin/aspera quality`.
+The same gate applies those layers plus ThreadSanitizer stress to the shared
+9ring and VirtIO-9P validation primitives. `bin/aspera verify` boots the real
+drivers on amd64 and ARM64.
 The ARM64 kernel links both
 `#~` and `#9`; QEMU `virt` tests exercise a named 9ring request and reply and
 virtio-MMIO 9P version negotiation. ARM64 user process launch remains a

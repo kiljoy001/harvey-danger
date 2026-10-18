@@ -59,6 +59,48 @@ servetwo(void)
 	exits(nil);
 }
 
+static int
+rejectbadmessages(void)
+{
+	uchar shortmsg[6] = {0};
+	uchar wronglen[7] = {8, 0, 0, 0, 100, 1, 0};
+	uchar request[7] = {7, 0, 0, 0, 100, 2, 0};
+	int announce, fd, ok;
+
+	announce = open("#~!ringbad/announce", OREAD);
+	if(announce < 0){
+		fprint(2, "o9-local9ring: negative announce failed: %r\n");
+		return -1;
+	}
+	fd = open("#~ringbad/connect", ORDWR);
+	if(fd < 0){
+		fprint(2, "o9-local9ring: negative connect failed: %r\n");
+		close(announce);
+		return -1;
+	}
+	ok = 1;
+	if(write(fd, shortmsg, sizeof(shortmsg)) >= 0){
+		fprint(2, "o9-local9ring: accepted short 9P message\n");
+		ok = 0;
+	}
+	if(write(fd, wronglen, sizeof(wronglen)) >= 0){
+		fprint(2, "o9-local9ring: accepted mismatched 9P length\n");
+		ok = 0;
+	}
+	if(write(fd, request, sizeof(request)) != sizeof(request)){
+		fprint(2, "o9-local9ring: valid request rejected: %r\n");
+		ok = 0;
+	}else if(write(fd, request, sizeof(request)) >= 0){
+		fprint(2, "o9-local9ring: accepted duplicate request tag\n");
+		ok = 0;
+	}
+	close(fd);
+	close(announce);
+	if(ok)
+		print("o9-local9ring: PASS invalid framing and duplicate tags rejected\n");
+	return ok ? 1 : -1;
+}
+
 int
 local9ringtest(void)
 {
@@ -83,7 +125,7 @@ local9ringtest(void)
 	}
 	if(pid == 0)
 		servetwo();
-	ok = 1;
+	ok = rejectbadmessages() > 0;
 	for(i = 0; i < 2; i++){
 		fd = open("#~ringtest/connect", ORDWR);
 		if(fd < 0){

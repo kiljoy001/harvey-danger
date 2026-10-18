@@ -73,6 +73,7 @@ ringprobe(void)
 static void
 virtio9pprobe(void)
 {
+	static u8 badrequest[] = {8, 0, 0, 0, 100, 1, 0};
 	static u8 request[] = {
 		19, 0, 0, 0, 100, 255, 255,
 		0x18, 0, 1, 0, 6, 0, '9', 'P', '2', '0', '0', '0',
@@ -82,6 +83,7 @@ virtio9pprobe(void)
 	Walkqid *walk;
 	char *name;
 	int n;
+	Proc *up;
 
 	root = virtio9pdevtab.attach("");
 	name = "0";
@@ -96,6 +98,14 @@ virtio9pprobe(void)
 	free(walk);
 	cclose(root);
 	virtio9pdevtab.open(stream, ORDWR);
+	up = externup();
+	if(waserror()){
+		arm64uartputs("HARVEY-ARM64 VIRTIO-9P FRAMING PASS\n");
+	}else{
+		virtio9pdevtab.write(stream, badrequest, sizeof(badrequest), 0);
+		poperror();
+		panic("ARM64 virtio9p accepted invalid frame");
+	}
 	n = virtio9pdevtab.write(stream, request, sizeof(request), 0);
 	if(n != sizeof(request))
 		panic("ARM64 virtio9p Tversion write failed");

@@ -27,7 +27,9 @@ def main() -> None:
         transcript = boot_until(command, "HARVEY-ARM64 VIRTIO-9P PASS")
         version = 2 if modern else 1
         expected = (f'#9/0: virtio-mmio v{version} 9p tag "host9p"',
-                    "HARVEY-ARM64 9RING PASS", "HARVEY-ARM64 VIRTIO-9P PASS")
+                    "HARVEY-ARM64 9RING PASS",
+                    "HARVEY-ARM64 VIRTIO-9P FRAMING PASS",
+                    "HARVEY-ARM64 VIRTIO-9P PASS")
         if any(marker not in transcript for marker in expected) or \
                 "ARM64 exception" in transcript or "failed" in transcript:
             raise RuntimeError(f"virtio-MMIO v{version} failed:\n{transcript}")

@@ -14,6 +14,8 @@ import threading
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
 VM_BIN = os.path.join(REPO_ROOT, "util/9vm/9vm")
 KERNEL_BIN = os.path.join(REPO_ROOT, "build/harvey.32bit")
+BUILD_BOOT = os.path.join(REPO_ROOT, "util/9vm/build_boot.py")
+BUILD_KERNEL = os.path.join(REPO_ROOT, "util/9vm/build_kernel.py")
 
 REQUIRED_ASSERTIONS = [
     ("kernel_banner", "Harvey"),
@@ -25,6 +27,7 @@ REQUIRED_ASSERTIONS = [
     ("ns_bind_host", "o9-boot: bound / -> /n/host"),
     ("bio_read", "o9-bio: Brdline read"),
     ("hostfs_rw", "o9-hostfs-rw: PASS 100000-byte write/read"),
+    ("local_9ring_reject", "o9-local9ring: PASS invalid framing and duplicate tags rejected"),
     ("local_9ring", "o9-local9ring: PASS two concurrent 9P mounts and reads"),
     ("actor_worker", "o9-worker[1]: executed job 101"),
     ("actor_results", "o9-worker: job results r1=1000 r2=1200"),
@@ -153,6 +156,10 @@ def run_test(use_ring):
         return 1
 
 if __name__ == "__main__":
+    # Rebuild both halves before testing. The kernel mounts this checkout as
+    # root, so rebuilding only the kernel can otherwise execute a stale PID 1.
+    subprocess.run([sys.executable, BUILD_BOOT], cwd=REPO_ROOT, check=True)
+    subprocess.run([sys.executable, BUILD_KERNEL], cwd=REPO_ROOT, check=True)
     # hostfs serves this checkout as /. Git does not preserve empty directories,
     # so provide the namespace mount targets for a fresh checkout during tests.
     created = []

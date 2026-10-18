@@ -19,6 +19,7 @@
 #include "io.h"
 #endif
 #include "../port/error.h"
+#include "virtio9p_core.h"
 
 typedef struct Vconfig Vconfig;
 typedef struct Vring Vring;
@@ -161,6 +162,7 @@ struct Ctlr {
 	Rendez  wwait;          /* write waits for free slot */
 
 	int     started;
+	int     failed;
 	Ref     inuse;
 
 	Ctlr    *next;
@@ -364,12 +366,7 @@ v9probe(void)
 			free(c);
 			continue;
 		}
-		n = mmread(c, Vqueuemax);
-		if(n > 64)
-			n = 64;
-		for(j = 1; j*2 <= n; j *= 2)
-			;
-		n = j;
+		n = v9pqueuesize(mmread(c, Vqueuemax), 64);
 		if(n < 2){
 			mmwrite(c, Vstatus, Failed);
 			free(c);
@@ -560,8 +557,8 @@ baddev:
 
 		/* Request queue 0 */
 		cfg->queuesel = 0;
-		n = cfg->queuesize;
-		if(n == 0 || (n & (n - 1)) != 0){
+		n = v9pqueuesize(cfg->queuesize, Maxslot * 2);
+		if(n == 0){
 			print("virtio9p: bad queue size %d\n", n);
 			goto baddev;
 		}
@@ -624,7 +621,8 @@ vqharvest(Ctlr *c)
 {
 	Vqueue *q;
 	Slot *s;
-	int id, free, m, ix;
+	u32 id;
+	int free, m, ix, next;
 
 	q = c->vq;
 	m = q->size - 1;
@@ -636,6 +634,21 @@ vqharvest(Ctlr *c)
 	while((q->lastused ^ q->used->idx) & 0xFFFF){
 		ix = q->lastused & m;
 		id = q->usedent[ix].id;
+		if(!v9pindexvalid(id, q->size) || q->rock[id] == nil){
+			print("virtio9p: invalid used descriptor %ud\n", id);
+			c->failed = 1;
+			q->lastused++;
+			break;
+		}
+		next = q->desc[id].next;
+		if(!v9pindexvalid(next, q->size) ||
+		   !v9pchain2valid(id, q->desc[id].flags, next,
+			q->desc[next].flags, q->size)){
+			print("virtio9p: invalid descriptor chain %ud\n", id);
+			c->failed = 1;
+			q->lastused++;
+			break;
+		}
 		s = q->rock[id];
 		q->rock[id] = nil;
 		if(s != nil)
@@ -659,6 +672,7 @@ vqharvest(Ctlr *c)
 	}
 	iunlock(&q->l);
 	wakeup(&c->rwait);
+	wakeup(&c->wwait);
 }
 
 #ifndef __aarch64__
@@ -675,13 +689,19 @@ v9interrupt(Ureg *ur, void *arg)
 static int
 havereply(void *arg)
 {
-	return ((Ctlr*)arg)->donehd != nil;
+	Ctlr *c;
+
+	c = arg;
+	return c->donehd != nil || c->failed;
 }
 
 static int
 haveslot(void *arg)
 {
-	return ((Ctlr*)arg)->sfree != nil;
+	Ctlr *c;
+
+	c = arg;
+	return c->sfree != nil || c->failed;
 }
 
 static Slot*
@@ -693,7 +713,7 @@ getslot(Ctlr *c)
 
 	q = c->vq;
 	ilock(&q->l);
-	while(c->sfree == nil){
+	while(c->sfree == nil && !c->failed){
 		iunlock(&q->l);
 		while(waserror())
 			;
@@ -701,6 +721,10 @@ getslot(Ctlr *c)
 		poperror();
 		vqharvest(c);
 		ilock(&q->l);
+	}
+	if(c->failed){
+		iunlock(&q->l);
+		error("virtio9p: device queue failed");
 	}
 	s = c->sfree;
 	c->sfree = s->next;
@@ -731,7 +755,7 @@ getreply(Ctlr *c)
 
 	q = c->vq;
 	ilock(&q->l);
-	while(c->donehd == nil){
+	while(c->donehd == nil && !c->failed){
 		iunlock(&q->l);
 		while(waserror())
 			;
@@ -745,6 +769,10 @@ getreply(Ctlr *c)
 		if(c->donehd == nil)
 			vqharvest(c);
 		ilock(&q->l);
+	}
+	if(c->failed){
+		iunlock(&q->l);
+		error("virtio9p: device queue failed");
 	}
 	s = c->donehd;
 	c->donehd = s->next;
@@ -942,10 +970,8 @@ v9write(Chan *c, void *a, i32 n, i64 off)
 
 	if(c->qid.type & QTDIR)
 		error(Eperm);
-	if(n < BIT32SZ + BIT8SZ + BIT16SZ)
-		error("invalid 9P message");
-	if(n > Msize + 64)
-		error("9P message exceeds buffer size");
+	if(!v9pmessagevalid(a, n, Msize + 64))
+		error("invalid 9P message framing");
 
 	cl = c->aux;
 	m = a;

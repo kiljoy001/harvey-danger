@@ -81,8 +81,9 @@ Run both required development gates before packaging:
 ```
 
 The quality command runs unit, property, sanitizer, coverage-guided fuzzing,
-and mutation tests. `verify` adds the namespace/persistence boot test and the
-Objective-9C driver-manager 9P integration test.
+and mutation tests for user-space policy and kernel transports. `verify` adds
+namespace/persistence, Objective-9C driver-manager 9P integration, amd64
+9ring/VirtIO fallback, and ARM64 VirtIO-MMIO v1/v2 tests.
 
 ## Runtime bundle target
 

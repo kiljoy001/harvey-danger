@@ -13,3 +13,12 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y clang
       - name: Unit, property, sanitizer, fuzz and mutation gate
         run: ./util/quality/run.sh
+
+  arm64-kernel-drivers:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install ARM64 kernel test toolchain
+        run: sudo apt-get update && sudo apt-get install -y clang lld llvm qemu-system-arm
+      - name: Build kernel and test 9ring plus VirtIO-MMIO 9P
+        run: python3 util/arm64/test_virtio9p.py

@@ -13,6 +13,8 @@ ROOT = Path(__file__).resolve().parents[1]
 LIVE = ROOT / "util/9vm/aspera_live.py"
 SYSTEM_TEST = ROOT / "util/9vm/test_system_milestone.py"
 DRIVER_TEST = ROOT / "util/9vm/test_driver_manager.py"
+KERNEL_TEST = ROOT / "util/9vm/test_boot.py"
+ARM_KERNEL_TEST = ROOT / "util/arm64/test_virtio9p.py"
 QUALITY = ROOT / "util/quality/run.sh"
 BUILD = ROOT / "build"
 PREVIEW_FILES = (
@@ -51,6 +53,10 @@ def check(command: str, image: Path) -> list[str]:
             problems.append("missing util/9vm/test_system_milestone.py")
         if not DRIVER_TEST.is_file():
             problems.append("missing util/9vm/test_driver_manager.py")
+        if not KERNEL_TEST.is_file():
+            problems.append("missing util/9vm/test_boot.py")
+        if not ARM_KERNEL_TEST.is_file():
+            problems.append("missing util/arm64/test_virtio9p.py")
     if command == "preview":
         o9_root = Path(os.environ["O9_REPO"])
         if not (o9_root / "o9c/o9c").is_file():
@@ -105,7 +111,9 @@ def main() -> int:
         return 0
     if args.command == "verify":
         os.chdir(ROOT)
-        for test in (SYSTEM_TEST, DRIVER_TEST):
+        # The kernel test rebuilds PID 1 and the amd64 kernel first. Run it
+        # before tests that reuse those artifacts.
+        for test in (KERNEL_TEST, SYSTEM_TEST, ARM_KERNEL_TEST, DRIVER_TEST):
             result = subprocess.run([sys.executable, str(test)])
             if result.returncode != 0:
                 return result.returncode
