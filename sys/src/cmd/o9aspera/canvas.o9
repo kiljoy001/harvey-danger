@@ -535,7 +535,16 @@ function AsperaWindowFrameRaw(int64 ptr, int64 xywh, int64 metrics,
             if(title != nil){
                 int tx = wx + bw + 6;
                 int ty = wy + bw + 4;
-                for(int idx = 0; title[idx] != '\0'; idx++){
+                int titleButtons = 0;
+                if(flags & 1) titleButtons++;
+                if((flags & 2) && !(flags & 16)) titleButtons++;
+                if(flags & 4) titleButtons++;
+                if(flags & 8) titleButtons++;
+                int titleEnd = wx + ww - bw - 4;
+                if(titleButtons > 0)
+                    titleEnd = wx + ww - bw - bs - 6 -
+                               (titleButtons - 1) * (bs + bsp);
+                for(int idx = 0; title[idx] != '\0' && tx + 8 <= titleEnd; idx++){
                     ASPERA_CHAR(title[idx], tx, ty, titleFg);
                     tx += 8;
                 }

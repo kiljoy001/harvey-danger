@@ -1,0 +1,130 @@
+import "canvas.o9";
+import "theme.o9";
+import "window.o9";
+import "desktop.o9";
+import "shelf.o9";
+
+function AsperaUiPixelRaw(int64 handle, int64 x, int64 y) int64 {
+    int64 out;
+    c {
+        typedef struct {
+            int width;
+            int height;
+            u32 *pixels;
+        } AsperaBuffer;
+        AsperaBuffer *b = (AsperaBuffer*)handle;
+
+        out = -1;
+        if(b != nil && b->pixels != nil && x >= 0 && y >= 0 &&
+           x < b->width && y < b->height)
+            out = b->pixels[y*b->width + x];
+    }
+    return out;
+}
+
+function AsperaUiOutsideRaw(int64 handle, int64 x, int64 y,
+                            int64 width, int64 height, int64 color) int64 {
+    int64 out;
+    c {
+        typedef struct {
+            int width;
+            int height;
+            u32 *pixels;
+        } AsperaBuffer;
+        AsperaBuffer *b = (AsperaBuffer*)handle;
+        int good, i, j;
+
+        good = b != nil && b->pixels != nil;
+        if(good){
+            for(j = 0; j < b->height && good; j++)
+                for(i = 0; i < b->width; i++)
+                    if((i < x || i >= x + width || j < y || j >= y + height) &&
+                       b->pixels[j*b->width + i] != (u32)color){
+                        good = 0;
+                        break;
+                    }
+        }
+        out = good;
+    }
+    return out;
+}
+
+main {
+    bool ok = true;
+    E16Theme theme = new E16Theme();
+    AsperaCanvas canvas = new AsperaCanvas(320, 240);
+    DesktopCompositor desk = new DesktopCompositor(320, 240, theme);
+    WindowActor window = desk.createWindow("Editor", 10, 40, 100, 80);
+    desk.renderAll(canvas);
+
+    Task<int64> topLeft = spawn AsperaUiPixelRaw(canvas.bufferAddress(), 10, 40);
+    Task<int64> frame = spawn AsperaUiPixelRaw(canvas.bufferAddress(), 11, 75);
+    Task<int64> title = spawn AsperaUiPixelRaw(canvas.bufferAddress(), 15, 45);
+    Task<int64> content = spawn AsperaUiPixelRaw(canvas.bufferAddress(), 20, 75);
+    Task<int64> bottomRight = spawn AsperaUiPixelRaw(canvas.bufferAddress(), 109, 119);
+    bool geometry = topLeft.await() == theme.getBevelLight() &&
+                    frame.await() == theme.getFrameActive() &&
+                    title.await() == theme.getTitleActiveBg() &&
+                    content.await() == theme.getContentBg() &&
+                    bottomRight.await() == theme.getBevelDark();
+    ok = ok && geometry;
+    print("window geometry ", geometry, "\n");
+
+    int64 buttonY = 40 + theme.borderThickness() +
+                    (theme.titlebarHeight() - theme.btnSize()) / 2 + 2;
+    int64 closeX = 10 + 100 - theme.borderThickness() - theme.btnSize() - 2 + 2;
+    int64 step = theme.btnSize() + theme.btnSpacing();
+    bool hitTargets = window.hitTest(closeX, buttonY) == theme.hitClose() &&
+                      window.hitTest(closeX - step, buttonY) == theme.hitMax() &&
+                      window.hitTest(closeX - step * 2, buttonY) == theme.hitShade() &&
+                      window.hitTest(closeX - step * 3, buttonY) == theme.hitStick();
+    ok = ok && hitTargets;
+    print("window hit targets ", hitTargets, "\n");
+
+    canvas.clear(theme.getContentBg());
+    WindowActor longTitle = new WindowActor(9,
+        "A title that must remain inside its own window", 20, 30, 140, 90, theme);
+    longTitle.renderFrame(canvas);
+    Task<int64> titleBounds = spawn AsperaUiOutsideRaw(canvas.bufferAddress(),
+        20, 30, 140, 90, theme.getContentBg());
+    bool titleClipping = titleBounds.await() == 1;
+    ok = ok && titleClipping;
+    print("title clipping ", titleClipping, "\n");
+
+    desk.switchDesktop(1, 0);
+    desk.renderAll(canvas);
+    Task<int64> hidden = spawn AsperaUiPixelRaw(canvas.bufferAddress(), 10, 40);
+    bool visibility = hidden.await() == theme.getContentBg();
+    window.setSticky(true);
+    desk.renderAll(canvas);
+    Task<int64> sticky = spawn AsperaUiPixelRaw(canvas.bufferAddress(), 10, 40);
+    visibility = visibility && sticky.await() == theme.getBevelLight();
+    ok = ok && visibility;
+    print("workspace visibility ", visibility, "\n");
+
+    AsperaCanvas shelfCanvas = new AsperaCanvas(1024, 768);
+    DesktopCompositor shelfDesk = new DesktopCompositor(1024, 768, theme);
+    WindowActor shelfWindow = shelfDesk.createWindow(
+        "A very long application title that must be clipped", 40, 60, 400, 300);
+    shelfDesk.renderAll(shelfCanvas);
+    AsperaShelf shelf = new AsperaShelf();
+    bool shelfBounds = shelfWindow.id() > 0 &&
+                       shelf.applySnapshot("12:34 0 1\n");
+    shelf.render(shelfCanvas, shelfDesk);
+    Task<int64> shelfTop = spawn AsperaUiPixelRaw(shelfCanvas.bufferAddress(), 0, 0);
+    Task<int64> shelfEdge = spawn AsperaUiPixelRaw(shelfCanvas.bufferAddress(), 1023, 31);
+    Task<int64> itemEdge = spawn AsperaUiPixelRaw(shelfCanvas.bufferAddress(), 385, 15);
+    Task<int64> afterItem = spawn AsperaUiPixelRaw(shelfCanvas.bufferAddress(), 386, 15);
+    shelfBounds = shelfBounds && shelfTop.await() == 0x1b2631 &&
+                  shelfEdge.await() == 0x3b5264 &&
+                  itemEdge.await() == 0x536675 &&
+                  afterItem.await() == 0x1b2631;
+    ok = ok && shelfBounds;
+    print("shelf bounds ", shelfBounds, "\n");
+
+    desk.closeWindow(window);
+    canvas.close();
+    shelfCanvas.close();
+    if(ok) { print("ASPERA-UI-TEST PASS\n"); }
+    else { print("ASPERA-UI-TEST FAIL\n"); }
+}

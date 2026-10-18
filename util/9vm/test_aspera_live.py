@@ -22,7 +22,13 @@ MUTANTS = (
      "if(targetIdx >= 0 && targetIdx < winList.length() - 1)",
      "if(targetIdx >= 1 && targetIdx < winList.length() - 1)"),
 )
+UI_MUTANTS = (
+    ("window-title-clipping", "canvas.o9",
+     "title[idx] != '\\0' && tx + 8 <= titleEnd",
+     "title[idx] != '\\0'"),
+)
 SHELF_TEST = SOURCE / "test_shelf_service.o9"
+UI_TEST = SOURCE / "test_ui.o9"
 SHELF_MUTANTS = (
     ("shelf-workspace-edge", "((x - 92) / 36) + 1", "((x - 92) / 37) + 1"),
     ("shelf-clock-bound", "hour >= 0 && hour <= 23", "hour >= 0 && hour <= 24"),
@@ -45,8 +51,9 @@ def run_guest(path: Path) -> str:
     return output
 
 
-def mutant_source(work: Path, filename: str, old: str, new: str) -> Path:
-    for name in ("test_live.o9", "canvas.o9", "theme.o9", "window.o9",
+def mutant_source(work: Path, filename: str, old: str, new: str,
+                  test_name: str = "test_live.o9") -> Path:
+    for name in ("test_live.o9", "test_ui.o9", "canvas.o9", "theme.o9", "window.o9",
                  "desktop.o9", "shelf.o9", "note.o9", "font8x14.h"):
         shutil.copyfile(SOURCE / name, work / name)
     (work / "stdlib").symlink_to(ROOT / "stdlib")
@@ -57,7 +64,7 @@ def mutant_source(work: Path, filename: str, old: str, new: str) -> Path:
     if source.count(old) != 1:
         raise RuntimeError(f"mutation site in {filename} changed")
     target.write_text(source.replace(old, new, 1))
-    return work / "test_live.o9"
+    return work / test_name
 
 
 def shelf_mutant_source(work: Path, old: str, new: str) -> Path:
@@ -84,6 +91,10 @@ def main() -> int:
     if "ASPERA-LIVE-TEST PASS" not in output:
         raise RuntimeError(f"Aspera guest assertions failed:\n{output[-1600:]}")
     print("Aspera VM unit and generated properties: PASS")
+    ui_output = run_guest(UI_TEST)
+    if "ASPERA-UI-TEST PASS" not in ui_output:
+        raise RuntimeError(f"Aspera rendered UI assertions failed:\n{ui_output[-1600:]}")
+    print("Aspera rendered geometry, clipping, workspaces and shelf: PASS")
     shelf_output = run_guest(SHELF_TEST)
     if "SHELF-9P PASS" not in shelf_output:
         raise RuntimeError(f"Shelf service 9P checks failed:\n{shelf_output[-1600:]}")
@@ -103,6 +114,14 @@ def main() -> int:
                 source = mutant_source(Path(temporary), filename, old, new)
                 output = run_guest(source)
                 if "ASPERA-LIVE-TEST FAIL" not in output:
+                    raise RuntimeError(f"{label} survived:\n{output[-1600:]}")
+                print(f"{label}: killed")
+        for label, filename, old, new in UI_MUTANTS:
+            with tempfile.TemporaryDirectory(prefix="aspera-ui-mutant-") as temporary:
+                source = mutant_source(Path(temporary), filename, old, new,
+                                       "test_ui.o9")
+                output = run_guest(source)
+                if "ASPERA-UI-TEST FAIL" not in output:
                     raise RuntimeError(f"{label} survived:\n{output[-1600:]}")
                 print(f"{label}: killed")
         for label, old, new in SHELF_MUTANTS:
