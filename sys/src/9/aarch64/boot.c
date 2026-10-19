@@ -358,6 +358,8 @@ arm64kernelstart(Fdtinfo *info)
 	useruarttype = info->uarttype;
 	devtabreset();
 	addbootfile("init", (u8 *)arm64initelf, sizeof(arm64initelf));
+	addbootfile("o9drvman", (u8 *)arm64drvmanelf, sizeof(arm64drvmanelf));
+	addbootfile("o9driverfs", (u8 *)arm64driverfself, sizeof(arm64driverfself));
 	arm64uartputs("HARVEY-ARM64 DEVICE-RESET PASS\n");
 	pageinit();
 	{

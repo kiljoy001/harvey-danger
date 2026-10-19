@@ -17,15 +17,15 @@ setjmp: STP     x19, x20, [x0,#0]
 	STP     x29, x30, [x0,#80]
 	MOV     x2, sp
 	STR     x2, [x0,#104]
-	STP     d8,  d9, [x0,#112]
-	STP     d10, d11, [x0,#128]
-	STP     d12, d13, [x0,#144]
-	STP     d14, d15, [x0,#160]
+	/* General-register-only userland reserves slots 14..21 for future FP
+	 * state. Launcher arguments live in otherwise unused slots 22 and 23. */
+	STP     x1, x2, [x0,#176]
 	MOV     x0, #0
 	RET
 
 .globl longjmp
 longjmp:
+	MOV     x3, x1
 	LDP     x19, x20, [x0,#0]
 	LDP     x21, x22, [x0,#16]
 	LDP     x23, x24, [x0,#32]
@@ -34,12 +34,9 @@ longjmp:
 	LDP     x29, x30, [x0,#80]
 	LDR     x2, [x0,#104]
 	MOV     sp, x2
-	LDP     d8 , d9, [x0,#112]
-	LDP     d10, d11, [x0,#128]
-	LDP     d12, d13, [x0,#144]
-	LDP     d14, d15, [x0,#160]
+	LDP     x1, x2, [x0,#176]
 
-	MOV     x0, x1
-	CBNZ    x1, 1f
+	MOV     x0, x3
+	CBNZ    x3, 1f
 	MOV     x0, #1
 1:	BR      x30

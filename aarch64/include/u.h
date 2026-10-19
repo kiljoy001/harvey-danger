@@ -23,7 +23,27 @@ typedef signed long long i64;
 typedef unsigned long long u64;
 typedef u64 usize;
 typedef i64 isize;
+typedef u8 u8int;
+typedef u16 u16int;
+typedef u32 u32int;
+typedef u64 u64int;
+typedef i8 s8int;
+typedef i16 s16int;
+typedef i32 s32int;
+typedef i64 s64int;
+typedef u8 uchar;
+typedef u16 ushort;
+typedef u32 uint;
+typedef u64 ulong;
+typedef u64 uvlong;
+typedef i64 vlong;
+typedef u64 uintptr;
+typedef i64 intptr;
 typedef u32 Rune;
+
+#define YYSIZE_T usize
+#define alignas _Alignas
+#define static_assert _Static_assert
 
 typedef union FPdbleword FPdbleword;
 union FPdbleword
@@ -38,10 +58,10 @@ union FPdbleword
 typedef u64 jmp_buf[32];
 
 #define JMPBUFDPC       0
-#define JMPBUFSP        30
-#define JMPBUFPC        31
-#define JMPBUFARG1      0
-#define JMPBUFARG2      1
+#define JMPBUFPC        11
+#define JMPBUFSP        13
+#define JMPBUFARG1      22
+#define JMPBUFARG2      23
 
 typedef u32	mpdigit;	// for /sys/include/mp.h
 

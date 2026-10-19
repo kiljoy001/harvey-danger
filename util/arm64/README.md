@@ -13,12 +13,12 @@ boot check confirms that EL0 cannot read kernel memory, write its code page,
 or execute its stack. A timer interrupt can arrive from EL0 and return to the
 interrupted instruction. The full kernel starts the shared Plan 9 scheduler,
 creates a `Proc` with its own page-table root, and runs a small libc-backed C
-program at EL0. Its embedded AArch64 ELF is validated and loaded from its
+program at EL0. Its AArch64 ELF is validated and loaded from its
 `PT_LOAD` records into separate RX text, RW data, and NX stack mappings, with a
 device-tree-selected UART page. The program enters through the ELF entry and ARM64 libc `_main`,
 calls the generated `nsec` wrapper through the normal syscall table, and writes
-its result marker through the UART mapping. It is still an embedded acceptance
-probe rather than a filesystem-backed `exec`. The ARM64 `Label` save/restore routines match the calling
+its result marker through the UART mapping. A normally segmented bootstrap
+then executes the filesystem-backed `/boot/init`. The ARM64 `Label` save/restore routines match the calling
 convention used by Harvey's shared scheduler in `sys/src/9/port/proc.c`. QEMU
 tests switch between two independent kernel stacks and check callee-saved
 register preservation while the timer is active. Interrupt masking is also
@@ -45,6 +45,7 @@ python3 util/arm64/test_fdt.py
 python3 util/arm64/check_port.py
 python3 util/arm64/test_syscalls.py
 python3 util/arm64/build_libc.py
+python3 util/arm64/build_o9_services.py
 python3 util/arm64/test_user_runtime.py
 python3 util/arm64/test_full_kernel.py
 python3 util/arm64/test_virtio9p.py
@@ -160,8 +161,9 @@ and a small `_main` process links against that libc. The embedded probe is
 loaded as ELF. A second, normally segmented bootstrap process calls
 `exec("/boot/init")`; the shared ELF loader replaces its address space, and the
 filesystem-backed ARM64 init image is demand-paged through tracked per-process
-page tables. Packaging the Objective-9C driver services into that boot
-filesystem follows.
+page tables. The same build cross-compiles the Objective-9C runtime and Harvey
+support libraries, then packages ARM64 `o9drvman` and `o9driverfs` ELF images
+as `/boot/o9drvman` and `/boot/o9driverfs`. Init does not launch them yet.
 The shared `#9` driver uses PCI on amd64 and device-tree discovered virtio-MMIO
 on ARM64. Both legacy MMIO v1 and modern v2 work in QEMU `virt`. The ARM64
 transport currently polls for replies; device interrupts are not routed yet.
@@ -171,8 +173,8 @@ check. Device services belong in the Objective-9C
 trusted host or VM transport. That service currently proxies named backend
 files and is tested in the x86 microVM. The ARM64 user-mode UART probe proves
 the privilege boundary needed by a driver server, but it is deliberately not
-the final Objective-9C `o9uartfs`: ARM64 builds of the Objective-9C support
-libraries and a restricted resource-grant interface are still required.
+the final Objective-9C `o9uartfs`: a restricted resource-grant interface is
+still required.
 
 The build uses `clang-23` if present because this host's default `clang` only
 contains the x86 backend. Kernel sources and integer/text kernel libc use

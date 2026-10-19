@@ -1,8 +1,12 @@
 #include "lifecycle.h"
 
+#ifdef __HARVEY__
+#include <libc.h>
+#else
 #include <limits.h>
 #include <stddef.h>
 #include <string.h>
+#endif
 
 static uint64_t
 addsat(uint64_t a, uint64_t b)

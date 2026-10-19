@@ -1,7 +1,19 @@
 #ifndef O9DRVMAN_LIFECYCLE_H
 #define O9DRVMAN_LIFECYCLE_H
 
+#ifdef __HARVEY__
+#include <u.h>
+typedef u8 uint8_t;
+typedef u32 uint32_t;
+typedef u64 uint64_t;
+#ifndef NULL
+#define NULL nil
+#endif
+#define UINT32_MAX ((uint32_t)~0U)
+#define UINT64_MAX ((uint64_t)~0ULL)
+#else
 #include <stdint.h>
+#endif
 
 typedef enum DrvState DrvState;
 typedef enum DrvEventType DrvEventType;

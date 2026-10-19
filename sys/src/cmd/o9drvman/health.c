@@ -1,7 +1,11 @@
 #include "health.h"
 
+#ifdef __HARVEY__
+#include <libc.h>
+#else
 #include <limits.h>
 #include <string.h>
+#endif
 
 enum {
 	FieldCount = 13,

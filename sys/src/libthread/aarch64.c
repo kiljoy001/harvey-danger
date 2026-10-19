@@ -12,11 +12,10 @@
 #include <thread.h>
 #include "threadimpl.h"
 
-/* first argument goes in a register; simplest just to ignore it */
 static void
 launcheraarch64(int unused, void (*f)(void *arg), void *arg)
 {
-	(void)unused;
+	USED(unused);
 	(*f)(arg);
 	threadexits(nil);
 }
@@ -24,14 +23,8 @@ launcheraarch64(int unused, void (*f)(void *arg), void *arg)
 void
 _threadinitstack(Thread *t, void (*f)(void*), void *arg)
 {
-	u64 *tos;
-
-	tos = (u64*)&t->stk[t->stksize&~0x0F];
-	*--tos = (u64)arg;
-	*--tos = (u64)f;
-	*--tos = 0;	/* first arg to launcheraarch64 */
-	*--tos = 0;	/* place to store return PC */
-
 	t->sched[JMPBUFPC] = (u64)launcheraarch64+JMPBUFDPC;
-	t->sched[JMPBUFSP] = (u64)tos;
+	t->sched[JMPBUFSP] = (u64)&t->stk[t->stksize&~0x0F];
+	t->sched[JMPBUFARG1] = (u64)f;
+	t->sched[JMPBUFARG2] = (u64)arg;
 }
