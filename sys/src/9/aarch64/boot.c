@@ -9,6 +9,8 @@
 #include "mmu.h"
 #include "user.h"
 #include "userprobe.h"
+#include "userland.h"
+#include <tos.h>
 
 extern void arm64uartputs(char *);
 extern void (*consuartputs)(char *, int);
@@ -192,6 +194,90 @@ startuserprocess(void)
 }
 
 static void
+initprocess(void *arg)
+{
+	Proc *p;
+
+	USED(arg);
+	p = externup();
+	p->nerrlab = 0;
+	spllo();
+	p->slash = namec("#/", Atodir, 0, 0);
+	pathclose(p->slash->path);
+	p->slash->path = newpath("/");
+	p->dot = cclone(p->slash);
+	devtabinit();
+	kproc("alarm", alarmkproc, nil);
+	arm64uartputs("HARVEY-ARM64 FILE-EXEC START\n");
+	arm64runprocessargs(ARM64EXECSTUBENTRY, USTKTOP-512,
+		1, USTKTOP-BIGPGSZ+288, USTKTOP-sizeof(Tos));
+}
+
+static void
+startinitprocess(void)
+{
+	Proc *p;
+	Segment *s;
+	Page *code, *data, *stack;
+	KMap *codeva, *datava, *stackva;
+	u64 entry;
+	char *path;
+	char **argv;
+	Tos *tos;
+
+	p = newproc();
+	p->pgrp = newpgrp();
+	p->egrp = smalloc(sizeof(Egrp));
+	p->egrp->r.ref = 1;
+	p->fgrp = dupfgrp(nil);
+	p->rgrp = newrgrp();
+	p->procmode = 0640;
+	kstrdup(&p->user, eve);
+	kstrdup(&p->text, "*arm64-init*");
+	p->noswap = 1;
+
+	code = newpage(1, nil, ARM64EXECSTUBBASE, BIGPGSZ, -1);
+	data = newpage(1, nil, ARM64EXECSTUBBASE+BIGPGSZ, BIGPGSZ, -1);
+	stack = newpage(1, nil, USTKTOP-BIGPGSZ, BIGPGSZ, -1);
+	if(code == nil || data == nil || stack == nil)
+		panic("ARM64 init process page allocation failed");
+	codeva = kmap(code);
+	datava = kmap(data);
+	if(arm64userloadelfpages(VA(codeva), VA(datava), BIGPGSZ,
+	   ARM64EXECSTUBBASE, arm64execstubelf, sizeof(arm64execstubelf),
+	   &entry) < 0 || entry != ARM64EXECSTUBENTRY)
+		panic("ARM64 exec bootstrap ELF load failed");
+	kunmap(codeva);
+	kunmap(datava);
+
+	s = newseg(SG_TEXT|SG_READ|SG_EXEC, ARM64EXECSTUBBASE, 1);
+	s->flushme++;
+	p->seg[0] = s;
+	segpage(s, code);
+	s = newseg(SG_DATA|SG_READ|SG_WRITE, ARM64EXECSTUBBASE+BIGPGSZ, 1);
+	p->seg[1] = s;
+	segpage(s, data);
+	s = newseg(SG_STACK|SG_READ|SG_WRITE, USTKTOP-USTKSIZE,
+		USTKSIZE/BIGPGSZ);
+	p->seg[2] = s;
+	segpage(s, stack);
+
+	stackva = kmap(stack);
+	path = (char *)(VA(stackva)+256);
+	strcpy(path, "/boot/execstub");
+	argv = (char **)(VA(stackva)+288);
+	argv[0] = (char *)(USTKTOP-BIGPGSZ+256);
+	argv[1] = nil;
+	tos = (Tos *)(VA(stackva)+BIGPGSZ-sizeof(Tos));
+	memset(tos, 0, sizeof(*tos));
+	tos->cyclefreq = sys->cyclefreq;
+	kunmap(stackva);
+	procpriority(p, PriNormal, 0);
+	kprocchild(p, initprocess, nil);
+	ready(p);
+}
+
+static void
 worker(void *arg)
 {
 	int id;
@@ -227,6 +313,7 @@ worker(void *arg)
 		startuserprocess();
 		while(userprocessphase != 2)
 			sched();
+		startinitprocess();
 	}else{
 		workerphase |= 2;
 	}
@@ -270,6 +357,7 @@ arm64kernelstart(Fdtinfo *info)
 	useruartbase = info->uartbase;
 	useruarttype = info->uarttype;
 	devtabreset();
+	addbootfile("init", (u8 *)arm64initelf, sizeof(arm64initelf));
 	arm64uartputs("HARVEY-ARM64 DEVICE-RESET PASS\n");
 	pageinit();
 	{

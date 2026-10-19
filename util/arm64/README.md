@@ -154,11 +154,14 @@ linked kernel has `Proc`/`Mach`, page mapping, the shared scheduler and core
 devices. The runtime handoff runs `procinit0()`, `psinit()`, `devtabreset()`,
 `pageinit()`, `timersinit()`, and `schedinit()`. A scheduled EL0 probe runs after
 the root walk and local transport checks. Before launching general untrusted
-programs, the temporary address-space builder and process lifecycle must be
-replaced by tracked per-process page tables. ARM64 libc and all 42 generated
-syscall wrappers now cross-build, and a small `_main` process links against
-that libc. The embedded process is now loaded as ELF; demand-fault handling,
-filesystem-backed `exec`, and an ARM64 init binary follow.
+programs, resource grants and the remaining process lifecycle paths still need
+hardening. ARM64 libc and all 42 generated syscall wrappers now cross-build,
+and a small `_main` process links against that libc. The embedded probe is
+loaded as ELF. A second, normally segmented bootstrap process calls
+`exec("/boot/init")`; the shared ELF loader replaces its address space, and the
+filesystem-backed ARM64 init image is demand-paged through tracked per-process
+page tables. Packaging the Objective-9C driver services into that boot
+filesystem follows.
 The shared `#9` driver uses PCI on amd64 and device-tree discovered virtio-MMIO
 on ARM64. Both legacy MMIO v1 and modern v2 work in QEMU `virt`. The ARM64
 transport currently polls for replies; device interrupts are not routed yet.
@@ -168,9 +171,8 @@ check. Device services belong in the Objective-9C
 trusted host or VM transport. That service currently proxies named backend
 files and is tested in the x86 microVM. The ARM64 user-mode UART probe proves
 the privilege boundary needed by a driver server, but it is deliberately not
-the final Objective-9C `o9uartfs`: executable loading, ARM64 builds of the
-Objective-9C support libraries, and a restricted resource-grant interface are
-still required.
+the final Objective-9C `o9uartfs`: ARM64 builds of the Objective-9C support
+libraries and a restricted resource-grant interface are still required.
 
 The build uses `clang-23` if present because this host's default `clang` only
 contains the x86 backend. Kernel sources and integer/text kernel libc use

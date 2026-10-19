@@ -41,7 +41,7 @@ u64 ringhostpa;
 int printallsyscalls;
 u32 kerndate = KERNDATE;
 Conf conf;
-char *cputype = "arm64";
+char *cputype = "aarch64";
 char *rolename[] = { "TC", "KC", "AC", "XC" };
 
 void

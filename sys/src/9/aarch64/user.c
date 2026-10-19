@@ -1,4 +1,12 @@
-/* EL0 transition and temporary syscall/permission-fault verification. */
+/* EL0 transition, syscall, and process-fault handling. */
+#ifdef ARM64_FULL_KERNEL
+#include <u.h>
+#include "../port/lib.h"
+#include "mem.h"
+#include "dat.h"
+#include "fns.h"
+#include "../port/error.h"
+#endif
 #include "user.h"
 
 extern u8 arm64usercode[], arm64usercodeend[];
@@ -85,8 +93,8 @@ get64(const u8 *p)
 }
 
 int
-arm64userloadelf(u64 codepage, u64 datapage, const u8 *image, usize n,
-	u64 *entry)
+arm64userloadelfpages(u64 codepage, u64 datapage, usize pagesz, u64 base,
+	const u8 *image, usize n, u64 *entry)
 {
 	const u8 *ph;
 	u64 filesz, memsz, offset, phoff, va, vend;
@@ -96,7 +104,8 @@ arm64userloadelf(u64 codepage, u64 datapage, const u8 *image, usize n,
 	u8 *dst;
 
 	if(codepage == 0 || datapage == 0 || image == nil || entry == nil ||
-	   (codepage|datapage) & (Userpagesz-1) || n < 64 ||
+	   pagesz < Userpagesz || (pagesz & (pagesz-1)) != 0 ||
+	   (codepage|datapage|base) & (pagesz-1) || n < 64 ||
 	   image[0] != 0x7f || image[1] != 'E' || image[2] != 'L' ||
 	   image[3] != 'F' || image[4] != 2 || image[5] != 1 ||
 	   image[6] != 1 || get16(image+16) != 2 || get16(image+18) != 183 ||
@@ -109,7 +118,7 @@ arm64userloadelf(u64 codepage, u64 datapage, const u8 *image, usize n,
 	   (u64)phnum*phentsize > n-phoff)
 		return -1;
 	*entry = get64(image+24);
-	for(i = 0; i < Userpagesz; i++){
+	for(i = 0; i < pagesz; i++){
 		((u8 *)codepage)[i] = 0;
 		((u8 *)datapage)[i] = 0;
 	}
@@ -125,18 +134,18 @@ arm64userloadelf(u64 codepage, u64 datapage, const u8 *image, usize n,
 		filesz = get64(ph+32);
 		memsz = get64(ph+40);
 		if(filesz > memsz || offset > n || filesz > n-offset ||
-		   memsz > 2*Userpagesz || va < ARM64USERBASE ||
-		   va-ARM64USERBASE > 2*Userpagesz-memsz || (flags & 3) == 3)
+		   memsz > 2*pagesz || va < base ||
+		   va-base > 2*pagesz-memsz || (flags & 3) == 3)
 			return -1;
 		vend = va+memsz;
-		if(va >= ARM64USERBASE+Userpagesz){
-			if(vend > ARM64USERBASE+2*Userpagesz || (flags & 2) == 0)
+		if(va >= base+pagesz){
+			if(vend > base+2*pagesz || (flags & 2) == 0)
 				return -1;
-			dst = (u8 *)datapage+(va-(ARM64USERBASE+Userpagesz));
+			dst = (u8 *)datapage+(va-(base+pagesz));
 		}else{
-			if(vend > ARM64USERBASE+Userpagesz || (flags & 2) != 0)
+			if(vend > base+pagesz || (flags & 2) != 0)
 				return -1;
-			dst = (u8 *)codepage+(va-ARM64USERBASE);
+			dst = (u8 *)codepage+(va-base);
 		}
 		for(j = 0; j < filesz; j++)
 			dst[j] = image[offset+j];
@@ -146,8 +155,16 @@ arm64userloadelf(u64 codepage, u64 datapage, const u8 *image, usize n,
 	}
 	if(!loaded || !executable)
 		return -1;
-	synccode(codepage, Userpagesz);
+	synccode(codepage, pagesz);
 	return 0;
+}
+
+int
+arm64userloadelf(u64 codepage, u64 datapage, const u8 *image, usize n,
+	u64 *entry)
+{
+	return arm64userloadelfpages(codepage, datapage, Userpagesz,
+		ARM64USERBASE, image, n, entry);
 }
 
 void
@@ -157,7 +174,11 @@ arm64usertrap(Arm64ureg *r)
 
 	ec = (r->esr>>26)&63;
 #ifdef ARM64_FULL_KERNEL
-	if(processactive != 0 && ec == 0x15 && (r->esr&0xffff) == 0){
+	Proc *p;
+	int ftype, insyscall;
+
+	p = externup();
+	if(p != nil && p->kp == 0 && ec == 0x15 && (r->esr&0xffff) == 0){
 		arm64syscall(r);
 		return;
 	}
@@ -166,6 +187,21 @@ arm64usertrap(Arm64ureg *r)
 		processactive = 0;
 		r->elr = (u64)arm64processresume;
 		r->spsr = 0x3c5;
+		return;
+	}
+	if(p != nil && p->kp == 0 &&
+	   (ec == 0x20 || ec == 0x21 || ec == 0x24 || ec == 0x25)){
+		ftype = (ec == 0x20 || ec == 0x21) ? FT_EXEC :
+			((r->esr & (1ULL<<6)) != 0 ? FT_WRITE : FT_READ);
+		insyscall = p->insyscall;
+		p->insyscall = 1;
+		if(fault(r->far, r->elr, ftype) < 0){
+			p->insyscall = insyscall;
+			if((ec == 0x21 || ec == 0x25) && insyscall && p->nerrlab != 0)
+				error("invalid address in system call");
+			pexit("user fault", 1);
+		}
+		p->insyscall = insyscall;
 		return;
 	}
 #endif

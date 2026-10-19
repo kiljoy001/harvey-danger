@@ -73,10 +73,12 @@ _boot_stack_top:
 	.globl arm64vectors
 arm64vectors:
 	/* EL1t, EL1h, lower AArch64, lower AArch32: four slots each. */
-	.rept 5
+	.rept 4
 	b	_arm64fault
 	.space 124
 	.endr
+	b	_arm64usersync	/* EL1h synchronous faults in a process context. */
+	.space 124
 	b	_arm64irq
 	.space 124
 	.rept 2
