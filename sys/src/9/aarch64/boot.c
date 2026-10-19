@@ -16,9 +16,11 @@ extern void arm64uartputs(char *);
 extern void (*consuartputs)(char *, int);
 extern void arm64clockready(void);
 extern void arm64virtio9pconfigure(Fdtinfo *);
+extern void arm64pnpinit(Fdtinfo *);
 extern Dev rootdevtab;
 extern Dev virtio9pdevtab;
 extern Dev ringdevtab;
+extern Dev pnpdevtab;
 
 static Chan *
 ringfile(Chan *root, char *name, int mode)
@@ -138,6 +140,7 @@ static volatile int workerphase;
 static volatile int userprocessphase;
 static u64 useruartbase;
 static u32 useruarttype;
+static Fdtinfo *bootinfo;
 
 void
 arm64processresume(void)
@@ -277,6 +280,65 @@ startinitprocess(void)
 	ready(p);
 }
 
+static int
+physseginit(Fdtinfo *info)
+{
+	Physseg seg;
+	u64 base, end;
+	u32 i;
+	int n;
+
+	n = 0;
+	memset(&seg, 0, sizeof seg);
+	seg.attr = SG_PHYSICAL | SG_READ | SG_WRITE;
+	seg.pgszi = -1;	/* default 2 MiB pages */
+	for(i = 0; i < info->ndev; i++){
+		base = info->dev[i].base & ~(u64)(BIGPGSZ - 1);
+		end = (info->dev[i].base + info->dev[i].size + BIGPGSZ - 1) &
+		      ~(u64)(BIGPGSZ - 1);
+		if(end <= base)
+			end = base + BIGPGSZ;
+		seg.name = info->dev[i].name;
+		seg.pa = base;
+		seg.size = (end - base) / BIGPGSZ;
+		if(addphysseg(&seg) == 0)
+			n++;
+	}
+	return n;
+}
+
+static void
+pnpprobe(Fdtinfo *info)
+{
+	char *names[2];
+	char buf[64];
+	Chan *root, *reg;
+	Walkqid *walk;
+	int n;
+
+	if(info->ndev == 0)
+		return;
+	root = pnpdevtab.attach("");
+	names[0] = info->dev[0].name;
+	names[1] = "reg";
+	walk = pnpdevtab.walk(root, nil, names, 2);
+	if(walk == nil || walk->nqid != 2 || walk->clone == nil){
+		if(walk != nil)
+			free(walk);
+		cclose(root);
+		panic("ARM64 #P walk failed");
+	}
+	reg = walk->clone;
+	free(walk);
+	cclose(root);
+	pnpdevtab.open(reg, OREAD);
+	n = pnpdevtab.read(reg, buf, sizeof(buf), 0);
+	cclose(reg);
+	if(n < 2 || memcmp(buf, "0x", 2) != 0)
+		panic("ARM64 #P reg read failed");
+	arm64uartputs("HARVEY-ARM64 PNP PASS\n");
+}
+
 static void
 worker(void *arg)
 {
@@ -307,6 +369,7 @@ worker(void *arg)
 			cclose(root);
 			arm64uartputs("HARVEY-ARM64 ROOT-WALK PASS\n");
 		}
+		pnpprobe(bootinfo);
 		ringprobe();
 		virtio9pprobe();
 		arm64uartputs("HARVEY-ARM64 BOOT-PROBES PASS\n");
@@ -356,10 +419,14 @@ arm64kernelstart(Fdtinfo *info)
 	arm64virtio9pconfigure(info);
 	useruartbase = info->uartbase;
 	useruarttype = info->uarttype;
+	bootinfo = info;
 	devtabreset();
+	physseginit(info);
+	arm64pnpinit(info);
 	addbootfile("init", (u8 *)arm64initelf, sizeof(arm64initelf));
 	addbootfile("o9drvman", (u8 *)arm64drvmanelf, sizeof(arm64drvmanelf));
 	addbootfile("o9driverfs", (u8 *)arm64driverfself, sizeof(arm64driverfself));
+	addbootfile("uartfs", (u8 *)arm64uartfself, sizeof(arm64uartfself));
 	arm64uartputs("HARVEY-ARM64 DEVICE-RESET PASS\n");
 	pageinit();
 	{

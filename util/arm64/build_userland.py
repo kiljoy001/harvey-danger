@@ -19,6 +19,7 @@ INIT_BASE = 0x200000
 BIG_PAGE = 0x200000
 DRVMAN_BASE = 0x600000
 DRIVERFS_BASE = 0xE00000
+UARTFS_BASE = 0x1600000
 
 
 def symbol_value(elf: Path, name: str) -> int:
@@ -83,7 +84,8 @@ SECTIONS {{
 ''')
     subprocess.run([
         CC, "--target=aarch64-none-elf", "-ffreestanding", "-fno-builtin",
-        "-fno-stack-protector", "-mstrict-align", "-O2",
+        "-fno-stack-protector", "-fno-vectorize", "-fno-slp-vectorize",
+        "-mstrict-align", "-O2",
         "-I", str(ROOT / "aarch64/include"),
         "-I", str(ROOT / "sys/include"), "-c", str(source), "-o", str(obj),
     ], check=True)
@@ -103,6 +105,49 @@ def emit_array(lines: list[str], name: str, image: bytes) -> None:
         chunk = image[offset:offset + 16]
         lines.append("\t" + ", ".join(f"0x{byte:02x}" for byte in chunk) + ",")
     lines.extend(("};", ""))
+
+
+def build_uartfs(out: Path, libc: Path) -> tuple[bytes, int]:
+    o9 = ROOT / "build/arm64-o9"
+    source = ROOT / "sys/src/cmd/uartfs/uartfs.c"
+    obj = out / "uartfs.o"
+    script = out / "uartfs.ld"
+    elf = out / "uartfs"
+    script.write_text(f'''ENTRY(_main)
+PHDRS {{
+  text PT_LOAD FLAGS(5);
+  data PT_LOAD FLAGS(6);
+}}
+SECTIONS {{
+  . = 0x{UARTFS_BASE:x};
+  .text : {{ *(.text .text.*) *(.rodata .rodata.*) }} :text
+  . = ALIGN(0x{BIG_PAGE:x});
+  .data : {{ *(.data .data.*) *(.sdata .sdata.*) *(.got .got.*) }} :data
+  .bss : {{ *(.bss .bss.*) *(.sbss .sbss.*) COMMON }} :data
+  PROVIDE(end = .);
+  /DISCARD/ : {{ *(.comment) *(.note*) }}
+}}
+''')
+    subprocess.run([
+        CC, "--target=aarch64-none-elf", "-ffreestanding", "-fno-builtin",
+        "-fno-stack-protector", "-fno-vectorize", "-fno-slp-vectorize",
+        "-mstrict-align", "-fsigned-char", "-fcommon", "-O2",
+        "-I", str(ROOT / "aarch64/include"),
+        "-I", str(ROOT / "sys/include"), "-c", str(source), "-o", str(obj),
+    ], check=True)
+    libs = [o9 / "lib9p.a", o9 / "libthread.a", o9 / "libauth.a",
+            o9 / "libauthsrv.a", o9 / "libsec.a", o9 / "libndb.a",
+            o9 / "libbio.a", libc]
+    subprocess.run([
+        LD, "-static", "-z", "max-page-size=4096", "-T", str(script),
+        "-e", "_main", "-u", "_main", str(obj),
+        "--start-group", *map(str, libs), "--end-group",
+        "-o", str(elf),
+    ], check=True)
+    image, entry = validate_elf(elf, UARTFS_BASE)
+    if symbol_value(elf, "_main") != entry:
+        raise RuntimeError("uartfs entry does not name _main")
+    return image, entry
 
 
 def main() -> None:
@@ -144,15 +189,90 @@ say(char *message)
 	write(1, message, strlen(message));
 }
 
+static int
+waitfor(char *path, int tries)
+{
+	int fd;
+
+	while(tries-- > 0){
+		fd = open(path, OREAD);
+		if(fd >= 0){
+			close(fd);
+			return 0;
+		}
+		sleep(100);
+	}
+	return -1;
+}
+
 void
 main(int argc, char **argv)
 {
+	char *manager[] = {
+		"/boot/o9drvman", "o9drvman",
+		"driverfs", "/boot/o9driverfs", nil,
+	};
+	char *uartsrv[] = { "/boot/uartfs", "uartfs", nil };
+	char config[] = "name\tbackend\nserial0\t/dev/cons\n";
+	int fd, pid;
+
 	USED(argc);
 	USED(argv);
 	open("#c/cons", OREAD);
 	open("#c/cons", OWRITE);
 	open("#c/cons", OWRITE);
 	say("HARVEY-ARM64 FILE-EXEC INIT PASS\n");
+	if(bind("#c", "/dev", MAFTER) < 0){
+		say("HARVEY-ARM64 DRIVER-NAMESPACE FAIL\n");
+		_exits("namespace");
+	}
+	say("HARVEY-ARM64 DRIVER-DEV PASS\n");
+	if(bind("#e", "/env", MCREATE|MAFTER) < 0 ||
+	   bind("#s", "/srv", MREPL|MCREATE) < 0 ||
+	   bind("#@", "/mnt", MREPL|MCREATE) < 0){
+		say("HARVEY-ARM64 DRIVER-NAMESPACE FAIL\n");
+		_exits("namespace");
+	}
+	say("HARVEY-ARM64 DRIVER-NAMESPACE PASS\n");
+	pid = rfork(RFPROC|RFNOWAIT|RFFDG|RFNAMEG|RFENVG|RFREND|RFNOTEG);
+	if(pid == 0){
+		exec(uartsrv[0], uartsrv);
+		say("HARVEY-ARM64 UARTFS EXEC FAIL\n");
+		_exits("exec");
+	}
+	if(pid < 0 || waitfor("/srv/uart", 50) < 0){
+		say("HARVEY-ARM64 UARTFS FAIL\n");
+		_exits("uartfs");
+	}
+	say("HARVEY-ARM64 UARTFS SRV PASS\n");
+	fd = create("/mnt/o9driverfs-config", OREAD, DMDIR|0755);
+	if(fd >= 0)
+		close(fd);
+	fd = create("/mnt/o9driverfs-config/driverfs.tab", OWRITE, 0644);
+	if(fd < 0 || write(fd, config, sizeof(config)-1) != sizeof(config)-1){
+		if(fd >= 0)
+			close(fd);
+		say("HARVEY-ARM64 DRIVER-CONFIG FAIL\n");
+		_exits("config");
+	}
+	close(fd);
+	say("HARVEY-ARM64 DRIVER-CONFIG PASS\n");
+	pid = rfork(RFPROC|RFNOWAIT|RFFDG|RFNAMEG|RFENVG|RFREND|RFNOTEG);
+	if(pid == 0){
+		exec(manager[0], manager);
+		say("HARVEY-ARM64 DRIVER-MANAGER EXEC FAIL\n");
+		_exits("exec");
+	}
+	say("HARVEY-ARM64 DRIVER-RFORK PASS\n");
+	if(pid < 0 || waitfor("/srv/o9drvman", 50) < 0){
+		say("HARVEY-ARM64 DRIVER-MANAGER FAIL\n");
+		_exits("manager");
+	}
+	say("HARVEY-ARM64 DRIVER-MANAGER PASS\n");
+	if(waitfor("/srv/driverfs", 50) == 0)
+		say("HARVEY-ARM64 DRIVER-FILESYSTEM PASS\n");
+	else
+		say("HARVEY-ARM64 DRIVER-FILESYSTEM PENDING\n");
 	for(;;)
 		sleep(1000);
 }
@@ -160,6 +280,7 @@ main(int argc, char **argv)
     drvman, _ = validate_elf(ROOT / "build/arm64-o9/o9drvman", DRVMAN_BASE)
     driverfs, _ = validate_elf(ROOT / "build/arm64-o9/o9driverfs",
                                DRIVERFS_BASE)
+    uartfs, _ = build_uartfs(out, libc)
     lines = [
         "/* generated by util/arm64/build_userland.py */",
         f"#define ARM64EXECSTUBBASE 0x{STUB_BASE:x}ULL",
@@ -170,6 +291,7 @@ main(int argc, char **argv)
     emit_array(lines, "arm64initelf", init)
     emit_array(lines, "arm64drvmanelf", drvman)
     emit_array(lines, "arm64driverfself", driverfs)
+    emit_array(lines, "arm64uartfself", uartfs)
     args.output.write_text("\n".join(lines))
 
 

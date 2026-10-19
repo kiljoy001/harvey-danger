@@ -9,13 +9,13 @@
 
 extern Dev rootdevtab, consdevtab, envdevtab, pipedevtab, procdevtab;
 extern Dev mntdevtab, srvdevtab, dupdevtab, capdevtab, segmentdevtab;
-extern Dev ramdevtab, ringdevtab, virtio9pdevtab;
+extern Dev ramdevtab, ringdevtab, virtio9pdevtab, pnpdevtab;
 
 Dev *devtab[] = {
 	&rootdevtab, &consdevtab, &envdevtab, &pipedevtab,
 	&procdevtab, &mntdevtab, &srvdevtab, &dupdevtab,
 	&capdevtab, &segmentdevtab, &ramdevtab, &ringdevtab,
-	&virtio9pdevtab,
+	&virtio9pdevtab, &pnpdevtab,
 	nil,
 };
 
@@ -30,11 +30,11 @@ oprof_alarm_handler(Ureg *u)
 {
 	USED(u);
 }
-Physseg physseg[8] = {
+Physseg physseg[128] = {
 	{ .attr = SG_SHARED|SG_READ|SG_WRITE, .name = "shared", .size = SEGMAXPG },
 	{ .attr = SG_BSS|SG_READ|SG_WRITE, .name = "memory", .size = SEGMAXPG },
 };
-int nphysseg = 8;
+int nphysseg = 128;
 int cpuserver = 1;
 /* The host ring is supplied by the VM transport when one is available. */
 u64 ringhostpa;

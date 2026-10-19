@@ -100,14 +100,17 @@ def build_library(name: str, flags: list[str]) -> Path:
 
 def main() -> None:
     OUT.mkdir(parents=True, exist_ok=True)
-    subprocess.run([
-        sys.executable, str(ROOT / "util/arm64/build_user_probe.py"),
-        "--output", str(OUT / "userprobe.h"),
-    ], check=True)
-    subprocess.run([
-        sys.executable, str(ROOT / "util/arm64/build_userland.py"),
-        "--output", str(OUT / "userland.h"),
-    ], check=True)
+    if os.environ.get("ARM64_REUSE_USERLAND") != "1":
+        subprocess.run([
+            sys.executable, str(ROOT / "util/arm64/build_user_probe.py"),
+            "--output", str(OUT / "userprobe.h"),
+        ], check=True)
+        subprocess.run([
+            sys.executable, str(ROOT / "util/arm64/build_userland.py"),
+            "--output", str(OUT / "userland.h"),
+        ], check=True)
+    elif not (OUT / "userprobe.h").is_file() or not (OUT / "userland.h").is_file():
+        raise SystemExit("ARM64_REUSE_USERLAND=1 needs existing generated headers")
     for mode, name in (("errstr.h", "errstr.h"), ("systab.c", "systab.c")):
         subprocess.run([sys.executable, str(ROOT / "util/9vm/mksys.py"),
                         f"-mode={mode}", "-o", str(OUT / name),
@@ -137,7 +140,7 @@ def main() -> None:
                ("l.S", "user.S", "context.S", "return.S", "main.c", "fdt.c", "timer.c",
                 "phys.c", "mmu.c", "user.c", "context.c", "arch.c",
                 "config.c", "qmalloc.c", "platform.c", "procarch.c", "syscall.c",
-                "boot.c")]
+                "boot.c", "devpnp.c")]
     core_devices = {
         "dev.c", "devcap.c", "devcons.c", "devdup.c", "devenv.c",
         "devmnt.c", "devpipe.c", "devproc.c", "devramfs.c",
