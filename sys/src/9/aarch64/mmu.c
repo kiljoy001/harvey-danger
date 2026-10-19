@@ -229,6 +229,11 @@ arm64mmuon(u64 rootpa)
 	__asm__ volatile("msr mair_el1, %0" :: "r"((u64)0x04ff) : "memory");
 	__asm__ volatile("msr tcr_el1, %0" :: "r"(tcr) : "memory");
 	__asm__ volatile("msr ttbr0_el1, %0" :: "r"(rootpa) : "memory");
+	/* Enable FP/SIMD at EL0 and EL1. Variadic callers save the FP
+	 * argument registers in va_start, which traps otherwise. Per-process
+	 * FP state management is still future work; FP arithmetic itself
+	 * remains unused by the current user runtime. */
+	__asm__ volatile("msr cpacr_el1, %0" :: "r"((u64)3<<20) : "memory");
 	kernelroot = rootpa;
 	__asm__ volatile("isb; tlbi vmalle1; dsb sy; isb" ::: "memory");
 	__asm__ volatile("mrs %0, sctlr_el1" : "=r"(sctlr));
@@ -346,8 +351,7 @@ mmuput(usize va, Page *page, u32 attr)
 	}
 	entry = 0;
 	if(attr & PTEVALID){
-		entry = page->pa | Ptevalid | Pteaccessed | Pteinnershare |
-			(1ULL << 53);
+		entry = page->pa | Ptevalid | Pteaccessed | (1ULL << 53);
 		if(size == PGSZ)
 			entry |= Ptetable;
 		if(attr & PTEWRITE)
@@ -358,6 +362,8 @@ mmuput(usize va, Page *page, u32 attr)
 			entry |= 1ULL << 54;
 		if(attr & PTEUNCACHED)
 			entry |= Pteattrdevice;
+		else
+			entry |= Pteinnershare;
 	}
 	if(size == PGSZ)
 		l3[i3] = entry;

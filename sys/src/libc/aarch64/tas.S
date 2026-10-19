@@ -8,13 +8,15 @@
 
 .text
 
+// int _tas(int*): atomically exchange *p with 0xbeefdead, return the old
+// value (0 means the lock was acquired).
 .globl _tas
 _tas:
 	MOVK	w1, #0xdead
 	MOVZ	w1, #0xbeef
-	LDXR	x2, [x0]
-	CBNZ	x2, 1f
-	STLXR	w9, x1, [x0]
+	LDXR	w2, [x0]
+	CBNZ	w2, 1f
+	STLXR	w9, w1, [x0]
 	DMB	ISH
-1:	MOV	x1, x2
+1:	MOV	w0, w2
 	RET
