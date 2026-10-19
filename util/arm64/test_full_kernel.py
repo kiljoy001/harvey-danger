@@ -34,7 +34,7 @@ def main() -> None:
                 "HARVEY-ARM64 ROOT-WALK PASS",
                 "HARVEY-ARM64 9RING PASS",
                 "HARVEY-ARM64 BOOT-PROBES PASS",
-                "HARVEY-ARM64 USER-UART PASS",
+                "HARVEY-ARM64 LIBC-USER PASS",
                 MARKER)) or \
                 "failed" in transcript or \
                 "ARM64 exception" in transcript:

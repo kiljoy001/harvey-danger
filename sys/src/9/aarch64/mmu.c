@@ -60,6 +60,44 @@ arm64mmuuser(u64 kernelrootpa, u64 codepa, u64 stackpa)
 	return rootpa;
 }
 
+u64
+arm64mmuuserprocess(u64 kernelrootpa, u64 codepa, u64 datapa, u64 stackpa)
+{
+	u64 rootpa, l2pa, l3pa;
+	u64 *kernelroot, *root, *l2, *l3;
+	u32 index, i;
+
+	if((kernelrootpa | codepa | datapa | stackpa) & (Pagesz-1))
+		return 0;
+	kernelroot = (u64 *)kernelrootpa;
+	rootpa = arm64physpage();
+	if(rootpa == 0)
+		return 0;
+	root = (u64 *)rootpa;
+	for(i = 0; i < Pagesz/sizeof(u64); i++)
+		root[i] = kernelroot[i];
+	index = (ARM64USERBASE>>30) & 511;
+	if(root[index] != 0)
+		return 0;
+	l2pa = arm64physpage();
+	l3pa = arm64physpage();
+	if(l2pa == 0 || l3pa == 0)
+		return 0;
+	l2 = (u64 *)l2pa;
+	l3 = (u64 *)l3pa;
+	root[index] = l2pa | Ptevalid | Ptetable;
+	l2[0] = l3pa | Ptevalid | Ptetable;
+	/* Text and read-only data: EL0 read/execute, EL1 privileged execute-never. */
+	l3[0] = codepa | Ptevalid | Ptetable | Pteaccessed |
+	        Pteinnershare | (3ULL<<6) | (1ULL<<53);
+	/* Writable data and stack are never executable. */
+	l3[1] = datapa | Ptevalid | Ptetable | Pteaccessed |
+	        Pteinnershare | (1ULL<<6) | (1ULL<<53) | (1ULL<<54);
+	l3[2] = stackpa | Ptevalid | Ptetable | Pteaccessed |
+	        Pteinnershare | (1ULL<<6) | (1ULL<<53) | (1ULL<<54);
+	return rootpa;
+}
+
 int
 arm64mmuuserdevice(u64 rootpa, u64 va, u64 pa)
 {

@@ -9,7 +9,7 @@ extern char arm64userresume[];
 #ifdef ARM64_FULL_KERNEL
 extern void arm64processresume(void) __attribute__((noreturn));
 #endif
-extern u64 arm64enteruser(u64, u64, u64);
+extern u64 arm64enteruser(u64, u64, u64, u64, u64);
 extern void arm64fault(void) __attribute__((noreturn));
 
 static volatile u32 useractive, trapkind;
@@ -105,11 +105,17 @@ arm64usertrap(Arm64ureg *r)
 
 #ifdef ARM64_FULL_KERNEL
 void
-arm64runprocess(u64 entry, u64 stack, u64 arg)
+arm64runprocessargs(u64 entry, u64 stack, u64 arg0, u64 arg1, u64 arg2)
 {
 	processactive = 1;
-	arm64enteruser(entry, stack, arg);
+	arm64enteruser(entry, stack, arg0, arg1, arg2);
 	arm64fault();
+}
+
+void
+arm64runprocess(u64 entry, u64 stack, u64 arg)
+{
+	arm64runprocessargs(entry, stack, arg, 0, 0);
 }
 #endif
 
@@ -124,7 +130,7 @@ faultprobe(u64 codepage, u8 *start, u8 *end, u64 arg, u32 ec)
 	expectedec = ec;
 	trapkind = 0;
 	useractive = 1;
-	result = arm64enteruser(ARM64USERBASE, ARM64USERBASE+8192, arg);
+	result = arm64enteruser(ARM64USERBASE, ARM64USERBASE+8192, arg, 0, 0);
 	useractive = 0;
 	diagresult = result;
 	if(trapkind != 2 || result != ~(u64)1 || trapfar != arg)
@@ -147,7 +153,7 @@ arm64userprobe(u64 codepage, u64 stackpage, u64 kernelpage)
 	trapkind = 0;
 	usercalls = 0;
 	useractive = 1;
-	result = arm64enteruser(ARM64USERBASE, ARM64USERBASE+8192, 0);
+	result = arm64enteruser(ARM64USERBASE, ARM64USERBASE+8192, 0, 0, 0);
 	useractive = 0;
 	diagresult = result;
 	diagstage = 3;

@@ -7,6 +7,7 @@
 
 u64 arm64mmubuild(Fdtinfo *);
 u64 arm64mmuuser(u64, u64, u64);
+u64 arm64mmuuserprocess(u64, u64, u64, u64);
 int arm64mmuuserdevice(u64, u64, u64);
 void arm64mmuon(u64);
 void arm64mmuswitch(u64);

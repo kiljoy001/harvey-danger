@@ -12,11 +12,12 @@ page-table roots whose user mappings point to different physical pages. The
 boot check confirms that EL0 cannot read kernel memory, write its code page,
 or execute its stack. A timer interrupt can arrive from EL0 and return to the
 interrupted instruction. The full kernel starts the shared Plan 9 scheduler,
-creates a `Proc` with its own page-table root, and runs a small payload at EL0.
-That payload writes through one device-tree-selected UART page mapped only in
-its address space, checks rejection of an invalid syscall, and calls the
-generated `nsec` syscall through the normal syscall table. It is an acceptance
-probe rather than an executable loader. The ARM64 `Label` save/restore routines match the calling
+creates a `Proc` with its own page-table root, and runs a small libc-backed C
+program at EL0. Its RX text, RW data, NX stack, and device-tree-selected UART
+page have separate mappings. The program enters through the ARM64 libc `_main`,
+calls the generated `nsec` wrapper through the normal syscall table, and writes
+its result marker through the UART mapping. It is an embedded acceptance probe
+rather than an executable loader. The ARM64 `Label` save/restore routines match the calling
 convention used by Harvey's shared scheduler in `sys/src/9/port/proc.c`. QEMU
 tests switch between two independent kernel stacks and check callee-saved
 register preservation while the timer is active. Interrupt masking is also
@@ -94,9 +95,10 @@ boot; set `ARM64_RK3566_NPU_PROBE=1` only for a separate NPU experiment. The
 board boot remains a hardware bring-up test, not an interactive userland.
 On an Orange Pi 3B v1.1, the common Image and the full OS DTB loaded over TFTP
 passed the early memory, MMU, timer, EL0 isolation, scheduler, root walk, and
-`#~` boot checks. The scheduled EL0 process also wrote its acceptance marker
-through a user-only mapping of the RK3566 DesignWare UART and completed its
-generated syscall-table checks. The board's 8 GiB appears as two memory banks in U-Boot;
+`#~` boot checks. The scheduled libc-backed C process entered through `_main`,
+called its generated `nsec` wrapper, wrote its acceptance marker through a
+user-only mapping of the RK3566 DesignWare UART, and returned to the kernel
+without an exception. The board's 8 GiB appears as two memory banks in U-Boot;
 the kernel currently manages the bank containing the Image (roughly 3.8 GiB)
 and leaves the second bank for later multi-bank allocator work. Early code is
 built with `-mstrict-align`: before the MMU

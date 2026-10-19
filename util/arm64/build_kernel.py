@@ -100,6 +100,10 @@ def build_library(name: str, flags: list[str]) -> Path:
 
 def main() -> None:
     OUT.mkdir(parents=True, exist_ok=True)
+    subprocess.run([
+        sys.executable, str(ROOT / "util/arm64/build_user_probe.py"),
+        "--output", str(OUT / "userprobe.h"),
+    ], check=True)
     for mode, name in (("errstr.h", "errstr.h"), ("systab.c", "systab.c")):
         subprocess.run([sys.executable, str(ROOT / "util/9vm/mksys.py"),
                         f"-mode={mode}", "-o", str(OUT / name),

@@ -8,6 +8,7 @@
 #include "phys.h"
 #include "mmu.h"
 #include "user.h"
+#include "userprobe.h"
 
 extern void arm64uartputs(char *);
 extern void (*consuartputs)(char *, int);
@@ -136,8 +137,6 @@ static volatile int userprocessphase;
 static u64 useruartbase;
 static u32 useruarttype;
 
-extern u8 arm64processcode[], arm64processcodeend[];
-
 void
 arm64processresume(void)
 {
@@ -151,24 +150,31 @@ static void
 userprocess(void *arg)
 {
 	Proc *p;
-	u64 code, stack, root;
+	u64 code, data, stack, root, typeoff;
 
 	USED(arg);
 	p = externup();
 	code = arm64physpage();
+	data = arm64physpage();
 	stack = arm64physpage();
-	root = arm64mmuuser(arm64mmukernelroot(), code, stack);
-	if(code == 0 || stack == 0 || root == 0)
+	root = arm64mmuuserprocess(arm64mmukernelroot(), code, data, stack);
+	if(code == 0 || data == 0 || stack == 0 || root == 0)
 		panic("ARM64 user process address space failed");
-	if(arm64mmuuserdevice(root, ARM64USERBASE+2*PGSZ,
+	if(arm64mmuuserdevice(root, ARM64USERBASE+3*PGSZ,
 	   useruartbase & ~(u64)(PGSZ-1)) < 0)
 		panic("ARM64 user process UART map failed");
-	if(arm64userload(code, arm64processcode, arm64processcodeend) < 0)
+	if(arm64userload(code, (u8 *)arm64userprobeimage,
+	   (u8 *)arm64userprobeimage+sizeof(arm64userprobeimage)) < 0)
 		panic("ARM64 user process code load failed");
+	typeoff = ARM64USERPROBEUARTTYPE - (ARM64USERBASE+PGSZ);
+	if(typeoff > PGSZ-sizeof(u32))
+		panic("ARM64 user process data offset failed");
+	*(u32 *)(data+typeoff) = useruarttype;
 	p->MMU.rootpa = root;
 	arm64mmuswitch(root);
 	userprocessphase = 1;
-	arm64runprocess(ARM64USERBASE, ARM64USERBASE+2*PGSZ, useruarttype);
+	arm64runprocessargs(ARM64USERPROBEENTRY, ARM64USERBASE+3*PGSZ,
+	   1, ARM64USERBASE+2*PGSZ, ARM64USERBASE+3*PGSZ-512);
 }
 
 static void
