@@ -9,6 +9,11 @@
 
 extern void arm64enterureg(Ureg *) __attribute__((noreturn));
 
+/* argc saved by sysexecstack: after the exec stack is relocated and the
+ * mmu is flushed, the argument count is no longer readable from the stack,
+ * so it is captured here for sysexecregs. */
+static int execargc;
+
 _Static_assert(__builtin_offsetof(Ureg, sp) == 248, "ARM64 SP frame offset");
 _Static_assert(__builtin_offsetof(Ureg, psr) == 264, "ARM64 PSR frame offset");
 _Static_assert(__builtin_offsetof(Ureg, pc) == 272, "ARM64 PC frame offset");
@@ -85,6 +90,7 @@ sysexecstack(usize stack, int argc)
 {
 	usize sp;
 
+	execargc = argc;
 	/* sysproc pushes argc, argv pointers, and a nil after this point. */
 	sp = stack & ~(usize)15;
 	if(argc & 1)
@@ -108,10 +114,12 @@ sysexecregs(usize entry, u32 ssize, void *tos)
 	r->sp = sp;
 	r->pc = entry;
 	r->psr = 0x340; /* EL0t, IRQ unmasked, FP disabled. */
-	r->x0 = *(usize *)sp;
+	r->x0 = execargc;
 	r->x1 = sp + sizeof(usize);
 	r->x2 = (usize)tos;
-	return tos;
+	/* Return argc so the generic syscall return (u.x0 = ar0.p) keeps the
+	 * argc value in x0 instead of clobbering it with the tos address. */
+	return (void *)(usize)execargc;
 }
 
 void
