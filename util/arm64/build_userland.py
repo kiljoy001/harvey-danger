@@ -17,11 +17,12 @@ NM = shutil.which("llvm-nm-23") or shutil.which("llvm-nm") or "llvm-nm"
 STUB_BASE = 0x4000000000
 INIT_BASE = 0x200000
 BIG_PAGE = 0x200000
-DRVMAN_BASE = 0x600000
+O9DRVMAN_BASE = 0x600000
 DRIVERFS_BASE = 0xE00000
 UARTFS_BASE = 0x1600000
 GPIOFS_BASE = 0x1A00000
 HUBFS_BASE = 0x1E00000
+DRVMAN_BASE = 0x2200000
 
 
 def symbol_value(elf: Path, name: str) -> int:
@@ -109,9 +110,8 @@ def emit_array(lines: list[str], name: str, image: bytes) -> None:
     lines.extend(("};", ""))
 
 
-def build_fs(out: Path, libc: Path, name: str, source: Path,
-             base: int) -> tuple[bytes, int]:
-    o9 = ROOT / "build/arm64-o9"
+def build_elf(out: Path, libc: Path, name: str, source: Path,
+              base: int, extra: list[Path]) -> tuple[bytes, int]:
     obj = out / f"{name}.o"
     script = out / f"{name}.ld"
     elf = out / name
@@ -137,9 +137,7 @@ SECTIONS {{
         "-I", str(ROOT / "aarch64/include"),
         "-I", str(ROOT / "sys/include"), "-c", str(source), "-o", str(obj),
     ], check=True)
-    libs = [o9 / "lib9p.a", o9 / "libthread.a", o9 / "libauth.a",
-            o9 / "libauthsrv.a", o9 / "libsec.a", o9 / "libndb.a",
-            o9 / "libbio.a", libc]
+    libs = [*extra, libc]
     subprocess.run([
         LD, "-static", "-z", "max-page-size=4096", "-T", str(script),
         "-e", "_main", "-u", "_main", str(obj),
@@ -150,6 +148,20 @@ SECTIONS {{
     if symbol_value(elf, "_main") != entry:
         raise RuntimeError(f"{name} entry does not name _main")
     return image, entry
+
+
+def build_fs(out: Path, libc: Path, name: str, source: Path,
+             base: int) -> tuple[bytes, int]:
+    o9 = ROOT / "build/arm64-o9"
+    extra = [o9 / "lib9p.a", o9 / "libthread.a", o9 / "libauth.a",
+             o9 / "libauthsrv.a", o9 / "libsec.a", o9 / "libndb.a",
+             o9 / "libbio.a"]
+    return build_elf(out, libc, name, source, base, extra)
+
+
+def build_simple(out: Path, libc: Path, name: str, source: Path,
+                 base: int) -> tuple[bytes, int]:
+    return build_elf(out, libc, name, source, base, [])
 
 
 def build_uartfs(out: Path, libc: Path) -> tuple[bytes, int]:
@@ -165,6 +177,11 @@ def build_gpiofs(out: Path, libc: Path) -> tuple[bytes, int]:
 def build_hubfs(out: Path, libc: Path) -> tuple[bytes, int]:
     return build_fs(out, libc, "hubfs",
                     ROOT / "sys/src/cmd/hubfs/hubfs.c", HUBFS_BASE)
+
+
+def build_drvman(out: Path, libc: Path) -> tuple[bytes, int]:
+    return build_simple(out, libc, "drvman",
+                        ROOT / "sys/src/cmd/drvman/drvman.c", DRVMAN_BASE)
 
 
 def main() -> None:
@@ -272,7 +289,6 @@ main(int argc, char **argv)
 		"/boot/o9drvman", "o9drvman",
 		"driverfs", "/boot/o9driverfs", nil,
 	};
-	char *uartsrv[] = { "/boot/uartfs", "uartfs", nil };
 	char config[] = "name\tbackend\nserial0\t/dev/cons\n";
 	int fd, pid;
 
@@ -294,44 +310,18 @@ main(int argc, char **argv)
 		_exits("namespace");
 	}
 	say("HARVEY-ARM64 DRIVER-NAMESPACE PASS\n");
-	pid = rfork(RFPROC|RFNOWAIT|RFFDG|RFNAMEG|RFENVG|RFREND|RFNOTEG);
-	if(pid == 0){
-		exec(uartsrv[0], uartsrv);
-		say("HARVEY-ARM64 UARTFS EXEC FAIL\n");
-		_exits("exec");
-	}
-	if(pid < 0 || waitfor("/srv/uart", 50) < 0){
-		say("HARVEY-ARM64 UARTFS FAIL\n");
-		_exits("uartfs");
-	}
-	say("HARVEY-ARM64 UARTFS SRV PASS\n");
 	{
-		char ebuf[64], sbuf[32];
-		int mfd, sfd;
-		long n;
-		mfd = open("/srv/uart", OREAD);
-		if(mfd >= 0){
-			create("/mnt/uart", OREAD, DMDIR|0755);
-			if(mount(mfd, -1, "/mnt/uart", MREPL, "") < 0){
-				errstr(ebuf, sizeof ebuf);
-				say("HARVEY-ARM64 UARTFS-MOUNT FAIL: ");
-				say(ebuf);
-				say("\n");
-			}else{
-				say("HARVEY-ARM64 UARTFS-MOUNT PASS\n");
-				sfd = open("/mnt/uart/status", OREAD);
-				if(sfd >= 0){
-					n = read(sfd, sbuf, sizeof(sbuf)-1);
-					close(sfd);
-					if(n > 0)
-						say("HARVEY-ARM64 UARTFS-READ PASS\n");
-					else
-						say("HARVEY-ARM64 UARTFS-READ FAIL\n");
-				}else
-					say("HARVEY-ARM64 UARTFS-OPEN FAIL\n");
-			}
-			close(mfd);
+		char *drvmansrv[] = { "/boot/drvman", "drvman", nil };
+		pid = rfork(RFPROC|RFNOWAIT|RFFDG|RFNAMEG|RFENVG|RFREND|RFNOTEG);
+		if(pid == 0){
+			exec(drvmansrv[0], drvmansrv);
+			say("HARVEY-ARM64 DRVMAN EXEC FAIL\n");
+			_exits("exec");
 		}
+		if(pid < 0)
+			say("HARVEY-ARM64 DRVMAN LAUNCH FAIL\n");
+		else
+			say("HARVEY-ARM64 DRVMAN LAUNCH PASS\n");
 	}
 	fd = create("/mnt/o9driverfs-config", OREAD, DMDIR|0755);
 	if(fd >= 0)
@@ -362,18 +352,6 @@ main(int argc, char **argv)
 	else
 		say("HARVEY-ARM64 DRIVER-FILESYSTEM PENDING\n");
 	{
-		char *gpiosrv[] = { "/boot/gpiofs", "gpiofs", nil };
-		pid = rfork(RFPROC|RFNOWAIT|RFFDG|RFNAMEG|RFENVG|RFREND|RFNOTEG);
-		if(pid == 0){
-			exec(gpiosrv[0], gpiosrv);
-			_exits("exec");
-		}
-		if(pid >= 0 && waitfor("/srv/gpio", 50) == 0)
-			say("HARVEY-ARM64 GPIOFS PASS\n");
-		else
-			say("HARVEY-ARM64 GPIOFS PENDING\n");
-	}
-	{
 		char *hubsrv[] = { "/boot/hubfs", "hubfs", nil };
 		pid = rfork(RFPROC|RFNOWAIT|RFFDG|RFNAMEG|RFENVG|RFREND|RFNOTEG);
 		if(pid == 0){
@@ -391,12 +369,13 @@ main(int argc, char **argv)
 		sleep(1000);
 }
 ''', INIT_BASE, libc)
-    drvman, _ = validate_elf(ROOT / "build/arm64-o9/o9drvman", DRVMAN_BASE)
+    o9drvman, _ = validate_elf(ROOT / "build/arm64-o9/o9drvman", O9DRVMAN_BASE)
     driverfs, _ = validate_elf(ROOT / "build/arm64-o9/o9driverfs",
                                DRIVERFS_BASE)
     uartfs, _ = build_uartfs(out, libc)
     gpiofs, _ = build_gpiofs(out, libc)
     hubfs, _ = build_hubfs(out, libc)
+    drvman, _ = build_drvman(out, libc)
     lines = [
         "/* generated by util/arm64/build_userland.py */",
         f"#define ARM64EXECSTUBBASE 0x{STUB_BASE:x}ULL",
@@ -405,11 +384,12 @@ main(int argc, char **argv)
     ]
     emit_array(lines, "arm64execstubelf", stub)
     emit_array(lines, "arm64initelf", init)
-    emit_array(lines, "arm64drvmanelf", drvman)
+    emit_array(lines, "arm64o9drvmanelf", o9drvman)
     emit_array(lines, "arm64driverfself", driverfs)
     emit_array(lines, "arm64uartfself", uartfs)
     emit_array(lines, "arm64gpiofself", gpiofs)
     emit_array(lines, "arm64hubfself", hubfs)
+    emit_array(lines, "arm64drvmanelf", drvman)
     args.output.write_text("\n".join(lines))
 
 

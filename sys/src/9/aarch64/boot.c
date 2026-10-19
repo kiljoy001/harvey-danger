@@ -424,11 +424,12 @@ arm64kernelstart(Fdtinfo *info)
 	physseginit(info);
 	arm64pnpinit(info);
 	addbootfile("init", (u8 *)arm64initelf, sizeof(arm64initelf));
-	addbootfile("o9drvman", (u8 *)arm64drvmanelf, sizeof(arm64drvmanelf));
+	addbootfile("o9drvman", (u8 *)arm64o9drvmanelf, sizeof(arm64o9drvmanelf));
 	addbootfile("o9driverfs", (u8 *)arm64driverfself, sizeof(arm64driverfself));
 	addbootfile("uartfs", (u8 *)arm64uartfself, sizeof(arm64uartfself));
 	addbootfile("gpiofs", (u8 *)arm64gpiofself, sizeof(arm64gpiofself));
 	addbootfile("hubfs", (u8 *)arm64hubfself, sizeof(arm64hubfself));
+	addbootfile("drvman", (u8 *)arm64drvmanelf, sizeof(arm64drvmanelf));
 	arm64uartputs("HARVEY-ARM64 DEVICE-RESET PASS\n");
 	pageinit();
 	{
