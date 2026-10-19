@@ -809,6 +809,10 @@ sysexits(Ar0 *ar0, ...)
 			poperror();
 		}
 	}
+#ifdef __aarch64__
+	print("ARM64 exits pid %d status %s\n", up->pid,
+		status == nil ? "" : status);
+#endif
 	pexit(status, 1);
 }
 

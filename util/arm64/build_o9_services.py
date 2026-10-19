@@ -23,7 +23,8 @@ BIG_PAGE = 0x200000
 FLAGS = [
     "--target=aarch64-none-elf", "-ffreestanding", "-fno-builtin",
     "-fno-stack-protector", "-fno-unwind-tables",
-    "-fno-asynchronous-unwind-tables", "-mstrict-align", "-fsigned-char",
+    "-fno-asynchronous-unwind-tables", "-fno-vectorize",
+    "-fno-slp-vectorize", "-mstrict-align", "-fsigned-char",
     "-fcommon", "-include", str(ROOT / "util/arm64/o9_compat.h"),
     "-O2", "-g", "-D__HARVEY__", "-DMONO_PLAN9", "-Wall",
     "-Wno-parentheses", "-Wno-missing-braces", "-Wno-unknown-pragmas",
@@ -140,12 +141,16 @@ def transpile(source: Path, destination: Path) -> None:
 
 def linker_script(path: Path, base: int) -> None:
     path.write_text(f"""ENTRY(_main)
+PHDRS {{
+  text PT_LOAD FLAGS(5);
+  data PT_LOAD FLAGS(6);
+}}
 SECTIONS {{
   . = 0x{base:x};
-  .text : {{ *(.text .text.*) *(.rodata .rodata.*) }}
+  .text : {{ *(.text .text.*) *(.rodata .rodata.*) }} :text
   . = ALIGN(0x{BIG_PAGE:x});
-  .data : {{ *(.data .data.*) *(.sdata .sdata.*) *(.got .got.*) }}
-  .bss : {{ *(.bss .bss.*) *(.sbss .sbss.*) COMMON }}
+  .data : {{ *(.data .data.*) *(.sdata .sdata.*) *(.got .got.*) }} :data
+  .bss : {{ *(.bss .bss.*) *(.sbss .sbss.*) COMMON }} :data
   PROVIDE(end = .);
   /DISCARD/ : {{ *(.comment) *(.note*) }}
 }}

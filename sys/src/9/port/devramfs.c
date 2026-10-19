@@ -77,6 +77,7 @@ raminit(void)
 	if(ramroot == nil){
 		error("raminit: out of memory");
 	}
+	memset(ramroot, 0, sizeof(*ramroot));
 	ramroot->n = smalloc(2);
 	kstrdup(&ramroot->n, ".");
 	ramroot->magic = RAM_MAGIC;
@@ -446,6 +447,7 @@ ramcreate(Chan *c, char *name, int omode, int perm)
 	if(file == nil){
 		error("ramcreate:no memory to create file struct");
 	}
+	memset(file, 0, sizeof(*file));
 	file->length = 0;
 	file->magic = RAM_MAGIC;
 	file->n = smalloc(strlen(name) + 1);

@@ -336,7 +336,9 @@ envcpy(Egrp *to, Egrp *from)
 
 	rlock(&from->rwl);
 	to->ment = (from->nent + 31) & ~31;
-	to->ent = smalloc(to->ment * sizeof(to->ent[0]));
+	to->ent = nil;
+	if(to->ment != 0)
+		to->ent = smalloc(to->ment * sizeof(to->ent[0]));
 	for(i = 0; i < from->nent; i++){
 		e = from->ent[i];
 		ne = smalloc(sizeof(Evalue));

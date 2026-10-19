@@ -40,10 +40,16 @@ _schedinit(void *arg)
 	Thread *t, **l;
 
 	p = arg;
+#ifdef __aarch64__
+	write(2, "ARM64 schedinit entry\n", 22);
+#endif
 	_threadsetproc(p);
 	p->pid = _tos->prof.pid; //getpid();
 	while(setjmp(p->sched))
 		;
+#ifdef __aarch64__
+	write(2, "ARM64 schedinit setjmp\n", 23);
+#endif
 	_threaddebug(DBGSCHED, "top of schedinit, _threadexitsallstatus=%p", _threadexitsallstatus);
 	if(_threadexitsallstatus)
 		exits(_threadexitsallstatus);
@@ -133,6 +139,9 @@ Resched:
 		}
 		t->state = Running;
 		t->nextstate = Ready;
+#ifdef __aarch64__
+		write(2, "ARM64 sched thread jump\n", 24);
+#endif
 		longjmp(t->sched, 1);
 	}
 }

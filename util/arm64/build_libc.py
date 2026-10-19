@@ -42,7 +42,8 @@ def main() -> None:
     flags = [
         "--target=aarch64-none-elf", "-ffreestanding", "-fno-builtin",
         "-fno-stack-protector", "-fno-unwind-tables",
-        "-fno-asynchronous-unwind-tables", "-mstrict-align", "-fcommon",
+        "-fno-asynchronous-unwind-tables", "-fno-vectorize",
+        "-fno-slp-vectorize", "-mstrict-align", "-fcommon",
         "-O2", "-g", "-D__HARVEY__", "-Wall", "-Wno-parentheses",
         "-Wno-missing-braces", "-Wno-unknown-pragmas",
         "-Wno-unused-function", "-Wno-unused-variable",

@@ -11,7 +11,7 @@ from test_virt import boot_until
 ROOT = Path(__file__).resolve().parents[2]
 IMAGE = ROOT / "build/arm64-kernel/harvey.img"
 ELF = ROOT / "build/arm64-kernel/harvey.elf"
-MARKER = "HARVEY-ARM64 FILE-EXEC INIT PASS"
+MARKER = "HARVEY-ARM64 DRIVER-MANAGER PASS"
 
 
 def main() -> None:
@@ -37,6 +37,7 @@ def main() -> None:
                 "HARVEY-ARM64 LIBC-USER PASS",
                 "HARVEY-ARM64 USER-PROCESS PASS",
                 "HARVEY-ARM64 FILE-EXEC START",
+                "HARVEY-ARM64 FILE-EXEC INIT PASS",
                 MARKER)) or \
                 "failed" in transcript or \
                 "ARM64 exception" in transcript:
