@@ -100,39 +100,58 @@ function DriverWriteRaw(string path, string data) int64 {
     return out;
 }
 
-function DriverManagedStopRaw(string statusRoot, string serviceName,
+function DriverManagedLoopRaw(string statusRoot, string serviceName,
                               string generation) int64 {
     int64 out;
     c {
-        char *root, *service, *gen, *path, text[16];
+        char *root, *service, *gen, *progress, *stop, text[32];
+        uvlong next, now, serial;
         int fd, n;
 
         out = -1;
         root = o9_string_cstr(statusRoot);
         service = o9_string_cstr(serviceName);
         gen = o9_string_cstr(generation);
-        path = nil;
-        if(root != nil && service != nil && gen != nil)
-            path = smprint("%s/%s.%s.stop", root, service, gen);
+        stop = nil;
+        progress = nil;
+        if(root != nil && service != nil && gen != nil){
+            stop = smprint("%s/%s.%s.stop", root, service, gen);
+            progress = smprint("%s/%s.%s.progress", root, service, gen);
+        }
         free(root);
         free(service);
         free(gen);
-        if(path != nil){
+        if(stop != nil && progress != nil){
+            next = 0;
+            serial = 1;
             for(;;){
-                fd = open(path, OREAD);
+                fd = open(stop, OREAD);
                 if(fd >= 0){
                     n = read(fd, text, sizeof text);
                     close(fd);
                     if(n == 9 && memcmp(text, "shutdown\n", 9) == 0){
-                        remove(path);
+                        remove(stop);
                         break;
                     }
                 }
+                now = nsec();
+                if(now >= next){
+                    n = snprint(text, sizeof text, "%llu\n", serial);
+                    fd = create(progress, OWRITE, 0600);
+                    if(fd >= 0){
+                        write(fd, text, n);
+                        close(fd);
+                    }
+                    next = now + 10000000000ULL;
+                    if(++serial == 0)
+                        serial = 1;
+                }
                 sleep(25);
             }
-            free(path);
             out = 0;
         }
+        free(stop);
+        free(progress);
     }
     return out;
 }
@@ -272,10 +291,10 @@ main {
             viewController(drivers);
             if(drivers.reportManagedReady(process.arg(4), process.arg(1),
                                           process.arg(2))) {
-                Task<int64> stop = spawn DriverManagedStopRaw(process.arg(4),
-                                                               process.arg(1),
-                                                               process.arg(2));
-                stop.await();
+                Task<int64> managed = spawn DriverManagedLoopRaw(process.arg(4),
+                                                                  process.arg(1),
+                                                                  process.arg(2));
+                managed.await();
             } else {
                 print("o9driverfs: could not report readiness\n");
             }

@@ -60,7 +60,8 @@ environment, descriptor, rendezvous, and note groups. Detached monitors own
 the child wait messages, while PID and exit state remain visible through the
 manager's tabular view. Managed services receive a generation-scoped status
 mailbox in their inherited namespace; `o9driverfs` uses it to publish readiness
-only after its configured view exists. The C core must pass unit, generated property, ASan/UBSan,
+only after its configured view exists, renew its liveness lease with monotonic
+progress serials, and receive generation-safe graceful-stop requests. The C core must pass unit, generated property, ASan/UBSan,
 libFuzzer, and semantic mutation tests through `bin/aspera quality`.
 The same gate applies those layers plus ThreadSanitizer stress to the shared
 9ring and VirtIO-9P validation primitives. `bin/aspera verify` boots the real

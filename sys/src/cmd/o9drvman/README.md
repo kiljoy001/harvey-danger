@@ -51,6 +51,10 @@ long-running service cleanly. The manager removes stale control markers before
 launch and after reap. If a startup, heartbeat, or graceful-stop deadline
 expires, the supervisor posts a forced shutdown note. It restarts desired
 drivers only after generation-safe backoff.
+Managed services publish monotonic heartbeat serials through a generation
+scoped `.progress` marker. The supervisor consumes readiness and progress
+before applying a deadline tick, avoiding a false timeout when a valid report
+is already waiting.
 
 The manager must run in the supervisor's private namespace; a read-only status
 service can be bound into broader namespaces later. AppUser authorization is

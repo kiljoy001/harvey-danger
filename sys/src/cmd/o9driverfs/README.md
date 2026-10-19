@@ -35,6 +35,11 @@ wakes the root Objective-9C task; returning from the generated application
 entry then invokes the runtime's whole-application exit path. The generation
 in both control paths prevents a late stop from terminating a replacement
 process.
+While running, the service writes a monotonic serial every 10 seconds to
+`<status-directory>/<service>.<generation>.progress`. The first serial is
+written immediately. The supervisor consumes it before checking the liveness
+deadline, so a heartbeat already waiting at the deadline wins the race and
+extends the service lease.
 
 This first service is a 9P device namespace and forwarding layer. It is not
 yet an MMIO driver, an interrupt broker, or a complete serial, block, network,

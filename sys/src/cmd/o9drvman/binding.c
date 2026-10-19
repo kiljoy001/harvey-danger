@@ -268,6 +268,8 @@ o9drvmanlaunch(int slot, uint generation)
 	remove(marker);
 	snprint(marker, sizeof marker, "%s/%s.%u.stop", manager, name, generation);
 	remove(marker);
+	snprint(marker, sizeof marker, "%s/%s.%u.progress", manager, name, generation);
+	remove(marker);
 	monitor = rfork(RFPROC|RFFDG|RFNOTEG|RFNOWAIT);
 	if(monitor == 0){
 		close(start[0]);
@@ -303,6 +305,36 @@ readymarker(int slot, uint generation)
 	if(n != 6 || memcmp(text, "ready\n", 6) != 0)
 		return 0;
 	remove(marker);
+	return 1;
+}
+
+static int
+progressmarker(int slot, uint generation, uvlong *progress)
+{
+	char marker[Maxpath + Maxname + 32], text[32], *end;
+	uvlong value;
+	int fd, i, n;
+
+	lock(&driverlock);
+	snprint(marker, sizeof marker, "%s/%s.%u.progress", processes[slot].manager,
+	        processes[slot].name, generation);
+	unlock(&driverlock);
+	fd = open(marker, OREAD);
+	if(fd < 0)
+		return 0;
+	n = read(fd, text, sizeof text - 1);
+	close(fd);
+	remove(marker);
+	if(n < 2 || text[n - 1] != '\n')
+		return 0;
+	text[--n] = 0;
+	for(i = 0; i < n; i++)
+		if(text[i] < '0' || text[i] > '9')
+			return 0;
+	value = strtoull(text, &end, 10);
+	if(value == 0 || end == text || *end != 0)
+		return 0;
+	*progress = value;
 	return 1;
 }
 
@@ -362,7 +394,8 @@ o9drvmanreapone(void)
 {
 	DrvExitMessage exit;
 	DrvEvent event;
-	char marker[Maxpath + Maxname + 32], stopmarker[Maxpath + Maxname + 32];
+	char marker[Maxpath + Maxname + 32], progresspath[Maxpath + Maxname + 32];
+	char stopmarker[Maxpath + Maxname + 32];
 	int result;
 
 	if(exitpipe[0] < 0 || readn(exitpipe[0], &exit, sizeof exit) != sizeof exit)
@@ -380,6 +413,7 @@ o9drvmanreapone(void)
 	snprint(marker, sizeof marker, "%s/%s.%u", processes[exit.slot].manager,
 	        processes[exit.slot].name, exit.generation);
 	snprint(stopmarker, sizeof stopmarker, "%s.stop", marker);
+	snprint(progresspath, sizeof progresspath, "%s.progress", marker);
 	event.type = DrvExit;
 	event.generation = exit.generation;
 	event.now_ms = nsec() / 1000000ULL;
@@ -388,12 +422,14 @@ o9drvmanreapone(void)
 	unlock(&driverlock);
 	remove(marker);
 	remove(stopmarker);
+	remove(progresspath);
 	return result == DrvRejected ? -1 : exit.slot + 1;
 }
 
 int
 o9drvmansuperviseonce(uvlong now)
 {
+	uvlong progress;
 	uint generation;
 	int current, launched, old, pid, slot, status;
 
@@ -403,13 +439,15 @@ o9drvmansuperviseonce(uvlong now)
 			continue;
 		old = o9drvmanfield(slot, 0);
 		generation = o9drvmanfield(slot, 1);
+		pid = o9drvmanfield(slot, 7);
+		if(old == DrvStarting && pid > 0 && readymarker(slot, generation))
+			o9drvmanapply(slot, DrvReady, generation, now, 0);
+		current = o9drvmanfield(slot, 0);
+		if(current == DrvRunning && pid > 0 &&
+		   progressmarker(slot, generation, &progress))
+			o9drvmanapply(slot, DrvProgress, generation, now, progress);
 		status = o9drvmanapply(slot, DrvTick, 0, now, 0);
 		current = o9drvmanfield(slot, 0);
-		pid = o9drvmanfield(slot, 7);
-		if(current == DrvStarting && pid > 0 && readymarker(slot, generation)){
-			o9drvmanapply(slot, DrvReady, generation, now, 0);
-			current = o9drvmanfield(slot, 0);
-		}
 		if(status == DrvApplied &&
 		   (old == DrvStarting || old == DrvRunning || old == DrvStopping) &&
 		   (current == DrvBackoff || current == DrvStopped) && pid > 0)

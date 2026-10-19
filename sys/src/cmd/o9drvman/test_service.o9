@@ -123,8 +123,10 @@ main {
         managedPause.await();
         tries = tries + 1;
     }
-    ok = ok && manager.superviseOnce(405) == 0 &&
-         manager.value("devices", 0) == 2 && managedService.exists();
+    int64 managedSupervise = manager.superviseOnce(405);
+    ok = ok && managedSupervise == 0 &&
+         manager.value("devices", 0) == 2 && managedService.exists() &&
+         manager.value("devices", 6) > 0 && manager.value("devices", 4) >= 30405;
     string managedStop = "stop devices 410\n";
     ok = ok && ctl.append(managedStop) == len(managedStop);
     ok = ok && manager.reapOne() > 0;
