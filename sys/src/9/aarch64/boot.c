@@ -6,6 +6,8 @@
 #include "fns.h"
 #include "fdt.h"
 #include "phys.h"
+#include "mmu.h"
+#include "user.h"
 
 extern void arm64uartputs(char *);
 extern void (*consuartputs)(char *, int);
@@ -130,6 +132,58 @@ uartwrite(char *buf, int n)
 }
 
 static volatile int workerphase;
+static volatile int userprocessphase;
+static u64 useruartbase;
+static u32 useruarttype;
+
+extern u8 arm64processcode[], arm64processcodeend[];
+
+void
+arm64processresume(void)
+{
+	userprocessphase = 2;
+	arm64uartputs("HARVEY-ARM64 USER-PROCESS PASS\n");
+	for(;;)
+		sched();
+}
+
+static void
+userprocess(void *arg)
+{
+	Proc *p;
+	u64 code, stack, root;
+
+	USED(arg);
+	p = externup();
+	code = arm64physpage();
+	stack = arm64physpage();
+	root = arm64mmuuser(arm64mmukernelroot(), code, stack);
+	if(code == 0 || stack == 0 || root == 0)
+		panic("ARM64 user process address space failed");
+	if(arm64mmuuserdevice(root, ARM64USERBASE+2*PGSZ,
+	   useruartbase & ~(u64)(PGSZ-1)) < 0)
+		panic("ARM64 user process UART map failed");
+	if(arm64userload(code, arm64processcode, arm64processcodeend) < 0)
+		panic("ARM64 user process code load failed");
+	p->MMU.rootpa = root;
+	arm64mmuswitch(root);
+	userprocessphase = 1;
+	arm64runprocess(ARM64USERBASE, ARM64USERBASE+2*PGSZ, useruarttype);
+}
+
+static void
+startuserprocess(void)
+{
+	Proc *p;
+
+	p = newproc();
+	kstrdup(&p->user, eve);
+	kstrdup(&p->text, "*arm64-user-probe*");
+	p->noswap = 1;
+	procpriority(p, PriNormal, 0);
+	kprocchild(p, userprocess, nil);
+	ready(p);
+}
 
 static void
 worker(void *arg)
@@ -164,6 +218,9 @@ worker(void *arg)
 		ringprobe();
 		virtio9pprobe();
 		arm64uartputs("HARVEY-ARM64 BOOT-PROBES PASS\n");
+		startuserprocess();
+		while(userprocessphase != 2)
+			sched();
 	}else{
 		workerphase |= 2;
 	}
@@ -204,6 +261,8 @@ arm64kernelstart(Fdtinfo *info)
 	printinit();
 	timersinit();
 	arm64virtio9pconfigure(info);
+	useruartbase = info->uartbase;
+	useruarttype = info->uarttype;
 	devtabreset();
 	arm64uartputs("HARVEY-ARM64 DEVICE-RESET PASS\n");
 	pageinit();

@@ -106,3 +106,47 @@ arm64userexecstack:
 	b	.
 	.globl arm64userexecstackend
 arm64userexecstackend:
+
+	/* Minimal payload used to prove that a scheduled Harvey Proc owns an
+	 * address space and can cross the EL1/EL0 boundary. */
+	.globl arm64processcode
+arm64processcode:
+	mov	x19, x0		/* FDT UART type */
+	movz	x20, #0x40, lsl #32
+	add	x20, x20, #2, lsl #12
+	adr	x21, 2f
+1:
+	ldrb	w22, [x21], #1
+	cbz	w22, 3f
+	cmp	x19, #1
+	b.ne	4f
+5:
+	ldr	w23, [x20, #0x18]
+	tbnz	w23, #5, 5b	/* PL011 TX FIFO full */
+	b	6f
+4:
+	ldr	w23, [x20, #0x7c]
+	tbz	w23, #1, 4b	/* DesignWare TX FIFO has no room */
+6:
+	str	w22, [x20]
+	b	1b
+2:
+	.asciz	"HARVEY-ARM64 USER-UART PASS\n"
+	.balign 4
+3:
+	mov	x8, #63		/* invalid syscall */
+	svc	#0
+	cmn	x0, #1
+	b.ne	7f
+	mov	x8, #53		/* nsec */
+	svc	#0
+	cbz	x0, 7f
+	mov	x0, #57
+	svc	#3
+	b	.
+7:
+	mov	x0, #58
+	svc	#3
+	b	.
+	.globl arm64processcodeend
+arm64processcodeend:

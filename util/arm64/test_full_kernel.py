@@ -11,7 +11,7 @@ from test_virt import boot_until
 ROOT = Path(__file__).resolve().parents[2]
 IMAGE = ROOT / "build/arm64-kernel/harvey.img"
 ELF = ROOT / "build/arm64-kernel/harvey.elf"
-MARKER = "HARVEY-ARM64 BOOT-PROBES PASS"
+MARKER = "HARVEY-ARM64 USER-PROCESS PASS"
 
 
 def main() -> None:
@@ -33,11 +33,13 @@ def main() -> None:
                 "HARVEY-ARM64 CLOCK PASS",
                 "HARVEY-ARM64 ROOT-WALK PASS",
                 "HARVEY-ARM64 9RING PASS",
+                "HARVEY-ARM64 BOOT-PROBES PASS",
+                "HARVEY-ARM64 USER-UART PASS",
                 MARKER)) or \
                 "failed" in transcript or \
                 "ARM64 exception" in transcript:
             raise RuntimeError(f"full kernel boot failed at {memory} MiB:\n{transcript}")
-        print(f"ARM64 linked kernel, QEMU virt {memory} MiB: devices, pages, scheduler, clock, 9ring, root PASS")
+        print(f"ARM64 linked kernel, QEMU virt {memory} MiB: devices, pages, scheduler, clock, 9ring, root, user process PASS")
 
 
 if __name__ == "__main__":

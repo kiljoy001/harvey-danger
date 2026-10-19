@@ -60,6 +60,35 @@ arm64mmuuser(u64 kernelrootpa, u64 codepa, u64 stackpa)
 	return rootpa;
 }
 
+int
+arm64mmuuserdevice(u64 rootpa, u64 va, u64 pa)
+{
+	u64 *root, *l2, *l3;
+	u64 entry;
+	u32 i1, i2, i3;
+
+	if((rootpa|va|pa) & (Pagesz-1) || va >= (1ULL<<39))
+		return -1;
+	root = (u64 *)rootpa;
+	i1 = (va>>30)&511;
+	i2 = (va>>21)&511;
+	i3 = (va>>12)&511;
+	entry = root[i1];
+	if((entry & (Ptevalid|Ptetable)) != (Ptevalid|Ptetable))
+		return -1;
+	l2 = (u64 *)(entry & ~(u64)(Pagesz-1));
+	entry = l2[i2];
+	if((entry & (Ptevalid|Ptetable)) != (Ptevalid|Ptetable))
+		return -1;
+	l3 = (u64 *)(entry & ~(u64)(Pagesz-1));
+	if(l3[i3] != 0)
+		return -1;
+	/* EL0 read/write, Device-nGnRE, never executable at either EL. */
+	l3[i3] = pa | Ptevalid | Ptetable | Pteattrdevice | Pteaccessed |
+	           (1ULL<<6) | (1ULL<<53) | (1ULL<<54);
+	return 0;
+}
+
 static u64
 blockpte(u64 pa, int ram)
 {

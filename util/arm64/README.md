@@ -11,8 +11,12 @@ serial. It enters EL0, resumes after a test syscall, and switches between two
 page-table roots whose user mappings point to different physical pages. The
 boot check confirms that EL0 cannot read kernel memory, write its code page,
 or execute its stack. A timer interrupt can arrive from EL0 and return to the
-interrupted instruction. The full kernel starts the shared Plan 9 scheduler;
-it does **not** yet load user programs. The ARM64 `Label` save/restore routines match the calling
+interrupted instruction. The full kernel starts the shared Plan 9 scheduler,
+creates a `Proc` with its own page-table root, and runs a small payload at EL0.
+That payload writes through one device-tree-selected UART page mapped only in
+its address space, checks rejection of an invalid syscall, and calls the
+generated `nsec` syscall through the normal syscall table. It is an acceptance
+probe rather than an executable loader. The ARM64 `Label` save/restore routines match the calling
 convention used by Harvey's shared scheduler in `sys/src/9/port/proc.c`. QEMU
 tests switch between two independent kernel stacks and check callee-saved
 register preservation while the timer is active. Interrupt masking is also
@@ -87,7 +91,9 @@ boot; set `ARM64_RK3566_NPU_PROBE=1` only for a separate NPU experiment. The
 board boot remains a hardware bring-up test, not an interactive userland.
 On an Orange Pi 3B v1.1, the common Image and the full OS DTB loaded over TFTP
 passed the early memory, MMU, timer, EL0 isolation, scheduler, root walk, and
-`#~` boot checks. The board's 8 GiB appears as two memory banks in U-Boot;
+`#~` boot checks. The scheduled EL0 process also wrote its acceptance marker
+through a user-only mapping of the RK3566 DesignWare UART and completed its
+generated syscall-table checks. The board's 8 GiB appears as two memory banks in U-Boot;
 the kernel currently manages the bank containing the Image (roughly 3.8 GiB)
 and leaves the second bank for later multi-bank allocator work. Early code is
 built with `-mstrict-align`: before the MMU
@@ -134,14 +140,18 @@ zeroed 4 KiB pages; the full build also
 has a free-list allocator for process pages and page tables.
 The identity map remains writable and executable in EL1, while its entries are
 inaccessible to EL0. Separate user roots and a complete general-register trap
-frame are in place, but the current trap handler is still a boot check. The
+frame are in place. The lower-EL synchronous trap path can now dispatch a
+scheduled process's register-based syscall through the generated syscall
+table. Error unwinding and return-value propagation are exercised by the boot
+probe, but notes and the complete production syscall-exit path remain. The
 linked kernel has `Proc`/`Mach`, page mapping, the shared scheduler and core
 devices. The runtime handoff runs `procinit0()`, `psinit()`, `devtabreset()`,
-`pageinit()`, `timersinit()`, and `schedinit()`. The test kernel processes exit
-after the root walk. Before launching untrusted processes, it needs a separate
-high address kernel mapping: the bootstrap identity map overlaps the range
-used for user addresses. Normal syscall dispatch, demand-fault handling,
-executable loading, and an ARM64 init binary follow.
+`pageinit()`, `timersinit()`, and `schedinit()`. A scheduled EL0 probe runs after
+the root walk and local transport checks. Before launching general untrusted
+programs, the temporary address-space builder and process lifecycle must be
+replaced by tracked per-process page tables. Demand-fault handling, executable
+loading, ARM64 libc syscall stubs and runtime startup, and an ARM64 init binary
+follow.
 The shared `#9` driver uses PCI on amd64 and device-tree discovered virtio-MMIO
 on ARM64. Both legacy MMIO v1 and modern v2 work in QEMU `virt`. The ARM64
 transport currently polls for replies; device interrupts are not routed yet.
@@ -149,9 +159,10 @@ transport currently polls for replies; device interrupts are not routed yet.
 check. Device services belong in the Objective-9C
 `sys/src/cmd/o9driverfs` user-space 9P filesystem, with backends supplied by a
 trusted host or VM transport. That service currently proxies named backend
-files and is tested in the x86 microVM; it does not access PL011 MMIO directly.
-The ARM64 kernel still needs the user process and syscall boot path before it
-can start `o9driverfs` or another Objective-9C service there.
+files and is tested in the x86 microVM. The ARM64 user-mode UART probe proves
+the privilege boundary needed by a driver server, but it is deliberately not
+the final Objective-9C `o9uartfs`: executable loading, the Objective-9C ARM64
+runtime, and a restricted resource-grant interface are still required.
 
 The build uses `clang-23` if present because this host's default `clang` only
 contains the x86 backend. Kernel sources and integer/text kernel libc use
@@ -163,7 +174,8 @@ Set `ARM64_CC`, `ARM64_LD` and `ARM64_OBJCOPY` to override the tools.
 the complete link for undefined symbols and boots that linked Image under QEMU
 with 256 and 512 MiB of RAM. It exercises physical allocation and free after
 the early MMU and trap probes, then checks device reset, page allocation,
-process scheduling, clock ticks, and the root walk.
+process scheduling, clock ticks, the root walk, a scheduled EL0 process, its
+restricted UART mapping, and generated syscall-table dispatch.
 `test_virtio9p.py` attaches a QEMU host directory and checks a real 9P version
 exchange through both MMIO transport versions. The boot check also exercises
 the local `#~` request and reply path without a host ring.

@@ -6,8 +6,11 @@ extern u8 arm64userfaultcode[], arm64userfaultcodeend[];
 extern u8 arm64userwritecode[], arm64userwritecodeend[];
 extern u8 arm64userexecstack[], arm64userexecstackend[];
 extern char arm64userresume[];
+#ifdef ARM64_FULL_KERNEL
+extern void arm64processresume(void) __attribute__((noreturn));
+#endif
 extern u64 arm64enteruser(u64, u64, u64);
-extern void arm64fault(void);
+extern void arm64fault(void) __attribute__((noreturn));
 
 static volatile u32 useractive, trapkind;
 static volatile u32 usercalls;
@@ -16,6 +19,9 @@ static volatile u64 expectedfault;
 static volatile u32 expectedec;
 static volatile u32 diagstage;
 static volatile u64 diagresult;
+#ifdef ARM64_FULL_KERNEL
+static volatile u32 processactive;
+#endif
 
 static void
 synccode(u64 base, usize n)
@@ -50,16 +56,35 @@ copycode(u64 page, u8 *start, u8 *end)
 	return 0;
 }
 
+int
+arm64userload(u64 page, u8 *start, u8 *end)
+{
+	return copycode(page, start, end);
+}
+
 void
 arm64usertrap(Arm64ureg *r)
 {
 	u32 ec;
 
+	ec = (r->esr>>26)&63;
+#ifdef ARM64_FULL_KERNEL
+	if(processactive != 0 && ec == 0x15 && (r->esr&0xffff) == 0){
+		arm64syscall(r);
+		return;
+	}
+	if(processactive != 0 && ec == 0x15 && (r->esr&0xffff) == 3 &&
+	   r->x[0] == 57){
+		processactive = 0;
+		r->elr = (u64)arm64processresume;
+		r->spsr = 0x3c5;
+		return;
+	}
+#endif
 	if(useractive == 0)
 		arm64fault();
 	trapesr = r->esr;
 	trapfar = r->far;
-	ec = (r->esr>>26)&63;
 	if(ec == 0x15 && (r->esr&0xffff) == 1){
 		/* Return a value and resume at the instruction following SVC. */
 		r->x[0]++;
@@ -77,6 +102,16 @@ arm64usertrap(Arm64ureg *r)
 	r->elr = (u64)arm64userresume;
 	r->spsr = 0x3c5;
 }
+
+#ifdef ARM64_FULL_KERNEL
+void
+arm64runprocess(u64 entry, u64 stack, u64 arg)
+{
+	processactive = 1;
+	arm64enteruser(entry, stack, arg);
+	arm64fault();
+}
+#endif
 
 static int
 faultprobe(u64 codepage, u8 *start, u8 *end, u64 arg, u32 ec)

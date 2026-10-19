@@ -128,7 +128,8 @@ def main() -> None:
     sources = [ARCH / name for name in
                ("l.S", "user.S", "context.S", "return.S", "main.c", "fdt.c", "timer.c",
                 "phys.c", "mmu.c", "user.c", "context.c", "arch.c",
-                "config.c", "qmalloc.c", "platform.c", "procarch.c", "boot.c")]
+                "config.c", "qmalloc.c", "platform.c", "procarch.c", "syscall.c",
+                "boot.c")]
     core_devices = {
         "dev.c", "devcap.c", "devcons.c", "devdup.c", "devenv.c",
         "devmnt.c", "devpipe.c", "devproc.c", "devramfs.c",
