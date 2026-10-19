@@ -103,17 +103,32 @@ probedev(char *name, u64 *base, u64 *size, u32 *type)
 	return 0;
 }
 
-/* Find the first enabled UART in #P. */
+/* Return nonzero if #P/<name> is the console UART (stdout-path). */
+static int
+isconsole(char *name)
+{
+	char path[128], buf[16];
+	long n;
+
+	mkpath(path, name, "console");
+	n = readfile(path, buf, sizeof buf);
+	return n > 0 && buf[0] == '1';
+}
+
+/* Find the console UART in #P, falling back to the first enabled UART. */
 static int
 discover(void)
 {
 	uchar dirbuf[4096];
-	char strs[512];
+	char strs[512], fallback[64];
+	u64 fbase, fsize;
+	u32 ftype;
 	Dir d;
-	int fd, found;
+	int fd, found, havefallback;
 	long i, n;
 
 	found = -1;
+	havefallback = 0;
 	fd = open("#P", OREAD);
 	if(fd < 0)
 		return -1;
@@ -122,16 +137,38 @@ discover(void)
 	if(n <= 0)
 		return -1;
 	for(i = 0; i < n; i += GBIT16(dirbuf + i) + BIT16SZ){
+		u64 base, size;
+		u32 type;
+
 		if(convM2D(dirbuf + i, GBIT16(dirbuf + i) + BIT16SZ,
 		   &d, strs) == 0)
 			break;
 		if(strcmp(d.name, ".") == 0)
 			continue;
-		if(probedev(d.name, &uart.base, &uart.size, &uart.type) == 0){
+		if(probedev(d.name, &base, &size, &type) < 0)
+			continue;
+		if(isconsole(d.name)){
+			uart.base = base;
+			uart.size = size;
+			uart.type = type;
 			strcpy(uartname, d.name);
 			found = 0;
 			break;
 		}
+		if(!havefallback){
+			fbase = base;
+			fsize = size;
+			ftype = type;
+			strcpy(fallback, d.name);
+			havefallback = 1;
+		}
+	}
+	if(found < 0 && havefallback){
+		uart.base = fbase;
+		uart.size = fsize;
+		uart.type = ftype;
+		strcpy(uartname, fallback);
+		found = 0;
 	}
 	return found;
 }

@@ -16,6 +16,7 @@ enum {
 	Qirqflags,
 	Qcompat,
 	Qclass,
+	Qconsole,
 };
 
 #define TYPE(x) ((int)((x)->qid.path & 0xf))
@@ -24,6 +25,7 @@ enum {
 
 static Fdtdev pnpdev[Maxfdtdev];
 static u32 npnpdev;
+static u64 consolebase;
 
 void
 arm64pnpinit(Fdtinfo *info)
@@ -33,6 +35,7 @@ arm64pnpinit(Fdtinfo *info)
 	npnpdev = info->ndev;
 	if(npnpdev > Maxfdtdev)
 		npnpdev = Maxfdtdev;
+	consolebase = info->uartbase;
 	for(i = 0; i < npnpdev; i++)
 		pnpdev[i] = info->dev[i];
 }
@@ -70,7 +73,7 @@ pnpgen(Chan *c, char *name, Dirtab *tab, int ntab, int s, Dir *dp)
 			return 1;
 		}
 		dev = DEV(c);
-		if(dev < 0 || dev >= (int)npnpdev || s < 0 || s > Qclass-Qreg)
+		if(dev < 0 || dev >= (int)npnpdev || s < 0 || s > Qconsole-Qreg)
 			return -1;
 		q.type = QTFILE;
 		switch(s + Qreg){
@@ -97,6 +100,10 @@ pnpgen(Chan *c, char *name, Dirtab *tab, int ntab, int s, Dir *dp)
 		case Qclass:
 			q.path = QPATH(dev, Qclass);
 			devdir(c, q, "class", 0, eve, 0444, dp);
+			break;
+		case Qconsole:
+			q.path = QPATH(dev, Qconsole);
+			devdir(c, q, "console", 0, eve, 0444, dp);
 			break;
 		}
 		return 1;
@@ -180,6 +187,9 @@ pnpread(Chan *c, void *a, i32 n, i64 off)
 		break;
 	case Qclass:
 		snprint(buf, sizeof buf, "%s\n", fdtclassname(d->clas));
+		break;
+	case Qconsole:
+		snprint(buf, sizeof buf, "%u\n", d->base == consolebase);
 		break;
 	default:
 		error(Ebadarg);

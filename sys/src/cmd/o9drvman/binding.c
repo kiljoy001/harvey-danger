@@ -68,6 +68,7 @@ monitorproc(int slot, uint generation, char *manager, char *name, char *path, in
 		putenv("O9_DRIVER_GENERATION", generationtext);
 		putenv("O9_DRIVER_NAME", name);
 		execl(path, path, name, generationtext, slottext, manager, nil);
+		fprint(2, "o9drvman: exec %s failed: %r\n", path);
 		exits("exec");
 	}
 	write(startfd, &pid, sizeof pid);
