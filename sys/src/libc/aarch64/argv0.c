@@ -10,9 +10,10 @@
 
 #include <u.h>
 #include <libc.h>
+#include <tos.h>
 
 void (*_abort)(void);
 char *argv0;
-char *_tos;
-char *_privates;
-char *_nprivates;
+Tos *_tos;
+void **_privates;
+int _nprivates;

@@ -41,6 +41,9 @@ It does **not** yet offer an interactive shell.
 python3 util/arm64/test_virt.py
 python3 util/arm64/test_fdt.py
 python3 util/arm64/check_port.py
+python3 util/arm64/test_syscalls.py
+python3 util/arm64/build_libc.py
+python3 util/arm64/test_user_runtime.py
 python3 util/arm64/test_full_kernel.py
 python3 util/arm64/test_virtio9p.py
 ```
@@ -149,9 +152,10 @@ devices. The runtime handoff runs `procinit0()`, `psinit()`, `devtabreset()`,
 `pageinit()`, `timersinit()`, and `schedinit()`. A scheduled EL0 probe runs after
 the root walk and local transport checks. Before launching general untrusted
 programs, the temporary address-space builder and process lifecycle must be
-replaced by tracked per-process page tables. Demand-fault handling, executable
-loading, ARM64 libc syscall stubs and runtime startup, and an ARM64 init binary
-follow.
+replaced by tracked per-process page tables. ARM64 libc and all 42 generated
+syscall wrappers now cross-build, and a small `_main` process links against
+that libc. Demand-fault handling, executable loading, running that linked
+process, and an ARM64 init binary follow.
 The shared `#9` driver uses PCI on amd64 and device-tree discovered virtio-MMIO
 on ARM64. Both legacy MMIO v1 and modern v2 work in QEMU `virt`. The ARM64
 transport currently polls for replies; device interrupts are not routed yet.
@@ -161,8 +165,9 @@ check. Device services belong in the Objective-9C
 trusted host or VM transport. That service currently proxies named backend
 files and is tested in the x86 microVM. The ARM64 user-mode UART probe proves
 the privilege boundary needed by a driver server, but it is deliberately not
-the final Objective-9C `o9uartfs`: executable loading, the Objective-9C ARM64
-runtime, and a restricted resource-grant interface are still required.
+the final Objective-9C `o9uartfs`: executable loading, ARM64 builds of the
+Objective-9C support libraries, and a restricted resource-grant interface are
+still required.
 
 The build uses `clang-23` if present because this host's default `clang` only
 contains the x86 backend. Kernel sources and integer/text kernel libc use
