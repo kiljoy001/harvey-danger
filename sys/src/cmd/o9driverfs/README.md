@@ -29,6 +29,12 @@ It must end in a newline, contain 1 to 16 records, and stay below 8 KiB.
 After installing its view controller, the service writes `ready` to
 `<status-directory>/<service>.<generation>`. The manager consumes this exact
 marker, so an old process cannot make its replacement ready.
+For shutdown, it watches
+`<status-directory>/<service>.<generation>.stop`. An exact `shutdown` record
+wakes the root Objective-9C task; returning from the generated application
+entry then invokes the runtime's whole-application exit path. The generation
+in both control paths prevents a late stop from terminating a replacement
+process.
 
 This first service is a 9P device namespace and forwarding layer. It is not
 yet an MMIO driver, an interrupt broker, or a complete serial, block, network,

@@ -28,6 +28,7 @@ main {
     ok = ok && managedBackend.write("device-ready\n") == 0;
     ok = ok && managedConfig.write("name\tbackend\nserial0\t/mnt/o9driverfs-managed-backend\n") == 0;
     ok = ok && manager.addProcess("devices", "/build/o9driverfs-managed");
+    ok = ok && manager.addProcess("stubborn", "/build/o9drvman-test-child");
     ok = ok && !manager.add("net0");
     ok = ok && !manager.add("../bad");
     string started = manager.command("start net0 100");
@@ -124,9 +125,32 @@ main {
     }
     ok = ok && manager.superviseOnce(405) == 0 &&
          manager.value("devices", 0) == 2 && managedService.exists();
+    string managedStop = "stop devices 410\n";
+    ok = ok && ctl.append(managedStop) == len(managedStop);
+    ok = ok && manager.reapOne() > 0;
+    Task<int64> managedStopped = spawn StringIndexOfRaw(table.read(),
+        "devices\tstopped\t1\t0\t0\t0\t0\t0\t0\t0");
+    ok = ok && managedStopped.await() >= 0;
+
+    string stubbornStart = "start stubborn 500\n";
+    string stubbornReady = "ready stubborn 1 510\n";
+    string stubbornStop = "stop stubborn 520\n";
+    ok = ok && ctl.append(stubbornStart) == len(stubbornStart);
+    ok = ok && ctl.append(stubbornReady) == len(stubbornReady);
+    ok = ok && ctl.append(stubbornStop) == len(stubbornStop);
+    int64 stopDeadline = manager.value("stubborn", 4);
+    ok = ok && stopDeadline > 520 && manager.superviseOnce(stopDeadline) == 0;
+    ok = ok && manager.reapOne() > 0;
+    Task<int64> forcedStopped = spawn StringIndexOfRaw(table.read(),
+        "stubborn\tstopped\t1\t0\t0\t0\t0\t0\t0\t0");
+    ok = ok && forcedStopped.await() >= 0;
     mounts.unmount("/mnt/o9drvman-test");
     mounts.close();
     childMarker.remove();
+    managedConfig.remove();
+    managedConfigDir.remove();
+    managedBackend.remove();
+    managerStatus.remove();
     privateMount.remove();
     if(ok) { print("O9DRVMAN-9P PASS\n"); }
     else { print("O9DRVMAN-9P FAIL\n"); }

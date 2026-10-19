@@ -100,6 +100,43 @@ function DriverWriteRaw(string path, string data) int64 {
     return out;
 }
 
+function DriverManagedStopRaw(string statusRoot, string serviceName,
+                              string generation) int64 {
+    int64 out;
+    c {
+        char *root, *service, *gen, *path, text[16];
+        int fd, n;
+
+        out = -1;
+        root = o9_string_cstr(statusRoot);
+        service = o9_string_cstr(serviceName);
+        gen = o9_string_cstr(generation);
+        path = nil;
+        if(root != nil && service != nil && gen != nil)
+            path = smprint("%s/%s.%s.stop", root, service, gen);
+        free(root);
+        free(service);
+        free(gen);
+        if(path != nil){
+            for(;;){
+                fd = open(path, OREAD);
+                if(fd >= 0){
+                    n = read(fd, text, sizeof text);
+                    close(fd);
+                    if(n == 9 && memcmp(text, "shutdown\n", 9) == 0){
+                        remove(path);
+                        break;
+                    }
+                }
+                sleep(25);
+            }
+            free(path);
+            out = 0;
+        }
+    }
+    return out;
+}
+
 class DriverFs {
     ViewController;
     private string[] names;
@@ -235,7 +272,10 @@ main {
             viewController(drivers);
             if(drivers.reportManagedReady(process.arg(4), process.arg(1),
                                           process.arg(2))) {
-                serve();
+                Task<int64> stop = spawn DriverManagedStopRaw(process.arg(4),
+                                                               process.arg(1),
+                                                               process.arg(2));
+                stop.await();
             } else {
                 print("o9driverfs: could not report readiness\n");
             }

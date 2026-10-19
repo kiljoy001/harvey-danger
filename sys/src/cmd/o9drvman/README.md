@@ -43,20 +43,25 @@ generation-scoped status file; the supervisor consumes that marker and rejects
 stale generations. A detached per-driver
 monitor owns the child wait message and sends a
 fixed exit record to the manager, so it cannot consume Objective-9C runtime
-wait messages. Stop and timeout paths write `shutdown` to the driver's note
-group. The manager restarts desired drivers only after generation-safe
-backoff. Long-running Objective-9C services need a service-level shutdown
-handler before their stop/reap path can be considered complete.
+wait messages. A normal stop creates
+`<status-directory>/<name>.<generation>.stop`. Managed Objective-9C services
+consume the generation-scoped marker and use the
+runtime's whole-application exit primitive, allowing the monitor to reap every
+long-running service cleanly. The manager removes stale control markers before
+launch and after reap. If a startup, heartbeat, or graceful-stop deadline
+expires, the supervisor posts a forced shutdown note. It restarts desired
+drivers only after generation-safe backoff.
 
 The manager must run in the supervisor's private namespace; a read-only status
 service can be bound into broader namespaces later. AppUser authorization is
 still needed before any control view may be exported over a network.
 
-The VM integration test launches a real Objective-9C driver, verifies that its
+The VM integration test launches Objective-9C drivers, verifies that a child
 namespace mutation does not escape, reports ready and progress through the 9P
-control view, shuts it down with a note, consumes its exit, and exercises a
-crash/backoff/relaunch generation. Device-specific services remain separate
-9P programs; connecting the first service to `o9driverfs` is the next slice.
+control view, consumes clean and crashed exits, and exercises a
+crash/backoff/relaunch generation. It also launches the real `o9driverfs`,
+consumes its readiness marker, and stops and reaps the blocked 9P service. A
+noncooperative child verifies forced termination after the grace deadline.
 
 Build or test it with the generic Objective-9C C source support:
 

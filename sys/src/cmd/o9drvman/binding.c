@@ -266,6 +266,8 @@ o9drvmanlaunch(int slot, uint generation)
 	process->generation = generation;
 	unlock(&driverlock);
 	remove(marker);
+	snprint(marker, sizeof marker, "%s/%s.%u.stop", manager, name, generation);
+	remove(marker);
 	monitor = rfork(RFPROC|RFFDG|RFNOTEG|RFNOWAIT);
 	if(monitor == 0){
 		close(start[0]);
@@ -307,11 +309,36 @@ readymarker(int slot, uint generation)
 int
 o9drvmansignal(int slot, uint generation)
 {
-	char path[64];
+	char marker[Maxpath + Maxname + 32];
 	int fd, pid;
 
 	if(!validslot(slot))
 		return -1;
+	lock(&driverlock);
+	if(processes[slot].generation != generation){
+		unlock(&driverlock);
+		return -1;
+	}
+	pid = processes[slot].pid;
+	snprint(marker, sizeof marker, "%s/%s.%u.stop", processes[slot].manager,
+	        processes[slot].name, generation);
+	unlock(&driverlock);
+	if(pid <= 0)
+		return -1;
+	fd = create(marker, OWRITE, 0600);
+	if(fd < 0)
+		return -1;
+	pid = write(fd, "shutdown\n", 9) == 9 ? 0 : -1;
+	close(fd);
+	return pid;
+}
+
+static int
+forceproc(int slot, uint generation)
+{
+	char path[64];
+	int fd, pid;
+
 	lock(&driverlock);
 	if(processes[slot].generation != generation){
 		unlock(&driverlock);
@@ -335,6 +362,7 @@ o9drvmanreapone(void)
 {
 	DrvExitMessage exit;
 	DrvEvent event;
+	char marker[Maxpath + Maxname + 32], stopmarker[Maxpath + Maxname + 32];
 	int result;
 
 	if(exitpipe[0] < 0 || readn(exitpipe[0], &exit, sizeof exit) != sizeof exit)
@@ -349,12 +377,17 @@ o9drvmanreapone(void)
 	}
 	processes[exit.slot].pid = 0;
 	processes[exit.slot].laststatus = exit.status;
+	snprint(marker, sizeof marker, "%s/%s.%u", processes[exit.slot].manager,
+	        processes[exit.slot].name, exit.generation);
+	snprint(stopmarker, sizeof stopmarker, "%s.stop", marker);
 	event.type = DrvExit;
 	event.generation = exit.generation;
 	event.now_ms = nsec() / 1000000ULL;
 	event.progress = 0;
 	result = drv_lifecycle_apply(&drivers[exit.slot], &event);
 	unlock(&driverlock);
+	remove(marker);
+	remove(stopmarker);
 	return result == DrvRejected ? -1 : exit.slot + 1;
 }
 
@@ -380,7 +413,7 @@ o9drvmansuperviseonce(uvlong now)
 		if(status == DrvApplied &&
 		   (old == DrvStarting || old == DrvRunning || old == DrvStopping) &&
 		   (current == DrvBackoff || current == DrvStopped) && pid > 0)
-			o9drvmansignal(slot, generation);
+			forceproc(slot, generation);
 		if(current != DrvStarting || pid != 0 || !o9drvmanconfigured(slot))
 			continue;
 		generation = o9drvmanfield(slot, 1);

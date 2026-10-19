@@ -20,9 +20,17 @@ main {
     int64 markerResult = -1;
     if(isolatedResult >= 0) { markerResult = marker.write(generation); }
     if(markerResult == 0) {
-        if(cmp(process.arg(3), "2") != 0) {
+        if(cmp(process.arg(3), "4") == 0) {
             Time clock = new Time();
             clock.sleep(10000);
+        } else if(cmp(process.arg(3), "2") != 0) {
+            File stop = new File(cat(cat(cat(process.arg(4), "/"),
+                                         process.arg(1)),
+                                     cat(".", cat(generation, ".stop"))));
+            while(!stop.exists()) {
+                Task<int64> pause = spawn TimeSleepRaw(25);
+                pause.await();
+            }
         }
     }
 }
