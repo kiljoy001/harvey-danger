@@ -111,6 +111,30 @@ virtual address. A local `ic iallu` currently handles that single-core boot
 probe; SMP code replacement will need cross-core synchronization. The board
 has no virtio-9P device attached, so the optional `#9` exchange is skipped.
 
+### SoC family and board drivers
+
+The RK3566 shares its SoC family with the RK3568 ("rk356x"). SoC-specific
+register layouts live in `sys/include/rockchip/rk356x.h`: GPIO bank offsets,
+the GRF/PMUGRF/CRU base addresses, and the pinmux (iomux) formula. The kernel
+already classifies the board's peripherals from the device tree through `#P`,
+so each driver discovers its live base addresses from `#P`, maps the MMIO with
+`segattach` (the resource grant), and serves 9P.
+
+The first driver is `gpiofs` (`sys/src/cmd/gpiofs/gpiofs.c`), served at
+`/srv/gpio`:
+
+- `/status` lists the discovered banks and pinmux.
+- `/gpioN/data` reads the actual pin state, or writes the output data.
+- `/gpioN/dir` reads/writes the 32-bit direction mask (1 = output).
+- `/gpioN/ctl` takes `"N in"` or `"N out [0|1]"` and muxes that pin to GPIO.
+
+The five RK3566 banks (GPIO0..GPIO4) are discovered and sorted by base address;
+GPIO0's pinmux is in PMUGRF, GPIO1-4's in GRF. The mux offsets and the V2 GPIO
+register layout are encoded in the family header and need on-board verification
+against the RK3566 TRM. `init` launches gpiofs non-fatally; the QEMU `virt`
+machine has no GPIO banks, so it reports `GPIOFS PENDING` there and `PASS` on
+the real board.
+
 For the tested v1.1 board, the installed vendor U-Boot needed a 100 Mbps PHY
 workaround before the TFTP transfer. With a TFTP server at `192.168.2.1`
 serving `aspera-arm64.img` and the full `orangepi-3b-v1.1.dtb`, the serial
