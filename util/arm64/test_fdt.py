@@ -20,6 +20,7 @@ def main() -> None:
                     str(ROOT / "util/arm64/testdata/board.dts")], check=True)
     subprocess.run(["cc", "-O1", "-g", "-fsanitize=address,undefined",
                     "-fno-omit-frame-pointer", "-Wall", "-Wextra", "-Werror",
+                    "-D_XOPEN_SOURCE=700",
                     "-I", str(ROOT / "sys/src/9/aarch64"),
                     "-I", str(ROOT / "aarch64/include"),
                     str(Path(__file__).with_suffix(".c")),

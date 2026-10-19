@@ -37,6 +37,47 @@
 		      <0 0xfd460000 0 0x80000>;
 	};
 
+	i2c@fe5a0000 {
+		compatible = "rockchip,rk3568-i2c", "rockchip,rk3399-i2c";
+		reg = <0 0xfe5a0000 0 0x1000>;
+		interrupts = <0 68 4>;
+		status = "okay";
+	};
+
+	spi@fe610000 {
+		compatible = "rockchip,rk3568-spi", "rockchip,rk3399-spi";
+		reg = <0 0xfe610000 0 0x1000>;
+		interrupts = <0 81 4>;
+		status = "okay";
+	};
+
+	gpio@fdd60000 {
+		compatible = "rockchip,gpio-bank";
+		reg = <0 0xfdd60000 0 0x100>;
+		interrupts = <0 85 4>;
+		status = "okay";
+	};
+
+	pwm@fdd70000 {
+		compatible = "rockchip,rk3568-pwm", "rockchip,rk3328-pwm";
+		reg = <0 0xfdd70000 0 0x10>;
+		status = "okay";
+	};
+
+	ethernet@fe010000 {
+		compatible = "rockchip,rk3568-gmac", "snps,dwmac";
+		reg = <0 0xfe010000 0 0x10000>;
+		interrupts = <0 32 4>;
+		status = "okay";
+	};
+
+	mmc@fe310000 {
+		compatible = "rockchip,rk3568-dw-mshc", "rockchip,rk3399-dw-mshc";
+		reg = <0 0xfe310000 0 0x4000>;
+		interrupts = <0 46 4>;
+		status = "okay";
+	};
+
 	timer {
 		compatible = "arm,armv8-timer";
 		interrupts = <1 13 4>, <1 14 4>, <1 11 1>, <1 10 4>;

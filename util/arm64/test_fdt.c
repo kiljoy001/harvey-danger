@@ -39,6 +39,17 @@ reject(u8 *p, usize n, char *reason)
 	}
 }
 
+static int
+finddev(Fdtinfo *info, u32 clas)
+{
+	u32 i;
+
+	for(i = 0; i < info->ndev; i++)
+		if(info->dev[i].clas == clas)
+			return (int)i;
+	return -1;
+}
+
 int
 main(int argc, char **argv)
 {
@@ -79,6 +90,39 @@ main(int argc, char **argv)
 			        (unsigned long long)info.giccpu,
 			        info.gicversion, info.timerirq);
 			return 1;
+		}
+		{
+			int i2c, spi, gpio, pwm, gmac, mmc, uart;
+
+			i2c = finddev(&info, Fdtclassi2c);
+			spi = finddev(&info, Fdtclassspi);
+			gpio = finddev(&info, Fdtclassgpio);
+			pwm = finddev(&info, Fdtclasspwm);
+			gmac = finddev(&info, Fdtclassgmac);
+			mmc = finddev(&info, Fdtclassmmc);
+			uart = finddev(&info, Fdtclassuart);
+			if(info.ndev != 7 || i2c < 0 || spi < 0 || gpio < 0 ||
+			   pwm < 0 || gmac < 0 || mmc < 0 || uart < 0 ||
+			   info.dev[i2c].base != 0xfe5a0000ULL ||
+			   info.dev[i2c].size != 0x1000 ||
+			   info.dev[i2c].irq != 100 ||
+			   info.dev[spi].base != 0xfe610000ULL ||
+			   info.dev[spi].irq != 113 ||
+			   info.dev[gpio].base != 0xfdd60000ULL ||
+			   info.dev[gpio].irq != 117 ||
+			   info.dev[pwm].base != 0xfdd70000ULL ||
+			   info.dev[pwm].irq != 0 ||
+			   info.dev[gmac].base != 0xfe010000ULL ||
+			   info.dev[gmac].irq != 64 ||
+			   info.dev[mmc].base != 0xfe310000ULL ||
+			   info.dev[mmc].irq != 78 ||
+			   info.dev[uart].base != 0xfe660000ULL ||
+			   strcmp(info.dev[i2c].name, "i2c@fe5a0000") != 0 ||
+			   strcmp(info.dev[gmac].compat, "rockchip,rk3568-gmac") != 0){
+				fprintf(stderr, "board: device discovery mismatch (ndev %u)\n",
+				        info.ndev);
+				return 1;
+			}
 		}
 		free(work);
 		free(original);

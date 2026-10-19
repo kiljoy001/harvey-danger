@@ -7,9 +7,54 @@ typedef struct Fdtinfo Fdtinfo;
 typedef struct Fdtreserve Fdtreserve;
 typedef struct Fdtvirtio Fdtvirtio;
 typedef struct Fdtmemory Fdtmemory;
+typedef struct Fdtdev Fdtdev;
 struct Fdtreserve {
 	u64 base;
 	u64 size;
+};
+
+/* Device classes discovered from board peripheral nodes. */
+enum {
+	Fdtclassnone = 0,
+	Fdtclassuart,
+	Fdtclassi2c,
+	Fdtclassspi,
+	Fdtclassgpio,
+	Fdtclasspwm,
+	Fdtclassgmac,
+	Fdtclassmmc,
+	Fdtclassusb,
+	Fdtclasspcie,
+	Fdtclasssaradc,
+	Fdtclasstsadc,
+	Fdtclasswdt,
+	Fdtclassi2s,
+	Fdtclasscru,
+	Fdtclassgrf,
+	Fdtclassnpu,
+	Fdtclassgpu,
+	Fdtclassvop,
+	Fdtclasshdmi,
+	Fdtclassdsi,
+	Fdtclassedp,
+	Fdtclasssfc,
+	Fdtclassvpu,
+};
+
+enum {
+	Maxfdtdev = 96,
+	Maxfdtname = 32,
+	Maxfdtcompat = 48,
+};
+
+struct Fdtdev {
+	char name[Maxfdtname];
+	char compat[Maxfdtcompat];
+	u64 base;
+	u64 size;
+	u32 irq;	/* GIC interrupt ID (SPI+32, PPI+16); 0 when absent */
+	u32 irqflags;	/* trigger flags from the first interrupt cell */
+	u32 clas;
 };
 
 struct Fdtvirtio {
@@ -44,10 +89,13 @@ struct Fdtinfo {
 	Fdtreserve reserve[Maxfdtreserve];
 	u32 nvirtio;
 	Fdtvirtio virtio[Maxfdtvirtio];
+	u32 ndev;
+	Fdtdev dev[Maxfdtdev];
 };
 
 int fdtparse(void *, usize, Fdtinfo *);
 int fdtselectram(Fdtinfo *, u64, u64);
+const char *fdtclassname(u32);
 int arm64timerinit(Fdtinfo *);
 void arm64timerstop(void);
 int arm64timerwait(void);

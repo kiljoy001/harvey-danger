@@ -24,7 +24,9 @@ struct Fdtnode {
 	u32 reglen;
 	u8 *intr;
 	u32 intrlen;
-	u32 pathlen, uarttype, gicversion;
+	u8 *compat;
+	u32 compatlen, pathlen, uarttype, gicversion;
+	u32 clas;
 	int memory, uart, gic, timer, virtio;
 	int reservedir, reserve, enabled;
 };
@@ -113,6 +115,90 @@ hascompat(u8 *p, u32 n, char *want)
 			return 1;
 	}
 	return 0;
+}
+
+typedef struct Fdtclass Fdtclass;
+struct Fdtclass {
+	char *compat;
+	u32 clas;
+};
+
+/* Map board peripheral compatible strings to a device class. */
+static const Fdtclass classtab[] = {
+	{ "snps,dw-apb-uart", Fdtclassuart },
+	{ "arm,pl011", Fdtclassuart },
+	{ "rockchip,rk3568-i2c", Fdtclassi2c },
+	{ "rockchip,rk3399-i2c", Fdtclassi2c },
+	{ "rockchip,rk3568-spi", Fdtclassspi },
+	{ "rockchip,rk3399-spi", Fdtclassspi },
+	{ "rockchip,gpio-bank", Fdtclassgpio },
+	{ "rockchip,rk3568-pwm", Fdtclasspwm },
+	{ "rockchip,rk3328-pwm", Fdtclasspwm },
+	{ "rockchip,rk3568-gmac", Fdtclassgmac },
+	{ "snps,dwmac", Fdtclassgmac },
+	{ "rockchip,rk3568-dw-mshc", Fdtclassmmc },
+	{ "rockchip,rk3399-dw-mshc", Fdtclassmmc },
+	{ "arasan,sdhci-8.9a", Fdtclassmmc },
+	{ "rockchip,rk3568-sdhci", Fdtclassmmc },
+	{ "snps,dwc3", Fdtclassusb },
+	{ "rockchip,rk3568-dwc3", Fdtclassusb },
+	{ "generic-ehci", Fdtclassusb },
+	{ "generic-ohci", Fdtclassusb },
+	{ "rockchip,rk3568-pcie", Fdtclasspcie },
+	{ "snps,dw-pcie", Fdtclasspcie },
+	{ "rockchip,rk3568-saradc", Fdtclasssaradc },
+	{ "rockchip,rk3568-tsadc", Fdtclasstsadc },
+	{ "rockchip,rk3568-wdt", Fdtclasswdt },
+	{ "snps,dw-wdt", Fdtclasswdt },
+	{ "rockchip,rk3568-i2s", Fdtclassi2s },
+	{ "rockchip,rk3568-i2s-tdm", Fdtclassi2s },
+	{ "rockchip,rk3568-cru", Fdtclasscru },
+	{ "rockchip,rk3568-pmucru", Fdtclasscru },
+	{ "rockchip,rk3568-grf", Fdtclassgrf },
+	{ "rockchip,rk3568-pmugrf", Fdtclassgrf },
+	{ "rockchip,rk3568-rknpu", Fdtclassnpu },
+	{ "rockchip,rk3568-gpu", Fdtclassgpu },
+	{ "arm,mali-bifrost", Fdtclassgpu },
+	{ "rockchip,rk3568-vop", Fdtclassvop },
+	{ "rockchip,rk3568-dw-hdmi", Fdtclasshdmi },
+	{ "rockchip,rk3568-mipi-dsi", Fdtclassdsi },
+	{ "rockchip,rk3568-edp", Fdtclassedp },
+	{ "rockchip,sfc", Fdtclasssfc },
+	{ "rockchip,rk3568-vpu", Fdtclassvpu },
+	{ "rockchip,rk3568-vdec", Fdtclassvpu },
+	{ "rockchip,rk3568-vepu", Fdtclassvpu },
+};
+
+static u32
+classify(u8 *p, u32 n)
+{
+	u32 i, j, k;
+
+	for(k = 0; k < sizeof(classtab)/sizeof(classtab[0]); k++){
+		for(i = 0; i < n; i = j+1){
+			for(j = i; j < n && p[j] != 0; j++)
+				;
+			if(j == n)
+				break;
+			if(same((char *)p+i, classtab[k].compat))
+				return classtab[k].clas;
+		}
+	}
+	return Fdtclassnone;
+}
+
+const char *
+fdtclassname(u32 clas)
+{
+	static const char *name[] = {
+		"none", "uart", "i2c", "spi", "gpio", "pwm", "gmac", "mmc",
+		"usb", "pcie", "saradc", "tsadc", "wdt", "i2s", "cru", "grf",
+		"npu", "gpu", "vop", "hdmi", "dsi", "edp", "sfc", "vpu",
+	};
+
+	if(clas >= sizeof(name)/sizeof(name[0]))
+		return "unknown";
+	return name[clas];
 }
 
 static int
@@ -214,6 +300,7 @@ fdtparse(void *blob, usize bytes, Fdtinfo *out)
 	out->gicdist = out->giccpu = 0;
 	out->timerirq = 0;
 	out->nmemory = out->nreserve = out->nvirtio = 0;
+	out->ndev = 0;
 	for(; rsv <= soff && soff-rsv >= 16; rsv += 16){
 		base = get8(p+rsv);
 		size = get8(p+rsv+8);
@@ -261,6 +348,9 @@ fdtparse(void *blob, usize bytes, Fdtinfo *out)
 			node->reglen = 0;
 			node->intr = nil;
 			node->intrlen = 0;
+			node->compat = nil;
+			node->compatlen = 0;
+			node->clas = Fdtclassnone;
 			node->memory = depth == 1 && i-pos >= 6 &&
 			               s[pos] == 'm' && s[pos+1] == 'e' &&
 			               s[pos+2] == 'm' && s[pos+3] == 'o' &&
@@ -328,6 +418,9 @@ fdtparse(void *blob, usize bytes, Fdtinfo *out)
 			         value[6] == 0 && same((char *)value, "memory"))
 				node->memory = 1;
 			else if(same((char *)str+off, "compatible")){
+				node->compat = value;
+				node->compatlen = len;
+				node->clas = classify(value, len);
 				if(hascompat(value, len, "arm,pl011"))
 					node->uarttype = Fdtpl011;
 				else if(hascompat(value, len, "snps,dw-apb-uart") ||
@@ -412,6 +505,42 @@ fdtparse(void *blob, usize bytes, Fdtinfo *out)
 					out->virtio[out->nvirtio].base = base;
 					out->virtio[out->nvirtio].size = size;
 					out->nvirtio++;
+				}
+				if(node->clas != Fdtclassnone &&
+				   out->ndev < Maxfdtdev && size != 0){
+					Fdtdev *dev;
+					u32 b, n, baselen;
+
+					dev = &out->dev[out->ndev];
+					b = 0;
+					for(n = 0; n < node->pathlen; n++)
+						if(path[n] == '/')
+							b = n+1;
+					baselen = node->pathlen - b;
+					if(baselen >= Maxfdtname)
+						baselen = Maxfdtname-1;
+					for(n = 0; n < baselen; n++)
+						dev->name[n] = path[b+n];
+					dev->name[baselen] = 0;
+					for(n = 0; n < node->compatlen &&
+					    n < Maxfdtcompat-1 && node->compat[n] != 0; n++)
+						dev->compat[n] = node->compat[n];
+					dev->compat[n] = 0;
+					dev->base = base;
+					dev->size = size;
+					dev->irq = 0;
+					dev->irqflags = 0;
+					if(node->intrlen >= 12){
+						u32 type, number;
+
+						type = get4(node->intr);
+						number = get4(node->intr+4);
+						dev->irqflags = get4(node->intr+8);
+						dev->irq = type == 0 ? number+32 :
+						           type == 1 ? number+16 : 0;
+					}
+					dev->clas = node->clas;
+					out->ndev++;
 				}
 			}
 			if(depth != 0 && nodes[depth-1].pathlen < Maxpath)
