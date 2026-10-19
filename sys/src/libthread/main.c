@@ -32,33 +32,16 @@ extern int _threaddial(char*, char*, char*, int*);
 
 static Proc **mainp;
 
-#ifdef __aarch64__
-static void
-threadmark(char *s)
-{
-	write(2, s, strlen(s));
-}
-#endif
-
 void
 main(int argc, char **argv)
 {
 	Mainarg *a;
 	Proc *p;
 
-#ifdef __aarch64__
-	threadmark("ARM64 libthread main\n");
-#endif
 	rfork(RFREND);
-#ifdef __aarch64__
-	threadmark("ARM64 libthread rfork\n");
-#endif
 	mainp = &p;
 	if(setjmp(_mainjmp))
 		_schedinit(p);
-#ifdef __aarch64__
-	threadmark("ARM64 libthread setjmp\n");
-#endif
 
 //_threaddebuglevel = (DBGSCHED|DBGCHAN|DBGREND)^~0;
 	_systhreadinit();
@@ -67,9 +50,6 @@ main(int argc, char **argv)
 	_dial = _threaddial;
 	__assert = _threadassert;
 	notify(_threadnote);
-#ifdef __aarch64__
-	threadmark("ARM64 libthread initialized\n");
-#endif
 	if(mainstacksize == 0)
 		mainstacksize = 8*1024;
 
@@ -78,9 +58,6 @@ main(int argc, char **argv)
 	a->argv = argv;
 
 	p = _newproc(mainlauncher, a, mainstacksize, "threadmain", 0, 0);
-#ifdef __aarch64__
-	threadmark("ARM64 libthread newproc\n");
-#endif
 	_schedinit(p);
 	abort();	/* not reached */
 }
@@ -91,9 +68,6 @@ mainlauncher(void *arg)
 	Mainarg *a;
 
 	a = arg;
-#ifdef __aarch64__
-	threadmark("ARM64 libthread launcher\n");
-#endif
 	threadmain(a->argc, a->argv);
 	threadexits("threadmain");
 }
