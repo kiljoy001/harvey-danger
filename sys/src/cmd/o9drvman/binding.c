@@ -5,6 +5,7 @@
 
 enum {
 	Maxdrivers = 64,
+	Maxname = 33,
 	Maxpath = 256,
 };
 
@@ -12,6 +13,8 @@ typedef struct DrvProcess DrvProcess;
 typedef struct DrvExitMessage DrvExitMessage;
 
 struct DrvProcess {
+	char name[Maxname];
+	char manager[Maxpath];
 	char path[Maxpath];
 	int configured;
 	int pid;
@@ -45,7 +48,7 @@ procexitstatus(Waitmsg *wait)
 }
 
 static void
-monitorproc(int slot, uint generation, char *path, int startfd)
+monitorproc(int slot, uint generation, char *manager, char *name, char *path, int startfd)
 {
 	DrvExitMessage event;
 	Waitmsg *wm;
@@ -61,7 +64,8 @@ monitorproc(int slot, uint generation, char *path, int startfd)
 		putenv("O9_DRIVER_SLOT", slottext);
 		snprint(generationtext, sizeof generationtext, "%u", generation);
 		putenv("O9_DRIVER_GENERATION", generationtext);
-		execl(path, path, slottext, generationtext, nil);
+		putenv("O9_DRIVER_NAME", name);
+		execl(path, path, name, generationtext, slottext, manager, nil);
 		exits("exec");
 	}
 	write(startfd, &pid, sizeof pid);
@@ -190,12 +194,15 @@ o9drvmanstate(int slot)
 }
 
 int
-o9drvmanconfigure(int slot, char *path)
+o9drvmanconfigure(int slot, char *manager, char *name, char *path)
 {
 	Dir *dir;
 	int n;
 
-	if(!validslot(slot) || path == nil || path[0] != '/')
+	if(!validslot(slot) || manager == nil || manager[0] != '/' ||
+	   strlen(manager) >= Maxpath || strchr(manager, '\n') != nil ||
+	   name == nil || name[0] == 0 ||
+	   strlen(name) >= Maxname || path == nil || path[0] != '/')
 		return -1;
 	n = strlen(path);
 	if(n < 2 || n >= Maxpath || strchr(path, '\n') != nil)
@@ -211,6 +218,8 @@ o9drvmanconfigure(int slot, char *path)
 		unlock(&driverlock);
 		return -1;
 	}
+	strcpy(processes[slot].manager, manager);
+	strcpy(processes[slot].name, name);
 	strcpy(processes[slot].path, path);
 	processes[slot].configured = 1;
 	unlock(&driverlock);
@@ -234,7 +243,7 @@ int
 o9drvmanlaunch(int slot, uint generation)
 {
 	DrvProcess *process;
-	char path[Maxpath];
+	char manager[Maxpath], marker[Maxpath + Maxname + 32], name[Maxname], path[Maxpath];
 	int start[2], monitor, pid;
 
 	if(!validslot(slot) || exitpipe[1] < 0 || pipe(start) < 0)
@@ -250,13 +259,17 @@ o9drvmanlaunch(int slot, uint generation)
 		return -1;
 	}
 	strcpy(path, process->path);
+	strcpy(manager, process->manager);
+	strcpy(name, process->name);
+	snprint(marker, sizeof marker, "%s/%s.%u", manager, name, generation);
 	process->pid = -1;
 	process->generation = generation;
 	unlock(&driverlock);
+	remove(marker);
 	monitor = rfork(RFPROC|RFFDG|RFNOTEG|RFNOWAIT);
 	if(monitor == 0){
 		close(start[0]);
-		monitorproc(slot, generation, path, start[1]);
+		monitorproc(slot, generation, manager, name, path, start[1]);
 	}
 	close(start[1]);
 	pid = -1;
@@ -268,6 +281,27 @@ o9drvmanlaunch(int slot, uint generation)
 		process->pid = pid > 0 ? pid : 0;
 	unlock(&driverlock);
 	return pid;
+}
+
+static int
+readymarker(int slot, uint generation)
+{
+	char marker[Maxpath + Maxname + 32], text[8];
+	int fd, n;
+
+	lock(&driverlock);
+	snprint(marker, sizeof marker, "%s/%s.%u", processes[slot].manager,
+	        processes[slot].name, generation);
+	unlock(&driverlock);
+	fd = open(marker, OREAD);
+	if(fd < 0)
+		return 0;
+	n = read(fd, text, sizeof text);
+	close(fd);
+	if(n != 6 || memcmp(text, "ready\n", 6) != 0)
+		return 0;
+	remove(marker);
+	return 1;
 }
 
 int
@@ -339,6 +373,10 @@ o9drvmansuperviseonce(uvlong now)
 		status = o9drvmanapply(slot, DrvTick, 0, now, 0);
 		current = o9drvmanfield(slot, 0);
 		pid = o9drvmanfield(slot, 7);
+		if(current == DrvStarting && pid > 0 && readymarker(slot, generation)){
+			o9drvmanapply(slot, DrvReady, generation, now, 0);
+			current = o9drvmanfield(slot, 0);
+		}
 		if(status == DrvApplied &&
 		   (old == DrvStarting || old == DrvRunning || old == DrvStopping) &&
 		   (current == DrvBackoff || current == DrvStopped) && pid > 0)

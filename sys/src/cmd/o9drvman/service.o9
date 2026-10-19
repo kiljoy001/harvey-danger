@@ -3,6 +3,7 @@
 // this service owns restart state and rejects stale reports.
 import "stdlib/view.o9";
 import "stdlib/process.o9";
+import "stdlib/file.o9";
 import "stdlib/string.o9";
 import "stdlib/time.o9";
 import "bytes.o9";
@@ -44,18 +45,22 @@ function DrvManagerStateRaw(int64 slot) string {
     return out;
 }
 
-function DrvManagerConfigureRaw(int64 slot, string path) int64 {
+function DrvManagerConfigureRaw(int64 slot, string manager, string name, string path) int64 {
     int64 out;
     c {
-        char *value;
+        char *managerName, *driver, *value;
 
         out = -1;
+        managerName = o9_string_cstr(manager);
+        driver = o9_string_cstr(name);
         value = o9_string_cstr(path);
-        if(value != nil){
-            extern int o9drvmanconfigure(int, char *);
-            out = o9drvmanconfigure(slot, value);
-            free(value);
+        if(managerName != nil && driver != nil && value != nil){
+            extern int o9drvmanconfigure(int, char *, char *, char *);
+            out = o9drvmanconfigure(slot, managerName, driver, value);
         }
+        free(managerName);
+        free(driver);
+        free(value);
     }
     return out;
 }
@@ -158,10 +163,25 @@ class DriverManager {
     private string[] names;
     private int64 count;
     private DriverNumber number;
+    private string managerName;
+    private string managerControl;
 
     method DriverManager() {
         count = 0;
         number = new DriverNumber();
+        managerName = "";
+        managerControl = "";
+    }
+
+    method bool service(string name, string controlPath) {
+        if(!validName(name) || len(controlPath) < 2 || len(controlPath) > 256) {
+            return false;
+        }
+        Task<byte> first = spawn BytesGetRaw(controlPath, 0);
+        if(first.await() != 47) { return false; }
+        managerName = cat(name, "");
+        managerControl = cat(controlPath, "");
+        return true;
     }
 
     private method bool validName(string name) {
@@ -198,8 +218,9 @@ class DriverManager {
     }
 
     method bool addProcess(string name, string path) {
-        if(!add(name)) { return false; }
-        Task<int64> configured = spawn DrvManagerConfigureRaw(count - 1, path);
+        if(len(managerName) == 0 || !add(name)) { return false; }
+        Task<int64> configured = spawn DrvManagerConfigureRaw(count - 1,
+                                                               managerControl, name, path);
         if(configured.await() != 0) {
             count = count - 1;
             return false;
@@ -425,21 +446,24 @@ class DriverManagerViews {
 main {
     Process process = new Process();
     DriverManager manager = new DriverManager();
-    bool valid = process.argc() >= 3 && process.argc() % 2 == 1;
-    int64 i = 1;
+    bool valid = process.argc() >= 4 && process.argc() % 2 == 0 &&
+                 manager.service(process.arg(1), "/mnt/o9drvman-status");
+    int64 i = 2;
     while(i + 1 < process.argc()) {
         if(!manager.addProcess(process.arg(i), process.arg(i + 1))) { valid = false; }
         i = i + 2;
     }
     if(!valid) {
-        print("usage: o9drvman name /absolute/executable [name /absolute/executable ...]\n");
+        print("usage: o9drvman service-name driver /absolute/executable [driver /absolute/executable ...]\n");
     } else {
         DriverManagerViews service = new DriverManagerViews(manager);
         viewController(service);
         Task<int64> notifications = spawn ViewCloseNotificationsRaw(true);
         notifications.await();
+        File managerStatus = new File("/mnt/o9drvman-status");
+        bool managerMounted = managerStatus.mkdirAll();
         Time clock = new Time();
-        bool started = manager.startAll(clock.nsec() / 1000000);
+        bool started = managerMounted && manager.startAll(clock.nsec() / 1000000);
         if(!started) { print("o9drvman: driver launch failed\n"); }
         Task<int64> reaper = spawn DrvManagerReapLoopRaw();
         Task<int64> supervisor = spawn DrvManagerSuperviseLoopRaw();

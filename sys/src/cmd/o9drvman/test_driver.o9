@@ -20,7 +20,7 @@ main {
     int64 markerResult = -1;
     if(isolatedResult >= 0) { markerResult = marker.write(generation); }
     if(markerResult == 0) {
-        if(cmp(process.arg(1), "2") != 0) {
+        if(cmp(process.arg(3), "2") != 0) {
             Time clock = new Time();
             clock.sleep(10000);
         }

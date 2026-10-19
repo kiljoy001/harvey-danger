@@ -30,17 +30,23 @@ Driver names and absolute executable paths are supplied only by the trusted
 launcher as command-line pairs:
 
 ```
-o9drvman serial /bin/serialfs network /bin/netfs
+o9drvman o9drvman serial /bin/serialfs network /bin/netfs
 ```
 
 The writable control view cannot allocate slots or replace executable paths.
-Each driver receives its slot and generation as `argv[1]` and `argv[2]` and
+Each driver receives its trusted name, generation, slot, and inherited status
+directory as `argv[1]` through `argv[4]` and
 runs with private descriptor, namespace, environment, rendezvous, and note
-groups. A detached per-driver monitor owns the child wait message and sends a
+groups. Objective-9C uses the trusted name for the service's global
+`/srv/<name>` post. After its view is usable, the child writes `ready` to its
+generation-scoped status file; the supervisor consumes that marker and rejects
+stale generations. A detached per-driver
+monitor owns the child wait message and sends a
 fixed exit record to the manager, so it cannot consume Objective-9C runtime
 wait messages. Stop and timeout paths write `shutdown` to the driver's note
 group. The manager restarts desired drivers only after generation-safe
-backoff.
+backoff. Long-running Objective-9C services need a service-level shutdown
+handler before their stop/reap path can be considered complete.
 
 The manager must run in the supervisor's private namespace; a read-only status
 service can be bound into broader namespaces later. AppUser authorization is

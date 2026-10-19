@@ -2,7 +2,33 @@
 // backend files; clients only see names inside this service's view.
 import "stdlib/view.o9";
 import "stdlib/process.o9";
+import "stdlib/file.o9";
+import "stdlib/string.o9";
 import "bytes.o9";
+
+function DriverManagedArgsRaw(string generation, string slot) int64 {
+    int64 out;
+    c {
+        char *g, *s, *p;
+
+        out = 0;
+        g = o9_string_cstr(generation);
+        s = o9_string_cstr(slot);
+        if(g != nil && s != nil && g[0] != 0 && s[0] != 0 &&
+           strlen(g) <= 10 && strlen(s) <= 10){
+            out = 1;
+            for(p = g; *p != 0; p++)
+                if(*p < '0' || *p > '9')
+                    out = 0;
+            for(p = s; *p != 0; p++)
+                if(*p < '0' || *p > '9')
+                    out = 0;
+        }
+        free(g);
+        free(s);
+    }
+    return out;
+}
 
 function DriverExistsRaw(string path) int64 {
     int64 out;
@@ -115,6 +141,45 @@ class DriverFs {
         return true;
     }
 
+    method bool loadManaged(string serviceName) {
+        if(!validName(serviceName)) { return false; }
+        string path = cat(cat("/mnt/o9driverfs-config/", serviceName), ".tab");
+        File config = new File(path);
+        if(!config.exists() || config.size() <= 0 || config.size() > 8192) {
+            return false;
+        }
+        string text = config.read();
+        Task<int64> terminatedTask = spawn StringEndsWithRaw(text, "\n");
+        Task<int64> linesTask = spawn StringCountRaw(text, "\n");
+        bool terminated = terminatedTask.await() != 0;
+        int64 lines = linesTask.await();
+        if(!terminated || lines < 2 || lines > 17) { return false; }
+        Task<string> headerTask = spawn StringFieldRaw(text, "\n", 0);
+        if(cmp(headerTask.await(), "name\tbackend") != 0) { return false; }
+        int64 row = 1;
+        while(row < lines) {
+            Task<string> lineTask = spawn StringFieldRaw(text, "\n", row);
+            string line = lineTask.await();
+            Task<string> nameTask = spawn StringFieldRaw(line, "\t", 0);
+            Task<string> backendTask = spawn StringFieldRaw(line, "\t", 1);
+            Task<string> extraTask = spawn StringFieldRaw(line, "\t", 2);
+            string name = nameTask.await();
+            string backend = backendTask.await();
+            string extra = extraTask.await();
+            if(len(name) == 0 || len(backend) == 0 || len(extra) != 0 ||
+               !add(name, backend)) { return false; }
+            row = row + 1;
+        }
+        return true;
+    }
+
+    method bool reportManagedReady(string statusRoot, string serviceName,
+                                   string generation) {
+        File marker = new File(cat(cat(cat(statusRoot, "/"), serviceName),
+                                   cat(".", generation)));
+        return marker.write("ready\n") == 0;
+    }
+
     private method int64 findDriver(string path) {
         int64 i = 0;
         while(i < count) {
@@ -159,7 +224,25 @@ class DriverFs {
 main {
     Process process = new Process();
     DriverFs drivers = new DriverFs();
-    if(process.argc() < 3 || process.argc() % 2 == 0) {
+    bool managedMode = false;
+    if(process.argc() == 5) {
+        Task<int64> managedTask = spawn DriverManagedArgsRaw(process.arg(2),
+                                                              process.arg(3));
+        managedMode = managedTask.await() == 1;
+    }
+    if(managedMode) {
+        if(drivers.loadManaged(process.arg(1))) {
+            viewController(drivers);
+            if(drivers.reportManagedReady(process.arg(4), process.arg(1),
+                                          process.arg(2))) {
+                serve();
+            } else {
+                print("o9driverfs: could not report readiness\n");
+            }
+        } else {
+            print("o9driverfs: invalid managed configuration\n");
+        }
+    } else if(process.argc() < 3 || process.argc() % 2 == 0) {
         print("usage: o9driverfs name /absolute/backend [name /absolute/backend ...]\n");
     } else {
         bool valid = true;

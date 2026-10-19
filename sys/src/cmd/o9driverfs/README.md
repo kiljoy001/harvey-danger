@@ -15,6 +15,21 @@ paths are rejected. Backend files must exist at startup: the service never
 creates one.
 Each operation is capped at 64 KiB.
 
+When `o9drvman` launches the service, it passes the trusted service name,
+generation, slot, and status directory. `o9driverfs` then reads
+`/mnt/o9driverfs-config/<service>.tab` instead of accepting backend paths from
+the managed process command line. The file has a fixed two-column schema:
+
+```
+name\tbackend
+serial0\t/n/host/dev/serial0
+```
+
+It must end in a newline, contain 1 to 16 records, and stay below 8 KiB.
+After installing its view controller, the service writes `ready` to
+`<status-directory>/<service>.<generation>`. The manager consumes this exact
+marker, so an old process cannot make its replacement ready.
+
 This first service is a 9P device namespace and forwarding layer. It is not
 yet an MMIO driver, an interrupt broker, or a complete serial, block, network,
 or display implementation. Those device-specific services should run as

@@ -11,13 +11,23 @@ class DriverManagerProbe {
 main {
     DriverManagerProbe probe = new DriverManagerProbe();
     DriverManager manager = new DriverManager();
-    bool ok = probe.identity(1) == 1 && manager.add("net0");
+    File managerStatus = new File("/mnt/o9drvman-status");
+    bool ok = probe.identity(1) == 1 && managerStatus.mkdirAll() &&
+              manager.service("DriverManagerProbe", "/mnt/o9drvman-status") &&
+              manager.add("net0");
     File privateMount = new File("/mnt/o9drvman-private");
     File childMarker = new File("/build/o9drvman-child-started");
     childMarker.remove();
     ok = ok && privateMount.mkdirAll();
     ok = ok && manager.addProcess("probe", "/build/o9drvman-test-child");
     ok = ok && manager.addProcess("crash", "/build/o9drvman-test-child");
+    File managedBackend = new File("/mnt/o9driverfs-managed-backend");
+    File managedConfigDir = new File("/mnt/o9driverfs-config");
+    File managedConfig = new File("/mnt/o9driverfs-config/devices.tab");
+    ok = ok && managedConfigDir.mkdirAll();
+    ok = ok && managedBackend.write("device-ready\n") == 0;
+    ok = ok && managedConfig.write("name\tbackend\nserial0\t/mnt/o9driverfs-managed-backend\n") == 0;
+    ok = ok && manager.addProcess("devices", "/build/o9driverfs-managed");
     ok = ok && !manager.add("net0");
     ok = ok && !manager.add("../bad");
     string started = manager.command("start net0 100");
@@ -102,6 +112,18 @@ main {
     Task<int64> restarted = spawn StringIndexOfRaw(table.read(),
         "crash\tbackoff\t2\t2\t1");
     ok = ok && restarted.await() >= 0;
+
+    File managedService = new File("/srv/devices");
+    string managedStart = "start devices 400\n";
+    ok = ok && ctl.append(managedStart) == len(managedStart);
+    tries = 0;
+    while((!managedService.exists() || manager.value("devices", 0) != 2) && tries < 80) {
+        Task<int64> managedPause = spawn TimeSleepRaw(25);
+        managedPause.await();
+        tries = tries + 1;
+    }
+    ok = ok && manager.superviseOnce(405) == 0 &&
+         manager.value("devices", 0) == 2 && managedService.exists();
     mounts.unmount("/mnt/o9drvman-test");
     mounts.close();
     childMarker.remove();

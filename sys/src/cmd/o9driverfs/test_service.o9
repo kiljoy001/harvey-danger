@@ -1,5 +1,4 @@
 import "service.o9";
-import "stdlib/file.o9";
 import "stdlib/namespace.o9";
 import "stdlib/time.o9";
 
@@ -15,10 +14,21 @@ main {
     File backendDir = new File("/mnt");
     bool tmp = backendDir.mkdirAll();
     File backend = new File("/mnt/o9driverfs-backend");
+    File configDir = new File("/mnt/o9driverfs-config");
+    File validConfig = new File("/mnt/o9driverfs-config/managed.tab");
+    File invalidConfig = new File("/mnt/o9driverfs-config/invalid.tab");
     File mountpoint = new File("/mnt/o9driverfs-test");
     int64 initialWrite = backend.write("ready\n");
     bool madeMount = mountpoint.mkdirAll();
-    bool ok = tmp && initialWrite == 0 && madeMount;
+    bool ok = tmp && initialWrite == 0 && madeMount && configDir.mkdirAll() &&
+              validConfig.write("name\tbackend\nmanaged0\t/mnt/o9driverfs-backend\n") == 0 &&
+              invalidConfig.write("backend\tname\n/mnt/o9driverfs-backend\tbad\n") == 0;
+    DriverFs managed = new DriverFs();
+    DriverFs invalid = new DriverFs();
+    Task<int64> managedArgs = spawn DriverManagedArgsRaw("1", "3");
+    Task<int64> directArgs = spawn DriverManagedArgsRaw("/mnt/backend", "disk0");
+    ok = ok && managedArgs.await() == 1 && directArgs.await() == 0 &&
+         managed.loadManaged("managed") && !invalid.loadManaged("invalid");
     DriverFs drivers = new DriverFs();
     ok = ok && drivers.add("serial0", "/mnt/o9driverfs-backend");
     ok = ok && !drivers.add("serial0", "/mnt/o9driverfs-backend");
@@ -49,6 +59,9 @@ main {
     mounts.unmount("/mnt/o9driverfs-test");
     mounts.close();
     backend.remove();
+    validConfig.remove();
+    invalidConfig.remove();
+    configDir.remove();
     if(ok) { print("O9DRIVERFS-9P PASS\n"); }
     else { print("O9DRIVERFS-9P FAIL\n"); }
 }

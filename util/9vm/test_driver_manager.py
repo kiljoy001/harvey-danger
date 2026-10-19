@@ -11,6 +11,8 @@ PRISM = ROOT / "util/9vm/prism.py"
 SOURCE = ROOT / "sys/src/cmd/o9drvman/test_service.o9"
 CHILD_SOURCE = ROOT / "sys/src/cmd/o9drvman/test_driver.o9"
 CHILD = ROOT / "build/o9drvman-test-child"
+DRIVERFS_SOURCE = ROOT / "sys/src/cmd/o9driverfs/service.o9"
+DRIVERFS = ROOT / "build/o9driverfs-managed"
 LIFECYCLE = ROOT / "sys/src/cmd/o9drvman/lifecycle.c"
 BINDING = ROOT / "sys/src/cmd/o9drvman/binding.c"
 MARKER = "O9DRVMAN-9P PASS"
@@ -20,6 +22,10 @@ def main() -> int:
     subprocess.run([
         sys.executable, str(PRISM), "build", str(CHILD_SOURCE),
         "-o", str(CHILD),
+    ], cwd=ROOT, check=True)
+    subprocess.run([
+        sys.executable, str(PRISM), "build", str(DRIVERFS_SOURCE),
+        "-o", str(DRIVERFS),
     ], cwd=ROOT, check=True)
     command = [
         sys.executable, str(PRISM), "run", str(SOURCE),
