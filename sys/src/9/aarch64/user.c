@@ -12,6 +12,10 @@ extern void arm64processresume(void) __attribute__((noreturn));
 extern u64 arm64enteruser(u64, u64, u64, u64, u64);
 extern void arm64fault(void) __attribute__((noreturn));
 
+enum {
+	Userpagesz = 4096,
+};
+
 static volatile u32 useractive, trapkind;
 static volatile u32 usercalls;
 static volatile u64 trapesr, trapfar;
@@ -60,6 +64,90 @@ int
 arm64userload(u64 page, u8 *start, u8 *end)
 {
 	return copycode(page, start, end);
+}
+
+static u16
+get16(const u8 *p)
+{
+	return (u16)p[0] | (u16)p[1]<<8;
+}
+
+static u32
+get32(const u8 *p)
+{
+	return (u32)p[0] | (u32)p[1]<<8 | (u32)p[2]<<16 | (u32)p[3]<<24;
+}
+
+static u64
+get64(const u8 *p)
+{
+	return (u64)get32(p) | (u64)get32(p+4)<<32;
+}
+
+int
+arm64userloadelf(u64 codepage, u64 datapage, const u8 *image, usize n,
+	u64 *entry)
+{
+	const u8 *ph;
+	u64 filesz, memsz, offset, phoff, va, vend;
+	u32 flags, i, j, phnum;
+	int executable, loaded;
+	u16 phentsize;
+	u8 *dst;
+
+	if(codepage == 0 || datapage == 0 || image == nil || entry == nil ||
+	   (codepage|datapage) & (Userpagesz-1) || n < 64 ||
+	   image[0] != 0x7f || image[1] != 'E' || image[2] != 'L' ||
+	   image[3] != 'F' || image[4] != 2 || image[5] != 1 ||
+	   image[6] != 1 || get16(image+16) != 2 || get16(image+18) != 183 ||
+	   get32(image+20) != 1 || get16(image+52) != 64)
+		return -1;
+	phoff = get64(image+32);
+	phentsize = get16(image+54);
+	phnum = get16(image+56);
+	if(phentsize != 56 || phnum == 0 || phnum > 16 || phoff > n ||
+	   (u64)phnum*phentsize > n-phoff)
+		return -1;
+	*entry = get64(image+24);
+	for(i = 0; i < Userpagesz; i++){
+		((u8 *)codepage)[i] = 0;
+		((u8 *)datapage)[i] = 0;
+	}
+	executable = 0;
+	loaded = 0;
+	for(i = 0; i < phnum; i++){
+		ph = image+phoff+(u64)i*phentsize;
+		if(get32(ph) != 1)
+			continue;
+		flags = get32(ph+4);
+		offset = get64(ph+8);
+		va = get64(ph+16);
+		filesz = get64(ph+32);
+		memsz = get64(ph+40);
+		if(filesz > memsz || offset > n || filesz > n-offset ||
+		   memsz > 2*Userpagesz || va < ARM64USERBASE ||
+		   va-ARM64USERBASE > 2*Userpagesz-memsz || (flags & 3) == 3)
+			return -1;
+		vend = va+memsz;
+		if(va >= ARM64USERBASE+Userpagesz){
+			if(vend > ARM64USERBASE+2*Userpagesz || (flags & 2) == 0)
+				return -1;
+			dst = (u8 *)datapage+(va-(ARM64USERBASE+Userpagesz));
+		}else{
+			if(vend > ARM64USERBASE+Userpagesz || (flags & 2) != 0)
+				return -1;
+			dst = (u8 *)codepage+(va-ARM64USERBASE);
+		}
+		for(j = 0; j < filesz; j++)
+			dst[j] = image[offset+j];
+		loaded = 1;
+		if((flags & 1) != 0 && *entry >= va && *entry < vend)
+			executable = 1;
+	}
+	if(!loaded || !executable)
+		return -1;
+	synccode(codepage, Userpagesz);
+	return 0;
 }
 
 void

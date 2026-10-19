@@ -21,6 +21,16 @@ main {
     if(isolatedResult >= 0) { markerResult = marker.write(generation); }
     if(markerResult == 0) {
         if(cmp(process.arg(3), "4") == 0) {
+            string base = cat(cat(cat(process.arg(4), "/"), process.arg(1)),
+                              cat(".", generation));
+            File health = new File(cat(base, ".health"));
+            File ready = new File(base);
+            string report = cat("o9health/1\t", cat(generation,
+                "\t1\t1\tfailed\t0\t0\t0\t1\t1\t0\trestart\tio-timeout\n"));
+            if(health.write(report) == 0) { ready.write("ready\n"); }
+            Time clock = new Time();
+            clock.sleep(10000);
+        } else if(cmp(process.arg(3), "5") == 0) {
             Time clock = new Time();
             clock.sleep(10000);
         } else if(cmp(process.arg(3), "2") != 0) {

@@ -15,6 +15,7 @@ struct Arm64ureg {
 
 int arm64userprobe(u64, u64, u64);
 int arm64userload(u64, u8 *, u8 *);
+int arm64userloadelf(u64, u64, const u8 *, usize, u64 *);
 void arm64runprocess(u64, u64, u64) __attribute__((noreturn));
 void arm64runprocessargs(u64, u64, u64, u64, u64) __attribute__((noreturn));
 u64 arm64userdiag(void);

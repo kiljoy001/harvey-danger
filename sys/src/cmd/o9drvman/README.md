@@ -7,7 +7,7 @@ It exposes a small 9P view:
 * writes to `view/ctl` submit lifecycle events;
 * `view/result` reports the result for that attach.
 
-Each run gets a monotonically increasing generation. Readiness, progress,
+Each run gets a monotonically increasing generation. Readiness, health,
 exit, and stopped events carry that generation. Reports from an old process
 are ignored after a restart, so a delayed exit cannot kill its replacement.
 The manager also owns heartbeat deadlines, bounded exponential backoff, a
@@ -51,10 +51,19 @@ long-running service cleanly. The manager removes stale control markers before
 launch and after reap. If a startup, heartbeat, or graceful-stop deadline
 expires, the supervisor posts a forced shutdown note. It restarts desired
 drivers only after generation-safe backoff.
-Managed services publish monotonic heartbeat serials through a generation
-scoped `.progress` marker. The supervisor consumes readiness and progress
-before applying a deadline tick, avoiding a false timeout when a valid report
-is already waiting.
+Managed services publish generation-scoped `.health` records:
+
+```
+o9health/1 GENERATION SEQUENCE TIMESTAMP_MS STATE PROGRESS INFLIGHT COMPLETED ERRORS TIMEOUTS RESETS RECOMMENDATION ERROR_CODE
+```
+
+The fields are tab-separated and the record ends in a newline. Sequence,
+timestamp, progress, and cumulative counters may not move backward. Healthy,
+degraded, and recovering reports renew the lease; stalled, failed, and offline
+reports trigger a restart. The supervisor consumes readiness and health before
+applying a deadline tick, avoiding a false timeout when a valid report is
+already waiting. A report is removed only after a complete parse, so polling
+cannot discard a file while its writer is still filling it.
 
 The manager must run in the supervisor's private namespace; a read-only status
 service can be bound into broader namespaces later. AppUser authorization is
@@ -64,17 +73,20 @@ The VM integration test launches Objective-9C drivers, verifies that a child
 namespace mutation does not escape, reports ready and progress through the 9P
 control view, consumes clean and crashed exits, and exercises a
 crash/backoff/relaunch generation. It also launches the real `o9driverfs`,
-consumes its readiness marker, and stops and reaps the blocked 9P service. A
-noncooperative child verifies forced termination after the grace deadline.
+consumes its readiness and health markers, restarts a child reporting failed
+hardware, and stops and reaps the blocked 9P service. A noncooperative child
+verifies forced termination after the grace deadline.
 
 Build or test it with the generic Objective-9C C source support:
 
 ```
 python3 util/9vm/prism.py build sys/src/cmd/o9drvman/service.o9 \
   --c-source sys/src/cmd/o9drvman/lifecycle.c \
+  --c-source sys/src/cmd/o9drvman/health.c \
   --c-source sys/src/cmd/o9drvman/binding.c -o build/o9drvman
 
 python3 util/9vm/prism.py run sys/src/cmd/o9drvman/test_service.o9 \
   --c-source sys/src/cmd/o9drvman/lifecycle.c \
-  --c-source sys/src/cmd/o9drvman/binding.c -m 512 -t 35
+  --c-source sys/src/cmd/o9drvman/health.c \
+  --c-source sys/src/cmd/o9drvman/binding.c -m 512 -t 45
 ```

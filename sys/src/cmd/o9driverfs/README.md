@@ -26,20 +26,23 @@ serial0\t/n/host/dev/serial0
 ```
 
 It must end in a newline, contain 1 to 16 records, and stay below 8 KiB.
-After installing its view controller, the service writes `ready` to
-`<status-directory>/<service>.<generation>`. The manager consumes this exact
-marker, so an old process cannot make its replacement ready.
+After installing its view controller, the service writes a versioned health
+record to `<status-directory>/<service>.<generation>.health`, then writes
+`ready` to `<status-directory>/<service>.<generation>`. The manager consumes
+these exact markers, so an old process cannot make its replacement ready or
+renew its lease.
 For shutdown, it watches
 `<status-directory>/<service>.<generation>.stop`. An exact `shutdown` record
 wakes the root Objective-9C task; returning from the generated application
 entry then invokes the runtime's whole-application exit path. The generation
 in both control paths prevents a late stop from terminating a replacement
 process.
-While running, the service writes a monotonic serial every 10 seconds to
-`<status-directory>/<service>.<generation>.progress`. The first serial is
-written immediately. The supervisor consumes it before checking the liveness
-deadline, so a heartbeat already waiting at the deadline wins the race and
-extends the service lease.
+While running, the service writes an `o9health/1` record with monotonic
+sequence, timestamp, progress, completion, error, timeout, and reset counters
+every 10 seconds to the health path. The first record is written immediately.
+The supervisor consumes it before checking the liveness deadline, so a health
+report already waiting at the deadline wins the race and extends the service
+lease. A stalled, failed, or offline report requests an immediate restart.
 
 This first service is a 9P device namespace and forwarding layer. It is not
 yet an MMIO driver, an interrupt broker, or a complete serial, block, network,

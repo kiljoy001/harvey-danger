@@ -45,6 +45,24 @@ function DrvManagerStateRaw(int64 slot) string {
     return out;
 }
 
+function DrvManagerHealthFieldRaw(int64 slot, int64 field) int64 {
+    int64 out;
+    c {
+        extern vlong o9drvmanhealthfield(int, int);
+        out = o9drvmanhealthfield(slot, field);
+    }
+    return out;
+}
+
+function DrvManagerHealthTextRaw(int64 slot, int64 field) string {
+    string out;
+    c {
+        extern char *o9drvmanhealthtext(int, int);
+        out = o9_string_from_c(o9drvmanhealthtext(slot, field));
+    }
+    return out;
+}
+
 function DrvManagerConfigureRaw(int64 slot, string manager, string name, string path) int64 {
     int64 out;
     c {
@@ -244,8 +262,18 @@ class DriverManager {
         return value.await();
     }
 
+    private method int64 healthField(int64 slot, int64 fieldNumber) {
+        Task<int64> value = spawn DrvManagerHealthFieldRaw(slot, fieldNumber);
+        return value.await();
+    }
+
+    private method string healthText(int64 slot, int64 fieldNumber) {
+        Task<string> value = spawn DrvManagerHealthTextRaw(slot, fieldNumber);
+        return value.await();
+    }
+
     method string table() {
-        string result = "name\tstate\tgeneration\trestarts\tdesired\tdeadline_ms\tretry_ms\tprogress\tpid\texit_status\n";
+        string result = "name\tstate\tgeneration\trestarts\tdesired\tdeadline_ms\tretry_ms\tprogress\tpid\texit_status\thealth\thealth_sequence\thealth_timestamp_ms\thardware_progress\tinflight\tcompleted\terrors\ttimeouts\tresets\trecommended\terror_code\n";
         int64 slot = 0;
         while(slot < count) {
             string row = cat(names[slot], cat("\t", stateName(slot)));
@@ -254,6 +282,14 @@ class DriverManager {
                 row = cat(row, cat("\t", number.format(field(slot, column))));
                 column = column + 1;
             }
+            row = cat(row, cat("\t", healthText(slot, 0)));
+            column = 1;
+            while(column <= 8) {
+                row = cat(row, cat("\t", number.format(healthField(slot, column))));
+                column = column + 1;
+            }
+            row = cat(row, cat("\t", healthText(slot, 1)));
+            row = cat(row, cat("\t", healthText(slot, 2)));
             result = cat(result, cat(row, "\n"));
             slot = slot + 1;
         }

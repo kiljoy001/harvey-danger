@@ -2,6 +2,7 @@
 #include <libc.h>
 
 #include "lifecycle.h"
+#include "health.h"
 
 enum {
 	Maxdrivers = 64,
@@ -31,6 +32,7 @@ struct DrvExitMessage {
 
 static Lock driverlock;
 static DrvLifecycle drivers[Maxdrivers];
+static DrvHealthTracker health[Maxdrivers];
 static DrvProcess processes[Maxdrivers];
 static uchar initialized[Maxdrivers];
 static int exitpipe[2] = {-1, -1};
@@ -111,9 +113,36 @@ o9drvmaninit(int slot)
 	if(result == 0){
 		memset(&processes[slot], 0, sizeof(processes[slot]));
 		processes[slot].laststatus = -1;
+		drv_health_reset(&health[slot], 0);
 	}
 	unlock(&driverlock);
 	return result;
+}
+
+int
+o9drvmanhealth(int slot, DrvHealthReport *report, uvlong now)
+{
+	DrvEvent event;
+	DrvHealthDecision decision;
+
+	if(!validslot(slot) || report == nil)
+		return DrvHealthReject;
+	lock(&driverlock);
+	if(drivers[slot].state != DrvRunning){
+		unlock(&driverlock);
+		return DrvHealthIgnore;
+	}
+	decision = drv_health_accept(&health[slot], report, now);
+	if(decision == DrvHealthRenew || decision == DrvHealthRestart){
+		event.type = decision == DrvHealthRenew ? DrvProgress : DrvExit;
+		event.generation = report->generation;
+		event.now_ms = now;
+		event.progress = report->sequence;
+		if(drv_lifecycle_apply(&drivers[slot], &event) == DrvRejected)
+			decision = DrvHealthReject;
+	}
+	unlock(&driverlock);
+	return decision;
 }
 
 int
@@ -130,6 +159,60 @@ o9drvmanapply(int slot, int type, uvlong generation, uvlong now, uvlong progress
 	event.progress = progress;
 	lock(&driverlock);
 	result = drv_lifecycle_apply(&drivers[slot], &event);
+	unlock(&driverlock);
+	return result;
+}
+
+vlong
+o9drvmanhealthfield(int slot, int field)
+{
+	DrvHealthTracker *tracker;
+	vlong result;
+
+	if(!validslot(slot))
+		return -1;
+	lock(&driverlock);
+	tracker = &health[slot];
+	if(!tracker->valid){
+		unlock(&driverlock);
+		return 0;
+	}
+	switch(field){
+	case 0: result = tracker->report.state; break;
+	case 1: result = tracker->report.sequence; break;
+	case 2: result = tracker->report.timestamp_ms; break;
+	case 3: result = tracker->report.progress; break;
+	case 4: result = tracker->report.inflight; break;
+	case 5: result = tracker->report.completed; break;
+	case 6: result = tracker->report.errors; break;
+	case 7: result = tracker->report.timeouts; break;
+	case 8: result = tracker->report.resets; break;
+	case 9: result = tracker->report.recommendation; break;
+	default: result = -1; break;
+	}
+	unlock(&driverlock);
+	return result;
+}
+
+char *
+o9drvmanhealthtext(int slot, int field)
+{
+	char *result;
+
+	if(!validslot(slot))
+		return "invalid";
+	lock(&driverlock);
+	if(!health[slot].valid)
+		result = field == 2 ? "none" : "unknown";
+	else if(field == 0)
+		result = (char *)drv_health_state_name(health[slot].report.state);
+	else if(field == 1)
+		result = (char *)drv_health_recommendation_name(
+			health[slot].report.recommendation);
+	else if(field == 2)
+		result = health[slot].report.error_code;
+	else
+		result = "invalid";
 	unlock(&driverlock);
 	return result;
 }
@@ -264,11 +347,12 @@ o9drvmanlaunch(int slot, uint generation)
 	snprint(marker, sizeof marker, "%s/%s.%u", manager, name, generation);
 	process->pid = -1;
 	process->generation = generation;
+	drv_health_reset(&health[slot], generation);
 	unlock(&driverlock);
 	remove(marker);
 	snprint(marker, sizeof marker, "%s/%s.%u.stop", manager, name, generation);
 	remove(marker);
-	snprint(marker, sizeof marker, "%s/%s.%u.progress", manager, name, generation);
+	snprint(marker, sizeof marker, "%s/%s.%u.health", manager, name, generation);
 	remove(marker);
 	monitor = rfork(RFPROC|RFFDG|RFNOTEG|RFNOWAIT);
 	if(monitor == 0){
@@ -309,33 +393,27 @@ readymarker(int slot, uint generation)
 }
 
 static int
-progressmarker(int slot, uint generation, uvlong *progress)
+healthmarker(int slot, uint generation, DrvHealthReport *report)
 {
-	char marker[Maxpath + Maxname + 32], text[32], *end;
-	uvlong value;
-	int fd, i, n;
+	char marker[Maxpath + Maxname + 32], text[512];
+	int fd, n;
 
 	lock(&driverlock);
-	snprint(marker, sizeof marker, "%s/%s.%u.progress", processes[slot].manager,
+	snprint(marker, sizeof marker, "%s/%s.%u.health", processes[slot].manager,
 	        processes[slot].name, generation);
 	unlock(&driverlock);
 	fd = open(marker, OREAD);
 	if(fd < 0)
 		return 0;
-	n = read(fd, text, sizeof text - 1);
+	n = read(fd, text, sizeof text);
 	close(fd);
-	remove(marker);
-	if(n < 2 || text[n - 1] != '\n')
-		return 0;
-	text[--n] = 0;
-	for(i = 0; i < n; i++)
-		if(text[i] < '0' || text[i] > '9')
-			return 0;
-	value = strtoull(text, &end, 10);
-	if(value == 0 || end == text || *end != 0)
-		return 0;
-	*progress = value;
-	return 1;
+	if(n > 0 && drv_health_parse(text, n, report) == 0){
+		remove(marker);
+		return 1;
+	}
+	if(n > 0)
+		print("o9drvman: invalid health report: %.*s\n", n, text);
+	return 0;
 }
 
 int
@@ -394,7 +472,7 @@ o9drvmanreapone(void)
 {
 	DrvExitMessage exit;
 	DrvEvent event;
-	char marker[Maxpath + Maxname + 32], progresspath[Maxpath + Maxname + 32];
+	char marker[Maxpath + Maxname + 32], healthpath[Maxpath + Maxname + 32];
 	char stopmarker[Maxpath + Maxname + 32];
 	int result;
 
@@ -413,7 +491,7 @@ o9drvmanreapone(void)
 	snprint(marker, sizeof marker, "%s/%s.%u", processes[exit.slot].manager,
 	        processes[exit.slot].name, exit.generation);
 	snprint(stopmarker, sizeof stopmarker, "%s.stop", marker);
-	snprint(progresspath, sizeof progresspath, "%s.progress", marker);
+	snprint(healthpath, sizeof healthpath, "%s.health", marker);
 	event.type = DrvExit;
 	event.generation = exit.generation;
 	event.now_ms = nsec() / 1000000ULL;
@@ -422,16 +500,16 @@ o9drvmanreapone(void)
 	unlock(&driverlock);
 	remove(marker);
 	remove(stopmarker);
-	remove(progresspath);
+	remove(healthpath);
 	return result == DrvRejected ? -1 : exit.slot + 1;
 }
 
 int
 o9drvmansuperviseonce(uvlong now)
 {
-	uvlong progress;
+	DrvHealthReport report;
 	uint generation;
-	int current, launched, old, pid, slot, status;
+	int current, healthstatus, launched, old, pid, slot, status;
 
 	launched = 0;
 	for(slot = 0; slot < Maxdrivers; slot++){
@@ -443,12 +521,13 @@ o9drvmansuperviseonce(uvlong now)
 		if(old == DrvStarting && pid > 0 && readymarker(slot, generation))
 			o9drvmanapply(slot, DrvReady, generation, now, 0);
 		current = o9drvmanfield(slot, 0);
+		healthstatus = DrvHealthIgnore;
 		if(current == DrvRunning && pid > 0 &&
-		   progressmarker(slot, generation, &progress))
-			o9drvmanapply(slot, DrvProgress, generation, now, progress);
+		   healthmarker(slot, generation, &report))
+			healthstatus = o9drvmanhealth(slot, &report, now);
 		status = o9drvmanapply(slot, DrvTick, 0, now, 0);
 		current = o9drvmanfield(slot, 0);
-		if(status == DrvApplied &&
+		if((status == DrvApplied || healthstatus == DrvHealthRestart) &&
 		   (old == DrvStarting || old == DrvRunning || old == DrvStopping) &&
 		   (current == DrvBackoff || current == DrvStopped) && pid > 0)
 			forceproc(slot, generation);

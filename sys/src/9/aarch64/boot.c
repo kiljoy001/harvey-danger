@@ -150,7 +150,7 @@ static void
 userprocess(void *arg)
 {
 	Proc *p;
-	u64 code, data, stack, root, typeoff;
+	u64 code, data, entry, stack, root, typeoff;
 
 	USED(arg);
 	p = externup();
@@ -163,9 +163,9 @@ userprocess(void *arg)
 	if(arm64mmuuserdevice(root, ARM64USERBASE+3*PGSZ,
 	   useruartbase & ~(u64)(PGSZ-1)) < 0)
 		panic("ARM64 user process UART map failed");
-	if(arm64userload(code, (u8 *)arm64userprobeimage,
-	   (u8 *)arm64userprobeimage+sizeof(arm64userprobeimage)) < 0)
-		panic("ARM64 user process code load failed");
+	if(arm64userloadelf(code, data, arm64userprobeelf,
+	   sizeof(arm64userprobeelf), &entry) < 0)
+		panic("ARM64 user process ELF load failed");
 	typeoff = ARM64USERPROBEUARTTYPE - (ARM64USERBASE+PGSZ);
 	if(typeoff > PGSZ-sizeof(u32))
 		panic("ARM64 user process data offset failed");
@@ -173,7 +173,7 @@ userprocess(void *arg)
 	p->MMU.rootpa = root;
 	arm64mmuswitch(root);
 	userprocessphase = 1;
-	arm64runprocessargs(ARM64USERPROBEENTRY, ARM64USERBASE+3*PGSZ,
+	arm64runprocessargs(entry, ARM64USERBASE+3*PGSZ,
 	   1, ARM64USERBASE+2*PGSZ, ARM64USERBASE+3*PGSZ-512);
 }
 

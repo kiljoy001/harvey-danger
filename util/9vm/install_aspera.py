@@ -22,6 +22,7 @@ PROGRAMS = {
     "driver-manager": (
         ROOT / "sys/src/cmd/o9drvman/service.o9", "/bin/o9drvman",
         (ROOT / "sys/src/cmd/o9drvman/lifecycle.c",
+         ROOT / "sys/src/cmd/o9drvman/health.c",
          ROOT / "sys/src/cmd/o9drvman/binding.c"),
     ),
     "driver-fs": (ROOT / "sys/src/cmd/o9driverfs/service.o9",

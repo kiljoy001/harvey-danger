@@ -13,11 +13,12 @@ boot check confirms that EL0 cannot read kernel memory, write its code page,
 or execute its stack. A timer interrupt can arrive from EL0 and return to the
 interrupted instruction. The full kernel starts the shared Plan 9 scheduler,
 creates a `Proc` with its own page-table root, and runs a small libc-backed C
-program at EL0. Its RX text, RW data, NX stack, and device-tree-selected UART
-page have separate mappings. The program enters through the ARM64 libc `_main`,
+program at EL0. Its embedded AArch64 ELF is validated and loaded from its
+`PT_LOAD` records into separate RX text, RW data, and NX stack mappings, with a
+device-tree-selected UART page. The program enters through the ELF entry and ARM64 libc `_main`,
 calls the generated `nsec` wrapper through the normal syscall table, and writes
-its result marker through the UART mapping. It is an embedded acceptance probe
-rather than an executable loader. The ARM64 `Label` save/restore routines match the calling
+its result marker through the UART mapping. It is still an embedded acceptance
+probe rather than a filesystem-backed `exec`. The ARM64 `Label` save/restore routines match the calling
 convention used by Harvey's shared scheduler in `sys/src/9/port/proc.c`. QEMU
 tests switch between two independent kernel stacks and check callee-saved
 register preservation while the timer is active. Interrupt masking is also
@@ -156,8 +157,8 @@ the root walk and local transport checks. Before launching general untrusted
 programs, the temporary address-space builder and process lifecycle must be
 replaced by tracked per-process page tables. ARM64 libc and all 42 generated
 syscall wrappers now cross-build, and a small `_main` process links against
-that libc. Demand-fault handling, executable loading, running that linked
-process, and an ARM64 init binary follow.
+that libc. The embedded process is now loaded as ELF; demand-fault handling,
+filesystem-backed `exec`, and an ARM64 init binary follow.
 The shared `#9` driver uses PCI on amd64 and device-tree discovered virtio-MMIO
 on ARM64. Both legacy MMIO v1 and modern v2 work in QEMU `virt`. The ARM64
 transport currently polls for replies; device interrupts are not routed yet.

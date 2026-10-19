@@ -100,11 +100,53 @@ function DriverWriteRaw(string path, string data) int64 {
     return out;
 }
 
+function DriverManagedReadyRaw(string statusRoot, string serviceName,
+                               string generation) int64 {
+    int64 out;
+    c {
+        char *root, *service, *gen, *health, *ready, text[256];
+        uvlong now;
+        int fd, n;
+
+        out = -1;
+        root = o9_string_cstr(statusRoot);
+        service = o9_string_cstr(serviceName);
+        gen = o9_string_cstr(generation);
+        health = nil;
+        ready = nil;
+        if(root != nil && service != nil && gen != nil){
+            health = smprint("%s/%s.%s.health", root, service, gen);
+            ready = smprint("%s/%s.%s", root, service, gen);
+        }
+        if(health != nil && ready != nil){
+            now = nsec();
+            n = snprint(text, sizeof text,
+                "o9health/1\t%s\t1\t%llu\thealthy\t1\t0\t1\t0\t0\t0\tnone\tnone\n",
+                gen, now / 1000000ULL);
+            fd = create(health, OWRITE, 0600);
+            if(fd >= 0 && write(fd, text, n) == n){
+                close(fd);
+                fd = create(ready, OWRITE, 0600);
+                if(fd >= 0 && write(fd, "ready\n", 6) == 6)
+                    out = 0;
+            }
+            if(fd >= 0)
+                close(fd);
+        }
+        free(root);
+        free(service);
+        free(gen);
+        free(health);
+        free(ready);
+    }
+    return out;
+}
+
 function DriverManagedLoopRaw(string statusRoot, string serviceName,
                               string generation) int64 {
     int64 out;
     c {
-        char *root, *service, *gen, *progress, *stop, text[32];
+        char *root, *service, *gen, *health, *stop, text[256];
         uvlong next, now, serial;
         int fd, n;
 
@@ -113,17 +155,16 @@ function DriverManagedLoopRaw(string statusRoot, string serviceName,
         service = o9_string_cstr(serviceName);
         gen = o9_string_cstr(generation);
         stop = nil;
-        progress = nil;
+        health = nil;
         if(root != nil && service != nil && gen != nil){
             stop = smprint("%s/%s.%s.stop", root, service, gen);
-            progress = smprint("%s/%s.%s.progress", root, service, gen);
+            health = smprint("%s/%s.%s.health", root, service, gen);
         }
         free(root);
         free(service);
-        free(gen);
-        if(stop != nil && progress != nil){
+        if(stop != nil && health != nil){
             next = 0;
-            serial = 1;
+            serial = 2;
             for(;;){
                 fd = open(stop, OREAD);
                 if(fd >= 0){
@@ -136,8 +177,10 @@ function DriverManagedLoopRaw(string statusRoot, string serviceName,
                 }
                 now = nsec();
                 if(now >= next){
-                    n = snprint(text, sizeof text, "%llu\n", serial);
-                    fd = create(progress, OWRITE, 0600);
+                    n = snprint(text, sizeof text,
+                        "o9health/1\t%s\t%llu\t%llu\thealthy\t%llu\t0\t%llu\t0\t0\t0\tnone\tnone\n",
+                        gen, serial, now / 1000000ULL, serial, serial);
+                    fd = create(health, OWRITE, 0600);
                     if(fd >= 0){
                         write(fd, text, n);
                         close(fd);
@@ -151,7 +194,8 @@ function DriverManagedLoopRaw(string statusRoot, string serviceName,
             out = 0;
         }
         free(stop);
-        free(progress);
+        free(health);
+        free(gen);
     }
     return out;
 }
@@ -231,9 +275,9 @@ class DriverFs {
 
     method bool reportManagedReady(string statusRoot, string serviceName,
                                    string generation) {
-        File marker = new File(cat(cat(cat(statusRoot, "/"), serviceName),
-                                   cat(".", generation)));
-        return marker.write("ready\n") == 0;
+        Task<int64> report = spawn DriverManagedReadyRaw(statusRoot, serviceName,
+                                                          generation);
+        return report.await() == 0;
     }
 
     private method int64 findDriver(string path) {

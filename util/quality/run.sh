@@ -37,9 +37,13 @@ echo "quality: deterministic unit tests"
 $cc $common -O2 "$source_dir/lifecycle.c" "$source_dir/test_lifecycle.c" \
 	-o "$build_dir/test_lifecycle"
 "$build_dir/test_lifecycle" --unit
+$cc $common -O2 "$source_dir/health.c" "$source_dir/test_health.c" \
+	-o "$build_dir/test_health"
+"$build_dir/test_health" --unit
 
 echo "quality: generated property tests"
 "$build_dir/test_lifecycle" --property
+"$build_dir/test_health" --property
 
 echo "quality: address and undefined behavior sanitizers"
 $cc $common -O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined \
@@ -48,6 +52,12 @@ $cc $common -O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined \
 ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 \
 	UBSAN_OPTIONS=halt_on_error=1 \
 	"$build_dir/test_lifecycle_san"
+$cc $common -O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined \
+	"$source_dir/health.c" "$source_dir/test_health.c" \
+	-o "$build_dir/test_health_san"
+ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 \
+	UBSAN_OPTIONS=halt_on_error=1 \
+	"$build_dir/test_health_san"
 
 echo "quality: coverage guided fuzzing ($fuzz_runs runs)"
 $cc $common -O1 -g -fno-omit-frame-pointer \
@@ -61,6 +71,19 @@ if ! ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 \
 	-artifact_prefix="$build_dir/" >"$fuzz_log" 2>&1
 then
 	tail -200 "$fuzz_log" >&2
+	exit 1
+fi
+$cc $common -O1 -g -fno-omit-frame-pointer \
+	-fsanitize=fuzzer,address,undefined \
+	"$source_dir/health.c" "$source_dir/fuzz_health.c" \
+	-o "$build_dir/fuzz_health"
+health_fuzz_log="$build_dir/health-fuzz.log"
+if ! ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 \
+	UBSAN_OPTIONS=halt_on_error=1 \
+	"$build_dir/fuzz_health" -runs="$fuzz_runs" -max_len=512 \
+	-artifact_prefix="$build_dir/health-" >"$health_fuzz_log" 2>&1
+then
+	tail -200 "$health_fuzz_log" >&2
 	exit 1
 fi
 
@@ -131,6 +154,17 @@ LLVM_PROFILE_FILE="$profile_dir/lifecycle.profraw" \
 	-instr-profile="$profile_dir/lifecycle.profdata" \
 	>"$profile_dir/lifecycle.json"
 
+$cc $common -O0 -g -fprofile-instr-generate -fcoverage-mapping \
+	"$source_dir/health.c" "$source_dir/test_health.c" \
+	-o "$profile_dir/health"
+LLVM_PROFILE_FILE="$profile_dir/health.profraw" \
+	"$profile_dir/health" >/dev/null
+"$llvm_profdata" merge -sparse "$profile_dir/health.profraw" \
+	-o "$profile_dir/health.profdata"
+"$llvm_cov" export "$profile_dir/health" \
+	-instr-profile="$profile_dir/health.profdata" \
+	>"$profile_dir/health.json"
+
 $cc $kernel_common -O0 -g -fprofile-instr-generate -fcoverage-mapping \
 	"$quality_dir/test_kernel_transport.c" \
 	-o "$profile_dir/kernel-transport"
@@ -144,10 +178,12 @@ LLVM_PROFILE_FILE="$profile_dir/kernel-transport.profraw" \
 
 python3 "$quality_dir/crap.py" --maximum 30 \
 	--source "$source_dir/lifecycle.c" \
+	--source "$source_dir/health.c" \
 	--source "$include_dir/9ring.h" \
 	--source "$include_dir/virtio9p_core.h" \
 	--output "$profile_dir/crap.json" \
-	"$profile_dir/lifecycle.json" "$profile_dir/kernel-transport.json"
+	"$profile_dir/lifecycle.json" "$profile_dir/health.json" \
+	"$profile_dir/kernel-transport.json"
 
 mutation_dir=$(mktemp -d "$build_dir/mutations.XXXXXX")
 trap 'rm -rf "$mutation_dir"' EXIT HUP INT TERM
@@ -182,6 +218,36 @@ kill_mutant restart-budget \
 kill_mutant deadline-edge \
 	'event->now_ms >= lifecycle->deadline_ms' \
 	'event->now_ms > lifecycle->deadline_ms'
+
+kill_health_mutant()
+{
+	name=$1
+	from=$2
+	to=$3
+	mutant="$mutation_dir/$name.c"
+	sed "s/$from/$to/" "$source_dir/health.c" >"$mutant"
+	if cmp -s "$source_dir/health.c" "$mutant"; then
+		echo "quality: mutation $name was not applied" >&2
+		exit 1
+	fi
+	$cc $common -O0 "$mutant" "$source_dir/test_health.c" \
+		-o "$mutation_dir/$name"
+	if "$mutation_dir/$name" >/dev/null 2>&1; then
+		echo "quality: surviving mutant: $name" >&2
+		exit 1
+	fi
+	echo "quality: killed mutant $name"
+}
+
+kill_health_mutant health-generation \
+	'report->generation != tracker->generation' \
+	'report->generation == tracker->generation'
+kill_health_mutant health-sequence \
+	'report->sequence <= tracker->report.sequence' \
+	'report->sequence < tracker->report.sequence'
+kill_health_mutant health-severity \
+	'report->state == DrvHealthStalled' \
+	'report->state != DrvHealthStalled'
 
 kill_header_mutant()
 {

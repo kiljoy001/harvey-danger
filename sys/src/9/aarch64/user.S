@@ -16,8 +16,8 @@ arm64enteruser:
 	mov	x0, x2
 	mov	x1, x3
 	mov	x2, x4
-	mov	x1, #0x340	/* EL0t with IRQ enabled */
-	msr	spsr_el1, x1
+	mov	x15, #0x340	/* EL0t with IRQ enabled */
+	msr	spsr_el1, x15
 	/* Do not expose the kernel's general registers to EL0. */
 	mov	x3, xzr
 	mov	x4, xzr
