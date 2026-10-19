@@ -16,12 +16,20 @@ from build_aspera_tools import main as build_tools
 ROOT = Path(__file__).resolve().parents[2]
 HERE = Path(__file__).resolve().parent
 PROGRAMS = {
-    "desktop": (ROOT / "sys/src/cmd/o9aspera/live.o9", "/bin/aspera-live"),
+    "desktop": (ROOT / "sys/src/cmd/o9aspera/live.o9", "/bin/aspera-live", ()),
     "shelf": (ROOT / "sys/src/cmd/o9aspera/shelf_service.o9",
-              "/bin/aspera-shelf-service"),
+              "/bin/aspera-shelf-service", ()),
+    "driver-manager": (
+        ROOT / "sys/src/cmd/o9drvman/service.o9", "/bin/o9drvman",
+        (ROOT / "sys/src/cmd/o9drvman/lifecycle.c",
+         ROOT / "sys/src/cmd/o9drvman/binding.c"),
+    ),
+    "driver-fs": (ROOT / "sys/src/cmd/o9driverfs/service.o9",
+                  "/bin/o9driverfs", ()),
 }
 TOOLS = {name: f"/bin/{name}" for name in ("rc", "ls", "cat", "test", "echo")}
 TOOLS["rcmain"] = "/rc/lib/rcmain"
+MIN_IMAGE_SIZE = 512 * 1024 * 1024
 
 
 def provision(base: Path, image: Path, stage: Path, work: Path) -> None:
@@ -63,7 +71,7 @@ def provision(base: Path, image: Path, stage: Path, work: Path) -> None:
                 output = console.run(line, 180)
                 if line.startswith("gefs -c") and "\nok\n" not in output.replace("\r", ""):
                     raise RuntimeError("GEFS check failed: " + output[-600:])
-            for staged, (_, installed) in PROGRAMS.items():
+            for staged, (_, installed, _) in PROGRAMS.items():
                 target = f"/n/asperagefs{installed}"
                 console.run(f"cp /n/asperastage/{staged} {target}", 180)
                 console.run(f"chmod 755 {target}")
@@ -106,11 +114,14 @@ def main() -> None:
     base, image = args.base.resolve(), args.image.resolve()
     if not base.is_file() or not image.is_file():
         parser.error("9front base image and GEFS image must exist")
+    if image.stat().st_size < MIN_IMAGE_SIZE:
+        parser.error("GEFS image is too small for Aspera; use at least 512 MiB")
     rcmain = args.front_source.resolve() / "rc/lib/rcmain"
     if not rcmain.is_file():
         parser.error("9front rc/lib/rcmain not found")
-    for staged, (source, _) in PROGRAMS.items():
-        compile_o9(str(source), str(ROOT / "build" / f"aspera-{staged}"))
+    for staged, (source, _, extras) in PROGRAMS.items():
+        compile_o9(str(source), str(ROOT / "build" / f"aspera-{staged}"),
+                   extra_sources=tuple(map(str, extras)))
     build_tools()
     with tempfile.TemporaryDirectory(prefix="aspera-install-", dir=ROOT / "build") as tmp:
         work = Path(tmp)

@@ -56,7 +56,7 @@ larger file operations are split into multiple messages.
 
 ## Opaque GEFS image
 
-Create a new 256 MiB image using an installed 9front VM as the formatter:
+Create a new 512 MiB image using an installed 9front VM as the formatter:
 
 ```sh
 python3 util/9vm/format_gefs_image.py --base /path/to/installed-9front.img /path/to/gefs.img
@@ -119,6 +119,15 @@ behavioral baseline for moving the image behind a supervised userspace block
 driver; it does not describe the current VirtIO 9P image export as a block
 device. The filesystem is synced before the persistence marker; supervised
 GEFS shutdown and restart remain a separate lifecycle milestone.
+
+The packaged driver test boots for longer than the manager heartbeat interval
+and rejects service restarts. Pass `--base` to exercise formatting and
+provisioning as well:
+
+```sh
+python3 util/9vm/test_driver_image.py
+python3 util/9vm/test_driver_image.py --base /path/to/installed-9front.img
+```
 
 ## Include o9irc
 

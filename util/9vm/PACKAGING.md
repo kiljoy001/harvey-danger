@@ -73,6 +73,16 @@ The built guest kernel is `build/harvey.32bit`, the host runner is
 missing inputs. The build instructions and transport tests are in
 [README.md](README.md).
 
+`install_aspera.py` also installs `/bin/o9drvman` and `/bin/o9driverfs`.
+The GEFS bootstrap maps the console through the device filesystem and starts
+the manager after the root pivot. Lifecycle markers live under the RAM-backed
+`/mnt/o9` tree; trusted device configuration remains under the persistent
+system image.
+
+Use an image of at least 512 MiB. The installer rejects smaller images before
+starting 9front because GEFS is append only and cannot reliably hold the
+desktop, command tools, and managed driver services in 256 MiB.
+
 Run both required development gates before packaging:
 
 ```sh
@@ -83,7 +93,8 @@ Run both required development gates before packaging:
 The quality command runs unit, property, sanitizer, coverage-guided fuzzing,
 and mutation tests for user-space policy and kernel transports. `verify` adds
 namespace/persistence, Objective-9C driver-manager 9P integration, amd64
-9ring/VirtIO fallback, and ARM64 VirtIO-MMIO v1/v2 tests.
+9ring/VirtIO fallback, ARM64 VirtIO-MMIO v1/v2 tests, and a managed driver
+boot that spans a complete heartbeat interval.
 
 ## Runtime bundle target
 

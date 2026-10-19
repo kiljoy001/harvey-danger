@@ -6,10 +6,12 @@ function start_gefs_root() int64 {
         char *args[] = {"gefs", "-A", "-m", "32", "-n", "asperagefs",
                         "-f", "/mnt/image", nil};
         char *dirs[] = {"/mnt/bin", "/mnt/dev", "/mnt/env", "/mnt/fd",
-                        "/mnt/mnt", "/mnt/mnt/o9", "/mnt/n", "/mnt/n/o9irc", "/mnt/net", "/mnt/proc",
+                        "/mnt/mnt", "/mnt/mnt/o9", "/mnt/n", "/mnt/n/o9irc",
+                        "/mnt/n/devices", "/mnt/net", "/mnt/proc",
                         "/mnt/srv", "/mnt/boot", "/mnt/rom", "/mnt/lib",
                         "/mnt/lib/o9irc", "/mnt/lib/aspera", "/mnt/build",
-                        "/mnt/build/aspera-live", nil};
+                        "/mnt/build/aspera-live", "/mnt/mnt/o9driverfs-config",
+                        "/mnt/mnt/o9drvman-status", nil};
         char *ircargs[] = {"o9irc-ircfs", "o9irc", "", "", "",
                            "/lib/o9irc", "262144", nil};
         char *probe = "Aspera GEFS root probe\n";
@@ -17,7 +19,7 @@ function start_gefs_root() int64 {
         char *mode;
         char buf[64];
         Dir *d;
-        int fd, pid, srvfd, i, n, hasApp;
+        int fd, pid, srvfd, i, n, hasApp, mounted;
 
         result = -1;
         fd = open("#9/2", ORDWR);
@@ -75,6 +77,18 @@ function start_gefs_root() int64 {
             print("aspera: device namespace bind failed: %r\n");
             goto gefs_done;
         }
+        d = dirstat("/mnt/o9/o9drvman-status");
+        if(d == nil){
+            fd = create("/mnt/o9/o9drvman-status", OREAD, DMDIR|0700);
+            if(fd >= 0)
+                close(fd);
+        }else
+            free(d);
+        if(bind("/mnt/o9/o9drvman-status", "/mnt/o9drvman-status",
+                MREPL|MCREATE) < 0){
+            print("aspera: driver status bind failed: %r\n");
+            goto gefs_done;
+        }
         d = dirstat("/");
         if(d == nil || (d->mode & DMDIR) == 0){
             print("aspera: GEFS root stat failed: %r\n");
@@ -85,6 +99,90 @@ function start_gefs_root() int64 {
         fd = open("#9/1", ORDWR);
         if(fd >= 0 && mount(fd, -1, "/net", MREPL, "") < 0)
             close(fd);
+        {
+            char *driverargs[] = {"o9drvman", "o9drvman", "devices",
+                                  "/bin/o9driverfs", nil};
+            char *config = "name\tbackend\nconsole\t/dev/cons\n";
+            Dir *managerbin = dirstat("/bin/o9drvman");
+            Dir *driverbin = dirstat("/bin/o9driverfs");
+
+            if(managerbin != nil && driverbin != nil &&
+               (managerbin->mode & DMDIR) == 0 && (driverbin->mode & DMDIR) == 0){
+                fd = open("/mnt/o9driverfs-config/devices.tab", OREAD);
+                n = fd < 0 ? -1 : read(fd, buf, sizeof buf);
+                if(fd >= 0) close(fd);
+                if(n != strlen(config) || memcmp(buf, config, n) != 0){
+                    fd = create("/mnt/o9driverfs-config/devices.tab", OWRITE, 0600);
+                    if(fd < 0 || write(fd, config, strlen(config)) != strlen(config)){
+                        print("aspera: driver configuration failed: %r\n");
+                        if(fd >= 0) close(fd);
+                        free(managerbin);
+                        free(driverbin);
+                        goto gefs_done;
+                    }
+                    close(fd);
+                }
+                pid = rfork(RFPROC|RFFDG|RFNAMEG|RFENVG|RFREND|RFNOTEG|RFNOWAIT);
+                if(pid == 0){
+                    exec("/bin/o9drvman", driverargs);
+                    print("aspera: driver manager exec failed: %r\n");
+                    _exits("drivers");
+                }
+                if(pid < 0){
+                    print("aspera: driver manager fork failed: %r\n");
+                    free(managerbin);
+                    free(driverbin);
+                    goto gefs_done;
+                }
+                for(i = 0; i < 200; i++){
+                    d = dirstat("/srv/o9drvman");
+                    if(d != nil){
+                        free(d);
+                        d = dirstat("/srv/devices");
+                        if(d != nil){
+                            free(d);
+                            break;
+                        }
+                    }
+                    sleep(25);
+                }
+                if(i == 200){
+                    print("aspera: driver services did not become ready\n");
+                    free(managerbin);
+                    free(driverbin);
+                    goto gefs_done;
+                }
+                n = -1;
+                for(i = 0; i < 200; i++){
+                    if(i != 0)
+                        unmount(nil, "/n/devices");
+                    srvfd = open("/srv/devices", ORDWR);
+                    mounted = srvfd < 0 ? -1 :
+                        mount(srvfd, -1, "/n/devices", MREPL, "");
+                    if(srvfd >= 0)
+                        close(srvfd);
+                    if(mounted >= 0){
+                        fd = open("/n/devices/view/protocol", OREAD);
+                        n = fd < 0 ? -1 : read(fd, buf, sizeof buf);
+                        if(fd >= 0) close(fd);
+                        if(n == strlen("o9driverfs 1\n") &&
+                           memcmp(buf, "o9driverfs 1\n", n) == 0)
+                            break;
+                    }
+                    sleep(25);
+                }
+                if(n != strlen("o9driverfs 1\n") ||
+                   memcmp(buf, "o9driverfs 1\n", n) != 0){
+                    print("aspera: device service probe failed\n");
+                    free(managerbin);
+                    free(driverbin);
+                    goto gefs_done;
+                }
+                print("ASPERA-DRIVERS-STARTED\n");
+            }
+            free(managerbin);
+            free(driverbin);
+        }
         mode = getenv("asperarcprobe");
         if(mode != nil && strcmp(mode, "1") == 0){
             char *rcargs[] = {"rc", "-c",

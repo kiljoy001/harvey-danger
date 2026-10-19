@@ -82,7 +82,8 @@ class Console:
         self.log.seek(start)
         output = self.log.read()
         self.log.seek(0, os.SEEK_END)
-        for error in ("gefs: create /srv/", "mount:", "can't open", "file does not exist"):
+        for error in ("gefs: create /srv/", "mount:", "can't open",
+                      "file does not exist", "file system full"):
             if error in output:
                 raise RuntimeError(f"{command}: {output[-500:]}")
         return output
@@ -143,7 +144,7 @@ def main():
     parser.add_argument("--base", required=True, type=Path,
                         help="installed 9front disk image, copied before use")
     parser.add_argument("image", type=Path, help="new GEFS image path")
-    parser.add_argument("--size-mib", type=int, default=256)
+    parser.add_argument("--size-mib", type=int, default=512)
     args = parser.parse_args()
     if args.size_mib < 129:
         parser.error("GEFS needs more than 128 MiB; use at least 129 MiB")
