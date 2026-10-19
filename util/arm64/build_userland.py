@@ -245,6 +245,34 @@ main(int argc, char **argv)
 		_exits("uartfs");
 	}
 	say("HARVEY-ARM64 UARTFS SRV PASS\n");
+	{
+		char ebuf[64], sbuf[32];
+		int mfd, sfd;
+		long n;
+		mfd = open("/srv/uart", OREAD);
+		if(mfd >= 0){
+			create("/mnt/uart", OREAD, DMDIR|0755);
+			if(mount(mfd, -1, "/mnt/uart", MREPL, "") < 0){
+				errstr(ebuf, sizeof ebuf);
+				say("HARVEY-ARM64 UARTFS-MOUNT FAIL: ");
+				say(ebuf);
+				say("\n");
+			}else{
+				say("HARVEY-ARM64 UARTFS-MOUNT PASS\n");
+				sfd = open("/mnt/uart/status", OREAD);
+				if(sfd >= 0){
+					n = read(sfd, sbuf, sizeof(sbuf)-1);
+					close(sfd);
+					if(n > 0)
+						say("HARVEY-ARM64 UARTFS-READ PASS\n");
+					else
+						say("HARVEY-ARM64 UARTFS-READ FAIL\n");
+				}else
+					say("HARVEY-ARM64 UARTFS-OPEN FAIL\n");
+			}
+			close(mfd);
+		}
+	}
 	fd = create("/mnt/o9driverfs-config", OREAD, DMDIR|0755);
 	if(fd >= 0)
 		close(fd);
