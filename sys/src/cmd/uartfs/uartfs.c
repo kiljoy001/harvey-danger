@@ -119,20 +119,26 @@ isconsole(char *name)
 static int
 discover(void)
 {
-	uchar dirbuf[4096];
+	uchar dirbuf[16384];
 	char strs[512], fallback[64];
 	u64 fbase, fsize;
 	u32 ftype;
 	Dir d;
 	int fd, found, havefallback;
-	long i, n;
+	long i, n, m;
 
 	found = -1;
 	havefallback = 0;
 	fd = open("#P", OREAD);
 	if(fd < 0)
 		return -1;
-	n = read(fd, dirbuf, sizeof dirbuf);
+	n = 0;
+	while(n < (long)sizeof dirbuf){
+		m = read(fd, dirbuf + n, sizeof dirbuf - n);
+		if(m <= 0)
+			break;
+		n += m;
+	}
 	close(fd);
 	if(n <= 0)
 		return -1;

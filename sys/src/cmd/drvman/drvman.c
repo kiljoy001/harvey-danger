@@ -98,11 +98,11 @@ launch(Driver *d)
 void
 main(int argc, char **argv)
 {
-	uchar dirbuf[4096];
+	uchar dirbuf[16384];
 	char strs[512], path[128], cls[32], srvpath[64];
 	char present[32][24];
 	int npresent, fd, i, j;
-	long n;
+	long n, m;
 	Dir d;
 	Driver *drv;
 
@@ -112,7 +112,13 @@ main(int argc, char **argv)
 	fd = open("#P", OREAD);
 	if(fd < 0)
 		_exits("no #P");
-	n = read(fd, dirbuf, sizeof dirbuf);
+	n = 0;
+	while(n < (long)sizeof dirbuf){
+		m = read(fd, dirbuf + n, sizeof dirbuf - n);
+		if(m <= 0)
+			break;
+		n += m;
+	}
 	close(fd);
 	if(n <= 0)
 		_exits("empty #P");

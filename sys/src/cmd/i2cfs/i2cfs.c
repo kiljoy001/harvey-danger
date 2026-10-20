@@ -92,7 +92,12 @@ probe(char *name, char *class, char *compat, u64 *base)
 
 	mkpath(path, name, "class");
 	n = readfile(path, buf, sizeof buf);
-	if(n < 0 || strcmp(buf, class) != 0)
+	if(n < 0)
+		return -1;
+	for(n = 0; buf[n] != 0 && buf[n] != '\n'; n++)
+		;
+	buf[n] = 0;
+	if(strcmp(buf, class) != 0)
 		return -1;
 	if(compat != nil){
 		mkpath(path, name, "compatible");
@@ -144,12 +149,12 @@ addi2c(char *name, u64 base)
 static int
 discover(void)
 {
-	uchar dirbuf[4096];
+	uchar dirbuf[16384];
 	char strs[512], cruname[64], pmucruname[64];
 	u64 base, crubase, pmucrubase;
 	Dir d;
 	int fd, havecru, havepmucru, i;
-	long n;
+	long n, m;
 
 	g.ni2c = 0;
 	crubase = pmucrubase = 0;
@@ -159,7 +164,13 @@ discover(void)
 	fd = open("#P", OREAD);
 	if(fd < 0)
 		return -1;
-	n = read(fd, dirbuf, sizeof dirbuf);
+	n = 0;
+	while(n < (long)sizeof dirbuf){
+		m = read(fd, dirbuf + n, sizeof dirbuf - n);
+		if(m <= 0)
+			break;
+		n += m;
+	}
 	close(fd);
 	if(n <= 0)
 		return -1;
