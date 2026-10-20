@@ -23,6 +23,7 @@ struct Driver {
 static Driver drivers[] = {
 	{ "uart",	"/boot/uartfs",	"uart" },
 	{ "gpio",	"/boot/gpiofs",	"gpio" },
+	{ "i2c",	"/boot/i2cfs",	"i2c" },
 	{ nil,	nil,	nil },
 };
 

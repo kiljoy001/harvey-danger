@@ -88,4 +88,75 @@ enum {
 /* Bit position of a pin's 4-bit mux field inside its iomux register. */
 #define RK_IOMUX_SHIFT(pin)	(((pin) % 4) * 4)
 
+/* ------------------------------------------------------------------ */
+/* I2C controller (Rockchip RK3x).                                     */
+/* ------------------------------------------------------------------ */
+
+/* Register offsets in bytes. */
+enum {
+	RK_I2C_CON	= 0x00,	/* control */
+	RK_I2C_CLKDIV	= 0x04,	/* (divh << 16) | divl */
+	RK_I2C_MRXADDR	= 0x08,	/* slave address, for register TX */
+	RK_I2C_MRXRADDR	= 0x0c,	/* slave register address */
+	RK_I2C_MTXCNT	= 0x10,	/* bytes to transmit */
+	RK_I2C_MRXCNT	= 0x14,	/* bytes to receive */
+	RK_I2C_IEN	= 0x18,	/* interrupt enable */
+	RK_I2C_IPD	= 0x1c,	/* interrupt pending (status) */
+	RK_I2C_FCNT	= 0x20,	/* finished count */
+	RK_I2C_SCL_OE_DB = 0x24, /* SCL output-enable debounce */
+	RK_I2C_TXBUF	= 0x100, /* transmit FIFO base */
+	RK_I2C_RXBUF	= 0x200, /* receive FIFO base */
+	RK_I2C_CON1	= 0x228, /* control 1 (RK356x extension) */
+};
+
+/* RK_I2C_CON bits. */
+enum {
+	RK_I2C_EN	= 1 << 0,
+	RK_I2C_MOD_TX	= 0 << 1,	/* transmit */
+	RK_I2C_MOD_REG_TX = 1 << 1,	/* register-then-restart TX (read) */
+	RK_I2C_MOD_RX	= 2 << 1,	/* receive */
+	RK_I2C_START	= 1 << 3,
+	RK_I2C_STOP	= 1 << 4,
+	RK_I2C_LASTACK	= 1 << 5,	/* NACK after last received byte */
+	RK_I2C_ACTACK	= 1 << 6,	/* stop on NACK */
+};
+
+/* RK_I2C_IEN / RK_I2C_IPD bits. */
+enum {
+	RK_I2C_INT_BTF	= 1 << 0,	/* byte transmitted */
+	RK_I2C_INT_BRF	= 1 << 1,	/* byte received */
+	RK_I2C_INT_MBTF	= 1 << 2,	/* TX finished */
+	RK_I2C_INT_MBRF	= 1 << 3,	/* RX finished */
+	RK_I2C_INT_START = 1 << 4,	/* START generated */
+	RK_I2C_INT_STOP	= 1 << 5,	/* STOP generated */
+	RK_I2C_INT_NAK	= 1 << 6,	/* NACK received */
+	RK_I2C_INT_ALL	= 0xff,
+};
+
+/* MRXADDR/MRXRADDR byte-valid bits: bit 24+x marks byte x present. */
+#define RK_I2C_ADDR_VALID(x)	(1 << (24 + (x)))
+
+/* ------------------------------------------------------------------ */
+/* CRU (clock/reset unit) register offsets.                            */
+/* ------------------------------------------------------------------ */
+
+/* System CRU (RK_CRU_BASE) and PMU CRU (RK_PMUCRU_BASE) use different
+ * register bases but the same offset scheme. */
+#define RK_CRU_CLKGATE(n)	(0x300 + (n) * 4)
+#define RK_CRU_SOFTRST(n)	(0x400 + (n) * 4)
+#define RK_PMU_CLKGATE(n)	(0x180 + (n) * 4)
+#define RK_PMU_SOFTRST(n)	(0x200 + (n) * 4)
+
+/* Clock gates use the HIWORD-MASK + SET-TO-DISABLE scheme: bits [31:16]
+ * are the write mask, bits [15:0] the value, and a clear bit ENABLES the
+ * clock.  To enable clock gate bit b, write (1 << (16 + b)). */
+
+/* I2C clock gates.  I2C0 lives in the PMUCRU, I2C1..I2C5 in the CRU:
+ *   I2C0: PMU CLKGATE_CON(1), PCLK bit 0, CLK bit 1.
+ *   I2Cn (n=1..5): CRU CLKGATE_CON(30), PCLK bit 2(n-1), CLK bit 2(n-1)+1.
+ */
+
+/* Soft reset IDs (flat) map to SOFTRST_CON(id/16), bit id%16.  The ID is
+ * asserted/reset the same HIWORD-MASK way; a set bit asserts reset. */
+
 #endif
