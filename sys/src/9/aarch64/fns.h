@@ -62,6 +62,7 @@ void arm64mmurelease(Proc *);
 void mmuprocinit(Proc *);
 void idlehands(void);
 void coherence(void);
+void dcacheclean(void *, usize);
 int corecolor(int);
 void cycles(u64 *);
 int infected_with_std(void);

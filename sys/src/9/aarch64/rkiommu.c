@@ -197,6 +197,7 @@ rkgetpt(Rkdomain *d, u32 dtei)
 	d->ptpa[dtei] = pa;
 	d->pt[dtei] = KADDR(pa);
 	d->dt[dtei] = rkdte(pa);
+	dcacheclean(d->dt, RkiommuPagesz);
 	return d->pt[dtei];
 }
 
@@ -211,6 +212,7 @@ rkiommuattach(Rkiommu *i, Rkdomain *d)
 	if(i->enabled){
 		int n;
 
+		dcacheclean(d->dt, RkiommuPagesz);
 		for(n = 0; n < i->nbase; n++)
 			rkwrite(i, n, MmuDteaddr, rkdte(d->dtpa));
 		rkcommand(i, CmdZap);
@@ -246,7 +248,9 @@ rkiommumap(Rkiommu *i, u64 iova, u64 pa, usize size, int writable)
 			return -1;
 		}
 		pt[ptei] = rkpte(pa+n, writable);
+		dcacheclean(pt, RkiommuPagesz);
 	}
+	dcacheclean(d->dt, RkiommuPagesz);
 	coherence();
 	iunlock(&d->l);
 	if(i->enabled)
@@ -275,7 +279,9 @@ rkiommuunmap(Rkiommu *i, u64 iova, usize size)
 		if(pt == nil)
 			continue;
 		pt[ptei] = 0;
+		dcacheclean(pt, RkiommuPagesz);
 	}
+	dcacheclean(d->dt, RkiommuPagesz);
 	coherence();
 	iunlock(&d->l);
 	if(i->enabled)
@@ -329,6 +335,7 @@ rkiommuenable(Rkiommu *i)
 	if(rkwait(i, MmuDteaddr, 0xffffffff, 0) < 0)
 		return -1;
 
+	dcacheclean(i->dom->dt, RkiommuPagesz);
 	for(n = 0; n < i->nbase; n++){
 		rkwrite(i, n, MmuDteaddr, rkdte(i->dom->dtpa));
 		rkcommand(i, CmdZap);

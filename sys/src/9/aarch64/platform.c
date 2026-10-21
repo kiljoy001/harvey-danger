@@ -96,6 +96,22 @@ delay(int ms)
 }
 
 void
+dcacheclean(void *va, usize len)
+{
+	u64 ctr, line, p, end;
+
+	if(va == nil || len == 0)
+		return;
+	__asm__ volatile("mrs %0, ctr_el0" : "=r"(ctr));
+	line = 4ULL << ((ctr >> 16) & 0xf);
+	p = (usize)va & ~(line-1);
+	end = (usize)va + len;
+	for(; p < end; p += line)
+		__asm__ volatile("dc civac, %0" :: "r"(p) : "memory");
+	__asm__ volatile("dsb sy" ::: "memory");
+}
+
+void
 timerset(u64 when)
 {
 	/* Port clock deadlines use the same virtual counter as fastticks. */

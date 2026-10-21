@@ -191,10 +191,11 @@ clocks(void)
 	/* PCLK_HDMI_HOST, CLK_HDMI_SFR, CLK_HDMI_CEC */
 	cruhi(0x354, (1 << 3) | (1 << 4) | (1 << 5), 0);
 
-	/* DCLK_VOP0 <- HPLL, divider 1. */
-	cru[0x19c/4] = 0;
+	/* DCLK_VOP0 <- HPLL, divider 1.  CLKSEL_CON39 has an
+	 * upper-half write mask. */
+	cruhi(0x19c, (3 << 10) | 0xff, 0);
 
-	/* HDMI reference clock <- xin24m. */
+	/* HDMI reference clock <- HPLL (bit 7 clear). */
 	pmucruhi(0x120, 1 << 7, 0);
 
 	/* HDMI DDC pins are driven by the controller. */
@@ -280,8 +281,8 @@ window(void)
 	/* Default window delay for Esmart0 is 20. */
 	vopwr(SmartDly, 20);
 
-	/* ARGB8888, enable Esmart0. */
-	vopwr(Smart0Region0Ctrl, 1);
+	/* Keep the plane disabled for the background/clock path test. */
+	vopwr(Smart0Region0Ctrl, 0);
 }
 
 static void
@@ -322,6 +323,7 @@ fbmap(Rkiommu *mmu)
 			return 0;
 		}
 		pattern(KADDR(pa), FbWidth, FbHeight);
+		dcacheclean(KADDR(pa), FbSize);
 		return pa;
 	}
 
@@ -337,6 +339,7 @@ fbmap(Rkiommu *mmu)
 			return 0;
 		}
 		memset(KADDR(pa), 0, 4096);
+		dcacheclean(KADDR(pa), 4096);
 	}
 	return 1;
 }
@@ -406,10 +409,10 @@ vop2init(Fdtinfo *info)
 	timing(&m);
 	window();
 	vopwr(VopDspIfCtrl, 0);
-	vopwr(VopDspIfPol, (1 << 28) | (1 << 7));
+	vopwr(VopDspIfPol, (1 << 28) | (3 << 4) | (1 << 7));
 	vopwr(VopDspIfEn, (0 << 10) | (1 << 1));
 
-	/* Use the solid background as a path test. */
+	/* Use the hardware background as a path test. */
 	vopwr(Vp0ColorBar, 0);
 
 	/* Global config done + VP0 config done, then release standby. */

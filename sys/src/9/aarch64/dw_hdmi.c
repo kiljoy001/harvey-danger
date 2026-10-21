@@ -137,12 +137,12 @@ phyconfigure(Hdmi *h, int clock)
 		phywrite(h, 0x802b, PHY_CKSYMTXCTRL);
 		phywrite(h, 0x0004, PHY_TXTERM);
 	}else if(clock <= 165000){
-		/* U-Boot's 148.5 MHz entry for the DWC HDMI 3D TX PHY. */
+		/* Orange Pi 3B phy-table at 165 MHz: 0x800b/0x0000/0x026d. */
 		phywrite(h, 0x0051, PHY_OPMODE_PLLCFG);
-		phywrite(h, 0x0003, PHY_PLLGMPCTRL);
-		phywrite(h, 0x028d, PHY_VLEVCTRL);
-		phywrite(h, 0x802b, PHY_CKSYMTXCTRL);
-		phywrite(h, 0x0004, PHY_TXTERM);
+		phywrite(h, 0x0002, PHY_PLLGMPCTRL);
+		phywrite(h, 0x026d, PHY_VLEVCTRL);
+		phywrite(h, 0x800b, PHY_CKSYMTXCTRL);
+		phywrite(h, 0x0000, PHY_TXTERM);
 	}else{
 		phywrite(h, 0x0040, PHY_OPMODE_PLLCFG);
 		phywrite(h, 0x0003, PHY_PLLGMPCTRL);
