@@ -273,8 +273,8 @@ static void
 pattern(u32 *p, int w, int h)
 {
 	static const u32 bars[8] = {
-		0x00ffffff, 0x00ffff00, 0x0000ffff, 0x0000ff00,
-		0x00ff00ff, 0x00ff0000, 0x000000ff, 0x00000000,
+		0xffffffff, 0xffffff00, 0xff00ffff, 0xff00ff00,
+		0xffff00ff, 0xffff0000, 0xff0000ff, 0xff000000,
 	};
 	u32 c;
 	int x, y, i;
@@ -284,7 +284,8 @@ pattern(u32 *p, int w, int h)
 			i = x * 8 / w;
 			c = bars[i];
 			if(y < h / 16)
-				c = (x * 255 / w) << 16 |
+				c = 0xff000000 |
+				    (x * 255 / w) << 16 |
 				    (x * 255 / w) << 8 |
 				    (x * 255 / w);
 			p[y * (FbStride/4) + x] = c;
