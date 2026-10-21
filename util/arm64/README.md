@@ -96,8 +96,13 @@ nodes to the OS DTB during `booti`. The early parser
 uses `/chosen/stdout-path` (including `/aliases`) to select UART2 on this board,
 and chooses the RAM bank containing the Image. The NPU register/DMA probe is excluded from normal
 boot; set `ARM64_RK3566_NPU_PROBE=1` only for a separate NPU experiment. The
-QEMU image now provides an interactive `rc`; hardware verification is pending
-after reflashing the board with the same image.
+QEMU image now provides an interactive `rc`. The same image was reflashed over
+router-hosted TFTP and verified on the v1.1 board: `echo hardware-rc` executed
+`/boot/echo`, `whatis cd` reported the builtin, and `exit` relaunched `rc`.
+The vendor U-Boot reports `FB base = 0` and exposes only the serial console, so
+it does not hand off a framebuffer. It also reports no SD/eMMC card and no USB
+storage. The display path therefore still requires a VOP2/HDMI driver; the
+RK3566 VOP compatible is now recognized by the device-tree inventory.
 On an Orange Pi 3B v1.1, the common Image and the full OS DTB loaded over TFTP
 passed the early memory, MMU, timer, EL0 isolation, scheduler, root walk, and
 `#~` boot checks. A later router-hosted TFTP boot of the same Image and the
