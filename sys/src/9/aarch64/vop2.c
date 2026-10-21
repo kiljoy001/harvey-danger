@@ -238,8 +238,8 @@ timing(Vmode *m)
 	vopwr(Vp0PostSclFac, 0);
 	vopwr(Vp0PostSclCtrl, 0);
 	/* RK3568 VP0 default pre-scan/bg delays: bg_dly=42, hsync=44. */
-	vopwr(Vp0PreScan, 0x03e9002c);
-	vopwr(Vp0BgMix, 42 << 24);
+	vopwr(Vp0PreScan, 0x03df002c);
+	vopwr(Vp0BgMix, 32 << 24);
 	vopwr(Vp0DspBg, 0x3fc00000);	/* red background for path test */
 	vopwr(Vp0BcshCtrl, 0);
 	vopwr(Vp0BcshBcs, 0);
@@ -275,8 +275,8 @@ window(void)
 	/* Smart0 is layer 3.  One layer on VP0.  Make layer/port mux
 	 * configuration take effect immediately, as Linux does. */
 	vopwr(VopOvlLayerSel, 3);
-	/* VP0 has one layer; VP1/VP2 have none (mux value 8). */
-	vopwr(VopOvlPortSel, 0x880);
+	/* Linux cumulative mux calculation for one SDR window on VP0. */
+	vopwr(VopOvlPortSel, 0x700);
 	vopwr(VopOvlCtrl, 1 << 28);
 
 	/* Smart0 delay field is bits 16..23. */
