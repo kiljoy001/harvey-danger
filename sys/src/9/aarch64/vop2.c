@@ -16,6 +16,9 @@
 #include "dw_hdmi_reg.h"
 #include "vop2.h"
 
+/* Define to enable the interactive display probe during bring-up. */
+/* #define RK_DISPLAY_PROBE 1 */
+
 enum {
 	CruBase		= 0xfdd20000,
 	PmucruBase	= 0xfdd00000,
@@ -207,10 +210,41 @@ clocks(void)
 static void
 resets(void)
 {
-	/* Deassert A_VOP, H_VOP, VOP0, P_HDMI_HOST and HDMI_HOST. */
+	/* Deassert A_VOP_NIU, A_VOP, H_VOP, VOP0-2, HDMI_HOST. */
 	cruhi(0x440, (1 << 3) | (1 << 4) | (1 << 5) | (1 << 6) |
-	      (1 << 14) | (1 << 15), 0);
+	      (1 << 7) | (1 << 8) | (1 << 14) | (1 << 15), 0);
 	microdelay(1000);
+}
+
+/*
+ * Rockchip IOMMU guide: do not enable the IOMMU while the VOP is
+ * fetching.  Put every video port in standby and disable all windows
+ * before the IOMMU is reset/enabled.
+ */
+static void
+vopidle(void)
+{
+	u32 v = 1u << 31;
+
+	vopwr(Vp0DspCtrl, v);
+	vopwr(0xd00, v);	/* VP1_DSP_CTRL */
+	vopwr(0xe00, v);	/* VP2_DSP_CTRL */
+
+	vopwr(0x1000, 0);
+	vopwr(0x1100, 0);	/* Cluster0 */
+	vopwr(0x1200, 0);
+	vopwr(0x1300, 0);	/* Cluster1 */
+	vopwr(0x1800, 0);
+	vopwr(0x1810, 0);	/* Esmart0 */
+	vopwr(0x1a00, 0);
+	vopwr(0x1a10, 0);	/* Esmart1 */
+	vopwr(0x1c00, 0);
+	vopwr(0x1c10, 0);	/* Smart0 */
+	vopwr(0x1e00, 0);
+	vopwr(0x1e10, 0);	/* Smart1 */
+
+	vopwr(VopCfgDone, 0x8001);
+	microdelay(50000);
 }
 
 static void
@@ -239,9 +273,10 @@ timing(Vmode *m)
 	/* No post scaling. */
 	vopwr(Vp0PostSclFac, 0);
 	vopwr(Vp0PostSclCtrl, 0);
-	/* VP0 has five mixers and port mux 0: bg_dly = 42 - 10 = 32. */
-	vopwr(Vp0PreScan, 0x03df002c);
-	vopwr(Vp0BgMix, 32 << 24);
+	/* VP0 carries all six plane-mask windows, so port mux 5 and
+	 * bg_ovl_dly = (5 - 5) << 1 = 0: bg_dly = 42, hsync = 44. */
+	vopwr(Vp0PreScan, 0x03e9002c);
+	vopwr(Vp0BgMix, 42 << 24);
 	vopwr(Vp0DspBg, 0x3fc00000);	/* red background for path test */
 	vopwr(Vp0BcshCtrl, 0);
 	vopwr(Vp0BcshBcs, 0);
@@ -262,7 +297,9 @@ window(void)
 	dsp = act;
 
 	vopwr(Smart0Ctrl0, 0);		/* RGB, no CSC */
-	vopwr(Smart0Ctrl1, 0);
+	/* Linux only clears ymirror here; the AXI read IDs (0xc/0xd)
+	 * come from U-Boot and must be preserved. */
+	vopwr(Smart0Ctrl1, voprd(Smart0Ctrl1) & ~(1u << 31));
 	vopwr(Smart0Region0Ctrl, 0);	/* disabled while programming */
 	vopwr(Smart0YrgbMst, (u32)FbIova);
 	vopwr(Smart0Vir, FbStride / 4);
@@ -273,17 +310,15 @@ window(void)
 	vopwr(Smart0SclFac, 0);
 	vopwr(Smart0SclCbr, 0);
 	vopwr(Smart0SclOff, 0);
-	/* vop2_plane_setup_background/color_key: disabled for this plane. */
-	vopwr(Smart0ColorKey, 0);
-	vopwr(Smart0Bg, 0);
 
 	/* Smart0 is layer 3.  One layer on VP0.  Make layer/port mux
 	 * configuration take effect immediately, as Linux does. */
 	/* Orange Pi VP0 plane-mask initial map, then active Smart0 -> layer0.
 	 * Layers 0..5: Smart0, Cluster1, Esmart0, Esmart1, Cluster0, Smart1. */
 	vopwr(VopOvlLayerSel, 0x00706213);
-	/* One active VP0 layer; VP1 has no layers; VP2 fixed at 7. */
-	vopwr(VopOvlPortSel, 0x700);
+	/* VP0 owns all six plane-mask windows (mux 5); VP1 follows at 5;
+	 * VP2 is fixed at 7 by hardware. */
+	vopwr(VopOvlPortSel, 0x755);
 	vopwr(VopOvlCtrl, 1 << 28);
 
 	/* Smart0 delay field is bits 16..23. */
@@ -364,13 +399,14 @@ fbmap(Rkiommu *mmu)
 	return 1;
 }
 
+#ifdef RK_DISPLAY_PROBE
 /* Temporary bring-up console: all register offsets are relative to VOP. */
 static void
 displayprobe(Rkiommu *mmu, u64 fb)
 {
 	volatile u32 *uart = (volatile u32 *)0xfe660000;
 	char line[80], *end;
-	int n = 0, c, k;
+	int n = 0, c, k, r;
 	u32 reg, value;
 
 	print("DISPLAY-PROBE: r offset, w offset value, d dump, b background, c bars, i iova, p physical, q boot\n");
@@ -427,14 +463,48 @@ displayprobe(Rkiommu *mmu, u64 fb)
 					break;
 				}
 				rkiommudisable(mmu);
+				mmu->enabled = 0;
 				vopwr(Smart0YrgbMst, fb);
 			}else{
+				mmu->enabled = 0;
 				rkiommuenable(mmu);
 				vopwr(Smart0YrgbMst, FbIova);
 			}
 			vopwr(Vp0ColorBar, 0);
 			vopwr(Smart0Region0Ctrl, 1);
 			vopwr(VopCfgDone, 0x8001);
+			break;
+		case 'm':
+			for(k = 0; k < mmu->nbase; k++){
+				volatile u32 *m = (volatile u32 *)mmu->base[k];
+				print("mmu%d dte %x status %x cmd %x fault %x raw %x clr %x mask %x int %x auto %x\n",
+					k, m[0], m[1], m[2], m[3], m[5], m[6], m[7], m[8], m[9]);
+			}
+			break;
+		case 't':
+			r = rkiommumap(mmu, fb, fb, FbSize, 1);
+			print("identity map %#llx -> %#llx: %d\n", fb, fb, r);
+			vopwr(Smart0Region0Ctrl, 0);
+			vopwr(Smart0YrgbMst, fb);
+			vopwr(Smart0Region0Ctrl, 1);
+			vopwr(VopCfgDone, 0x8001);
+			break;
+		case 'z':
+			mmu->enabled = 0;
+			print("mmu reenable %d\n", rkiommuenable(mmu));
+			vopwr(Smart0Region0Ctrl, 0);
+			vopwr(Smart0YrgbMst, FbIova);
+			vopwr(Smart0Region0Ctrl, 1);
+			vopwr(VopCfgDone, 0x8001);
+			break;
+		case 'a':
+			print("cru194 %x cru198 %x cru19c %x gates %x/%x\n",
+				cru[0x194/4], cru[0x198/4], cru[0x19c/4],
+				cru[0x350/4], cru[0x354/4]);
+			if(line[1] == 's'){
+				cruhi(0x198, (3 << 6) | 0x1f, (1 << 6) | 3);
+				print("cru198 now %x\n", cru[0x198/4]);
+			}
 			break;
 		case 'd':
 			print("fb pa %llx first %x middle %x\n", fb,
@@ -446,6 +516,18 @@ displayprobe(Rkiommu *mmu, u64 fb)
 			}
 			print("vop status %x/%x vp raw %x sys raw %x/%x\n",
 				voprd(0x60), voprd(0x64), voprd(0xac), voprd(0x8c), voprd(0x9c));
+			print("vop vp0 dsp %x bg %x prescan %x bgmix %x ifen %x ifpol %x ifctrl %x ovl %x\n",
+				voprd(0xc00), voprd(0xc2c), voprd(0xc30),
+				voprd(0x6e0), voprd(0x28), voprd(0x30),
+				voprd(0x2c), voprd(0x600));
+			print("vop vp1 %x vp2 %x layer %x port %x\n",
+				voprd(0xd00), voprd(0xe00),
+				voprd(0x604), voprd(0x608));
+			print("smart0 %x/%x/%x mst %x vir %x act %x dsp %x st %x key %x bg %x\n",
+				voprd(0x1c00), voprd(0x1c04), voprd(0x1c10),
+				voprd(0x1c14), voprd(0x1c1c), voprd(0x1c20),
+				voprd(0x1c24), voprd(0x1c28), voprd(0x1cd0),
+				voprd(0x1cd4));
 			print("hdmi phy %x fcstat %x/%x/%x\n",
 				((volatile u32 *)HdmiBase)[HDMI_PHY_STAT0],
 				((volatile u32 *)HdmiBase)[0x100],
@@ -456,6 +538,7 @@ displayprobe(Rkiommu *mmu, u64 fb)
 		print("probe ready\n");
 	}
 }
+#endif
 
 int
 vop2init(Fdtinfo *info)
@@ -479,6 +562,16 @@ vop2init(Fdtinfo *info)
 	grf = (volatile u32 *)GrfBase;
 	vop = (volatile u32 *)VopBase;
 
+	print("vop2: pre sys %x/%x/%x/%x/%x ovl %x layer %x port %x\n",
+		voprd(0x0), voprd(0x8), voprd(0x24), voprd(0x28),
+		voprd(0x2c), voprd(0x600), voprd(0x604), voprd(0x608));
+	print("vop2: pre vp0 dsp %x clk %x bg %x pre %x mix %x\n",
+		voprd(0xc00), voprd(0xc0c), voprd(0xc2c),
+		voprd(0xc30), voprd(0x6e0));
+	print("vop2: pre smart0 %x/%x/%x/%x/%x/%x\n",
+		voprd(0x1c00), voprd(0x1c04), voprd(0x1c08),
+		voprd(0x1c10), voprd(0x1c14), voprd(0x1c1c));
+
 	clocks();
 	resets();
 	vopwr(VopSysAuto, 0);		/* disable auto gating */
@@ -489,6 +582,10 @@ vop2init(Fdtinfo *info)
 		return -1;
 	print("vop2: hpll %x/%x mode %x\n",
 		pmucru[0x40/4], pmucru[0x44/4], pmucru[0x80/4]);
+
+	/* The VOP may still be scanning U-Boot's framebuffer.  Stop it
+	 * before the IOMMU is reset or its page table changes. */
+	vopidle();
 
 	dom = rkiommudomain();
 	if(dom == nil){
