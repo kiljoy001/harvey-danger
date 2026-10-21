@@ -535,7 +535,23 @@ echo(char *buf, int n)
 void
 consinput(char *buf, int n)
 {
-	echo(buf, n);
+	static int cr;
+	int i, j;
+
+	/* Normalize CR, CRLF, and LF from different serial terminals. */
+	for(i = j = 0; i < n; i++){
+		if(buf[i] == '\r'){
+			buf[j++] = '\n';
+			cr = 1;
+		}else if(buf[i] == '\n' && cr){
+			cr = 0;
+		}else{
+			buf[j++] = buf[i];
+			cr = 0;
+		}
+	}
+	if(j != 0)
+		echo(buf, j);
 }
 
 /*

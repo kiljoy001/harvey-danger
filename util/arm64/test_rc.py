@@ -22,7 +22,7 @@ def send_slow(child, line: str) -> None:
     for ch in line:
         child.send(ch)
         time.sleep(0.04)
-    child.send("\n")
+    child.send("\r\n")
 
 
 def main() -> None:
