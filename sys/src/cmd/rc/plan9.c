@@ -38,8 +38,15 @@ char *syssigname[] = {
 	"term",
 	0
 };
+#ifdef __HARVEY__
+/* Harvey's bootstrap namespace keeps the dup device at #d and embeds the
+ * shell startup script as a boot file. */
+char *Rcmain = "/boot/rcmain";
+char *Fdprefix = "#d/";
+#else
 char *Rcmain = "/rc/lib/rcmain";
 char *Fdprefix = "/fd/";
+#endif
 
 void execfinit(void);
 void execbind(void);

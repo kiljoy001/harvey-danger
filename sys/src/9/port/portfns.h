@@ -168,6 +168,7 @@ void ixsummary(void);
 int kbdcr2nl(Queue *, int);
 int kbdgetmap(int, int *, int *, Rune *);
 int kbdputc(Queue *, int);
+void consinput(char *, int);
 void kbdputmap(u16, u16, Rune);
 void initDeadKeys();
 void kdbputdeadkey(Rune deadkey, Rune basekey, Rune finalkey);

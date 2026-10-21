@@ -531,6 +531,13 @@ echo(char *buf, int n)
 		putstrn(buf, n);
 }
 
+/* Feed already-sampled UART input to the console line editor. */
+void
+consinput(char *buf, int n)
+{
+	echo(buf, n);
+}
+
 /*
  *  Called by a uart interrupt for console input.
  *

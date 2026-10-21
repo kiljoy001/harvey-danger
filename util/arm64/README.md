@@ -48,6 +48,7 @@ python3 util/arm64/build_libc.py
 python3 util/arm64/build_o9_services.py
 python3 util/arm64/test_user_runtime.py
 python3 util/arm64/test_full_kernel.py
+python3 util/arm64/test_rc.py
 python3 util/arm64/test_virtio9p.py
 ```
 
@@ -95,19 +96,24 @@ nodes to the OS DTB during `booti`. The early parser
 uses `/chosen/stdout-path` (including `/aliases`) to select UART2 on this board,
 and chooses the RAM bank containing the Image. The NPU register/DMA probe is excluded from normal
 boot; set `ARM64_RK3566_NPU_PROBE=1` only for a separate NPU experiment. The
-board boot remains a hardware bring-up test, not an interactive userland.
+QEMU image now provides an interactive `rc`; hardware verification is pending
+after reflashing the board with the same image.
 On an Orange Pi 3B v1.1, the common Image and the full OS DTB loaded over TFTP
 passed the early memory, MMU, timer, EL0 isolation, scheduler, root walk, and
 `#~` boot checks. A later router-hosted TFTP boot of the same Image and the
 full OS DTB also passed every driver probe: `DRVMAN` enumerated the on-board
 I2C, UART, GPIO, MMC, GMAC, USB, PCIe, HDMI, and codec nodes; `uartfs`,
 `drvman`, `o9driverfs`, and `hubfs` reached `PASS`, and the driver manager
-reported its `i2c` and `gpio` backends `PASS`. There is still no shell or
-mounted root filesystem; `init` remains in its post-boot wait loop. The
-scheduled libc-backed C process entered through `_main`,
-called its generated `nsec` wrapper, wrote its acceptance marker through a
-user-only mapping of the RK3566 DesignWare UART, and returned to the kernel
-without an exception. The board's 8 GiB appears as two memory banks in U-Boot;
+reported its `i2c` and `gpio` backends `PASS`. The image now embeds Plan 9
+`rc`, its `rcmain`, and a small `/boot/echo`; `init` forks `rc` on the console
+after the driver services start and relaunches it after `exit`. UART input is
+sampled by the ARM64 clock callback and fed through the console line editor.
+`test_rc.py` verifies the prompt, an external `/boot/echo` execution, a
+built-in, and exit/relaunch under QEMU. The scheduled libc-backed C process
+entered through `_main`, called its generated `nsec` wrapper, wrote its
+acceptance marker through a user-only mapping of the RK3566 DesignWare UART,
+and returned to the kernel without an exception. A real root filesystem and
+storage/network services are still missing. The board's 8 GiB appears as two memory banks in U-Boot;
 the kernel currently manages the bank containing the Image (roughly 3.8 GiB)
 and leaves the second bank for later multi-bank allocator work. Early code is
 built with `-mstrict-align`: before the MMU

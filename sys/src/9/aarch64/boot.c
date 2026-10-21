@@ -14,6 +14,59 @@
 
 extern void arm64uartputs(char *);
 extern void (*consuartputs)(char *, int);
+static Queue *consolekbdq;
+static u64 consoleuartbase;
+static u32 consoleuarttype;
+
+static int
+consoleuartgetc(void)
+{
+	volatile u32 *uart;
+
+	if(consoleuartbase == 0)
+		return -1;
+	uart = (volatile u32 *)consoleuartbase;
+	if(consoleuarttype == Fdtdwuart){
+		if((uart[0x14/4] & 1) == 0)
+			return -1;
+		return uart[0] & 0xff;
+	}
+	if(consoleuarttype == Fdtpl011){
+		if(uart[0x18/4] & (1<<4))
+			return -1;
+		return uart[0] & 0xff;
+	}
+	return -1;
+}
+
+static void
+consoleuartpoll(void)
+{
+	char buf[64];
+	int c, n;
+
+	if(consolekbdq == nil)
+		return;
+	n = 0;
+	while(n < sizeof buf && (c = consoleuartgetc()) >= 0)
+		buf[n++] = c;
+	if(n != 0)
+		consinput(buf, n);
+}
+
+static void
+consoleuartinit(Fdtinfo *info)
+{
+	consoleuartbase = info->uartbase;
+	consoleuarttype = info->uarttype;
+	consolekbdq = qopen(4 * 1024, 0, nil, nil);
+	if(consolekbdq == nil){
+		arm64uartputs("HARVEY-ARM64 CONSOLE-QUEUE FAIL\n");
+		return;
+	}
+	addkbdq(consolekbdq, -1);
+	addclock0link(consoleuartpoll, 10);
+}
 extern void arm64clockready(void);
 extern void arm64virtio9pconfigure(Fdtinfo *);
 extern void arm64pnpinit(Fdtinfo *);
@@ -210,6 +263,7 @@ initprocess(void *arg)
 	p->slash->path = newpath("/");
 	p->dot = cclone(p->slash);
 	devtabinit();
+	consoleuartinit(bootinfo);
 	kproc("alarm", alarmkproc, nil);
 	arm64uartputs("HARVEY-ARM64 FILE-EXEC START\n");
 	arm64runprocessargs(ARM64EXECSTUBENTRY, USTKTOP-512,
@@ -431,6 +485,9 @@ arm64kernelstart(Fdtinfo *info)
 	addbootfile("hubfs", (u8 *)arm64hubfself, sizeof(arm64hubfself));
 	addbootfile("drvman", (u8 *)arm64drvmanelf, sizeof(arm64drvmanelf));
 	addbootfile("i2cfs", (u8 *)arm64i2cfself, sizeof(arm64i2cfself));
+	addbootfile("rc", (u8 *)arm64rcelf, sizeof(arm64rcelf));
+	addbootfile("echo", (u8 *)arm64echoelf, sizeof(arm64echoelf));
+	addbootfile("rcmain", (u8 *)arm64rcmain, sizeof(arm64rcmain));
 	arm64uartputs("HARVEY-ARM64 DEVICE-RESET PASS\n");
 	pageinit();
 	{
