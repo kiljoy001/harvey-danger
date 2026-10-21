@@ -6,6 +6,7 @@
 #include "fns.h"
 #include "fdt.h"
 #include "rkiommu.h"
+#include "vop2.h"
 #include "phys.h"
 #include "mmu.h"
 #include "user.h"
@@ -501,6 +502,7 @@ arm64kernelstart(Fdtinfo *info)
 	}
 	arm64uartputs("HARVEY-ARM64 PAGE-ALLOC PASS\n");
 	rkiommuinit(info);
+	vop2init(info);
 #ifdef RKIOMMU_SELFTEST
 	if(rkiommuptest() == 0)
 		arm64uartputs("HARVEY-ARM64 RKIOMMU-TABLE PASS\n");

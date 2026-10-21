@@ -194,7 +194,8 @@ arm64mmubuild(Fdtinfo *info)
 		if(d->base2 != 0 && d->size2 != 0)
 			device[regions++] = (Fdtvirtio){d->base2, d->size2};
 	}
-	/* PMU power-domain/status block is not represented by a class. */
+	/* PMU CRU and power-domain/status blocks are not represented by a class. */
+	device[regions++] = (Fdtvirtio){0xfdd20000ULL, Pagesz};
 	device[regions++] = (Fdtvirtio){0xfdd90000ULL, Pagesz};
 #ifdef ARM64_RK3566_NPU_PROBE
 	/* Temporary register probe; a user-space driver will own these later. */
