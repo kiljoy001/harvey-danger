@@ -349,6 +349,8 @@ vop2init(Fdtinfo *info)
 
 	clocks();
 	resets();
+	vopwr(VopSysAuto, 0);		/* disable auto gating */
+	vopwr(0x50, 1);			/* RK3566 OTP window enable */
 	ver = voprd(VopVersion);
 	print("vop2: version %x\n", ver);
 	if(hpllstart() < 0)
@@ -422,6 +424,9 @@ vop2init(Fdtinfo *info)
 		voprd(Vp0ColorBar), voprd(Vp0DspCtrl),
 		((volatile u32 *)mmu->base[0])[0x04/4],
 		((volatile u32 *)mmu->base[0])[0x20/4]);
+	print("vop2: stat0 %x", voprd(0x60));
+	microdelay(50000);
+	print(" stat1 %x\n", voprd(0x60));
 	rkiommufault(mmu);
 	return 0;
 }
