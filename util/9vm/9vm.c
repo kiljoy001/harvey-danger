@@ -1361,6 +1361,7 @@ int main(int argc, char **argv) {
     while (vm_running) {
         if (ioctl(vcpu, KVM_RUN, 0) < 0) {
             if (errno == EINTR) {
+                if (getenv("VM_TRACE")) fprintf(stderr, "[9vm] EINTR\n");
                 if (!vm_running) break;
                 continue;
             }
