@@ -342,8 +342,17 @@ fbmap(Rkiommu *mmu)
 			physfree(pa, 4096);
 			return 0;
 		}
-		memset(KADDR(pa), 0, 4096);
+		{
+			u32 *p = KADDR(pa);
+			int j;
+			for(j = 0; j < 1024; j++)
+				p[j] = 0xff0000ff;	/* opaque blue */
+		}
 		dcacheclean(KADDR(pa), 4096);
+		if(i == 0)
+			print("vop2: fb page0 pa %#llx pte %#x\n", pa,
+				mmu->dom->pt[(iova >> RkiommuDteshift) & RkiommuDtemask]
+				[(iova >> RkiommuPteshift) & RkiommuPtemask]);
 	}
 	return 1;
 }
