@@ -394,10 +394,10 @@ rkiommuinit(Fdtinfo *info)
 			i->nbase = 2;
 		}
 		i->irq = d->irq;
-		print("rkiommu: %s base %#llux", i->name, i->base[0]);
+		print("rkiommu: %s base 0x%llx", i->name, i->base[0]);
 		for(j = 1; j < i->nbase; j++)
-			print("/%#llux", i->base[j]);
-		print(" irq %ud\n", i->irq);
+			print("/0x%llx", i->base[j]);
+		print(" irq %d\n", i->irq);
 	}
 	return niommu != 0 ? iommus : nil;
 }

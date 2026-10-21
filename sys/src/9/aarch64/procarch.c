@@ -27,6 +27,16 @@ userureg(Ureg *r)
 usize
 userpc(Ureg *r)
 {
+	Proc *p;
+
+	if(r == nil){
+		p = externup();
+		if(p == nil)
+			return 0;
+		r = p->dbgreg;
+		if(r == nil)
+			return 0;
+	}
 	return r->pc;
 }
 
