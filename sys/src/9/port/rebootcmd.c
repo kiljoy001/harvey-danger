@@ -56,7 +56,7 @@ void
 rebootcmd(int argc, char *argv[])
 {
 	if(argc == 0)
-		exit(0);
+		reboot(nil, 0, 0);
 
 	error("Reboot with a file is not supported yet");
 }

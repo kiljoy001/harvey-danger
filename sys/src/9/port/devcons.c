@@ -1124,7 +1124,7 @@ conswrite(Chan *c, void *va, i32 n, i64 off)
 		ct = lookupcmd(cb, rebootmsg, nelem(rebootmsg));
 		switch(ct->index){
 		case CMhalt:
-			reboot(nil, 0, 0);
+			exit(0);
 			break;
 		case CMreboot:
 			rebootcmd(cb->nf - 1, cb->f + 1);

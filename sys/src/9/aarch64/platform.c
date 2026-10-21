@@ -227,10 +227,18 @@ exit(int panic)
 void
 reboot(void *entry, void *code, i32 size)
 {
+	u64 fn;
+
 	USED(entry);
 	USED(code);
 	USED(size);
-	exit(0);
+
+	/* PSCI SYSTEM_RESET (SMC32).  ATF owns the actual board reset. */
+	fn = 0x84000009ULL;
+	__asm__ volatile("mov x0, %0\n\tsmc #0"
+		:: "r"(fn) : "x0", "memory");
+	for(;;)
+		__asm__ volatile("wfi");
 }
 
 Mach *
