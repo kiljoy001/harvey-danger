@@ -171,6 +171,7 @@ static const Fdtclass classtab[] = {
 	{ "rockchip,rk3568-rknpu", Fdtclassnpu },
 	{ "rockchip,rk3568-gpu", Fdtclassgpu },
 	{ "arm,mali-bifrost", Fdtclassgpu },
+	{ "rockchip,rk3566-vop", Fdtclassvop },
 	{ "rockchip,rk3568-vop", Fdtclassvop },
 	{ "rockchip,rk3568-dw-hdmi", Fdtclasshdmi },
 	{ "rockchip,rk3568-mipi-dsi", Fdtclassdsi },
