@@ -239,9 +239,9 @@ timing(Vmode *m)
 	/* No post scaling. */
 	vopwr(Vp0PostSclFac, 0);
 	vopwr(Vp0PostSclCtrl, 0);
-	/* RK3568 VP0 default pre-scan/bg delays: bg_dly=42, hsync=44. */
-	vopwr(Vp0PreScan, 0x03e9002c);
-	vopwr(Vp0BgMix, 42 << 24);
+	/* VP0 has five mixers and port mux 0: bg_dly = 42 - 10 = 32. */
+	vopwr(Vp0PreScan, 0x03df002c);
+	vopwr(Vp0BgMix, 32 << 24);
 	vopwr(Vp0DspBg, 0x3fc00000);	/* red background for path test */
 	vopwr(Vp0BcshCtrl, 0);
 	vopwr(Vp0BcshBcs, 0);
@@ -279,9 +279,11 @@ window(void)
 
 	/* Smart0 is layer 3.  One layer on VP0.  Make layer/port mux
 	 * configuration take effect immediately, as Linux does. */
-	vopwr(VopOvlLayerSel, 3);
-	/* Empirically required with our current layer/mixer state. */
-	vopwr(VopOvlPortSel, 0x880);
+	/* Orange Pi VP0 plane-mask initial map, then active Smart0 -> layer0.
+	 * Layers 0..5: Smart0, Cluster1, Esmart0, Esmart1, Cluster0, Smart1. */
+	vopwr(VopOvlLayerSel, 0x00706213);
+	/* One active VP0 layer; VP1 has no layers; VP2 fixed at 7. */
+	vopwr(VopOvlPortSel, 0x700);
 	vopwr(VopOvlCtrl, 1 << 28);
 
 	/* Smart0 delay field is bits 16..23. */
@@ -560,6 +562,8 @@ vop2init(Fdtinfo *info)
 	microdelay(50000);
 	print(" stat1 %x\n", voprd(0x60));
 	rkiommufault(mmu);
+#ifdef RK_DISPLAY_PROBE
 	displayprobe(mmu, fb);
+#endif
 	return 0;
 }
