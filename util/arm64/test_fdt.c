@@ -69,6 +69,34 @@ main(int argc, char **argv)
 	fclose(f);
 	if(n < 80 || fdtparse(original, n, &info) < 0)
 		return 1;
+	if(argc == 3 && strcmp(argv[2], "h6") == 0){
+		if(info.nmemory != 1 || info.memory[0].base != 0x40000000 ||
+		   info.memory[0].size != 0x80000000 ||
+		   info.uartbase != 0x05000000 || info.uarttype != Fdtdwuart ||
+		   info.gicdist != 0x03021000 || info.giccpu != 0x03022000 ||
+		   info.gicversion != 2 || info.timerirq != 27 ||
+		   fdtselectram(&info, 0x40080000, 0x40400000) < 0 ||
+		   info.rambase != 0x40000000 || info.ramsize != 0x80000000 ||
+		   finddev(&info, Fdtclassmmc) < 0 ||
+		   finddev(&info, Fdtclassgpio) < 0 ||
+		   finddev(&info, Fdtclassi2c) < 0 ||
+		   finddev(&info, Fdtclassgmac) < 0 ||
+		   finddev(&info, Fdtclassuart) < 0 || info.ndev != 5){
+			fprintf(stderr, "h6: memory %u selected %#llx/%#llx uart %#llx/%u gic %#llx/%#llx/%u timer %u ndev %u\n",
+			        info.nmemory,
+			        (unsigned long long)info.rambase,
+			        (unsigned long long)info.ramsize,
+			        (unsigned long long)info.uartbase, info.uarttype,
+			        (unsigned long long)info.gicdist,
+			        (unsigned long long)info.giccpu,
+			        info.gicversion, info.timerirq, info.ndev);
+			return 1;
+		}
+		free(work);
+		free(original);
+		puts("FDT Orange Pi 3 H6 discovery PASS");
+		return 0;
+	}
 	if(argc == 3){
 		if(strcmp(argv[2], "board") != 0 ||
 		   info.nmemory != 2 || info.memory[0].base != 0x20000000 ||

@@ -63,8 +63,9 @@ qemu-system-aarch64 -machine virt -cpu cortex-a57 -m 512M -smp 1 \
     -nographic -monitor none -kernel build/arm64-kernel/harvey.img
 ```
 
-The **same** `build/arm64-kernel/harvey.img` is used with QEMU `virt` and the
-Orange Pi 3B. No board flag or separate kernel build is needed. The firmware
+The **same** `build/arm64-kernel/harvey.img` is used with QEMU `virt`, the
+Orange Pi 3B (RK3566), and the Orange Pi 3 (Allwinner H6). No board flag or
+separate kernel build is needed. The firmware
 passes a device tree in `x0`; the kernel chooses its console, timer controller,
 MMIO ranges, and a RAM bank containing the loaded Image from that tree. The
 current Image is linked at `0x40080000`, so firmware must place it there. A
@@ -110,6 +111,36 @@ also requires invalidating the instruction-cache alias used by its user
 virtual address. A local `ic iallu` currently handles that single-core boot
 probe; SMP code replacement will need cross-core synchronization. The board
 has no virtio-9P device attached, so the optional `#9` exchange is skipped.
+
+### Orange Pi 3 (Allwinner H6)
+
+The H6 path is earlier than the RK3566 path. The common early kernel now
+recognizes the H6's `arm,gic-400` GICv2, its DesignWare UART0, the ARMv8
+timer, and the H6 MMC/GPIO/I2C/EMAC device-tree classes. `test_fdt.py` builds
+`testdata/h6-orangepi3.dts` and checks the expected memory, console, GIC,
+timer, and class discovery.
+
+Boot contract:
+
+```text
+load harvey.img at 0x40080000
+load the full OS sun50i-h6-orangepi-3.dtb at 0x48000000
+booti 0x40080000 - 0x48000000
+```
+
+The early UART assumes firmware/U-Boot has already initialized UART0
+(`serial0`, 115200). The next hardware step is a serial boot on the board to
+confirm the H6 GIC-400, timer, MMU, and EL0 probes before adding storage or
+network drivers.
+
+Still missing for an interactive H6 system:
+
+- sunxi MMC/SD and eMMC user-space driver, for a real root filesystem
+- H6 pinctrl/GPIO backend instead of the RK356x register layout
+- H6 I2C and AXP805 PMIC/regulator support
+- H6 EMAC (`dwmac-sun8i`) plus the board PHY/MDIO setup
+- USB, HDMI/display, and thermal/RTC support
+- a durable U-Boot/ATF/SD-card boot image rather than manual TFTP/`booti`
 
 ### SoC family and board drivers
 

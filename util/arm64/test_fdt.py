@@ -9,6 +9,7 @@ ROOT = Path(__file__).resolve().parents[2]
 OUT = ROOT / "build/arm64"
 DTB = OUT / "qemu-virt.dtb"
 BOARD = OUT / "test-board.dtb"
+H6 = OUT / "h6-orangepi3.dtb"
 TEST = OUT / "test-fdt"
 
 
@@ -18,6 +19,8 @@ def main() -> None:
                     "-cpu", "cortex-a57", "-m", "512M", "-nographic"], check=True)
     subprocess.run(["dtc", "-q", "-I", "dts", "-O", "dtb", "-o", str(BOARD),
                     str(ROOT / "util/arm64/testdata/board.dts")], check=True)
+    subprocess.run(["dtc", "-q", "-I", "dts", "-O", "dtb", "-o", str(H6),
+                    str(ROOT / "util/arm64/testdata/h6-orangepi3.dts")], check=True)
     subprocess.run(["cc", "-O1", "-g", "-fsanitize=address,undefined",
                     "-fno-omit-frame-pointer", "-Wall", "-Wextra", "-Werror",
                     "-D_XOPEN_SOURCE=700",
@@ -27,6 +30,7 @@ def main() -> None:
                     str(ROOT / "sys/src/9/aarch64/fdt.c"), "-o", str(TEST)], check=True)
     subprocess.run([str(TEST), str(DTB)], check=True)
     subprocess.run([str(TEST), str(BOARD), "board"], check=True)
+    subprocess.run([str(TEST), str(H6), "h6"], check=True)
 
 
 if __name__ == "__main__":

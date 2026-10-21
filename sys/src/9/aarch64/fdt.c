@@ -127,6 +127,18 @@ struct Fdtclass {
 static const Fdtclass classtab[] = {
 	{ "snps,dw-apb-uart", Fdtclassuart },
 	{ "arm,pl011", Fdtclassuart },
+	/* Allwinner H6 (Orange Pi 3) and related sun50i boards. */
+	{ "allwinner,sun50i-h6-mmc", Fdtclassmmc },
+	{ "allwinner,sun50i-h6-emmc", Fdtclassmmc },
+	{ "allwinner,sun50i-a64-mmc", Fdtclassmmc },
+	{ "allwinner,sun50i-a64-emmc", Fdtclassmmc },
+	{ "allwinner,sun50i-h6-pinctrl", Fdtclassgpio },
+	{ "allwinner,sun50i-h6-r-pinctrl", Fdtclassgpio },
+	{ "allwinner,sun6i-a31-i2c", Fdtclassi2c },
+	{ "allwinner,sun50i-h6-i2c", Fdtclassi2c },
+	{ "allwinner,sun50i-h6-pwm", Fdtclasspwm },
+	{ "allwinner,sun50i-h6-emac", Fdtclassgmac },
+	{ "allwinner,sun8i-h3-emac", Fdtclassgmac },
 	{ "rockchip,rk3568-i2c", Fdtclassi2c },
 	{ "rockchip,rk3399-i2c", Fdtclassi2c },
 	{ "rockchip,rk3568-spi", Fdtclassspi },
@@ -429,9 +441,11 @@ fdtparse(void *blob, usize bytes, Fdtinfo *out)
 				node->uart = node->uarttype != 0;
 				if(hascompat(value, len, "arm,gic-v3"))
 					node->gicversion = 3;
-				else if(hascompat(value, len, "arm,cortex-a15-gic"))
+				else if(hascompat(value, len, "arm,cortex-a15-gic") ||
+				        hascompat(value, len, "arm,gic-400"))
 					node->gicversion = 2;
 				node->gic = hascompat(value, len, "arm,cortex-a15-gic") ||
+				            hascompat(value, len, "arm,gic-400") ||
 				            hascompat(value, len, "arm,gic-v3");
 				node->timer = hascompat(value, len, "arm,armv8-timer");
 				node->virtio = hascompat(value, len, "virtio,mmio");

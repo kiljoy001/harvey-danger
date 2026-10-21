@@ -1,0 +1,63 @@
+/dts-v1/;
+
+/ {
+	compatible = "xunlong,orangepi-3", "allwinner,sun50i-h6";
+	#address-cells = <2>;
+	#size-cells = <2>;
+
+	aliases {
+		serial0 = &uart0;
+	};
+
+	chosen {
+		stdout-path = "serial0:115200n8";
+	};
+
+	memory@40000000 {
+		device_type = "memory";
+		reg = <0x0 0x40000000 0x0 0x80000000>;
+	};
+
+	gic: interrupt-controller@3021000 {
+		compatible = "arm,gic-400";
+		reg = <0x0 0x03021000 0x0 0x1000>,
+		      <0x0 0x03022000 0x0 0x2000>;
+		interrupt-controller;
+		#interrupt-cells = <3>;
+	};
+
+	timer {
+		compatible = "arm,armv8-timer";
+		interrupts = <1 13 4>, <1 14 4>, <1 11 4>, <1 10 4>;
+	};
+
+	uart0: serial@5000000 {
+		compatible = "snps,dw-apb-uart";
+		reg = <0x0 0x05000000 0x0 0x400>;
+		interrupts = <0 0 4>;
+	};
+
+	mmc0: mmc@4020000 {
+		compatible = "allwinner,sun50i-h6-mmc", "allwinner,sun50i-a64-mmc";
+		reg = <0x0 0x04020000 0x0 0x1000>;
+		interrupts = <0 35 4>;
+	};
+
+	pio: pinctrl@300b000 {
+		compatible = "allwinner,sun50i-h6-pinctrl";
+		reg = <0x0 0x0300b000 0x0 0x400>;
+		interrupts = <0 43 4>;
+	};
+
+	i2c0: i2c@5002000 {
+		compatible = "allwinner,sun6i-a31-i2c";
+		reg = <0x0 0x05002000 0x0 0x400>;
+		interrupts = <0 8 4>;
+	};
+
+	gmac: ethernet@5020000 {
+		compatible = "allwinner,sun50i-h6-emac", "allwinner,sun8i-h3-emac";
+		reg = <0x0 0x05020000 0x0 0x1000>;
+		interrupts = <0 5 4>;
+	};
+};
