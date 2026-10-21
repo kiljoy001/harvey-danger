@@ -74,6 +74,8 @@ enum {
 	Smart0SclFac	= 0x1c34,
 	Smart0SclCbr	= 0x1c38,
 	Smart0SclOff	= 0x1c3c,
+	Smart0ColorKey	= 0x1cd0,
+	Smart0Bg	= 0x1cd4,
 	SmartDly	= 0x6f8,
 	Vp0BgMix	= 0x6e0,
 };
@@ -238,8 +240,8 @@ timing(Vmode *m)
 	vopwr(Vp0PostSclFac, 0);
 	vopwr(Vp0PostSclCtrl, 0);
 	/* RK3568 VP0 default pre-scan/bg delays: bg_dly=42, hsync=44. */
-	vopwr(Vp0PreScan, 0x03df002c);
-	vopwr(Vp0BgMix, 32 << 24);
+	vopwr(Vp0PreScan, 0x03e9002c);
+	vopwr(Vp0BgMix, 42 << 24);
 	vopwr(Vp0DspBg, 0x3fc00000);	/* red background for path test */
 	vopwr(Vp0BcshCtrl, 0);
 	vopwr(Vp0BcshBcs, 0);
@@ -271,12 +273,15 @@ window(void)
 	vopwr(Smart0SclFac, 0);
 	vopwr(Smart0SclCbr, 0);
 	vopwr(Smart0SclOff, 0);
+	/* vop2_plane_setup_background/color_key: disabled for this plane. */
+	vopwr(Smart0ColorKey, 0);
+	vopwr(Smart0Bg, 0);
 
 	/* Smart0 is layer 3.  One layer on VP0.  Make layer/port mux
 	 * configuration take effect immediately, as Linux does. */
 	vopwr(VopOvlLayerSel, 3);
-	/* Linux cumulative mux calculation for one SDR window on VP0. */
-	vopwr(VopOvlPortSel, 0x700);
+	/* Empirically required with our current layer/mixer state. */
+	vopwr(VopOvlPortSel, 0x880);
 	vopwr(VopOvlCtrl, 1 << 28);
 
 	/* Smart0 delay field is bits 16..23. */
@@ -355,6 +360,99 @@ fbmap(Rkiommu *mmu)
 				[(iova >> RkiommuPteshift) & RkiommuPtemask]);
 	}
 	return 1;
+}
+
+/* Temporary bring-up console: all register offsets are relative to VOP. */
+static void
+displayprobe(Rkiommu *mmu, u64 fb)
+{
+	volatile u32 *uart = (volatile u32 *)0xfe660000;
+	char line[80], *end;
+	int n = 0, c, k;
+	u32 reg, value;
+
+	print("DISPLAY-PROBE: r offset, w offset value, d dump, b background, c bars, i iova, p physical, q boot\n");
+	for(;;){
+		if(!(uart[0x14/4] & 1)){
+			microdelay(100);
+			continue;
+		}
+		c = uart[0] & 0xff;
+		if(c != '\r' && c != '\n'){
+			if(n < sizeof line - 1)
+				line[n++] = c;
+			continue;
+		}
+		if(n == 0)
+			continue;
+		line[n] = 0;
+		n = 0;
+		print("probe: %s\n", line);
+		switch(line[0]){
+		case 'q': return;
+		case 'r':
+		case 'w':
+			reg = strtoul(line+1, &end, 16);
+			if(reg >= 0x3000 || (reg & 3)){
+				print("bad offset\n");
+				break;
+			}
+			if(line[0] == 'w'){
+				value = strtoul(end, nil, 16);
+				vopwr(reg, value);
+				vopwr(VopCfgDone, 0x8001);
+				microdelay(50000);
+			}
+			print("vop[%x] = %x\n", reg, voprd(reg));
+			break;
+		case 'b':
+			vopwr(Smart0Region0Ctrl, 0);
+			vopwr(Vp0ColorBar, 0);
+			vopwr(VopCfgDone, 0x8001);
+			break;
+		case 'c':
+			vopwr(Vp0ColorBar, 1);
+			vopwr(VopCfgDone, 0x8001);
+			break;
+		case 'i':
+		case 'p':
+			vopwr(Smart0Region0Ctrl, 0);
+			vopwr(VopCfgDone, 0x8001);
+			microdelay(50000);
+			if(line[0] == 'p'){
+				if(fb <= 1 || fb >> 32){
+					print("no contiguous 32-bit framebuffer\n");
+					break;
+				}
+				rkiommudisable(mmu);
+				vopwr(Smart0YrgbMst, fb);
+			}else{
+				rkiommuenable(mmu);
+				vopwr(Smart0YrgbMst, FbIova);
+			}
+			vopwr(Vp0ColorBar, 0);
+			vopwr(Smart0Region0Ctrl, 1);
+			vopwr(VopCfgDone, 0x8001);
+			break;
+		case 'd':
+			print("fb pa %llx first %x middle %x\n", fb,
+				fb > 1 ? ((u32 *)KADDR(fb))[0] : 0,
+				fb > 1 ? ((u32 *)KADDR(fb))[FbWidth*100] : 0);
+			for(k = 0; k < mmu->nbase; k++){
+				volatile u32 *m = (volatile u32 *)mmu->base[k];
+				print("mmu%d dt %x status %x raw %x fault %x\n", k, m[0], m[1], m[5], m[3]);
+			}
+			print("vop status %x/%x vp raw %x sys raw %x/%x\n",
+				voprd(0x60), voprd(0x64), voprd(0xac), voprd(0x8c), voprd(0x9c));
+			print("hdmi phy %x fcstat %x/%x/%x\n",
+				((volatile u32 *)HdmiBase)[HDMI_PHY_STAT0],
+				((volatile u32 *)HdmiBase)[0x100],
+				((volatile u32 *)HdmiBase)[0x101],
+				((volatile u32 *)HdmiBase)[0x102]);
+			break;
+		}
+		print("probe ready\n");
+	}
 }
 
 int
@@ -462,5 +560,6 @@ vop2init(Fdtinfo *info)
 	microdelay(50000);
 	print(" stat1 %x\n", voprd(0x60));
 	rkiommufault(mmu);
+	displayprobe(mmu, fb);
 	return 0;
 }
