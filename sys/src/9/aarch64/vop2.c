@@ -227,7 +227,7 @@ timing(Vmode *m)
 	vopwr(Vp0PostSclFac, 0);
 	vopwr(Vp0PostSclCtrl, 0);
 	vopwr(Vp0PreScan, 0);
-	vopwr(Vp0DspBg, 0);
+	vopwr(Vp0DspBg, 0x3fc00000);	/* red background for path test */
 	vopwr(Vp0BcshCtrl, 0);
 	vopwr(Vp0BcshBcs, 0);
 	vopwr(Vp0BcshH, 0);
@@ -388,8 +388,8 @@ vop2init(Fdtinfo *info)
 	vopwr(VopDspIfPol, (1 << 28) | (1 << 7));
 	vopwr(VopDspIfEn, (0 << 10) | (1 << 1));
 
-	/* Keep the VOP color-bar generator available as a path test. */
-	vopwr(Vp0ColorBar, 1);
+	/* Use the solid background as a path test. */
+	vopwr(Vp0ColorBar, 0);
 
 	/* Global config done + VP0 config done. */
 	vopwr(VopCfgDone, 0x8001);
