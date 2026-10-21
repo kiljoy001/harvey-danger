@@ -17,8 +17,8 @@
 #include "vop2.h"
 
 enum {
-	CruBase		= 0xfdd00000,
-	PmucruBase	= 0xfdd20000,
+	CruBase		= 0xfdd20000,
+	PmucruBase	= 0xfdd00000,
 	PmuBase		= 0xfdd90000,
 	GrfBase		= 0xfdc60000,
 	VopBase		= 0xfe040000,
