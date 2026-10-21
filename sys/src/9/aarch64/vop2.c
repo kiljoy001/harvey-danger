@@ -61,19 +61,19 @@ enum {
 	Vp0BcshBcs	= 0xc64,
 	Vp0BcshH	= 0xc68,
 
-	/* Esmart0 window registers (test alternate primary window) */
-	Smart0Ctrl0	= 0x1800,
-	Smart0Ctrl1	= 0x1804,
-	Smart0Region0Ctrl = 0x1810,
-	Smart0YrgbMst	= 0x1814,
-	Smart0Vir	= 0x181c,
-	Smart0ActInfo	= 0x1820,
-	Smart0DspInfo	= 0x1824,
-	Smart0DspSt	= 0x1828,
-	Smart0SclCtrl	= 0x1830,
-	Smart0SclFac	= 0x1834,
-	Smart0SclCbr	= 0x1838,
-	Smart0SclOff	= 0x183c,
+	/* Smart0 window registers */
+	Smart0Ctrl0	= 0x1c00,
+	Smart0Ctrl1	= 0x1c04,
+	Smart0Region0Ctrl = 0x1c10,
+	Smart0YrgbMst	= 0x1c14,
+	Smart0Vir	= 0x1c1c,
+	Smart0ActInfo	= 0x1c20,
+	Smart0DspInfo	= 0x1c24,
+	Smart0DspSt	= 0x1c28,
+	Smart0SclCtrl	= 0x1c30,
+	Smart0SclFac	= 0x1c34,
+	Smart0SclCbr	= 0x1c38,
+	Smart0SclOff	= 0x1c3c,
 	SmartDly	= 0x6f8,
 	Vp0BgMix	= 0x6e0,
 };
@@ -274,15 +274,15 @@ window(void)
 
 	/* Smart0 is layer 3.  One layer on VP0.  Make layer/port mux
 	 * configuration take effect immediately, as Linux does. */
-	vopwr(VopOvlLayerSel, 2);
+	vopwr(VopOvlLayerSel, 3);
 	/* VP0 has one layer; VP1/VP2 have none (mux value 8). */
 	vopwr(VopOvlPortSel, 0x880);
 	vopwr(VopOvlCtrl, 1 << 28);
 
-	/* Default window delay for Esmart0 is 20. */
-	vopwr(SmartDly, 20);
+	/* Smart0 delay field is bits 16..23. */
+	vopwr(SmartDly, 20 << 16);
 
-	/* ARGB8888, enable Esmart0 scanout from the IOMMU-mapped buffer. */
+	/* ARGB8888, enable Smart0 scanout from the IOMMU-mapped buffer. */
 	vopwr(Smart0Region0Ctrl, 1);
 }
 
