@@ -61,19 +61,19 @@ enum {
 	Vp0BcshBcs	= 0xc64,
 	Vp0BcshH	= 0xc68,
 
-	/* Smart0 window registers */
-	Smart0Ctrl0	= 0x1c00,
-	Smart0Ctrl1	= 0x1c04,
-	Smart0Region0Ctrl = 0x1c10,
-	Smart0YrgbMst	= 0x1c14,
-	Smart0Vir	= 0x1c1c,
-	Smart0ActInfo	= 0x1c20,
-	Smart0DspInfo	= 0x1c24,
-	Smart0DspSt	= 0x1c28,
-	Smart0SclCtrl	= 0x1c30,
-	Smart0SclFac	= 0x1c34,
-	Smart0SclCbr	= 0x1c38,
-	Smart0SclOff	= 0x1c3c,
+	/* Esmart0 window registers (test alternate primary window) */
+	Smart0Ctrl0	= 0x1800,
+	Smart0Ctrl1	= 0x1804,
+	Smart0Region0Ctrl = 0x1810,
+	Smart0YrgbMst	= 0x1814,
+	Smart0Vir	= 0x181c,
+	Smart0ActInfo	= 0x1820,
+	Smart0DspInfo	= 0x1824,
+	Smart0DspSt	= 0x1828,
+	Smart0SclCtrl	= 0x1830,
+	Smart0SclFac	= 0x1834,
+	Smart0SclCbr	= 0x1838,
+	Smart0SclOff	= 0x183c,
 };
 
 static volatile u32 *cru;
@@ -261,12 +261,12 @@ window(void)
 
 	/* Smart0 is layer 3.  One layer on VP0.  Make layer/port mux
 	 * configuration take effect immediately, as Linux does. */
-	vopwr(VopOvlLayerSel, 3);
+	vopwr(VopOvlLayerSel, 2);
 	vopwr(VopOvlPortSel, 0x700);
 	vopwr(VopOvlCtrl, 1 << 28);
 
-	/* Color-bar isolation: leave the window disabled for this boot. */
-	vopwr(Smart0Region0Ctrl, 0);
+	/* ARGB8888, enable Esmart0. */
+	vopwr(Smart0Region0Ctrl, 1);
 }
 
 static void
