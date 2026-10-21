@@ -120,7 +120,7 @@ vopread(Chan *c, void *a, i32 n, i64 offset)
 	case Qctl:
 		if(vopfb.size == 0)
 			return 0;
-		snprint(buf, sizeof buf, "vop 1 xrgb8888 %ud %ud %ud\n",
+		snprint(buf, sizeof buf, "vop 1 xrgb8888 %u %u %u\n",
 			vopfb.width, vopfb.height, vopfb.stride);
 		return readstr(offset, a, n, buf);
 	case Qdata:
@@ -138,7 +138,7 @@ vopread(Chan *c, void *a, i32 n, i64 offset)
 		return n;
 	case Qevents:
 		qlock(&voplk);
-		snprint(buf, sizeof buf, "frame %llud\n", vopfb.seq);
+		snprint(buf, sizeof buf, "frame %llu\n", vopfb.seq);
 		qunlock(&voplk);
 		if(n > (i32)strlen(buf))
 			n = strlen(buf);

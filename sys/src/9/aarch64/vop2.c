@@ -611,7 +611,7 @@ vop2init(Fdtinfo *info)
 	vopfb.height = FbHeight;
 	vopfb.stride = FbStride;
 	vopfb.format = 0;		/* XRGB8888 */
-	print("vop2: vopfb pa %#llx size %llud stride %ud\n",
+	print("vop2: vopfb pa %#llx size %llu stride %u\n",
 		vopfb.pa, vopfb.size, vopfb.stride);
 	if(rkiommuenable(mmu) < 0){
 		print("vop2: IOMMU enable failed\n");
