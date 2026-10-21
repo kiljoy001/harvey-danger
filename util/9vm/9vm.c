@@ -48,6 +48,7 @@ static uint64_t hostring_requests;
 static uint64_t virtio_host_kicks;
 static uint64_t vm_io_exits;
 static uint64_t vm_mmio_exits;
+static uint64_t hlt_exits;
 static struct vmdisplay *vm_display;
 static int vm_display_fd = -1;
 static char vm_display_name[128];
@@ -211,8 +212,13 @@ static void hostring_stop(void) {
 }
 
 static uint8_t uart_scr = 0;
-static volatile uint8_t uart_rx_char = 0;   /* pending UART RX character (from stdin) */
-static volatile int uart_rx_ready = 0;       /* 1 while a character is pending */
+/* UART receive FIFO (16550 has 16; use a larger one so the host can
+ * drain the stdin pipe in one go and deliver console input quickly to a
+ * guest that only polls the RBR from its periodic clock). */
+#define UART_RX_FIFO 512
+static volatile uint8_t uart_rx_buf[UART_RX_FIFO];
+static volatile unsigned uart_rx_head = 0;   /* next byte the guest reads */
+static volatile unsigned uart_rx_tail = 0;   /* next byte the host writes */
 static int g_vm = -1;                        /* KVM VM fd, for the stdin thread */
 static volatile sig_atomic_t vm_running = 1;
 static void vm_sig_handler(int sig) {
@@ -1548,12 +1554,15 @@ int main(int argc, char **argv) {
 
     while (vm_running) {
         /* poll stdin and feed it to the UART (0x3F8) as receive data */
-        if (!uart_rx_ready) {
-            uint8_t c;
-            ssize_t n = read(STDIN_FILENO, &c, 1);
-            if (n == 1) {
-                uart_rx_char = c;
-                uart_rx_ready = 1;
+        {
+            unsigned free_slots = (uart_rx_head - uart_rx_tail - 1) & (UART_RX_FIFO - 1);
+            if (free_slots > 0) {
+                uint8_t buf[256];
+                ssize_t n = read(STDIN_FILENO, buf, free_slots < sizeof(buf) ? free_slots : sizeof(buf));
+                for (ssize_t i = 0; i < n; i++) {
+                    uart_rx_buf[uart_rx_tail & (UART_RX_FIFO - 1)] = buf[i];
+                    uart_rx_tail++;
+                }
             }
         }
 
@@ -1610,14 +1619,18 @@ int main(int argc, char **argv) {
                 /* IN instruction */
                 if (run->io.port == 0x3FD) {
                     /* Line Status Register: bit0 = RX data ready, bits5-6 = THR/TX empty */
-                    *data = 0x20 | 0x40 | (uart_rx_ready ? 0x01 : 0x00);
+                    *data = 0x20 | 0x40 | (uart_rx_head != uart_rx_tail ? 0x01 : 0x00);
                 } else if (run->io.port == 0x3F8) {
                     /* RBR: return the received character, clear data-ready */
-                    *data = uart_rx_char;
-                    uart_rx_ready = 0;
+                    if (uart_rx_head != uart_rx_tail) {
+                        *data = uart_rx_buf[uart_rx_head & (UART_RX_FIFO - 1)];
+                        uart_rx_head++;
+                    } else {
+                        *data = 0;
+                    }
                 } else if (run->io.port == 0x3FA) {
                     /* IIR: 0x04 = receive data available, 0x01 = no interrupt */
-                    *data = uart_rx_ready ? 0x04 : 0x01;
+                    *data = (uart_rx_head != uart_rx_tail) ? 0x04 : 0x01;
                 } else if (run->io.port == 0x3FF) {
                     *data = uart_scr;
                 } else if (run->io.port >= 0xCF8 && run->io.port <= 0xCFF) {
@@ -1664,9 +1677,16 @@ int main(int argc, char **argv) {
             break;
         }
         case KVM_EXIT_HLT:
-            fprintf(stderr, "\n[9vm] Guest CPU halted.\n");
-            hostring_stop();
-            return 0;
+            /* The guest's idle loop halted to wait for the next interrupt.
+             * Block until the periodic SIGALRM (20ms) lets the host clock
+             * advance, then re-enter the guest so KVM can inject the LAPIC
+             * timer interrupt (TSC-deadline) and wake the halted vCPU.
+             * Guest shutdown is signalled via port 0xF4, not HLT. */
+            hlt_exits++;
+            if (hlt_exits == 1)
+                fprintf(stderr, "[9vm] first HLT (idle), re-entering\n");
+            pause();
+            continue;
         case KVM_EXIT_FAIL_ENTRY:
             fprintf(stderr, "[9vm] Hardware entry failure: 0x%llx\n",
                     (unsigned long long)run->fail_entry.hardware_entry_failure_reason);
