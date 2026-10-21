@@ -209,10 +209,36 @@ static void hostring_stop(void) {
 }
 
 static uint8_t uart_scr = 0;
+static volatile uint8_t uart_rx_char = 0;   /* pending UART RX character (from stdin) */
+static volatile int uart_rx_ready = 0;       /* 1 while a character is pending */
+static int g_vm = -1;                        /* KVM VM fd, for the stdin thread */
 static volatile sig_atomic_t vm_running = 1;
 static void vm_sig_handler(int sig) {
     (void)sig;
     vm_running = 0;
+}
+
+/* Read stdin and feed each character to the UART (0x3F8) as receive data,
+ * injecting IRQ 4 to wake the (possibly HLTed) guest. */
+static void *stdin_thread(void *arg) {
+    (void)arg;
+    while (vm_running) {
+        uint8_t c;
+        ssize_t n = read(STDIN_FILENO, &c, 1);
+        if (n == 1) {
+            while (uart_rx_ready && vm_running)
+                usleep(1000);
+            if (!vm_running)
+                break;
+            uart_rx_char = c;
+            uart_rx_ready = 1;
+            struct kvm_irq_level irq = { .irq = 4, .level = 1 };
+            ioctl(g_vm, KVM_IRQ_LINE, &irq);
+        } else {
+            break;  /* EOF or error */
+        }
+    }
+    return NULL;
 }
 
 struct multiboot_mmap_entry {
@@ -1187,6 +1213,7 @@ int main(int argc, char **argv) {
         perror("KVM_CREATE_VM");
         return 1;
     }
+    g_vm = vm;
 
     if (ioctl(vm, KVM_CREATE_IRQCHIP, 0) < 0) {
         perror("KVM_CREATE_IRQCHIP");
@@ -1320,6 +1347,10 @@ int main(int argc, char **argv) {
     static bool first_exit = true;
     static bool first_uart = true;
 
+    /* start a thread to read stdin and feed it to the UART (0x3F8) */
+    pthread_t stdin_tid;
+    pthread_create(&stdin_tid, NULL, stdin_thread, NULL);
+
     while (vm_running) {
         if (ioctl(vcpu, KVM_RUN, 0) < 0) {
             if (errno == EINTR) {
@@ -1372,10 +1403,19 @@ int main(int argc, char **argv) {
             } else {
                 /* IN instruction */
                 if (run->io.port == 0x3FD) {
-                    /* Line Status Register: always ready to transmit */
-                    *data = 0x20 | 0x40;
+                    /* Line Status Register: bit0 = RX data ready, bits5-6 = THR/TX empty */
+                    *data = 0x20 | 0x40 | (uart_rx_ready ? 0x01 : 0x00);
                 } else if (run->io.port == 0x3F8) {
-                    *data = 0;
+                    /* RBR: return the received character, clear data-ready + IRQ 4 */
+                    *data = uart_rx_char;
+                    if (uart_rx_ready) {
+                        uart_rx_ready = 0;
+                        struct kvm_irq_level irq = { .irq = 4, .level = 0 };
+                        ioctl(vm, KVM_IRQ_LINE, &irq);
+                    }
+                } else if (run->io.port == 0x3FA) {
+                    /* IIR: 0x04 = receive data available, 0x01 = no interrupt */
+                    *data = uart_rx_ready ? 0x04 : 0x01;
                 } else if (run->io.port == 0x3FF) {
                     *data = uart_scr;
                 } else if (run->io.port >= 0xCF8 && run->io.port <= 0xCFF) {
