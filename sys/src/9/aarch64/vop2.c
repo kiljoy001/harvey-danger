@@ -74,6 +74,8 @@ enum {
 	Smart0SclFac	= 0x1834,
 	Smart0SclCbr	= 0x1838,
 	Smart0SclOff	= 0x183c,
+	SmartDly	= 0x6f8,
+	Vp0BgMix	= 0x6e0,
 };
 
 static volatile u32 *cru;
@@ -226,7 +228,9 @@ timing(Vmode *m)
 	/* No post scaling. */
 	vopwr(Vp0PostSclFac, 0);
 	vopwr(Vp0PostSclCtrl, 0);
-	vopwr(Vp0PreScan, 0);
+	/* RK3568 VP0 default pre-scan/bg delays: bg_dly=42, hsync=44. */
+	vopwr(Vp0PreScan, 0x03e9002c);
+	vopwr(Vp0BgMix, 42 << 24);
 	vopwr(Vp0DspBg, 0x3fc00000);	/* red background for path test */
 	vopwr(Vp0BcshCtrl, 0);
 	vopwr(Vp0BcshBcs, 0);
@@ -264,6 +268,9 @@ window(void)
 	vopwr(VopOvlLayerSel, 2);
 	vopwr(VopOvlPortSel, 0x700);
 	vopwr(VopOvlCtrl, 1 << 28);
+
+	/* Default window delay for Esmart0 is 20. */
+	vopwr(SmartDly, 20);
 
 	/* ARGB8888, enable Esmart0. */
 	vopwr(Smart0Region0Ctrl, 1);
