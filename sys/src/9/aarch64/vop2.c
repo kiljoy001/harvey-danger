@@ -133,20 +133,29 @@ hpllstart(void)
 	int i;
 	u32 v;
 
+	/* Put HPLL in slow mode before changing its dividers, as Linux does. */
+	pmucruhi(0x80, 3 << 2, 0);
+	microdelay(1000);
+
 	/* HPLL: 24 MHz * 99 / 1 / 4 / 4 = 148.5 MHz. */
 	pmucruhi(0x40, 0xfff | (0x7 << 12), 99 | (4 << 12));
 	pmucruhi(0x44, 0x3f | (0x7 << 6) | (1 << 12) | (1 << 13) | (1 << 15),
 		 1 | (4 << 6) | (1 << 12));	/* PLLPDSEL=0 */
-	pmucruhi(0x80, 3 << 2, 1 << 2);	/* normal mode */
+	microdelay(1000);
 	for(i = 0; i < 100; i++){
 		v = pmucru[0x44/4];
 		if(v & (1 << 10))
-			return 0;
+			break;
 		microdelay(1000);
 	}
-	print("vop2: hpll lock timeout, con0 %x con1 %x\n",
-		pmucru[0x40/4], pmucru[0x44/4]);
-	return -1;
+	pmucruhi(0x80, 3 << 2, 1 << 2);	/* normal mode */
+	microdelay(1000);
+	if(i == 100){
+		print("vop2: hpll lock timeout, con0 %x con1 %x\n",
+			pmucru[0x40/4], pmucru[0x44/4]);
+		return -1;
+	}
+	return 0;
 }
 
 static int
@@ -182,8 +191,8 @@ clocks(void)
 	/* PCLK_HDMI_HOST, CLK_HDMI_SFR, CLK_HDMI_CEC */
 	cruhi(0x354, (1 << 3) | (1 << 4) | (1 << 5), 0);
 
-	/* Test GPLL/8 (U-Boot reports GPLL 1188 MHz) for DCLK_VOP0. */
-	cru[0x19c/4] = (2 << 10) | 7;
+	/* DCLK_VOP0 <- HPLL, divider 1. */
+	cru[0x19c/4] = 0;
 
 	/* HDMI reference clock <- xin24m. */
 	pmucruhi(0x120, 1 << 7, 0);
