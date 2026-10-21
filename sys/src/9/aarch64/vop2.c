@@ -275,7 +275,8 @@ window(void)
 	/* Smart0 is layer 3.  One layer on VP0.  Make layer/port mux
 	 * configuration take effect immediately, as Linux does. */
 	vopwr(VopOvlLayerSel, 2);
-	vopwr(VopOvlPortSel, 0x700);
+	/* VP0 has one layer; VP1/VP2 have none (mux value 8). */
+	vopwr(VopOvlPortSel, 0x880);
 	vopwr(VopOvlCtrl, 1 << 28);
 
 	/* Default window delay for Esmart0 is 20. */
@@ -322,6 +323,9 @@ fbmap(Rkiommu *mmu)
 			physfree(pa, FbSize);
 			return 0;
 		}
+		print("vop2: fb pa %#llx pte %#x\n", pa,
+			mmu->dom->pt[(FbIova >> RkiommuDteshift) & RkiommuDtemask]
+			[(FbIova >> RkiommuPteshift) & RkiommuPtemask]);
 		pattern(KADDR(pa), FbWidth, FbHeight);
 		dcacheclean(KADDR(pa), FbSize);
 		return pa;
