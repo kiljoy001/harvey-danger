@@ -258,10 +258,11 @@ window(void)
 	vopwr(Smart0SclCbr, 0);
 	vopwr(Smart0SclOff, 0);
 
-	/* Smart0 is layer 3.  One layer on VP0. */
+	/* Smart0 is layer 3.  One layer on VP0.  Make layer/port mux
+	 * configuration take effect immediately, as Linux does. */
 	vopwr(VopOvlLayerSel, 3);
 	vopwr(VopOvlPortSel, 0x700);
-	vopwr(VopOvlCtrl, 0);
+	vopwr(VopOvlCtrl, 1 << 28);
 
 	/* Color-bar isolation: leave the window disabled for this boot. */
 	vopwr(Smart0Region0Ctrl, 0);
@@ -384,7 +385,7 @@ vop2init(Fdtinfo *info)
 	timing(&m);
 	window();
 	vopwr(VopDspIfCtrl, 0);
-	vopwr(VopDspIfPol, 1 << 7);
+	vopwr(VopDspIfPol, (1 << 28) | (1 << 7));
 	vopwr(VopDspIfEn, (0 << 10) | (1 << 1));
 
 	/* Keep the VOP color-bar generator available as a path test. */
