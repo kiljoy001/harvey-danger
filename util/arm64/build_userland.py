@@ -26,6 +26,7 @@ DRVMAN_BASE = 0x2200000
 I2CFS_BASE = 0x2600000
 RC_BASE = 0x2A00000
 ECHO_BASE = 0x2E00000
+CAT_BASE = 0x3200000
 
 RC_SOURCES = [
     "code.c", "exec.c", "getflags.c", "glob.c", "havefork.c", "here.c",
@@ -382,6 +383,10 @@ main(int argc, char **argv)
 		_exits("namespace");
 	}
 	say("HARVEY-ARM64 DRIVER-DEV PASS\n");
+	if(bind("#V", "/dev", MAFTER) < 0)
+		say("HARVEY-ARM64 DISPLAY-BIND FAIL\n");
+	else
+		say("HARVEY-ARM64 DISPLAY-BIND PASS\n");
 	if(bind("#e", "/env", MCREATE|MAFTER) < 0 ||
 	   bind("#s", "/srv", MREPL|MCREATE) < 0 ||
 	   bind("#@", "/mnt", MREPL|MCREATE) < 0){
@@ -492,6 +497,35 @@ main(int argc, char **argv)
 	exits(nil);
 }
 ''', ECHO_BASE, libc)
+    cat, _ = build_program(out, "cat", r'''#include <u.h>
+#include <libc.h>
+
+void
+main(int argc, char **argv)
+{
+	char buf[4096];
+	int fd, n, i;
+
+	if(argc < 2){
+		fprint(2, "usage: cat file...\n");
+		exits("usage");
+	}
+	for(i = 1; i < argc; i++){
+		fd = open(argv[i], OREAD);
+		if(fd < 0){
+			fprint(2, "cat: %s: %r\n", argv[i]);
+			exits("open");
+		}
+		while((n = read(fd, buf, sizeof buf)) > 0)
+			if(write(1, buf, n) != n){
+				fprint(2, "cat: write: %r\n");
+				exits("write");
+			}
+		close(fd);
+	}
+	exits(nil);
+}
+''', CAT_BASE, libc)
     rcmain = (ROOT / "rc/lib/rcmain").read_text()
     rcmain = rcmain.replace("path=(. /bin)", "path=(/boot . /bin)")
     lines = [
@@ -512,6 +546,7 @@ main(int argc, char **argv)
     emit_array(lines, "arm64i2cfself", i2cfs)
     emit_array(lines, "arm64rcelf", rc)
     emit_array(lines, "arm64echoelf", echo)
+    emit_array(lines, "arm64catelf", cat)
     emit_array(lines, "arm64rcmain", rcmain.encode())
     args.output.write_text("\n".join(lines))
 

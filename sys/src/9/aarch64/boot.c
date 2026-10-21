@@ -489,6 +489,7 @@ arm64kernelstart(Fdtinfo *info)
 	addbootfile("i2cfs", (u8 *)arm64i2cfself, sizeof(arm64i2cfself));
 	addbootfile("rc", (u8 *)arm64rcelf, sizeof(arm64rcelf));
 	addbootfile("echo", (u8 *)arm64echoelf, sizeof(arm64echoelf));
+	addbootfile("cat", (u8 *)arm64catelf, sizeof(arm64catelf));
 	addbootfile("rcmain", (u8 *)arm64rcmain, sizeof(arm64rcmain));
 	arm64uartputs("HARVEY-ARM64 DEVICE-RESET PASS\n");
 	pageinit();

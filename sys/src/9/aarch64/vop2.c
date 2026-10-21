@@ -89,6 +89,8 @@ static volatile u32 *pmu;
 static volatile u32 *grf;
 static volatile u32 *vop;
 
+Vopfb vopfb;
+
 static void
 vopwr(int reg, u32 v)
 {
@@ -601,6 +603,16 @@ vop2init(Fdtinfo *info)
 		print("vop2: no framebuffer\n");
 		return -1;
 	}
+	vopfb.pa = fb > 1 ? fb : 0;
+	vopfb.iova = FbIova;
+	vopfb.size = fb > 1 ? FbSize : 0;
+	vopfb.seq = 0;
+	vopfb.width = FbWidth;
+	vopfb.height = FbHeight;
+	vopfb.stride = FbStride;
+	vopfb.format = 0;		/* XRGB8888 */
+	print("vop2: vopfb pa %#llx size %llud stride %ud\n",
+		vopfb.pa, vopfb.size, vopfb.stride);
 	if(rkiommuenable(mmu) < 0){
 		print("vop2: IOMMU enable failed\n");
 		return -1;
