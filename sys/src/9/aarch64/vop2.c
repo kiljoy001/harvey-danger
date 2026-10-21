@@ -281,8 +281,8 @@ window(void)
 	/* Default window delay for Esmart0 is 20. */
 	vopwr(SmartDly, 20);
 
-	/* Keep the plane disabled for the background/clock path test. */
-	vopwr(Smart0Region0Ctrl, 0);
+	/* ARGB8888, enable Esmart0 scanout from the IOMMU-mapped buffer. */
+	vopwr(Smart0Region0Ctrl, 1);
 }
 
 static void
