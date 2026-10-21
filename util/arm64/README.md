@@ -98,7 +98,13 @@ boot; set `ARM64_RK3566_NPU_PROBE=1` only for a separate NPU experiment. The
 board boot remains a hardware bring-up test, not an interactive userland.
 On an Orange Pi 3B v1.1, the common Image and the full OS DTB loaded over TFTP
 passed the early memory, MMU, timer, EL0 isolation, scheduler, root walk, and
-`#~` boot checks. The scheduled libc-backed C process entered through `_main`,
+`#~` boot checks. A later router-hosted TFTP boot of the same Image and the
+full OS DTB also passed every driver probe: `DRVMAN` enumerated the on-board
+I2C, UART, GPIO, MMC, GMAC, USB, PCIe, HDMI, and codec nodes; `uartfs`,
+`drvman`, `o9driverfs`, and `hubfs` reached `PASS`, and the driver manager
+reported its `i2c` and `gpio` backends `PASS`. There is still no shell or
+mounted root filesystem; `init` remains in its post-boot wait loop. The
+scheduled libc-backed C process entered through `_main`,
 called its generated `nsec` wrapper, wrote its acceptance marker through a
 user-only mapping of the RK3566 DesignWare UART, and returned to the kernel
 without an exception. The board's 8 GiB appears as two memory banks in U-Boot;
