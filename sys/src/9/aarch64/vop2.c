@@ -135,8 +135,8 @@ hpllstart(void)
 
 	/* HPLL: 24 MHz * 99 / 1 / 4 / 4 = 148.5 MHz. */
 	pmucruhi(0x40, 0xfff | (0x7 << 12), 99 | (4 << 12));
-	pmucruhi(0x44, 0x3f | (0x7 << 6) | (1 << 12) | (1 << 13),
-		 1 | (4 << 6) | (1 << 12));
+	pmucruhi(0x44, 0x3f | (0x7 << 6) | (1 << 12) | (1 << 13) | (1 << 15),
+		 1 | (4 << 6) | (1 << 12));	/* PLLPDSEL=0 */
 	pmucruhi(0x80, 3 << 2, 1 << 2);	/* normal mode */
 	for(i = 0; i < 100; i++){
 		v = pmucru[0x44/4];
@@ -363,6 +363,8 @@ vop2init(Fdtinfo *info)
 	print("vop2: version %x\n", ver);
 	if(hpllstart() < 0)
 		return -1;
+	print("vop2: hpll %x/%x mode %x\n",
+		pmucru[0x40/4], pmucru[0x44/4], pmucru[0x80/4]);
 
 	dom = rkiommudomain();
 	if(dom == nil){
