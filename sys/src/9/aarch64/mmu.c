@@ -185,11 +185,17 @@ arm64mmubuild(Fdtinfo *info)
 	 * through #P/segattach grants. */
 	for(k = 0; k < info->ndev; k++){
 		Fdtdev *d = &info->dev[k];
+		if(d->clas != Fdtclasscru && d->clas != Fdtclassgrf &&
+		   d->clas != Fdtclassvop && d->clas != Fdtclasshdmi &&
+		   d->clas != Fdtclassiommu)
+			continue;
 		if(d->base != 0 && d->size != 0)
 			device[regions++] = (Fdtvirtio){d->base, d->size};
 		if(d->base2 != 0 && d->size2 != 0)
 			device[regions++] = (Fdtvirtio){d->base2, d->size2};
 	}
+	/* PMU power-domain/status block is not represented by a class. */
+	device[regions++] = (Fdtvirtio){0xfdd90000ULL, Pagesz};
 #ifdef ARM64_RK3566_NPU_PROBE
 	/* Temporary register probe; a user-space driver will own these later. */
 	device[regions++] = (Fdtvirtio){0xfdd90000ULL, Pagesz};

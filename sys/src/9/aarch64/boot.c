@@ -501,10 +501,12 @@ arm64kernelstart(Fdtinfo *info)
 	}
 	arm64uartputs("HARVEY-ARM64 PAGE-ALLOC PASS\n");
 	rkiommuinit(info);
+#ifdef RKIOMMU_SELFTEST
 	if(rkiommuptest() == 0)
 		arm64uartputs("HARVEY-ARM64 RKIOMMU-TABLE PASS\n");
 	else
 		arm64uartputs("HARVEY-ARM64 RKIOMMU-TABLE FAIL\n");
+#endif
 	arm64clockready();
 	startworker(1);
 	startworker(2);

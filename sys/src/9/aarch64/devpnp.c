@@ -32,12 +32,13 @@ arm64pnpinit(Fdtinfo *info)
 {
 	u32 i;
 
-	npnpdev = info->ndev;
-	if(npnpdev > Maxfdtdev)
-		npnpdev = Maxfdtdev;
 	consolebase = info->uartbase;
-	for(i = 0; i < npnpdev; i++)
-		pnpdev[i] = info->dev[i];
+	npnpdev = 0;
+	for(i = 0; i < info->ndev && npnpdev < Maxfdtdev; i++){
+		if(info->dev[i].clas == Fdtclassiommu)
+			continue;
+		pnpdev[npnpdev++] = info->dev[i];
+	}
 }
 
 static int
