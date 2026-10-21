@@ -20,6 +20,7 @@
 #include <linux/if_tun.h>
 #include <signal.h>
 #include <time.h>
+#include <sys/time.h>
 #include <pthread.h>
 #include <sched.h>
 #include "hostfs.h"
@@ -212,38 +213,13 @@ static uint8_t uart_scr = 0;
 static volatile uint8_t uart_rx_char = 0;   /* pending UART RX character (from stdin) */
 static volatile int uart_rx_ready = 0;       /* 1 while a character is pending */
 static int g_vm = -1;                        /* KVM VM fd, for the stdin thread */
-static pthread_t g_main_thread;              /* main thread, to wake KVM_RUN */
 static volatile sig_atomic_t vm_running = 1;
 static void vm_sig_handler(int sig) {
     (void)sig;
     vm_running = 0;
 }
 static void stdin_wake_handler(int sig) {
-    (void)sig;  /* no-op: just interrupt KVM_RUN so the guest re-checks the IRQ */
-}
-
-/* Read stdin and feed each character to the UART (0x3F8) as receive data,
- * injecting IRQ 4 to wake the (possibly HLTed) guest. */
-static void *stdin_thread(void *arg) {
-    (void)arg;
-    while (vm_running) {
-        uint8_t c;
-        ssize_t n = read(STDIN_FILENO, &c, 1);
-        if (n == 1) {
-            while (uart_rx_ready && vm_running)
-                usleep(1000);
-            if (!vm_running)
-                break;
-            uart_rx_char = c;
-            uart_rx_ready = 1;
-            struct kvm_irq_level irq = { .irq = 4, .level = 1 };
-            ioctl(g_vm, KVM_IRQ_LINE, &irq);
-            pthread_kill(g_main_thread, SIGUSR1);  /* wake KVM_RUN from the guest's HLT */
-        } else {
-            break;  /* EOF or error */
-        }
-    }
-    return NULL;
+    (void)sig;  /* no-op: just interrupt KVM_RUN so we can poll stdin */
 }
 
 struct multiboot_mmap_entry {
@@ -1140,7 +1116,7 @@ int main(int argc, char **argv) {
     }
     signal(SIGINT, vm_sig_handler);
     signal(SIGTERM, vm_sig_handler);
-    signal(SIGUSR1, stdin_wake_handler);
+    signal(SIGALRM, stdin_wake_handler);
     if (isolated_gefs_root)
         fprintf(stderr, "[9vm] GEFS root mode: only the image file is exported\n");
     else
@@ -1353,12 +1329,28 @@ int main(int argc, char **argv) {
     static bool first_exit = true;
     static bool first_uart = true;
 
-    /* start a thread to read stdin and feed it to the UART (0x3F8) */
-    g_main_thread = pthread_self();
-    pthread_t stdin_tid;
-    pthread_create(&stdin_tid, NULL, stdin_thread, NULL);
+    /* make stdin non-blocking and set a periodic SIGALRM so KVM_RUN is
+     * interrupted regularly and we can poll stdin even while the guest is
+     * idle/HLTed (the KVM_IRQ_LINE from another thread isn't delivered). */
+    {
+        int fl = fcntl(STDIN_FILENO, F_GETFL, 0);
+        if (fl >= 0)
+            fcntl(STDIN_FILENO, F_SETFL, fl | O_NONBLOCK);
+    }
+    struct itimerval it = { {0, 200000}, {0, 200000} };  /* 200ms periodic */
+    setitimer(ITIMER_REAL, &it, NULL);
 
     while (vm_running) {
+        /* poll stdin and feed it to the UART (0x3F8) as receive data */
+        if (!uart_rx_ready) {
+            uint8_t c;
+            ssize_t n = read(STDIN_FILENO, &c, 1);
+            if (n == 1) {
+                uart_rx_char = c;
+                uart_rx_ready = 1;
+            }
+        }
+
         if (ioctl(vcpu, KVM_RUN, 0) < 0) {
             if (errno == EINTR) {
                 if (getenv("VM_TRACE")) fprintf(stderr, "[9vm] EINTR\n");
@@ -1414,11 +1406,9 @@ int main(int argc, char **argv) {
                     /* Line Status Register: bit0 = RX data ready, bits5-6 = THR/TX empty */
                     *data = 0x20 | 0x40 | (uart_rx_ready ? 0x01 : 0x00);
                 } else if (run->io.port == 0x3F8) {
-                    /* RBR: return the received character, clear data-ready + IRQ 4 */
+                    /* RBR: return the received character, clear data-ready */
                     *data = uart_rx_char;
                     uart_rx_ready = 0;
-                    struct kvm_irq_level irq = { .irq = 4, .level = 0 };
-                    ioctl(vm, KVM_IRQ_LINE, &irq);
                 } else if (run->io.port == 0x3FA) {
                     /* IIR: 0x04 = receive data available, 0x01 = no interrupt */
                     *data = uart_rx_ready ? 0x04 : 0x01;
