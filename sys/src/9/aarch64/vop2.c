@@ -232,7 +232,8 @@ timing(Vmode *m)
 	vopwr(Vp0BcshBcs, 0);
 	vopwr(Vp0BcshH, 0);
 
-	v = 0;
+	/* Keep VP0 in standby until timing and mixer state are committed. */
+	v = 1u << 31;
 	vopwr(Vp0DspCtrl, v);
 	vopwr(Vp0ClkCtrl, 0);
 }
@@ -391,8 +392,10 @@ vop2init(Fdtinfo *info)
 	/* Use the solid background as a path test. */
 	vopwr(Vp0ColorBar, 0);
 
-	/* Global config done + VP0 config done. */
+	/* Global config done + VP0 config done, then release standby. */
 	vopwr(VopCfgDone, 0x8001);
+	microdelay(20000);
+	vopwr(Vp0DspCtrl, 0);
 	microdelay(20000);
 
 	print("vop2: %dx%d framebuffer at iova %#llx\n",

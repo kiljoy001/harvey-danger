@@ -137,9 +137,10 @@ phyconfigure(Hdmi *h, int clock)
 		phywrite(h, 0x802b, PHY_CKSYMTXCTRL);
 		phywrite(h, 0x0004, PHY_TXTERM);
 	}else if(clock <= 165000){
+		/* U-Boot's 148.5 MHz entry for the DWC HDMI 3D TX PHY. */
 		phywrite(h, 0x0051, PHY_OPMODE_PLLCFG);
-		phywrite(h, 0x0002, PHY_PLLGMPCTRL);
-		phywrite(h, 0x0209, PHY_VLEVCTRL);
+		phywrite(h, 0x0003, PHY_PLLGMPCTRL);
+		phywrite(h, 0x028d, PHY_VLEVCTRL);
 		phywrite(h, 0x802b, PHY_CKSYMTXCTRL);
 		phywrite(h, 0x0004, PHY_TXTERM);
 	}else{
