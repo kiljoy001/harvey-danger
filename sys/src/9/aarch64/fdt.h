@@ -39,6 +39,7 @@ enum {
 	Fdtclassedp,
 	Fdtclasssfc,
 	Fdtclassvpu,
+	Fdtclassiommu,
 };
 
 enum {
@@ -52,6 +53,8 @@ struct Fdtdev {
 	char compat[Maxfdtcompat];
 	u64 base;
 	u64 size;
+	u64 base2;	/* second MMIO range, used by the VOP IOMMU */
+	u64 size2;
 	u32 irq;	/* GIC interrupt ID (SPI+32, PPI+16); 0 when absent */
 	u32 irqflags;	/* trigger flags from the first interrupt cell */
 	u32 clas;

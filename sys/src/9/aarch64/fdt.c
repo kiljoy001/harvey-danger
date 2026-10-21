@@ -180,6 +180,9 @@ static const Fdtclass classtab[] = {
 	{ "rockchip,rk3568-vpu", Fdtclassvpu },
 	{ "rockchip,rk3568-vdec", Fdtclassvpu },
 	{ "rockchip,rk3568-vepu", Fdtclassvpu },
+	{ "rockchip,rk3568-iommu", Fdtclassiommu },
+	{ "rockchip,iommu-v2", Fdtclassiommu },
+	{ "rockchip,iommu", Fdtclassiommu },
 };
 
 static u32
@@ -207,6 +210,7 @@ fdtclassname(u32 clas)
 		"none", "uart", "i2c", "spi", "gpio", "pwm", "gmac", "mmc",
 		"usb", "pcie", "saradc", "tsadc", "wdt", "i2s", "cru", "grf",
 		"npu", "gpu", "vop", "hdmi", "dsi", "edp", "sfc", "vpu",
+		"iommu",
 	};
 
 	if(clas >= sizeof(name)/sizeof(name[0]))
@@ -543,6 +547,13 @@ fdtparse(void *blob, usize bytes, Fdtinfo *out)
 					dev->compat[n] = 0;
 					dev->base = base;
 					dev->size = size;
+					dev->base2 = 0;
+					dev->size2 = 0;
+					if(node->clas == Fdtclassiommu &&
+					   regpair(node, 1, &base, &size) == 0){
+						dev->base2 = base;
+						dev->size2 = size;
+					}
 					dev->irq = 0;
 					dev->irqflags = 0;
 					if(node->intrlen >= 12){

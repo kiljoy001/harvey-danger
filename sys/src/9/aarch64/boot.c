@@ -5,6 +5,7 @@
 #include "dat.h"
 #include "fns.h"
 #include "fdt.h"
+#include "rkiommu.h"
 #include "phys.h"
 #include "mmu.h"
 #include "user.h"
@@ -499,6 +500,11 @@ arm64kernelstart(Fdtinfo *info)
 		pgfree(p);
 	}
 	arm64uartputs("HARVEY-ARM64 PAGE-ALLOC PASS\n");
+	rkiommuinit(info);
+	if(rkiommuptest() == 0)
+		arm64uartputs("HARVEY-ARM64 RKIOMMU-TABLE PASS\n");
+	else
+		arm64uartputs("HARVEY-ARM64 RKIOMMU-TABLE FAIL\n");
 	arm64clockready();
 	startworker(1);
 	startworker(2);

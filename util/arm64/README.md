@@ -129,6 +129,38 @@ virtual address. A local `ic iallu` currently handles that single-core boot
 probe; SMP code replacement will need cross-core synchronization. The board
 has no virtio-9P device attached, so the optional `#9` exchange is skipped.
 
+### Rockchip IOMMU
+
+The RK3568/RK3566 IOMMU is implemented in `sys/src/9/aarch64/rkiommu.c`.
+It is a two-level Rockchip v2 table: 1024 directory entries, 1024 page-table
+entries per directory, and 4 KiB pages.  This gives a 4 GiB IOVA space, while
+the RK3568 PTE format carries a 40-bit physical address so pages from the high
+DRAM bank can be mapped into the VOP's 32-bit address space.
+
+The implementation includes:
+
+- page-table allocation and teardown
+- v2 DTE/PTE encoding
+- map/unmap with TLB shootdown
+- reset, paging enable/disable, interrupt mask, and auto-gating setup
+- page-fault status reporting
+- a hardware-independent page-table self-test
+
+The FDT parser now classifies `rockchip,rk3568-iommu` nodes and records the
+VOP IOMMU's two register ranges.  The ARM64 MMU build also identity-maps the
+SoC device ranges discovered from the device tree; user processes still reach
+device MMIO only through `#P`/`segattach` grants.
+
+A Linux 6.18 boot with the VOP2/DW-HDMI drivers initialized a 2560x1440,
+32-bpp framebuffer.  Its register state, including VOP, HDMI, CRU, PMU, GRF,
+and PMUGRF, is recorded in
+`snapshots/rk3566-linux-2560x1440.txt`.  The snapshots show `FB base = 0`
+because DRM exposes the display through the VOP IOMMU, not as a physical
+address.
+
+The IOMMU page-table self-test passes under QEMU.  Board-level enumeration and
+the VOP2/HDMI scanout driver are the next steps.
+
 ### Orange Pi 3 (Allwinner H6)
 
 The H6 path is earlier than the RK3566 path. The common early kernel now

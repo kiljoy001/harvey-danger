@@ -146,7 +146,7 @@ arm64mmubuild(Fdtinfo *info)
 	u64 rootpa, l2pa, ramend, pa, start, end;
 	u64 *root, *l2;
 	u32 i, j, k, regions;
-	Fdtvirtio device[Maxfdtvirtio+7];
+	Fdtvirtio device[Maxfdtvirtio+7+2*Maxfdtdev];
 
 	if(info->rambase == 0 || info->ramsize == 0 ||
 	   (info->rambase | info->ramsize) & (L2blocksz-1))
@@ -180,6 +180,16 @@ arm64mmubuild(Fdtinfo *info)
 	regions = 3;
 	for(k = 0; k < info->nvirtio; k++)
 		device[regions++] = info->virtio[k];
+	/* Kernel display/DMA drivers need identity mappings for the SoC blocks
+	 * discovered from the device tree.  User processes still get access only
+	 * through #P/segattach grants. */
+	for(k = 0; k < info->ndev; k++){
+		Fdtdev *d = &info->dev[k];
+		if(d->base != 0 && d->size != 0)
+			device[regions++] = (Fdtvirtio){d->base, d->size};
+		if(d->base2 != 0 && d->size2 != 0)
+			device[regions++] = (Fdtvirtio){d->base2, d->size2};
+	}
 #ifdef ARM64_RK3566_NPU_PROBE
 	/* Temporary register probe; a user-space driver will own these later. */
 	device[regions++] = (Fdtvirtio){0xfdd90000ULL, Pagesz};
