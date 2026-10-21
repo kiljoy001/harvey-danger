@@ -21,6 +21,7 @@
 #include <signal.h>
 #include <time.h>
 #include <sys/time.h>
+#include <termios.h>
 #include <pthread.h>
 #include <sched.h>
 #include "hostfs.h"
@@ -220,6 +221,14 @@ static void vm_sig_handler(int sig) {
 }
 static void stdin_wake_handler(int sig) {
     (void)sig;  /* no-op: just interrupt KVM_RUN so we can poll stdin */
+}
+
+/* terminal state, so we can put stdin in raw mode and restore it on exit */
+static struct termios tty_orig;
+static bool tty_raw_set = false;
+static void restore_tty(void) {
+    if (tty_raw_set)
+        tcsetattr(STDIN_FILENO, TCSANOW, &tty_orig);
 }
 
 struct multiboot_mmap_entry {
@@ -1329,15 +1338,23 @@ int main(int argc, char **argv) {
     static bool first_exit = true;
     static bool first_uart = true;
 
-    /* make stdin non-blocking and set a periodic SIGALRM so KVM_RUN is
-     * interrupted regularly and we can poll stdin even while the guest is
-     * idle/HLTed (the KVM_IRQ_LINE from another thread isn't delivered). */
+    /* make stdin non-blocking, put the terminal in raw mode, and set a
+     * periodic SIGALRM so KVM_RUN is interrupted regularly and we can poll
+     * stdin even while the guest is idle/HLTed (KVM_IRQ_LINE from another
+     * thread isn't delivered to a HLTed vCPU). */
     {
         int fl = fcntl(STDIN_FILENO, F_GETFL, 0);
         if (fl >= 0)
             fcntl(STDIN_FILENO, F_SETFL, fl | O_NONBLOCK);
     }
-    struct itimerval it = { {0, 200000}, {0, 200000} };  /* 200ms periodic */
+    if (isatty(STDIN_FILENO) && tcgetattr(STDIN_FILENO, &tty_orig) == 0) {
+        struct termios raw = tty_orig;
+        cfmakeraw(&raw);
+        tcsetattr(STDIN_FILENO, TCSANOW, &raw);
+        tty_raw_set = true;
+        atexit(restore_tty);
+    }
+    struct itimerval it = { {0, 20000}, {0, 20000} };  /* 20ms periodic */
     setitimer(ITIMER_REAL, &it, NULL);
 
     while (vm_running) {
