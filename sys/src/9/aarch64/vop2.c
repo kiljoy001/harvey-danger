@@ -157,8 +157,8 @@ clocks(void)
 	/* PCLK_HDMI_HOST, CLK_HDMI_SFR, CLK_HDMI_CEC */
 	cruhi(0x354, (1 << 3) | (1 << 4) | (1 << 5), 0);
 
-	/* DCLK_VOP0 <- VPLL, divider 1. */
-	cruhi(0x19c, (3 << 10) | 0xff, 1 << 10);
+	/* DCLK_VOP0 <- GPLL (1188 MHz) / 8 = 148.5 MHz. */
+	cruhi(0x19c, (3 << 10) | 0xff, (2 << 10) | 7);
 
 	/* HDMI reference clock <- xin24m. */
 	pmucruhi(0x120, 1 << 7, 0);
@@ -324,9 +324,7 @@ vop2init(Fdtinfo *info)
 	clocks();
 	resets();
 	ver = voprd(VopVersion);
-	print("vop2: version %#ux\n", ver);
-	if(vpllstart() < 0)
-		return -1;
+	print("vop2: version %x\n", ver);
 
 	dom = rkiommudomain();
 	if(dom == nil){
