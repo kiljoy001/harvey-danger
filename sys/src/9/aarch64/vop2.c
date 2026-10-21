@@ -13,6 +13,7 @@
 #include "fns.h"
 #include "fdt.h"
 #include "rkiommu.h"
+#include "dw_hdmi_reg.h"
 #include "vop2.h"
 
 enum {
@@ -125,6 +126,28 @@ pllset(int reg, u32 fbdiv, u32 postdiv1, u32 refdiv, u32 postdiv2)
 }
 
 static int
+hpllstart(void)
+{
+	int i;
+	u32 v;
+
+	/* HPLL: 24 MHz * 99 / 1 / 4 / 4 = 148.5 MHz. */
+	pmucruhi(0x40, 0xfff | (0x7 << 12), 99 | (4 << 12));
+	pmucruhi(0x44, 0x3f | (0x7 << 6) | (1 << 12) | (1 << 13),
+		 1 | (4 << 6) | (1 << 12));
+	pmucruhi(0x80, 3 << 2, 1 << 2);	/* normal mode */
+	for(i = 0; i < 100; i++){
+		v = pmucru[0x44/4];
+		if(v & (1 << 10))
+			return 0;
+		microdelay(1000);
+	}
+	print("vop2: hpll lock timeout, con0 %x con1 %x\n",
+		pmucru[0x40/4], pmucru[0x44/4]);
+	return -1;
+}
+
+static int
 vpllstart(void)
 {
 	int i;
@@ -157,8 +180,9 @@ clocks(void)
 	/* PCLK_HDMI_HOST, CLK_HDMI_SFR, CLK_HDMI_CEC */
 	cruhi(0x354, (1 << 3) | (1 << 4) | (1 << 5), 0);
 
-	/* DCLK_VOP0 <- GPLL (1188 MHz) / 8 = 148.5 MHz. */
-	cruhi(0x19c, (3 << 10) | 0xff, (2 << 10) | 7);
+	/* DCLK_VOP0 <- HPLL, divider 1.  HPLL is programmed to 148.5 MHz
+	 * below; HDMI requires this parent per the RK3568 clock rules. */
+	cruhi(0x19c, (3 << 10) | 0xff, 0);
 
 	/* HDMI reference clock <- xin24m. */
 	pmucruhi(0x120, 1 << 7, 0);
@@ -325,6 +349,8 @@ vop2init(Fdtinfo *info)
 	resets();
 	ver = voprd(VopVersion);
 	print("vop2: version %x\n", ver);
+	if(hpllstart() < 0)
+		return -1;
 
 	dom = rkiommudomain();
 	if(dom == nil){
@@ -361,11 +387,32 @@ vop2init(Fdtinfo *info)
 	vopwr(VopDspIfPol, 1 << 7);
 	vopwr(VopDspIfEn, (0 << 10) | (1 << 1));
 
+	/* Keep the VOP color-bar generator available as a path test. */
+	vopwr(Vp0ColorBar, 1);
+
 	/* Global config done + VP0 config done. */
 	vopwr(VopCfgDone, 0x8001);
 	microdelay(20000);
 
 	print("vop2: %dx%d framebuffer at iova %#llx\n",
 		FbWidth, FbHeight, FbIova);
-	return dw_hdmi_start(HdmiBase, &m);
+	print("vop2: dspctrl %x ifen %x layer %x port %x stat %x\n",
+		voprd(Vp0DspCtrl), voprd(VopDspIfEn),
+		voprd(VopOvlLayerSel), voprd(VopOvlPortSel), voprd(0x60));
+	print("vop2: smart0 ctrl %x vir %x mst %x act %x dsp %x\n",
+		voprd(Smart0Region0Ctrl), voprd(Smart0Vir),
+		voprd(Smart0YrgbMst), voprd(Smart0ActInfo), voprd(Smart0DspInfo));
+	print("vop2: cru19c %x cru40 %x cru44 %x gates %x/%x\n",
+		cru[0x19c/4], cru[0x40/4], cru[0x44/4],
+		cru[0x350/4], cru[0x354/4]);
+	{
+		int hr;
+		hr = dw_hdmi_start(HdmiBase, &m);
+		microdelay(20000);
+		print("vop2: hdmi start %d phy %x clkdis %x invid %x\n",
+			hr, ((volatile u32 *)HdmiBase)[HDMI_PHY_STAT0],
+			((volatile u32 *)HdmiBase)[HDMI_MC_CLKDIS],
+			((volatile u32 *)HdmiBase)[HDMI_FC_INVIDCONF]);
+	}
+	return 0;
 }
