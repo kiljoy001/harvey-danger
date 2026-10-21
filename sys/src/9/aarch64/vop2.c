@@ -182,9 +182,8 @@ clocks(void)
 	/* PCLK_HDMI_HOST, CLK_HDMI_SFR, CLK_HDMI_CEC */
 	cruhi(0x354, (1 << 3) | (1 << 4) | (1 << 5), 0);
 
-	/* DCLK_VOP0 <- HPLL, divider 1.  HPLL is programmed to 148.5 MHz
-	 * below; HDMI requires this parent per the RK3568 clock rules. */
-	cruhi(0x19c, (3 << 10) | 0xff, 0);
+	/* Test GPLL/8 (U-Boot reports GPLL 1188 MHz) for DCLK_VOP0. */
+	cru[0x19c/4] = (2 << 10) | 7;
 
 	/* HDMI reference clock <- xin24m. */
 	pmucruhi(0x120, 1 << 7, 0);
