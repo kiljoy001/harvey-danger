@@ -703,7 +703,7 @@ static void pci_dev_init(struct pci_dev *pci, uint16_t dev_id, uint16_t subsys_i
     *(uint32_t *)&pci->config[0x80] = 16;    /* length 16 bytes */
 }
 
-static void pci_io_write(struct pci_dev *p_host, struct pci_dev *p_net, struct pci_dev *p_disk, uint32_t *addr_reg, uint16_t port, uint8_t *data, uint32_t size) {
+static void pci_io_write(struct pci_dev *p_host, struct pci_dev *p_net, struct pci_dev *p_disk, struct pci_dev *p_blk, uint32_t *addr_reg, uint16_t port, uint8_t *data, uint32_t size) {
     if (port == PCI_CONFIG_ADDR && size == 4) {
         *addr_reg = *(uint32_t *)data;
         return;
@@ -713,7 +713,7 @@ static void pci_io_write(struct pci_dev *p_host, struct pci_dev *p_net, struct p
         uint32_t dev = (*addr_reg >> 11) & 0x1F;
         uint32_t fn  = (*addr_reg >> 8) & 0x07;
         if ((*addr_reg & 0x80000000) && bus == 0 && fn == 0) {
-            struct pci_dev *p = (dev == 1) ? p_host : ((dev == 2) ? p_net : ((dev == 3) ? p_disk : NULL));
+            struct pci_dev *p = (dev == 1) ? p_host : ((dev == 2) ? p_net : ((dev == 3) ? p_disk : ((dev == 4) ? p_blk : NULL)));
             if (p) {
                 uint32_t reg = (*addr_reg & 0xFC) + (port - PCI_CONFIG_DATA);
                 if (reg == 0x10 && size == 4) {
@@ -733,7 +733,7 @@ static void pci_io_write(struct pci_dev *p_host, struct pci_dev *p_net, struct p
     }
 }
 
-static void pci_io_read(struct pci_dev *p_host, struct pci_dev *p_net, struct pci_dev *p_disk, uint32_t *addr_reg, uint16_t port, uint8_t *data, uint32_t size) {
+static void pci_io_read(struct pci_dev *p_host, struct pci_dev *p_net, struct pci_dev *p_disk, struct pci_dev *p_blk, uint32_t *addr_reg, uint16_t port, uint8_t *data, uint32_t size) {
     if (port == PCI_CONFIG_ADDR && size == 4) {
         *(uint32_t *)data = *addr_reg;
         return;
@@ -743,7 +743,7 @@ static void pci_io_read(struct pci_dev *p_host, struct pci_dev *p_net, struct pc
         uint32_t dev = (*addr_reg >> 11) & 0x1F;
         uint32_t fn  = (*addr_reg >> 8) & 0x07;
         if ((*addr_reg & 0x80000000) && bus == 0 && fn == 0) {
-            struct pci_dev *p = (dev == 1) ? p_host : ((dev == 2) ? p_net : ((dev == 3) ? p_disk : NULL));
+            struct pci_dev *p = (dev == 1) ? p_host : ((dev == 2) ? p_net : ((dev == 3) ? p_disk : ((dev == 4) ? p_blk : NULL)));
             if (p) {
                 uint32_t reg = (*addr_reg & 0xFC) + (port - PCI_CONFIG_DATA);
                 if (reg + size <= 256) {
@@ -988,7 +988,168 @@ static void virtio_9p_mmio_read(int vm, struct virtio_9p *v9,
     }
 
     memcpy(data, v9->bar0 + offset, len);
-}static int connect_unix_socket(const char *path) {
+}
+
+/* ---- virtio-blk ---- */
+
+#define VIRTIO_BLK_BAR0_ADDR 0xFEB03000ULL
+#define VIRTIO_ID_BLOCK 0x1001
+
+struct virtio_blk {
+    uint8_t  bar0[VIRTIO_BAR0_SIZE];
+    uint16_t last_avail_idx;
+    int      fd;
+    uint64_t capacity;   /* number of 512-byte sectors */
+    uint32_t irq;
+    uint64_t bar_addr;
+};
+
+#define VIRTIO_BLK_T_IN    0
+#define VIRTIO_BLK_T_OUT   1
+#define VIRTIO_BLK_T_FLUSH 4
+
+static void virtio_blk_init(struct virtio_blk *vb, int fd, uint32_t irq, uint64_t bar_addr, uint64_t capacity) {
+    memset(vb, 0, sizeof(*vb));
+    vb->fd = fd;
+    vb->irq = irq;
+    vb->bar_addr = bar_addr;
+    vb->capacity = capacity;
+    *(uint16_t *)(vb->bar0 + 0x18) = 16;      /* queuesize = 16 */
+    *(uint16_t *)(vb->bar0 + 0x12) = 1;       /* nqueues = 1 */
+    *(uint16_t *)(vb->bar0 + 0x10) = 0xFFFF;  /* msixcfg = none */
+    *(uint16_t *)(vb->bar0 + 0x1A) = 0xFFFF;  /* queuemsixvect = none */
+    *(uint64_t *)(vb->bar0 + 0x300) = capacity; /* device config: capacity (sectors) */
+}
+
+static void virtio_blk_process_queue(int vm, uint8_t *ram, size_t ram_size, struct virtio_blk *vb) {
+    if (!(*(uint16_t *)(vb->bar0 + 0x1C)) || vb->fd < 0)
+        return;
+
+    uint64_t desc_table_pa = *(uint64_t *)(vb->bar0 + 0x20);
+    uint64_t avail_ring_pa = *(uint64_t *)(vb->bar0 + 0x28);
+    uint64_t used_ring_pa  = *(uint64_t *)(vb->bar0 + 0x30);
+    uint16_t queue_size    = *(uint16_t *)(vb->bar0 + 0x18);
+    if (queue_size == 0 || queue_size > 32768)
+        return;
+
+    uint64_t desc_bytes  = (uint64_t)queue_size * 16;
+    uint64_t avail_bytes = 4 + (uint64_t)queue_size * 2 + 2;
+    uint64_t used_bytes  = 4 + (uint64_t)queue_size * 8 + 2;
+    if (!is_valid_ram_range(desc_table_pa, desc_bytes, ram_size) ||
+        !is_valid_ram_range(avail_ring_pa, avail_bytes, ram_size) ||
+        !is_valid_ram_range(used_ring_pa, used_bytes, ram_size))
+        return;
+
+    uint16_t avail_idx = *(uint16_t *)(ram + avail_ring_pa + 2);
+    int did_work = 0;
+
+    while (vb->last_avail_idx != avail_idx) {
+        uint16_t ring_idx = vb->last_avail_idx % queue_size;
+        uint16_t head = *(uint16_t *)(ram + avail_ring_pa + 4 + ring_idx * 2);
+        if (head >= queue_size) { vb->last_avail_idx++; continue; }
+
+        /* Collect up to 3 descriptors: header, data, status */
+        uint8_t *d[3] = {NULL, NULL, NULL};
+        uint32_t dl[3] = {0, 0, 0};
+        int ndesc = 0, desc_ok = 1;
+        uint16_t desc_idx = head;
+        for (int i = 0; i < queue_size && ndesc < 3; i++) {
+            if (desc_idx >= queue_size) { desc_ok = 0; break; }
+            uint64_t d_addr  = *(uint64_t *)(ram + desc_table_pa + desc_idx * 16);
+            uint32_t d_len   = *(uint32_t *)(ram + desc_table_pa + desc_idx * 16 + 8);
+            uint16_t d_flags = *(uint16_t *)(ram + desc_table_pa + desc_idx * 16 + 12);
+            uint16_t d_next  = *(uint16_t *)(ram + desc_table_pa + desc_idx * 16 + 14);
+            if (!is_valid_ram_range(d_addr, d_len, ram_size)) { desc_ok = 0; break; }
+            d[ndesc] = ram + d_addr; dl[ndesc] = d_len; ndesc++;
+            if (d_flags & 1) desc_idx = d_next; else break;
+        }
+
+        uint8_t st = 2; /* VIRTIO_BLK_S_UNSUPP */
+        if (desc_ok && ndesc >= 3 && dl[0] >= 16 && dl[2] >= 1) {
+            uint8_t *hdr = d[0], *data = d[1], *status = d[2];
+            uint32_t type = *(uint32_t *)(hdr + 0);
+            uint64_t sector = *(uint64_t *)(hdr + 8);
+            uint32_t nbytes = dl[1];
+            if (type == VIRTIO_BLK_T_IN || type == VIRTIO_BLK_T_OUT) {
+                off_t off = (off_t)(sector * 512);
+                if (off >= 0 && off + nbytes <= (off_t)(vb->capacity * 512)) {
+                    ssize_t r = (type == VIRTIO_BLK_T_IN)
+                        ? pread(vb->fd, data, nbytes, off)
+                        : pwrite(vb->fd, data, nbytes, off);
+                    st = (r == (ssize_t)nbytes) ? 0 : 1; /* OK : IOERR */
+                } else {
+                    st = 1;
+                }
+            } else if (type == VIRTIO_BLK_T_FLUSH) {
+                fsync(vb->fd);
+                st = 0;
+            }
+            *status = st;
+        }
+
+        uint16_t used_idx = *(uint16_t *)(ram + used_ring_pa + 2);
+        uint16_t used_slot = used_idx % queue_size;
+        *(uint32_t *)(ram + used_ring_pa + 4 + used_slot * 8) = head;
+        *(uint32_t *)(ram + used_ring_pa + 4 + used_slot * 8 + 4) = 1;
+        *(uint16_t *)(ram + used_ring_pa + 2) = used_idx + 1;
+        vb->last_avail_idx++;
+        did_work = 1;
+    }
+
+    if (did_work) {
+        vb->bar0[0x200] |= 1;
+        struct kvm_irq_level irq = { .irq = vb->irq, .level = 1 };
+        ioctl(vm, KVM_IRQ_LINE, &irq);
+    }
+}
+
+static void virtio_blk_mmio_write(int vm, uint8_t *ram, size_t ram_size, struct virtio_blk *vb,
+                                  uint64_t addr, uint8_t *data, uint32_t len) {
+    uint64_t offset = addr - vb->bar_addr;
+    if (offset + len > VIRTIO_BAR0_SIZE)
+        return;
+    memcpy(vb->bar0 + offset, data, len);
+
+    if (offset == 0x00 && len >= 4) {
+        *(uint32_t *)(vb->bar0 + 0x04) = 0; /* no features */
+    } else if (offset == 0x14) {
+        if (vb->bar0[0x14] == 0) {
+            vb->last_avail_idx = 0;
+            vb->bar0[0x200] = 0;
+            struct kvm_irq_level irq = { .irq = vb->irq, .level = 0 };
+            ioctl(vm, KVM_IRQ_LINE, &irq);
+        }
+    } else if (offset == 0x16) {
+        uint16_t sel = *(uint16_t *)(vb->bar0 + 0x16);
+        *(uint16_t *)(vb->bar0 + 0x18) = (sel == 0) ? 16 : 0;
+    } else if (offset >= 0x100 && offset < 0x104) {
+        virtio_blk_process_queue(vm, ram, ram_size, vb);
+    }
+}
+
+static void virtio_blk_mmio_read(int vm, struct virtio_blk *vb,
+                                 uint64_t addr, uint8_t *data, uint32_t len) {
+    uint64_t offset = addr - vb->bar_addr;
+    if (offset + len > VIRTIO_BAR0_SIZE) {
+        memset(data, 0, len);
+        return;
+    }
+    if (offset == 0x04) {
+        uint32_t feat = 0;
+        memcpy(data, &feat, len);
+        return;
+    }
+    if (offset == 0x200) {
+        memcpy(data, vb->bar0 + offset, len);
+        vb->bar0[0x200] = 0;
+        struct kvm_irq_level irq = { .irq = vb->irq, .level = 0 };
+        ioctl(vm, KVM_IRQ_LINE, &irq);
+        return;
+    }
+    memcpy(data, vb->bar0 + offset, len);
+}
+
+static int connect_unix_socket(const char *path) {
     if (!path || !*path)
         return -1;
     int fd = socket(AF_UNIX, SOCK_STREAM, 0);
@@ -1014,6 +1175,7 @@ int main(int argc, char **argv) {
     const char *display_name = NULL;
     const char *display_root = NULL;
     const char *gefs_image = NULL;
+    const char *disk_image = NULL;
     bool legacy_host_root = false;
     bool isolated_gefs_root;
     char image_cmdline[256];
@@ -1036,6 +1198,8 @@ int main(int argc, char **argv) {
             display_root = argv[++i];
         } else if (strcmp(argv[i], "-gefs-image") == 0 && i + 1 < argc) {
             gefs_image = argv[++i];
+        } else if (strcmp(argv[i], "-disk") == 0 && i + 1 < argc) {
+            disk_image = argv[++i];
         } else if (strcmp(argv[i], "-legacy-host-root") == 0) {
             legacy_host_root = true;
         } else if (strcmp(argv[i], "-u9fs") == 0 && i + 1 < argc) {
@@ -1052,7 +1216,7 @@ int main(int argc, char **argv) {
     }
 
     if (!kernel_path) {
-        fprintf(stderr, "Usage: %s [-m <mb>] [-c <cmdline>] [-r <root>] [-boot <guest>] [-display-shm <name>] [-display-root <dir>] [-netfs <sock>] [-gefs-image <image>] [-legacy-host-root] [-no9ring] <kernel-elf>\n", argv[0]);
+        fprintf(stderr, "Usage: %s [-m <mb>] [-c <cmdline>] [-r <root>] [-boot <guest>] [-display-shm <name>] [-display-root <dir>] [-netfs <sock>] [-gefs-image <image>] [-disk <image>] [-legacy-host-root] [-no9ring] <kernel-elf>\n", argv[0]);
         return 1;
     }
     isolated_gefs_root = gefs_image != NULL && boot_override == NULL && !legacy_host_root;
@@ -1183,6 +1347,31 @@ int main(int argc, char **argv) {
         virtio_9p_init(&v9_disk, -1, "gefs-image", 12, VIRTIO_9P_DISK_BAR0_ADDR);
         v9_disk.hostfs = diskfs_inst;
         fprintf(stderr, "[9vm] GEFS image exported as VirtIO 9P tag 'gefs-image' (#9/2)\n");
+    }
+
+    struct virtio_blk vblk;
+    memset(&vblk, 0, sizeof(vblk));
+    vblk.fd = -1;
+    struct pci_dev pci_blk;
+    if (disk_image != NULL) {
+        int blk_fd = open(disk_image, O_RDWR | O_CLOEXEC);
+        if (blk_fd >= 0) {
+            struct stat st;
+            if (fstat(blk_fd, &st) == 0 && st.st_size >= 512) {
+                pci_dev_init(&pci_blk, VIRTIO_ID_BLOCK, 2, VIRTIO_BLK_BAR0_ADDR, 13);
+                /* classify as mass-storage so the guest reads the BAR */
+                pci_blk.config[0x09] = 0x00;  /* prog IF */
+                pci_blk.config[0x0A] = 0x80;  /* subclass: other */
+                pci_blk.config[0x0B] = 0x01;  /* base class: mass storage */
+                virtio_blk_init(&vblk, blk_fd, 13, VIRTIO_BLK_BAR0_ADDR, st.st_size / 512);
+                fprintf(stderr, "[9vm] disk image '%s' as virtio-blk (%llu sectors)\n",
+                        disk_image, (unsigned long long)(st.st_size / 512));
+            } else {
+                close(blk_fd);
+            }
+        } else {
+            perror("open disk image");
+        }
     }
 
     size_t ram_size = ram_mb * 1024 * 1024;
@@ -1414,7 +1603,7 @@ int main(int argc, char **argv) {
                     /* POST debug port */
                 } else if (run->io.port >= 0xCF8 && run->io.port <= 0xCFF) {
                     for (__u32 i = 0; i < run->io.count; i++) {
-                        pci_io_write(&pci_9p_host, &pci_9p_net, gefs_image != NULL ? &pci_9p_disk : NULL, &pci_addr_reg, run->io.port, data + i * run->io.size, run->io.size);
+                        pci_io_write(&pci_9p_host, &pci_9p_net, gefs_image != NULL ? &pci_9p_disk : NULL, vblk.fd >= 0 ? &pci_blk : NULL, &pci_addr_reg, run->io.port, data + i * run->io.size, run->io.size);
                     }
                 }
             } else {
@@ -1433,7 +1622,7 @@ int main(int argc, char **argv) {
                     *data = uart_scr;
                 } else if (run->io.port >= 0xCF8 && run->io.port <= 0xCFF) {
                     for (__u32 i = 0; i < run->io.count; i++) {
-                        pci_io_read(&pci_9p_host, &pci_9p_net, gefs_image != NULL ? &pci_9p_disk : NULL, &pci_addr_reg, run->io.port, data + i * run->io.size, run->io.size);
+                        pci_io_read(&pci_9p_host, &pci_9p_net, gefs_image != NULL ? &pci_9p_disk : NULL, vblk.fd >= 0 ? &pci_blk : NULL, &pci_addr_reg, run->io.port, data + i * run->io.size, run->io.size);
                     }
                 } else {
                     memset(data, 0xFF, run->io.size);
@@ -1461,6 +1650,12 @@ int main(int argc, char **argv) {
                     virtio_9p_mmio_write(vm, ram, ram_size, &v9_disk, paddr, run->mmio.data, run->mmio.len);
                 else
                     virtio_9p_mmio_read(vm, &v9_disk, paddr, run->mmio.data, run->mmio.len);
+            } else if (vblk.fd >= 0 && paddr >= VIRTIO_BLK_BAR0_ADDR &&
+                       paddr < VIRTIO_BLK_BAR0_ADDR + VIRTIO_BAR0_SIZE) {
+                if (run->mmio.is_write)
+                    virtio_blk_mmio_write(vm, ram, ram_size, &vblk, paddr, run->mmio.data, run->mmio.len);
+                else
+                    virtio_blk_mmio_read(vm, &vblk, paddr, run->mmio.data, run->mmio.len);
             } else {
                 if (!run->mmio.is_write) {
                     memset(run->mmio.data, 0, run->mmio.len);
