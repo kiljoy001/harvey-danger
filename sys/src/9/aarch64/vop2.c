@@ -263,8 +263,8 @@ window(void)
 	vopwr(VopOvlPortSel, 0x700);
 	vopwr(VopOvlCtrl, 0);
 
-	/* ARGB8888, enable. */
-	vopwr(Smart0Region0Ctrl, 1);
+	/* Color-bar isolation: leave the window disabled for this boot. */
+	vopwr(Smart0Region0Ctrl, 0);
 }
 
 static void
@@ -414,5 +414,10 @@ vop2init(Fdtinfo *info)
 			((volatile u32 *)HdmiBase)[HDMI_MC_CLKDIS],
 			((volatile u32 *)HdmiBase)[HDMI_FC_INVIDCONF]);
 	}
+	print("vop2: colorbar %x dspctrl %x iommu %x/%x\n",
+		voprd(Vp0ColorBar), voprd(Vp0DspCtrl),
+		((volatile u32 *)mmu->base[0])[0x04/4],
+		((volatile u32 *)mmu->base[0])[0x20/4]);
+	rkiommufault(mmu);
 	return 0;
 }
