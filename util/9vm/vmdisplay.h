@@ -19,6 +19,10 @@ enum {
 
 #define VMDISPLAY_MAGIC 0x56444c39U
 #define VMDISPLAY_FRAME_BYTES (VMDISPLAY_WIDTH * VMDISPLAY_HEIGHT * 4)
+/* Guest physical address where 9vm maps the display shared memory when the
+ * guest mapping extension is enabled.  Kept below the virtio MMIO windows. */
+#define VMDISPLAY_GUEST_ADDR 0xF8000000ULL
+#define VMDISPLAY_GUEST_SIZE (((sizeof(struct vmdisplay)) + 4095U) & ~4095U)
 /* written[] uses this sentinel while a slot holds a copy of the last frame. */
 #define VMDISPLAY_DELTA_WRITES 0x80000000U
 

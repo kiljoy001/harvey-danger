@@ -74,9 +74,9 @@ static int display_init(const char *name) {
     vm_display_fd = shm_open(name, O_CREAT | O_EXCL | O_RDWR, 0600);
     if (vm_display_fd < 0)
         return -1;
-    if (ftruncate(vm_display_fd, sizeof(struct vmdisplay)) < 0)
+    if (ftruncate(vm_display_fd, VMDISPLAY_GUEST_SIZE) < 0)
         return -1;
-    vm_display = mmap(NULL, sizeof(struct vmdisplay), PROT_READ | PROT_WRITE,
+    vm_display = mmap(NULL, VMDISPLAY_GUEST_SIZE, PROT_READ | PROT_WRITE,
                       MAP_SHARED, vm_display_fd, 0);
     if (vm_display == MAP_FAILED) {
         vm_display = NULL;
@@ -1433,6 +1433,33 @@ int main(int argc, char **argv) {
         perror("KVM_SET_USER_MEMORY_REGION");
         return 1;
     }
+
+    /*
+     * Give the guest direct access to the display shared memory when a
+     * display was requested.  The host viewer and the guest then share the
+     * same pages, so a guest framebuffer driver can present with begin/commit
+     * rather than copying frames through 9P.
+     */
+    if (vm_display != NULL) {
+        struct kvm_userspace_memory_region disp = {
+            .slot = 1,
+            .flags = 0,
+            .guest_phys_addr = VMDISPLAY_GUEST_ADDR,
+            .memory_size = VMDISPLAY_GUEST_SIZE,
+            .userspace_addr = (uint64_t)vm_display,
+        };
+        if (ioctl(vm, KVM_SET_USER_MEMORY_REGION, &disp) < 0) {
+            fprintf(stderr, "display region ioctl failed: errno=%d (%s) size=%llu addr=0x%llx host=%p\n",
+                    errno, strerror(errno), (unsigned long long)disp.memory_size,
+                    (unsigned long long)disp.guest_phys_addr, (void *)vm_display);
+            perror("KVM_SET_USER_MEMORY_REGION display");
+            return 1;
+        }
+        fprintf(stderr, "[9vm] display shared memory at guest 0x%llx (%llu KiB)\n",
+                (unsigned long long)VMDISPLAY_GUEST_ADDR,
+                (unsigned long long)(VMDISPLAY_GUEST_SIZE / 1024));
+    }
+
     if (getenv("VM_TRACE")) fprintf(stderr, "[perf +%.2f ms] vm & ram created\n", get_boot_ms());
 
     uint64_t entry_point = load_elf(kernel_path, ram, ram_size);

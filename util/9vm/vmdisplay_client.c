@@ -35,7 +35,7 @@ vmdisplay_client_open(struct vmdisplay_client *client, const char *name,
         if(client->fd < 0)
             client->fd = shm_open(name, O_RDWR, 0);
         if(client->fd >= 0 && fstat(client->fd, &st) == 0 &&
-           st.st_size == sizeof *display){
+           st.st_size >= (off_t)sizeof *display){
             display = mmap(NULL, sizeof *display, PROT_READ | PROT_WRITE,
                            MAP_SHARED, client->fd, 0);
             if(display == MAP_FAILED)
