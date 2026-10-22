@@ -264,8 +264,10 @@ class DisplaySession {
         string clean = cleanTask.take();
         Task<string> verbTask = spawn StringFieldRaw(clean, " ", 0);
         Task<string> targetTask = spawn StringFieldRaw(clean, " ", 1);
+        Task<string> secondTask = spawn StringFieldRaw(clean, " ", 2);
         string verb = verbTask.take();
         int64 target = codec.unsigned(targetTask.take());
+        int64 second = codec.unsigned(secondTask.take());
         i = 1;
         while(i < model.highWater()) {
             string pathCtl = cat(cat("surfaces/", codec.number(i)), "/ctl");
@@ -276,6 +278,11 @@ class DisplaySession {
                     DisplayBuffer b = buffers[index];
                     if(!model.attach(ownerId, i, b.id(),
                        b.width(), b.height())) { return -1; }
+                    result = "ok\n";
+                    return len(text);
+                }
+                if(cmp(verb, "place") == 0) {
+                    if(!model.place(ownerId, i, target, second)) { return -1; }
                     result = "ok\n";
                     return len(text);
                 }
@@ -290,7 +297,9 @@ class DisplaySession {
                             // First scanout path: present one bounded tile.
                             // The VOP device is a linear XRGB8888 buffer.
                             string devdata = "/dev/display/data";
-                            int64 wrote = b.present(devdata, 0, 0, 7680);
+                            int64 px = model.xFor(ownerId, i);
+                            int64 py = model.yFor(ownerId, i);
+                            int64 wrote = b.present(devdata, px, py, 7680);
                             if(wrote == b.size()) {
                                 model.release(i, serial);
                             }

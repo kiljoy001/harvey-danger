@@ -1,184 +1,160 @@
 import "string.o9";
 import "bytes.o9";
-// Keep each upload to one new snapshot. A DisplayBuffer actor is reused for
-// every write; helper tasks are consumed with take() after one result.
-function DisplayBufferBlankRaw(int64 size) string {
-    string out;
-    c {
-        out = nil;
-        if(size > 0 && size <= 512*512*4) {
-            out = o9_string_new(nil, size);
-            if(out != nil)
-                memset(o9_string_data(out), 0, size);
-        }
-    }
-    return out;
-}
-
-function DisplayBufferPatchRaw(string current, int64 offset, string patch) string {
-    string out;
-    c {
-        vlong total, count;
-        char *dst, *src;
-
-        out = nil;
-        total = o9_string_len(current);
-        count = o9_string_len(patch);
-        if(current != nil && patch != nil && offset >= 0 &&
-           count <= 65536 && offset <= total && count <= total-offset) {
-            out = o9_string_new(nil, total);
-            if(out != nil) {
-                dst = o9_string_data(out);
-                src = o9_string_data(current);
-                memmove(dst, src, offset);
-                memmove(dst+offset, o9_string_data(patch), count);
-                memmove(dst+offset+count, src+offset+count,
-                        total-offset-count);
-            }
-        }
-    }
-    return out;
-}
-
-function DisplayBufferPresentRaw(string pixels, string path,
-                                 int64 width, int64 rows,
-                                 int64 x, int64 y, int64 stride) int64 {
+// Native XRGB8888 image storage. Pixel bytes live in a C-side store owned by
+// the display service; only small control strings and integer handles cross
+// actor boundaries. This keeps scanout independent of actor payload limits.
+function DisplayPixelRaw(int64 op, int64 slot, int64 a, int64 b, int64 c,
+                         string data) int64 {
     int64 out;
     c {
-        char *p, *row;
+        static uchar *buf[256];
+        static vlong len[256];
+        static vlong wid[256];
+        static vlong hei[256];
+        static Lock pixlock;
+        vlong i, size, count, rowbytes, r, off;
+        uchar *p;
+        char *path;
         int fd;
-        vlong r, rowbytes, off;
 
         out = -1;
-        rowbytes = width * 4;
-        if(pixels != nil && width > 0 && rows > 0 &&
-           o9_string_len(pixels) >= width * rows * 4) {
-            p = o9_string_cstr(path);
-            if(p != nil) {
-                fd = open(p, OWRITE);
-                free(p);
-                if(fd >= 0) {
-                    out = 0;
-                    row = o9_string_data(pixels);
-                    for(r = 0; r < rows; r++) {
-                        off = (y + r) * stride + x * 4;
-                        if(seek(fd, off, 0) < 0 ||
-                           write(fd, row + r * rowbytes, rowbytes) != rowbytes) {
-                            out = -1;
-                            break;
-                        }
-                        out += rowbytes;
+        lock(&pixlock);
+        if(op == 0) {
+            if(a > 0 && b > 0 && a <= 1920 && b <= 1080) {
+                for(slot = 0; slot < 256 && buf[slot] != nil; slot++)
+                    ;
+                if(slot < 256) {
+                    size = a * b * 4;
+                    p = malloc(size);
+                    if(p != nil) {
+                        memset(p, 0, size);
+                        buf[slot] = p;
+                        len[slot] = size;
+                        wid[slot] = a;
+                        hei[slot] = b;
+                        out = slot;
                     }
-                    close(fd);
+                }
+            }
+        } else if(op == 1) {
+            if(slot >= 0 && slot < 256 && buf[slot] != nil) {
+                free(buf[slot]);
+                buf[slot] = nil;
+                len[slot] = 0;
+                wid[slot] = 0;
+                hei[slot] = 0;
+                out = 0;
+            }
+        } else if(slot >= 0 && slot < 256 && buf[slot] != nil) {
+            if(op == 2) {
+                if(a >= 0 && a <= 0xffffff) {
+                    p = buf[slot];
+                    for(i = 0; i < len[slot]; i += 4) {
+                        p[i] = a;
+                        p[i+1] = a >> 8;
+                        p[i+2] = a >> 16;
+                        p[i+3] = 255;
+                    }
+                    out = len[slot];
+                }
+            } else if(op == 3) {
+                count = o9_string_len(data);
+                if(a >= 0 && count <= 65536 && a + count <= len[slot]) {
+                    memmove(buf[slot] + a, o9_string_data(data), count);
+                    out = count;
+                }
+            } else if(op == 4) {
+                path = o9_string_cstr(data);
+                if(path != nil) {
+                    fd = open(path, OWRITE);
+                    free(path);
+                    if(fd >= 0) {
+                        out = 0;
+                        rowbytes = wid[slot] * 4;
+                        p = buf[slot];
+                        for(r = 0; r < hei[slot]; r++) {
+                            off = (b + r) * c + a * 4;
+                            if(seek(fd, off, 0) < 0 ||
+                               write(fd, p + r * rowbytes, rowbytes) != rowbytes) {
+                                out = -1;
+                                break;
+                            }
+                            out += rowbytes;
+                        }
+                        close(fd);
+                    }
+                }
+            } else if(op == 5) {
+                count = b;
+                if(a >= 0 && count >= 0 && a + count <= len[slot]) {
+                    p = malloc(count > 0 ? count : 1);
+                    if(p != nil) {
+                        memmove(p, buf[slot] + a, count);
+                        out = (vlong)p;
+                    }
                 }
             }
         }
+        unlock(&pixlock);
     }
     return out;
 }
 
-function DisplayBufferFillInPlaceRaw(string s, int64 rgb) int64 {
-    int64 out;
-    c {
-        vlong i, size;
-        uchar *dst;
-
-        out = -1;
-        if(s != nil && rgb >= 0 && rgb <= 0xffffff) {
-            size = o9_string_len(s);
-            dst = (uchar*)o9_string_data(s);
-            for(i = 0; i < size; i += 4) {
-                dst[i] = rgb;
-                dst[i+1] = rgb >> 8;
-                dst[i+2] = rgb >> 16;
-                dst[i+3] = 255;
-            }
-            out = size;
-        }
-    }
-    return out;
-}
-
-function DisplayBufferFillRaw(int64 count, int64 rgb) string {
+function DisplayPixelStringRaw(int64 ptr, int64 len) string {
     string out;
     c {
-        vlong i, size;
-        uchar *dst;
-
         out = nil;
-        if(count > 0 && count <= 512*512 && rgb >= 0 && rgb <= 0xffffff) {
-            size = count*4;
-            out = o9_string_new(nil, size);
-            if(out != nil) {
-                dst = (uchar*)o9_string_data(out);
-                for(i = 0; i < size; i += 4) {
-                    dst[i] = rgb;
-                    dst[i+1] = rgb >> 8;
-                    dst[i+2] = rgb >> 16;
-                    dst[i+3] = 255;
-                }
-            }
+        if(ptr != 0) {
+            out = o9_string_new((char*)ptr, len);
+            free((void*)ptr);
         }
+        if(out == nil)
+            out = o9_string_new("", 0);
     }
     return out;
 }
 
-// Native XRGB8888 image storage. The 9P service owns buffers, including
-// offscreen images; surfaces only refer to these buffers when presenting.
 class DisplayBuffer {
     private int64 bufferId;
     private int64 ownerId;
     private int64 pixelWidth;
     private int64 pixelHeight;
-    private string pixels;
+    private int64 pixelSlot;
 
     method DisplayBuffer(int64 id, int64 owner, int64 width, int64 height) {
         bufferId = id;
         ownerId = owner;
         pixelWidth = width;
         pixelHeight = height;
-        pixels = "";
+        pixelSlot = -1;
         if(id > 0 && owner > 0 && width > 0 && height > 0 &&
            width <= 512 && height <= 512) {
-            Task<string> blank = spawn DisplayBufferBlankRaw(width * height * 4);
-            pixels = blank.take();
+            Task<int64> alloc = spawn DisplayPixelRaw(0, 0, width, height, 0, "");
+            pixelSlot = alloc.take();
         }
     }
 
     method bool valid() {
-        return len(pixels) == pixelWidth * pixelHeight * 4 &&
-               bufferId > 0 && ownerId > 0;
+        return pixelSlot >= 0 && bufferId > 0 && ownerId > 0 &&
+               pixelWidth > 0 && pixelHeight > 0;
     }
 
     method int64 id() { return bufferId; }
     method int64 owner() { return ownerId; }
     method int64 width() { return pixelWidth; }
     method int64 height() { return pixelHeight; }
-    method int64 size() { return len(pixels); }
-    // The reader owns its snapshot after subsequent writes replace pixels.
-    method string data() { return cat(pixels, ""); }
-    // Present from the actor that owns the pixels; the payload never
-    // crosses an actor boundary as a return value.
-    method int64 present(string path, int64 x, int64 y, int64 stride) {
-        int64 total = 0;
-        int64 row = 0;
-        int64 rows;
-        int64 bytes;
-        int64 chunk = 262144;
-        while(row < pixelHeight) {
-            rows = chunk / (pixelWidth * 4);
-            if(rows < 1) { rows = 1; }
-            if(rows > pixelHeight - row) { rows = pixelHeight - row; }
-            bytes = rows * pixelWidth * 4;
-            Task<string> sliceTask = spawn StringSliceRaw(pixels, row * pixelWidth * 4, bytes);
-            string part = sliceTask.take();
-            Task<int64> writeTask = spawn DisplayBufferPresentRaw(part, path, pixelWidth, rows, x, y + row, stride);
-            int64 wrote = writeTask.take();
-            if(wrote != bytes) { return -1; }
-            total = total + wrote;
-            row = row + rows;
-        }
-        return total;
+    method int64 size() {
+        if(!valid()) { return 0; }
+        return pixelWidth * pixelHeight * 4;
+    }
+
+    method string data() {
+        if(!valid()) { return ""; }
+        Task<int64> read = spawn DisplayPixelRaw(5, pixelSlot, 0, size(), 0, "");
+        int64 ptr = read.take();
+        if(ptr < 0) { return ""; }
+        Task<string> text = spawn DisplayPixelStringRaw(ptr, size());
+        return text.take();
     }
 
     method bool reset(int64 id, int64 owner, int64 width, int64 height) {
@@ -186,54 +162,53 @@ class DisplayBuffer {
            width <= 0 || height <= 0 || width > 512 || height > 512) {
             return false;
         }
-        Task<string> blank = spawn DisplayBufferBlankRaw(width * height * 4);
-        string next = blank.take();
-        if(len(next) != width * height * 4) { return false; }
-        pixels.dispose();
-        pixels = next;
+        Task<int64> alloc = spawn DisplayPixelRaw(0, 0, width, height, 0, "");
+        int64 slot = alloc.take();
+        if(slot < 0) { return false; }
         bufferId = id;
         ownerId = owner;
         pixelWidth = width;
         pixelHeight = height;
+        pixelSlot = slot;
         return true;
     }
 
     method bool zero() {
         if(!valid()) { return false; }
-        Task<string> blank = spawn DisplayBufferBlankRaw(pixelWidth * pixelHeight * 4);
-        string next = blank.take();
-        if(len(next) != len(pixels)) { return false; }
-        pixels.dispose();
-        pixels = next;
-        return valid();
+        Task<int64> fill = spawn DisplayPixelRaw(2, pixelSlot, 0, 0, 0, "");
+        return fill.take() == size();
     }
 
-    // A write is one 9P chunk. Reject oversized chunks and out-of-range
-    // offsets before forming a new immutable snapshot.
     method bool write(int64 offset, string bytes) {
-        int64 count = len(bytes);
-        int64 total = len(pixels);
-        if(!valid() || offset < 0 || count > 65536 ||
-           offset > total || count > total - offset) { return false; }
-        Task<string> patchTask = spawn DisplayBufferPatchRaw(pixels, offset, bytes);
-        string next = patchTask.take();
-        if(len(next) != total) { return false; }
-        pixels.dispose();
-        pixels = next;
-        return len(pixels) == total;
+        if(!valid() || offset < 0 || len(bytes) > 65536 ||
+           offset > size() || len(bytes) > size() - offset) {
+            return false;
+        }
+        Task<int64> patch = spawn DisplayPixelRaw(3, pixelSlot, offset, 0, 0, bytes);
+        return patch.take() == len(bytes);
     }
 
     method bool clear(int64 rgb) {
         if(!valid() || rgb < 0 || rgb > 16777215) { return false; }
-        Task<int64> fill = spawn DisplayBufferFillInPlaceRaw(pixels, rgb);
-        int64 filled = fill.take();
-        return filled == len(pixels);
+        Task<int64> fill = spawn DisplayPixelRaw(2, pixelSlot, rgb, 0, 0, "");
+        return fill.take() == size();
+    }
+
+    // Present from the actor that owns the C pixel store.
+    method int64 present(string path, int64 x, int64 y, int64 stride) {
+        Task<int64> writeTask = spawn DisplayPixelRaw(4, pixelSlot, x, y, stride, path);
+        return writeTask.take();
     }
 
     method void close() {
-        pixels.dispose();
-        pixels = "";
+        if(pixelSlot >= 0) {
+            Task<int64> release = spawn DisplayPixelRaw(1, pixelSlot, 0, 0, 0, "");
+            release.take();
+            pixelSlot = -1;
+        }
         bufferId = 0;
         ownerId = 0;
+        pixelWidth = 0;
+        pixelHeight = 0;
     }
 }

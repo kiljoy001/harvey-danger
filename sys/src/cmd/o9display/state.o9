@@ -9,6 +9,8 @@ class DisplaySurface {
     private int64 committedBuffer;
     private int64 pendingBuffer;
     private int64 frameSerial;
+    private int64 posX;
+    private int64 posY;
 
     method DisplaySurface(int64 id, int64 owner, int64 width, int64 height) {
         surfaceId = id;
@@ -18,6 +20,8 @@ class DisplaySurface {
         committedBuffer = 0;
         pendingBuffer = 0;
         frameSerial = 0;
+        posX = 0;
+        posY = 0;
     }
 
     method int64 id() { return surfaceId; }
@@ -27,6 +31,15 @@ class DisplaySurface {
     method int64 buffer() { return committedBuffer; }
     method int64 pending() { return pendingBuffer; }
     method int64 serial() { return frameSerial; }
+    method int64 x() { return posX; }
+    method int64 y() { return posY; }
+
+    method bool place(int64 x, int64 y) {
+        if(x < 0 || y < 0) { return false; }
+        posX = x;
+        posY = y;
+        return true;
+    }
 
     method bool attach(int64 bufferId, int64 width, int64 height) {
         if(bufferId <= 0 || width != pixelWidth || height != pixelHeight) {
@@ -159,6 +172,30 @@ class DisplayState {
         DisplaySurface surface = surfaces[index];
         if(surface.owner() != owner) { return 0; }
         return surface.pending();
+    }
+
+    internal method bool place(int64 owner, int64 id, int64 x, int64 y) {
+        int64 index = findIndex(id);
+        if(index < 0) { return false; }
+        DisplaySurface surface = surfaces[index];
+        if(surface.owner() != owner) { return false; }
+        return surface.place(x, y);
+    }
+
+    internal method int64 xFor(int64 owner, int64 id) {
+        int64 index = findIndex(id);
+        if(index < 0) { return 0; }
+        DisplaySurface surface = surfaces[index];
+        if(surface.owner() != owner) { return 0; }
+        return surface.x();
+    }
+
+    internal method int64 yFor(int64 owner, int64 id) {
+        int64 index = findIndex(id);
+        if(index < 0) { return 0; }
+        DisplaySurface surface = surfaces[index];
+        if(surface.owner() != owner) { return 0; }
+        return surface.y();
     }
 
     internal method int64 commit(int64 owner, int64 id) {

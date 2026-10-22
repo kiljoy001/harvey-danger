@@ -575,12 +575,38 @@ main(int argc, char **argv)
 			print("DISPLAYTEST PEEK OPEN FAIL\n");
 			exits("open");
 		}
-		for(off = 0; off < 512 * 7680; off += 256 * 7680){
+		for(off = 0; off < 8294400; off += 2073600){
 			at = off;
 			if(seek(fd, at, 0) >= 0 && read(fd, &pixel, 4) == 4)
 				print("DISPLAYTEST PIXEL %ld %ux\n", at, pixel);
 		}
 		close(fd);
+		exits(nil);
+	}
+	if(argc > 1 && strcmp(argv[1], "scan") == 0){
+		int x, y, bad;
+		long at;
+		u32 pixel;
+		fd = open("/dev/display/data", OREAD);
+		if(fd < 0){
+			print("DISPLAYTEST SCAN OPEN FAIL\n");
+			exits("open");
+		}
+		bad = 0;
+		for(y = 0; y < 1080; y += 60){
+			for(x = 0; x < 1920; x += 60){
+				at = (long)y * 7680 + (long)x * 4;
+				if(seek(fd, at, 0) >= 0 && read(fd, &pixel, 4) == 4 &&
+				   pixel != 0xff00ff00){
+					if(bad < 40)
+						print("DISPLAYTEST BLACK %d %d %ux\n",
+						      x, y, pixel);
+					bad++;
+				}
+			}
+		}
+		close(fd);
+		print("DISPLAYTEST SCAN BAD %d\n", bad);
 		exits(nil);
 	}
 	create(mnt, OREAD, DMDIR|0755);
@@ -592,7 +618,7 @@ main(int argc, char **argv)
 		exits("mount");
 	}
 	close(fd);
-	if(wr("/mnt/display/view/ctl", "buffer 512 512\n") < 0){
+	if(wr("/mnt/display/view/ctl", "buffer 480 270\n") < 0){
 		print("DISPLAYTEST BUFFER FAIL\n");
 		exits("buffer");
 	}
@@ -602,25 +628,46 @@ main(int argc, char **argv)
 		exits("clear");
 	}
 	print("DISPLAYTEST CLEAR PASS\n");
-	if(wr("/mnt/display/view/ctl", "surface 512 512\n") < 0){
-		print("DISPLAYTEST SURFACE FAIL\n");
-		exits("surface");
+	{
+		char path[64], cmd[64];
+		int id, row, col;
+		id = 1;
+		for(row = 0; row < 4; row++){
+			for(col = 0; col < 4; col++){
+				if(wr("/mnt/display/view/ctl", "surface 480 270\n") < 0){
+					print("DISPLAYTEST SURFACE FAIL\n");
+					exits("surface");
+				}
+				snprint(path, sizeof path, "/mnt/display/view/surfaces/%d/ctl", id);
+				snprint(cmd, sizeof cmd, "place %d %d\n", col * 480, row * 270);
+				if(wr(path, cmd) < 0 || wr(path, "attach 1\n") < 0 ||
+				   wr(path, "commit\n") < 0){
+					print("DISPLAYTEST TILE FAIL\n");
+					exits("tile");
+				}
+				{
+					int dfd;
+					u32 pixel;
+					long at;
+					dfd = open("/dev/display/data", OREAD);
+					at = (row * 270 + 135) * 7680 + (col * 480 + 240) * 4;
+					if(dfd >= 0 && seek(dfd, at, 0) >= 0 &&
+					   read(dfd, &pixel, 4) == 4)
+						print("DISPLAYTEST TILE %d %d %d %ux\n",
+						      col, row, id, pixel);
+					if(dfd >= 0)
+						close(dfd);
+				}
+				id++;
+			}
+		}
 	}
-	print("DISPLAYTEST SURFACE PASS\n");
-	if(wr("/mnt/display/view/surfaces/1/ctl", "attach 1\n") < 0){
-		print("DISPLAYTEST ATTACH FAIL\n");
-		exits("attach");
-	}
-	print("DISPLAYTEST ATTACH PASS\n");
-	if(wr("/mnt/display/view/surfaces/1/ctl", "commit\n") < 0){
-		print("DISPLAYTEST COMMIT FAIL\n");
-		exits("commit");
-	}
+	print("DISPLAYTEST TILES PASS\n");
 	fd = open("/dev/display/data", OREAD);
 	if(fd >= 0){
 		long off, at;
 		u32 pixel;
-		for(off = 0; off < 512 * 7680; off += 256 * 7680){
+		for(off = 0; off < 8294400; off += 2073600){
 			at = off;
 			if(seek(fd, at, 0) >= 0 && read(fd, &pixel, 4) == 4)
 				print("DISPLAYTEST PIXEL %ld %ux\n", at, pixel);

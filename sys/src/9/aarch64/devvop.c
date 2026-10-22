@@ -133,6 +133,9 @@ vopread(Chan *c, void *a, i32 n, i64 offset)
 		avail = vopfb.size - (u64)offset;
 		if((u64)n > avail)
 			n = avail;
+		/* Make readback observe what the VOP sees, not a stale
+		 * cached copy left by the writer. */
+		dcacheclean(KADDR(vopfb.pa + offset), n);
 		memmove(a, KADDR(vopfb.pa + offset), n);
 		qunlock(&voplk);
 		return n;
