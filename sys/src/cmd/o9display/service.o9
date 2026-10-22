@@ -249,8 +249,9 @@ class DisplaySession {
                 string clean = cleanTask.take();
                 Task<string> verbTask = spawn StringFieldRaw(clean, " ", 0);
                 Task<string> colorTask = spawn StringFieldRaw(clean, " ", 1);
-                if(cmp(verbTask.take(), "clear") != 0 ||
-                   !buffer.clear(codec.unsigned(colorTask.take()))) {
+                int64 rgb = codec.unsigned(colorTask.take());
+                bool cleared = buffer.clear(rgb);
+                if(cmp(verbTask.take(), "clear") != 0 || !cleared) {
                     return -1;
                 }
                 result = "ok\n";
@@ -279,8 +280,22 @@ class DisplaySession {
                     return len(text);
                 }
                 if(cmp(verb, "commit") == 0) {
+                    int64 bufferId = model.pendingFor(ownerId, i);
                     int64 serial = model.commit(ownerId, i);
                     if(serial == 0) { return -1; }
+                    if(bufferId > 0) {
+                        int64 bi = findBufferIndex(bufferId);
+                        if(bi >= 0) {
+                            DisplayBuffer b = buffers[bi];
+                            // First scanout path: present one bounded tile.
+                            // The VOP device is a linear XRGB8888 buffer.
+                            string devdata = "/dev/display/data";
+                            int64 wrote = b.present(devdata, 0, 0, 7680);
+                            if(wrote == b.size()) {
+                                model.release(i, serial);
+                            }
+                        }
+                    }
                     result = cat(cat("frame ", codec.number(serial)), "\n");
                     return len(text);
                 }

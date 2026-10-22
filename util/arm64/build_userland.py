@@ -27,6 +27,8 @@ I2CFS_BASE = 0x2600000
 RC_BASE = 0x2A00000
 ECHO_BASE = 0x2E00000
 CAT_BASE = 0x3200000
+O9DISPLAY_BASE = 0x3A00000
+DISPLAYTEST_BASE = 0x4200000
 
 RC_SOURCES = [
     "code.c", "exec.c", "getflags.c", "glob.c", "havefork.c", "here.c",
@@ -450,6 +452,19 @@ main(int argc, char **argv)
 			say("HARVEY-ARM64 HUBFS FAIL\n");
 	}
 	{
+		char *dispargv[] = { "/boot/o9display", nil };
+		pid = rfork(RFPROC|RFNOWAIT|RFFDG|RFENVG|RFREND|RFNOTEG);
+		if(pid == 0){
+			exec(dispargv[0], dispargv);
+			say("HARVEY-ARM64 DISPLAY-SERVICE EXEC FAIL\n");
+			_exits("exec");
+		}
+		if(pid < 0 || waitfor("/srv/DisplayViews", 200) < 0)
+			say("HARVEY-ARM64 DISPLAY-SERVICE FAIL\n");
+		else
+			say("HARVEY-ARM64 DISPLAY-SERVICE PASS\n");
+	}
+	{
 		char *rcargv[] = { "/boot/rc", "-i", "-m", "/boot/rcmain", nil };
 		say("HARVEY-ARM64 RC START\n");
 		for(;;){
@@ -474,6 +489,8 @@ main(int argc, char **argv)
     o9drvman, _ = validate_elf(ROOT / "build/arm64-o9/o9drvman", O9DRVMAN_BASE)
     driverfs, _ = validate_elf(ROOT / "build/arm64-o9/o9driverfs",
                                DRIVERFS_BASE)
+    o9display, _ = validate_elf(ROOT / "build/arm64-o9/o9display",
+                                O9DISPLAY_BASE)
     uartfs, _ = build_uartfs(out, libc)
     gpiofs, _ = build_gpiofs(out, libc)
     hubfs, _ = build_hubfs(out, libc)
@@ -526,6 +543,94 @@ main(int argc, char **argv)
 	exits(nil);
 }
 ''', CAT_BASE, libc)
+    displaytest, _ = build_program(out, "displaytest", r'''#include <u.h>
+#include <libc.h>
+
+static int
+wr(char *path, char *text)
+{
+	int fd, n, len;
+
+	len = strlen(text);
+	fd = open(path, OWRITE);
+	if(fd < 0)
+		return -1;
+	n = write(fd, text, len);
+	close(fd);
+	return n == len ? 0 : -1;
+}
+
+void
+main(int argc, char **argv)
+{
+	int fd;
+	char *mnt = "/mnt/display";
+
+	USED(argv);
+	if(argc > 1 && strcmp(argv[1], "peek") == 0){
+		long off, at;
+		u32 pixel;
+		fd = open("/dev/display/data", OREAD);
+		if(fd < 0){
+			print("DISPLAYTEST PEEK OPEN FAIL\n");
+			exits("open");
+		}
+		for(off = 0; off < 512 * 7680; off += 256 * 7680){
+			at = off;
+			if(seek(fd, at, 0) >= 0 && read(fd, &pixel, 4) == 4)
+				print("DISPLAYTEST PIXEL %ld %ux\n", at, pixel);
+		}
+		close(fd);
+		exits(nil);
+	}
+	create(mnt, OREAD, DMDIR|0755);
+	fd = open("/srv/DisplayViews", OREAD);
+	if(fd < 0 || mount(fd, -1, mnt, MREPL|MCREATE, "") < 0){
+		if(fd >= 0)
+			close(fd);
+		print("DISPLAYTEST MOUNT FAIL\n");
+		exits("mount");
+	}
+	close(fd);
+	if(wr("/mnt/display/view/ctl", "buffer 512 512\n") < 0){
+		print("DISPLAYTEST BUFFER FAIL\n");
+		exits("buffer");
+	}
+	print("DISPLAYTEST BUFFER PASS\n");
+	if(wr("/mnt/display/view/buffers/1/ctl", "clear 65280\n") < 0){
+		print("DISPLAYTEST CLEAR FAIL\n");
+		exits("clear");
+	}
+	print("DISPLAYTEST CLEAR PASS\n");
+	if(wr("/mnt/display/view/ctl", "surface 512 512\n") < 0){
+		print("DISPLAYTEST SURFACE FAIL\n");
+		exits("surface");
+	}
+	print("DISPLAYTEST SURFACE PASS\n");
+	if(wr("/mnt/display/view/surfaces/1/ctl", "attach 1\n") < 0){
+		print("DISPLAYTEST ATTACH FAIL\n");
+		exits("attach");
+	}
+	print("DISPLAYTEST ATTACH PASS\n");
+	if(wr("/mnt/display/view/surfaces/1/ctl", "commit\n") < 0){
+		print("DISPLAYTEST COMMIT FAIL\n");
+		exits("commit");
+	}
+	fd = open("/dev/display/data", OREAD);
+	if(fd >= 0){
+		long off, at;
+		u32 pixel;
+		for(off = 0; off < 512 * 7680; off += 256 * 7680){
+			at = off;
+			if(seek(fd, at, 0) >= 0 && read(fd, &pixel, 4) == 4)
+				print("DISPLAYTEST PIXEL %ld %ux\n", at, pixel);
+		}
+		close(fd);
+	}
+	print("DISPLAYTEST PASS\n");
+	exits(nil);
+}
+''', DISPLAYTEST_BASE, libc)
     rcmain = (ROOT / "rc/lib/rcmain").read_text()
     rcmain = rcmain.replace("path=(. /bin)", "path=(/boot . /bin)")
     lines = [
@@ -538,6 +643,7 @@ main(int argc, char **argv)
     emit_array(lines, "arm64execstubelf", stub)
     emit_array(lines, "arm64initelf", init)
     emit_array(lines, "arm64o9drvmanelf", o9drvman)
+    emit_array(lines, "arm64o9displayelf", o9display)
     emit_array(lines, "arm64driverfself", driverfs)
     emit_array(lines, "arm64uartfself", uartfs)
     emit_array(lines, "arm64gpiofself", gpiofs)
@@ -547,6 +653,7 @@ main(int argc, char **argv)
     emit_array(lines, "arm64rcelf", rc)
     emit_array(lines, "arm64echoelf", echo)
     emit_array(lines, "arm64catelf", cat)
+    emit_array(lines, "arm64displaytestelf", displaytest)
     emit_array(lines, "arm64rcmain", rcmain.encode())
     args.output.write_text("\n".join(lines))
 

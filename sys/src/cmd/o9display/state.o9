@@ -153,6 +153,14 @@ class DisplayState {
         return surface.attach(bufferId, width, height);
     }
 
+    internal method int64 pendingFor(int64 owner, int64 id) {
+        int64 index = findIndex(id);
+        if(index < 0) { return 0; }
+        DisplaySurface surface = surfaces[index];
+        if(surface.owner() != owner) { return 0; }
+        return surface.pending();
+    }
+
     internal method int64 commit(int64 owner, int64 id) {
         int64 index = findIndex(id);
         if(index < 0) { return 0; }

@@ -564,16 +564,6 @@ vop2init(Fdtinfo *info)
 	grf = (volatile u32 *)GrfBase;
 	vop = (volatile u32 *)VopBase;
 
-	print("vop2: pre sys %x/%x/%x/%x/%x ovl %x layer %x port %x\n",
-		voprd(0x0), voprd(0x8), voprd(0x24), voprd(0x28),
-		voprd(0x2c), voprd(0x600), voprd(0x604), voprd(0x608));
-	print("vop2: pre vp0 dsp %x clk %x bg %x pre %x mix %x\n",
-		voprd(0xc00), voprd(0xc0c), voprd(0xc2c),
-		voprd(0xc30), voprd(0x6e0));
-	print("vop2: pre smart0 %x/%x/%x/%x/%x/%x\n",
-		voprd(0x1c00), voprd(0x1c04), voprd(0x1c08),
-		voprd(0x1c10), voprd(0x1c14), voprd(0x1c1c));
-
 	clocks();
 	resets();
 	vopwr(VopSysAuto, 0);		/* disable auto gating */

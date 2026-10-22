@@ -73,6 +73,11 @@ SERVICES = {
         "extra": [],
         "base": 0xE00000,
     },
+    "o9display": {
+        "source": ROOT / "sys/src/cmd/o9display/service.o9",
+        "extra": [],
+        "base": 0x3A00000,
+    },
 }
 
 

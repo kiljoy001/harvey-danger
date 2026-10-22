@@ -40,6 +40,65 @@ function DisplayBufferPatchRaw(string current, int64 offset, string patch) strin
     return out;
 }
 
+function DisplayBufferPresentRaw(string pixels, string path,
+                                 int64 width, int64 rows,
+                                 int64 x, int64 y, int64 stride) int64 {
+    int64 out;
+    c {
+        char *p, *row;
+        int fd;
+        vlong r, rowbytes, off;
+
+        out = -1;
+        rowbytes = width * 4;
+        if(pixels != nil && width > 0 && rows > 0 &&
+           o9_string_len(pixels) >= width * rows * 4) {
+            p = o9_string_cstr(path);
+            if(p != nil) {
+                fd = open(p, OWRITE);
+                free(p);
+                if(fd >= 0) {
+                    out = 0;
+                    row = o9_string_data(pixels);
+                    for(r = 0; r < rows; r++) {
+                        off = (y + r) * stride + x * 4;
+                        if(seek(fd, off, 0) < 0 ||
+                           write(fd, row + r * rowbytes, rowbytes) != rowbytes) {
+                            out = -1;
+                            break;
+                        }
+                        out += rowbytes;
+                    }
+                    close(fd);
+                }
+            }
+        }
+    }
+    return out;
+}
+
+function DisplayBufferFillInPlaceRaw(string s, int64 rgb) int64 {
+    int64 out;
+    c {
+        vlong i, size;
+        uchar *dst;
+
+        out = -1;
+        if(s != nil && rgb >= 0 && rgb <= 0xffffff) {
+            size = o9_string_len(s);
+            dst = (uchar*)o9_string_data(s);
+            for(i = 0; i < size; i += 4) {
+                dst[i] = rgb;
+                dst[i+1] = rgb >> 8;
+                dst[i+2] = rgb >> 16;
+                dst[i+3] = 255;
+            }
+            out = size;
+        }
+    }
+    return out;
+}
+
 function DisplayBufferFillRaw(int64 count, int64 rgb) string {
     string out;
     c {
@@ -98,6 +157,29 @@ class DisplayBuffer {
     method int64 size() { return len(pixels); }
     // The reader owns its snapshot after subsequent writes replace pixels.
     method string data() { return cat(pixels, ""); }
+    // Present from the actor that owns the pixels; the payload never
+    // crosses an actor boundary as a return value.
+    method int64 present(string path, int64 x, int64 y, int64 stride) {
+        int64 total = 0;
+        int64 row = 0;
+        int64 rows;
+        int64 bytes;
+        int64 chunk = 262144;
+        while(row < pixelHeight) {
+            rows = chunk / (pixelWidth * 4);
+            if(rows < 1) { rows = 1; }
+            if(rows > pixelHeight - row) { rows = pixelHeight - row; }
+            bytes = rows * pixelWidth * 4;
+            Task<string> sliceTask = spawn StringSliceRaw(pixels, row * pixelWidth * 4, bytes);
+            string part = sliceTask.take();
+            Task<int64> writeTask = spawn DisplayBufferPresentRaw(part, path, pixelWidth, rows, x, y + row, stride);
+            int64 wrote = writeTask.take();
+            if(wrote != bytes) { return -1; }
+            total = total + wrote;
+            row = row + rows;
+        }
+        return total;
+    }
 
     method bool reset(int64 id, int64 owner, int64 width, int64 height) {
         if(bufferId != 0 || id <= 0 || owner <= 0 ||
@@ -143,12 +225,9 @@ class DisplayBuffer {
 
     method bool clear(int64 rgb) {
         if(!valid() || rgb < 0 || rgb > 16777215) { return false; }
-        Task<string> fill = spawn DisplayBufferFillRaw(pixelWidth * pixelHeight, rgb);
-        string next = fill.take();
-        if(len(next) != len(pixels)) { return false; }
-        pixels.dispose();
-        pixels = next;
-        return len(pixels) == pixelWidth * pixelHeight * 4;
+        Task<int64> fill = spawn DisplayBufferFillInPlaceRaw(pixels, rgb);
+        int64 filled = fill.take();
+        return filled == len(pixels);
     }
 
     method void close() {
