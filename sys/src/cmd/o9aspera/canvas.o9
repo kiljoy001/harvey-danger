@@ -734,6 +734,130 @@ function AsperaPresentRaw(int64 ptr, string directory, int64 preferred) int64 {
     return out;
 }
 
+function AsperaPresentDisplayRaw(int64 ptr, string mountpoint) int64 {
+    int64 out;
+    c {
+        typedef struct {
+            int width;
+            int height;
+            u32 *pixels;
+        } AsperaBuffer;
+
+        AsperaBuffer *b = (AsperaBuffer*)ptr;
+        char *mp, path[160], command[64], rbuf[64];
+        int mfd, ctl, fd, n, off, total, good, bid, sid, rfd, rn;
+
+        out = -1;
+        mp = o9_string_cstr(mountpoint);
+        if(b != nil && b->pixels != nil && b->width > 0 && b->height > 0 &&
+           mp != nil) {
+        create(mp, OREAD, DMDIR|0755);
+        mfd = open("/srv/DisplayViews", OREAD);
+        if(mfd >= 0 && mount(mfd, -1, mp, MREPL|MCREATE, "") >= 0) {
+            close(mfd);
+            good = 1;
+            bid = 1;
+            snprint(path, sizeof path, "%s/view/ctl", mp);
+            ctl = open(path, OWRITE);
+            if(ctl >= 0) {
+                n = snprint(command, sizeof command, "buffer %d %d\n",
+                            b->width, b->height);
+                if(write(ctl, command, n) != n)
+                    good = 0;
+                close(ctl);
+            } else
+                good = 0;
+            snprint(path, sizeof path, "%s/view/result", mp);
+            rfd = open(path, OREAD);
+            if(rfd >= 0) {
+                rn = read(rfd, rbuf, sizeof rbuf - 1);
+                close(rfd);
+                if(rn > 0) {
+                    rbuf[rn] = '\0';
+                    if(strncmp(rbuf, "buffer ", 7) == 0)
+                        bid = (int)strtol(rbuf + 7, nil, 10);
+                }
+            }
+            snprint(path, sizeof path, "%s/view/buffers/%d/upload", mp, bid);
+            fd = open(path, OWRITE);
+            if(fd < 0)
+                good = 0;
+            total = b->width * b->height * sizeof(u32);
+            off = 0;
+            while(good && off < total) {
+                n = total - off;
+                if(n > 65536) n = 65536;
+                if(write(fd, (u8*)b->pixels + off, n) != n)
+                    good = 0;
+                else
+                    off += n;
+            }
+            if(fd >= 0) close(fd);
+            snprint(path, sizeof path, "%s/view/ctl", mp);
+            ctl = open(path, OWRITE);
+            if(ctl >= 0) {
+                n = snprint(command, sizeof command, "surface %d %d\n",
+                            b->width, b->height);
+                if(write(ctl, command, n) != n)
+                    good = 0;
+                close(ctl);
+            } else
+                good = 0;
+            sid = 1;
+            snprint(path, sizeof path, "%s/view/result", mp);
+            rfd = open(path, OREAD);
+            if(rfd >= 0) {
+                rn = read(rfd, rbuf, sizeof rbuf - 1);
+                close(rfd);
+                if(rn > 0) {
+                    rbuf[rn] = '\0';
+                    if(strncmp(rbuf, "surface ", 8) == 0)
+                        sid = (int)strtol(rbuf + 8, nil, 10);
+                }
+            }
+            snprint(path, sizeof path, "%s/view/surfaces/%d/ctl", mp, sid);
+            ctl = open(path, OWRITE);
+            if(ctl >= 0) {
+                if(seek(ctl, 0, 0) < 0) good = 0;
+                if(write(ctl, "place 0 0\n", 10) != 10) good = 0;
+                if(seek(ctl, 0, 0) < 0) good = 0;
+                if(write(ctl, "attach 1\n", 9) != 9) good = 0;
+                if(seek(ctl, 0, 0) < 0) good = 0;
+                if(write(ctl, "commit\n", 7) != 7) good = 0;
+                close(ctl);
+            } else
+                good = 0;
+            if(good) {
+                /* A full-screen surface also goes straight to the scanout
+                 * buffer.  The live-file upload path is kept for o9display
+                 * state and smaller/partial surfaces, but it can lose
+                 * chunks under load; the kernel device is authoritative. */
+                fd = open("/dev/display/data", OWRITE);
+                if(fd >= 0) {
+                    off = 0;
+                    while(off < total) {
+                        n = total - off;
+                        if(n > 65536) n = 65536;
+                        if(write(fd, (u8*)b->pixels + off, n) != n) {
+                            good = 0;
+                            break;
+                        }
+                        off += n;
+                    }
+                    close(fd);
+                } else
+                    good = 0;
+            }
+            if(good)
+                out = total;
+        } else if(mfd >= 0)
+            close(mfd);
+        }
+        free(mp);
+    }
+    return out;
+}
+
 function AsperaInputRaw(string directory) string {
     string out;
     c {
@@ -871,6 +995,12 @@ class AsperaCanvas {
     method bool present(string directory, int64 preferred) {
         if(handle == 0) { return false; }
         Task<int64> t = spawn AsperaPresentRaw(handle, directory, preferred);
+        return t.await() >= 0;
+    }
+
+    method bool presentDisplay(string mountpoint) {
+        if(handle == 0) { return false; }
+        Task<int64> t = spawn AsperaPresentDisplayRaw(handle, mountpoint);
         return t.await() >= 0;
     }
 

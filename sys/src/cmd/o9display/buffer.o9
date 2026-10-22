@@ -93,6 +93,12 @@ function DisplayPixelRaw(int64 op, int64 slot, int64 a, int64 b, int64 c,
                         out = (vlong)p;
                     }
                 }
+            } else if(op == 6) {
+                count = o9_string_len(data);
+                if(a >= 0 && count <= 65536 && a + count <= len[slot]) {
+                    memmove(buf[slot] + a, o9_string_data(data), count);
+                    out = count;
+                }
             }
         }
         unlock(&pixlock);
@@ -120,6 +126,7 @@ class DisplayBuffer {
     private int64 pixelWidth;
     private int64 pixelHeight;
     private int64 pixelSlot;
+    private int64 writeOffset;
 
     method DisplayBuffer(int64 id, int64 owner, int64 width, int64 height) {
         bufferId = id;
@@ -127,8 +134,9 @@ class DisplayBuffer {
         pixelWidth = width;
         pixelHeight = height;
         pixelSlot = -1;
+        writeOffset = 0;
         if(id > 0 && owner > 0 && width > 0 && height > 0 &&
-           width <= 512 && height <= 512) {
+           width <= 1920 && height <= 1080) {
             Task<int64> alloc = spawn DisplayPixelRaw(0, 0, width, height, 0, "");
             pixelSlot = alloc.take();
         }
@@ -159,7 +167,7 @@ class DisplayBuffer {
 
     method bool reset(int64 id, int64 owner, int64 width, int64 height) {
         if(bufferId != 0 || id <= 0 || owner <= 0 ||
-           width <= 0 || height <= 0 || width > 512 || height > 512) {
+           width <= 0 || height <= 0 || width > 1920 || height > 1080) {
             return false;
         }
         Task<int64> alloc = spawn DisplayPixelRaw(0, 0, width, height, 0, "");
@@ -170,6 +178,7 @@ class DisplayBuffer {
         pixelWidth = width;
         pixelHeight = height;
         pixelSlot = slot;
+        writeOffset = 0;
         return true;
     }
 
@@ -188,10 +197,24 @@ class DisplayBuffer {
         return patch.take() == len(bytes);
     }
 
+    method bool append(string bytes) {
+        if(!valid() || len(bytes) > 65536 ||
+           writeOffset > size() || len(bytes) > size() - writeOffset) {
+            return false;
+        }
+        Task<int64> patch = spawn DisplayPixelRaw(6, pixelSlot, writeOffset, 0, 0, bytes);
+        int64 wrote = patch.take();
+        if(wrote != len(bytes)) { return false; }
+        writeOffset = writeOffset + wrote;
+        return true;
+    }
+
     method bool clear(int64 rgb) {
         if(!valid() || rgb < 0 || rgb > 16777215) { return false; }
         Task<int64> fill = spawn DisplayPixelRaw(2, pixelSlot, rgb, 0, 0, "");
-        return fill.take() == size();
+        if(fill.take() != size()) { return false; }
+        writeOffset = 0;
+        return true;
     }
 
     // Present from the actor that owns the C pixel store.
@@ -206,6 +229,7 @@ class DisplayBuffer {
             release.take();
             pixelSlot = -1;
         }
+        writeOffset = 0;
         bufferId = 0;
         ownerId = 0;
         pixelWidth = 0;

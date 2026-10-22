@@ -43,6 +43,8 @@ LIBRARIES = {
     "libsec": ROOT / "sys/src/libsec/libsec.json",
     "libndb": ROOT / "sys/src/libndb/libndb.json",
     "libbio": ROOT / "sys/src/libbio/libbio.json",
+    "libmemdraw": ROOT / "sys/src/libmemdraw/libmemdraw.json",
+    "libdraw": ROOT / "sys/src/libdraw/libdraw.json",
 }
 
 LIBO9_SOURCES = [
@@ -77,6 +79,16 @@ SERVICES = {
         "source": ROOT / "sys/src/cmd/o9display/service.o9",
         "extra": [],
         "base": 0x3A00000,
+    },
+    "o9aspera": {
+        "source": ROOT / "sys/src/cmd/o9aspera/main.o9",
+        "extra": [],
+        "base": 0x4600000,
+    },
+    "o9aspera-screen": {
+        "source": ROOT / "sys/src/cmd/o9aspera/screen.o9",
+        "extra": [],
+        "base": 0x4E00000,
     },
 }
 

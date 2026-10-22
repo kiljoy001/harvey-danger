@@ -1,0 +1,20 @@
+import "canvas.o9";
+import "theme.o9";
+import "desktop.o9";
+import "window.o9";
+
+main {
+    E16Theme theme = new E16Theme();
+    DesktopCompositor desk = new DesktopCompositor(1920, 1080, theme);
+    WindowActor terminal = desk.createWindow("Terminal", 80, 80, 720, 480);
+    WindowActor notes = desk.createWindow("Notes", 860, 220, 640, 420);
+    AsperaCanvas canvas = new AsperaCanvas(1920, 1080);
+
+    desk.renderAll(canvas);
+    if(!canvas.presentDisplay("/mnt/aspera")) {
+        print("ASPERA-SCREEN FAIL\n");
+    } else {
+        print("ASPERA-SCREEN PASS\n");
+    }
+    canvas.close();
+}

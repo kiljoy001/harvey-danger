@@ -144,8 +144,8 @@ class DisplaySession {
     }
 
     internal method bool createBuffer(int64 width, int64 height) {
-        if(width <= 0 || height <= 0 || width > 512 || height > 512 ||
-           bufferCount >= 8 || width * height * 4 > 4194304 - bufferBytes) {
+        if(width <= 0 || height <= 0 || width > 1920 || height > 1080 ||
+           bufferCount >= 8 || width * height * 4 > 67108864 - bufferBytes) {
             return false;
         }
         int64 id = nextBuffer;
@@ -179,7 +179,7 @@ class DisplaySession {
     }
 
     internal method bool createSurface(int64 width, int64 height) {
-        if(width <= 0 || height <= 0 || width > 512 || height > 512) {
+        if(width <= 0 || height <= 0 || width > 1920 || height > 1080) {
             return false;
         }
         int64 id = model.create(ownerId, width, height);
@@ -240,6 +240,11 @@ class DisplaySession {
                 if(model.bufferCommitted(ownerId, buffer.id())) { return -1; }
                 if(truncate && !buffer.zero()) { return -1; }
                 if(!buffer.write(offset, text)) { return -1; }
+                return len(text);
+            }
+            if(cmp(path, cat(prefix, "/upload")) == 0) {
+                if(model.bufferCommitted(ownerId, buffer.id())) { return -1; }
+                if(!buffer.append(text)) { return -1; }
                 return len(text);
             }
             if(cmp(path, cat(prefix, "/ctl")) == 0) {
@@ -429,6 +434,7 @@ class DisplayViews {
                 string basePath = cat("buffers/", codec.number(bufferId));
                 if(tree.dir(basePath) < 0 ||
                    tree.live(cat(basePath, "/data"), true) < 0 ||
+                   tree.live(cat(basePath, "/upload"), true) < 0 ||
                    tree.live(cat(basePath, "/ctl"), true) < 0 ||
                    tree.live(cat(basePath, "/status"), false) < 0) {
                     session.removeBuffer(bufferId);
@@ -449,6 +455,7 @@ class DisplayViews {
                 Task<string> bufferTarget = spawn StringFieldRaw(clean, " ", 1);
                 string basePath = cat("buffers/", bufferTarget.take());
                 tree.remove(cat(basePath, "/data"));
+                tree.remove(cat(basePath, "/upload"));
                 tree.remove(cat(basePath, "/ctl"));
                 tree.remove(cat(basePath, "/status"));
                 tree.remove(basePath);

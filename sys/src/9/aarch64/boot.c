@@ -482,6 +482,8 @@ arm64kernelstart(Fdtinfo *info)
 	addbootfile("init", (u8 *)arm64initelf, sizeof(arm64initelf));
 	addbootfile("o9drvman", (u8 *)arm64o9drvmanelf, sizeof(arm64o9drvmanelf));
 	addbootfile("o9display", (u8 *)arm64o9displayelf, sizeof(arm64o9displayelf));
+	addbootfile("o9aspera-screen", (u8 *)arm64o9asperascreenelf,
+		    sizeof(arm64o9asperascreenelf));
 	addbootfile("o9driverfs", (u8 *)arm64driverfself, sizeof(arm64driverfself));
 	addbootfile("uartfs", (u8 *)arm64uartfself, sizeof(arm64uartfself));
 	addbootfile("gpiofs", (u8 *)arm64gpiofself, sizeof(arm64gpiofself));
