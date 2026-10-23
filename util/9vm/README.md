@@ -126,6 +126,14 @@ util/9vm/9vm -r /tmp/9vm/stage \
   -disk /tmp/9vm/gefs.img build/harvey.32bit
 ```
 
+`bench_boot.py` timestamps the kernel, host-ring, GEFS-root and rc-shell
+milestones from the serial log and samples the 9vm process CPU over an idle
+window (which includes the host ring's polling thread):
+
+```sh
+python3 util/9vm/bench_boot.py --image /tmp/9vm/gefs.img -n 3
+```
+
 Run the image transport regression, including a 9front format/reboot and two
 9vm boots:
 
