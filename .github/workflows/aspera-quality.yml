@@ -37,7 +37,11 @@ jobs:
           ./INSTALL
       - name: Check out Objective-9C
         run: |
-          git clone --depth=1 --recurse-submodules --shallow-submodules \
+          # Pin to the release the arm64 port was built against: newer main
+          # switches monocypher.h to the stdint spelling, which collides with
+          # the Plan 9 u8/u32 types in the freestanding aarch64 build.
+          git clone --depth=1 --branch objective-9c-v0.2.0 \
+            --recurse-submodules --shallow-submodules \
             https://github.com/kiljoy001/objective-9c.git ../objective-9c
       - name: Build the Objective-9C compiler
         run: |
