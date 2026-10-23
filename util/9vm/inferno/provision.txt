@@ -1,0 +1,13 @@
+mount -c {disk/kfs64 -r -b 4096 '#S/sd00/data'} /n
+cp -r /dis /n
+cp -r /icons /n
+mkdir /n/fonts
+cp -r /fonts/misc /n/fonts/misc
+mkdir /n/lib
+cat /lib/wmsetup > /n/lib/wmsetup
+cat /osinit.dis > /n/osinit.dis
+mkdir /n/chan /n/dev /n/env /n/fd /n/n /n/n/remote /n/net /n/nvfs /n/prog
+echo PROVISION-OK
+ls /n
+ls /n/icons/tk
+ls /n/fonts/misc
