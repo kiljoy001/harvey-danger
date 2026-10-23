@@ -18,6 +18,8 @@ function start_gefs_root() int64 {
         char *milestone = "Aspera system milestone 1\n";
         char *mode;
         char buf[64];
+        char icmd[96];
+        int nn;
         Dir *d;
         int fd, pid, srvfd, i, n, hasApp, mounted;
 
@@ -90,7 +92,7 @@ function start_gefs_root() int64 {
                 print("install: open ctl: %r\n");
                 goto gefs_done;
             }
-            nn = snprint(icmd, sizeof icmd, "part plan9 2048 %llud", sec - 1);
+            nn = snprint(icmd, sizeof icmd, "part plan9 2048 %llu", sec - 1);
             if(write(fd, icmd, nn) != nn){
                 print("install: part command failed: %r\n");
                 close(fd);
@@ -133,18 +135,128 @@ function start_gefs_root() int64 {
                 print("install: GEFS did not come up on the new partition: %r\n");
                 goto gefs_done;
             }
-            close(srvfd);
-            print("INSTALL-OK\n");
-            result = 1;
+            {
+                char *names[] = {"bin/rc", "bin/ls", "bin/cat", "bin/echo",
+                                 "boot/boot", nil};
+                char sp[128], dp[128], cbuf[4096];
+                int sf, df, hfd, k, ncopy, nfail;
+                Dir *sd;
+
+                hfd = open("#9/0", ORDWR);
+                if(hfd < 0){
+                    print("install: no host tree (#9/0): %r\n");
+                    close(srvfd);
+                    goto gefs_done;
+                }
+                if(mount(hfd, -1, "/n", MREPL, "") < 0){
+                    print("install: mount host tree: %r\n");
+                    close(hfd);
+                    close(srvfd);
+                    goto gefs_done;
+                }
+                if(mount(srvfd, -1, "/mnt", MREPL|MCREATE, "") < 0){
+                    print("install: mount new filesystem: %r\n");
+                    close(srvfd);
+                    goto gefs_done;
+                }
+                close(srvfd);
+
+                df = create("/mnt/bin", OREAD, DMDIR|0775);
+                if(df >= 0) close(df);
+                df = create("/mnt/boot", OREAD, DMDIR|0775);
+                if(df >= 0) close(df);
+
+                ncopy = 0;
+                nfail = 0;
+                for(k = 0; names[k] != nil; k++){
+                    snprint(sp, sizeof sp, "/n/%s", names[k]);
+                    snprint(dp, sizeof dp, "/mnt/%s", names[k]);
+                    sf = open(sp, OREAD);
+                    if(sf < 0){
+                        print("install: open %s: %r\n", sp);
+                        nfail++;
+                        continue;
+                    }
+                    df = create(dp, OWRITE, 0775);
+                    if(df < 0){
+                        print("install: create %s: %r\n", dp);
+                        close(sf);
+                        nfail++;
+                        continue;
+                    }
+                    while((nn = read(sf, cbuf, 4096)) > 0){
+                        if(write(df, cbuf, nn) != nn){
+                            print("install: write %s: %r\n", dp);
+                            nfail++;
+                            break;
+                        }
+                        ncopy += nn;
+                    }
+                    close(sf);
+                    close(df);
+                    sd = dirstat(dp);
+                    if(sd != nil){
+                        print("install: %s: %lld bytes\n", dp, sd->length);
+                        free(sd);
+                    }
+                }
+                print("install: copied %d bytes into the new root\n", ncopy);
+                unmount(nil, "/mnt");
+                if(nfail == 0){
+                    print("INSTALL-OK\n");
+                    result = 1;
+                } else
+                    print("INSTALL-PARTIAL (%d files failed)\n", nfail);
+            }
             goto gefs_done;
         }
     not_installing:;
 
-        fd = open("#9/2", ORDWR);
-        if(fd < 0 || mount(fd, -1, "/mnt", MREPL, "") < 0){
-            print("aspera: image transport mount failed: %r\n");
-            if(fd >= 0) close(fd);
-            goto gefs_done;
+        /* devsd keeps partitions in memory only, so a reboot leaves
+         * '#S/sdV0/plan9' missing.  Rebuild the entry from the MBR. */
+        {
+            unsigned char mbr[512];
+            int mfd, cfd, lba, cnt;
+
+            mfd = open("#S/sdV0/data", OREAD);
+            if(mfd >= 0){
+                if(pread(mfd, mbr, 512, 0) == 512 &&
+                   mbr[510] == 0x55 && mbr[511] == 0xAA){
+                    for(i = 0; i < 4; i++){
+                        if(mbr[446 + i*16 + 4] != 0x39)
+                            continue;
+                        lba = *(unsigned int*)(mbr + 446 + i*16 + 8);
+                        cnt = *(unsigned int*)(mbr + 446 + i*16 + 12);
+                        cfd = open("#S/sdV0/ctl", OWRITE);
+                        if(cfd >= 0 && cnt > 0){
+                            nn = snprint(icmd, sizeof icmd,
+                                         "part plan9 %d %d", lba, lba + cnt - 1);
+                            if(write(cfd, icmd, nn) == nn)
+                                print("aspera: plan9 partition %d..%d from MBR\n",
+                                      lba, lba + cnt - 1);
+                            close(cfd);
+                        }
+                        break;
+                    }
+                }
+                close(mfd);
+            }
+        }
+
+        /* Prefer a native GEFS partition on the virtio disk; fall back to
+         * 9vm's 9P image export (#9/2) when there is no disk. */
+        fd = open("#S/sdV0/plan9", OREAD);
+        if(fd >= 0){
+            close(fd);
+            args[7] = "#S/sdV0/plan9";
+            print("aspera: GEFS root on %s\n", args[7]);
+        } else {
+            fd = open("#9/2", ORDWR);
+            if(fd < 0 || mount(fd, -1, "/mnt", MREPL, "") < 0){
+                print("aspera: image transport mount failed: %r\n");
+                if(fd >= 0) close(fd);
+                goto gefs_done;
+            }
         }
         pid = rfork(RFPROC|RFFDG|RFNOWAIT);
         if(pid == 0){

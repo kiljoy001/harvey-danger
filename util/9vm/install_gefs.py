@@ -29,10 +29,31 @@ CMDLINE = "bootargs=local!#9/0 nobootprompt=local gefsroot=1 install=1"
 GEFS_MAGIC = b"gefs9."
 MIN_MIB = 160
 
+# Minimal bootable root: what the installer copies onto the new filesystem.
+STAGE = (
+    ("bin/rc", "build/rc"),
+    ("bin/ls", "build/ls"),
+    ("bin/cat", "build/aspera-cat"),
+    ("bin/echo", "build/aspera-echo"),
+    ("boot/boot", "boot/boot"),
+)
 
-def run(image: Path, timeout: float) -> str:
+
+def make_stage(stage: Path) -> None:
+    import shutil
+    for dest, src in STAGE:
+        target = stage / dest
+        target.parent.mkdir(parents=True, exist_ok=True)
+        source = ROOT / src
+        if not source.is_file():
+            raise SystemExit(f"missing staging source {src}")
+        shutil.copy2(source, target)
+
+
+def run(image: Path, stage: Path, timeout: float) -> str:
     proc = subprocess.Popen(
-        [str(VM), "-c", CMDLINE, "-disk", str(image), str(KERNEL)],
+        [str(VM), "-r", str(stage), "-c", CMDLINE,
+         "-disk", str(image), str(KERNEL)],
         cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     sel = selectors.DefaultSelector()
     sel.register(proc.stdout, selectors.EVENT_READ)
@@ -89,6 +110,8 @@ def main() -> int:
                     help="image to create (default /tmp/9vm/gefs.img)")
     ap.add_argument("-s", "--size", type=int, default=256,
                     help=f"image size in MiB (default 256, minimum {MIN_MIB})")
+    ap.add_argument("--stage", default="/tmp/9vm/stage",
+                    help="staged minimal root the guest copies (default /tmp/9vm/stage)")
     ap.add_argument("--timeout", type=float, default=180.0)
     args = ap.parse_args()
 
@@ -105,7 +128,9 @@ def main() -> int:
         f.truncate(args.size * 1024 * 1024)
     print(f"created {image} ({args.size} MiB)")
 
-    log = run(image, args.timeout)
+    stage = Path(args.stage)
+    make_stage(stage)
+    log = run(image, stage, args.timeout)
     if "INSTALL-OK" not in log:
         print("install failed:", file=sys.stderr)
         tail = "\n".join(log.strip().splitlines()[-25:])
