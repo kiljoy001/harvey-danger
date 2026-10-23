@@ -90,6 +90,7 @@ SOURCES = [
     "sys/src/9/amd64/mpacpi.c",
     "sys/src/9/amd64/devacpi.c",
     "sys/src/9/amd64/micro.c",
+    "sys/src/9/amd64/devxhci.c",
     "sys/src/9/386/pci.c",
     "sys/src/9/386/uarti8250.c",
 

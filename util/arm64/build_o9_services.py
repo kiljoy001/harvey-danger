@@ -90,6 +90,30 @@ SERVICES = {
         "extra": [],
         "base": 0x4E00000,
     },
+    "o9xhci": {
+        "source": ROOT / "sys/src/cmd/o9xhci/service.o9",
+        "extra": [
+            ROOT / "sys/src/cmd/o9xhci/xhci.c",
+            ROOT / "sys/src/cmd/o9xhci/binding.c",
+        ],
+        "base": 0x5600000,
+    },
+    "test-xhci": {
+        "source": ROOT / "sys/src/cmd/o9xhci/test_guest.o9",
+        "extra": [
+            ROOT / "sys/src/cmd/o9xhci/xhci.c",
+            ROOT / "sys/src/cmd/o9xhci/binding.c",
+        ],
+        "base": 0x5E00000,
+    },
+    "test-xhci1": {
+        "source": ROOT / "sys/src/cmd/o9xhci/test_otg.o9",
+        "extra": [
+            ROOT / "sys/src/cmd/o9xhci/xhci.c",
+            ROOT / "sys/src/cmd/o9xhci/binding.c",
+        ],
+        "base": 0x6600000,
+    },
 }
 
 

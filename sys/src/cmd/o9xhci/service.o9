@@ -1,0 +1,123 @@
+// SPDX-License-Identifier: GPL-2.0-only
+import "stdlib/view.o9";
+import "stdlib/process.o9";
+
+function XhciStart(string path) int64 {
+    int64 out;
+    c {
+        extern int o9xhci_start(char *);
+        char *p = o9_string_cstr(path);
+        out = p == nil ? -1 : o9xhci_start(p);
+        free(p);
+    }
+    return out;
+}
+function XhciRequest(int64 owner, string request) string {
+    string out;
+    c {
+        extern uchar *o9xhci_request(uvlong, uchar *, int, int *);
+        int n = 0;
+        uchar *p = o9xhci_request(owner, (uchar*)o9_string_data(request),
+                                 o9_string_len(request), &n);
+        out = o9_string_new(p, n);
+        free(p);
+    }
+    return out;
+}
+function XhciRelease(int64 owner) int64 {
+    c {
+        extern void o9xhci_release(uvlong);
+        o9xhci_release(owner);
+    }
+    return 0;
+}
+function XhciStatus() string {
+    string out;
+    c {
+        extern char *o9xhci_status(void);
+        char *p = o9xhci_status();
+        out = o9_string_from_c(p == nil ? "" : p);
+        free(p);
+    }
+    return out;
+}
+
+class UsbController {
+    ViewController;
+    private string[] ids;
+    private string[] results;
+    private int64[] owners;
+    private FileTree[] trees;
+    private int64 count;
+    private int64 serial;
+
+    internal method int64 find(string id) {
+        int64 i = 0;
+        while(i < count) {
+            if(cmp(ids[i], id) == 0) { return i; }
+            i = i + 1;
+        }
+        return -1;
+    }
+    internal method FileTree display(string id, string caller) {
+        int64 i = 0;
+        while(i < count && len(ids[i]) != 0) { i = i + 1; }
+        if(i == count && count >= 16) { return nil; }
+        FileTree tree = new FileTree();
+        tree.text("protocol", "o9xhci 1\n", false);
+        tree.live("status", false);
+        tree.live("request", true);
+        tree.live("reply", false);
+        serial = serial + 1;
+        ids[i] = cat(id, ""); owners[i] = serial; results[i] = ""; trees[i] = tree;
+        if(i == count) { count = count + 1; }
+        return tree;
+    }
+    internal method void closeView(string id) {
+        int64 i = find(id);
+        if(i >= 0) {
+            Task<int64> release = spawn XhciRelease(owners[i]);
+            release.await();
+            FileTree tree = trees[i];
+            tree.close(); tree.destroy();
+            ids[i] = ""; results[i] = "";
+        }
+    }
+    internal method string readText(string id, string path) {
+        int64 i = find(id);
+        if(i < 0) { return ""; }
+        if(cmp(path, "status") == 0) {
+            Task<string> status = spawn XhciStatus();
+            return status.take();
+        }
+        if(cmp(path, "reply") == 0) { return cat(results[i], ""); }
+        return "";
+    }
+    internal method int64 writeText(string id, string path, int64 offset,
+                                   string data, bool truncate) {
+        int64 i = find(id);
+        if(i < 0 || cmp(path, "request") != 0 || offset != 0 ||
+           len(data) < 24 || len(data) > 65568) { return -1; }
+        Task<string> reply = spawn XhciRequest(owners[i], data);
+        results[i] = reply.take();
+        return len(data);
+    }
+}
+
+main {
+    Process process = new Process();
+    if(process.argc() != 2) {
+        print("usage: o9xhci '#X/0'\n");
+    } else {
+        Task<int64> start = spawn XhciStart(process.arg(1));
+        if(start.await() < 0) {
+            print("o9xhci: controller startup failed\n");
+        } else {
+            Task<int64> lifecycle = spawn ViewCloseNotificationsRaw(true);
+            lifecycle.await();
+            UsbController controller = new UsbController();
+            viewController(controller);
+            print("o9xhci: controller ready\n");
+        }
+    }
+}

@@ -286,4 +286,7 @@ kill_header_mutant queue-boundary virtio9p_core.h \
 kill_header_mutant descriptor-cycle virtio9p_core.h \
 	'next != head' 'next == head'
 
+echo "quality: user-space xHCI engine"
+CC="$cc" sh "$quality_dir/xhci.sh"
+
 echo "ASPERA-NATIVE-QUALITY PASS"

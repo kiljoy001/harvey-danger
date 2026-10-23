@@ -20,6 +20,7 @@ extern Dev segmentdevtab;
 extern Dev virtio9pdevtab;
 extern Dev ringdevtab;
 extern Dev ramdevtab;
+extern Dev xhcidevtab;
 
 Dev *devtab[] = {
 	&rootdevtab,
@@ -36,6 +37,7 @@ Dev *devtab[] = {
 	&virtio9pdevtab,
 	&ringdevtab,
 	&ramdevtab,
+	&xhcidevtab,
 	nil,
 };
 

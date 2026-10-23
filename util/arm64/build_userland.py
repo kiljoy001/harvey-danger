@@ -30,6 +30,9 @@ CAT_BASE = 0x3200000
 O9DISPLAY_BASE = 0x3A00000
 DISPLAYTEST_BASE = 0x4200000
 O9ASPERA_SCREEN_BASE = 0x4E00000
+O9XHCI_BASE = 0x5600000
+TESTXHCI_BASE = 0x5E00000
+TESTXHCI1_BASE = 0x6600000
 
 RC_SOURCES = [
     "code.c", "exec.c", "getflags.c", "glob.c", "havefork.c", "here.c",
@@ -494,6 +497,9 @@ main(int argc, char **argv)
                                 O9DISPLAY_BASE)
     asperascreen, _ = validate_elf(ROOT / "build/arm64-o9/o9aspera-screen",
                                    O9ASPERA_SCREEN_BASE)
+    o9xhci, _ = validate_elf(ROOT / "build/arm64-o9/o9xhci", O9XHCI_BASE)
+    testxhci, _ = validate_elf(ROOT / "build/arm64-o9/test-xhci", TESTXHCI_BASE)
+    testxhci1, _ = validate_elf(ROOT / "build/arm64-o9/test-xhci1", TESTXHCI1_BASE)
     uartfs, _ = build_uartfs(out, libc)
     gpiofs, _ = build_gpiofs(out, libc)
     hubfs, _ = build_hubfs(out, libc)
@@ -695,6 +701,9 @@ main(int argc, char **argv)
     emit_array(lines, "arm64o9drvmanelf", o9drvman)
     emit_array(lines, "arm64o9displayelf", o9display)
     emit_array(lines, "arm64o9asperascreenelf", asperascreen)
+    emit_array(lines, "arm64o9xhcielf", o9xhci)
+    emit_array(lines, "arm64testxhcielf", testxhci)
+    emit_array(lines, "arm64testxhci1elf", testxhci1)
     emit_array(lines, "arm64driverfself", driverfs)
     emit_array(lines, "arm64uartfself", uartfs)
     emit_array(lines, "arm64gpiofself", gpiofs)
