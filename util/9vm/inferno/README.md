@@ -101,6 +101,27 @@ A healthy `wm` on the kfs root renders a `0x777777` background with the
 `0xdddddd` toolbar; `tk: font not found: /fonts/pelm/unicode.8.font` is
 expected and harmless (it falls back to the built-in font).
 
+## 9vm host filesystem
+
+The init mounts 9vm's shared-ring host filesystem at `/n/host` when the
+hypervisor offers it.  The kernel device is `#~` (`os/pc/devhostring.c`):
+
+- `#~/host` (alias `#~/client`) is a bidirectional 9P2000 byte stream, ready
+  for `mount(2)`.
+- `#~/ctl` reports the ring address, free buffer slots and request counters.
+- 9vm reserves the top 2 MiB of guest RAM and publishes it as a Multiboot
+  memory-map entry of type `0x9009`; the device maps it uncached, validates
+  the `P9_HOST_MAGIC` header, then submits T-messages and polls completions.
+  There is no interrupt from the host, so reads spin briefly and then sleep.
+- The exported directory is 9vm's `-r` argument (the current directory by
+  default).  The mount is best effort: without the ring the init prints
+  `init: no 9ring host transport` and continues.
+
+```sh
+mount -A '#~/host' /n/host
+ls /n/host
+```
+
 ## Baseline measured on this setup
 
 - `cp -r /dis` (783 files, 7.6 MB): ~7.7 s
