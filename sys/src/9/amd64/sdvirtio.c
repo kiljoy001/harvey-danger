@@ -87,7 +87,7 @@ struct Vbdev {
 	QLock	lk;
 	u64	capacity;	/* 512-byte sectors */
 	u64	reqhdr[2];	/* 16-byte request header */
-	u8	reqstatus;
+	volatile u8 reqstatus;	/* device writes this */
 };
 
 SDifc sdvirtioifc;
@@ -114,16 +114,6 @@ static void
 vbw8(Vbdev *vb, int off, u8 v)
 {
 	*(volatile u8*)(vb->mmio + off) = v;
-}
-
-static void
-sdvirtiointerrupt(Ureg *u, void *a)
-{
-	Vbdev *vb;
-
-	USED(u);
-	vb = a;
-	(void)vbr32(vb, VISR);	/* read clears the ISR and deasserts the line */
 }
 
 static i32
@@ -160,7 +150,7 @@ sdvirtiobio(SDunit *unit, int lun, int write, void *data, i32 nb, u64 bno)
 	r->desc[1].next = 2;
 
 	/* descriptor 2: status byte (device writes) */
-	r->desc[2].addr = PADDR(&vb->reqstatus);
+	r->desc[2].addr = PADDR((void*)&vb->reqstatus);
 	r->desc[2].len = 1;
 	r->desc[2].flags = VDescWrite;
 	r->desc[2].next = 0;
@@ -173,6 +163,8 @@ sdvirtiobio(SDunit *unit, int lun, int write, void *data, i32 nb, u64 bno)
 	(void)vbr32(vb, VISR);
 
 	if(vb->reqstatus != 0){
+		print("sdvirtio: bio type=%d bno=%llu nb=%d status=%ux used=%d\n",
+		      write, bno, nb, vb->reqstatus, r->used.idx);
 		qunlock(&vb->lk);
 		return -1;
 	}
@@ -223,13 +215,12 @@ sdvirtioenable(SDev *sdev)
 	vb->capacity = vbr32(vb, VDevConfig);
 	vb->capacity |= (u64)vbr32(vb, VDevConfig + 4) << 32;
 
-	print("sdvirtio: %llud sectors (%llud MB)\n",
+	print("sdvirtio: %llu sectors (%llu MB)\n",
 	      vb->capacity, vb->capacity / 2048);
 
-	if(vb->pci != nil && vb->pci->intl != 0 && vb->pci->intl != 0xFF)
-		intrenable(vb->pci->intl, sdvirtiointerrupt, vb,
-			   vb->pci->tbdf, "virtio");
-
+	/* No handler: 9vm completes inline and the ISR is read after each
+	 * request.  The PCI interrupt line is not routed through the MADT,
+	 * so intrenable would only print "unable to build IOAPIC route". */
 	return 1;
 }
 
