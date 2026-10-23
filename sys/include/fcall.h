@@ -71,17 +71,25 @@ struct	Fcall
 } Fcall;
 
 
-#define	GBIT8(p)	((p)[0])
-#define	GBIT16(p)	((p)[0]|((p)[1]<<8))
-#define	GBIT32(p)	((p)[0]|((p)[1]<<8)|((p)[2]<<16)|((p)[3]<<24))
-#define	GBIT64(p)	((u32)((p)[0]|((p)[1]<<8)|((p)[2]<<16)|((p)[3]<<24)) |\
-				((i64)((p)[4]|((p)[5]<<8)|((p)[6]<<16)|((p)[7]<<24)) << 32))
+/*
+ * The casts to u8 are required: callers routinely pass plain (signed)
+ * char buffers, and sign extension here turns a length such as 0x9d7
+ * into a negative number, desynchronising the 9P stream.
+ */
+#define	GBIT8(p)	((u8)(p)[0])
+#define	GBIT16(p)	((u16)(u8)(p)[0]|((u16)(u8)(p)[1]<<8))
+#define	GBIT32(p)	((u32)(u8)(p)[0]|((u32)(u8)(p)[1]<<8)|\
+				((u32)(u8)(p)[2]<<16)|((u32)(u8)(p)[3]<<24))
+#define	GBIT64(p)	((u64)(u8)(p)[0]|((u64)(u8)(p)[1]<<8)|\
+				((u64)(u8)(p)[2]<<16)|((u64)(u8)(p)[3]<<24)|\
+				((u64)(u8)(p)[4]<<32)|((u64)(u8)(p)[5]<<40)|\
+				((u64)(u8)(p)[6]<<48)|((u64)(u8)(p)[7]<<56))
 
-#define	PBIT8(p,v)	(p)[0]=(v)
-#define	PBIT16(p,v)	(p)[0]=(v);(p)[1]=(v)>>8
-#define	PBIT32(p,v)	(p)[0]=(v);(p)[1]=(v)>>8;(p)[2]=(v)>>16;(p)[3]=(v)>>24
-#define	PBIT64(p,v)	(p)[0]=(v);(p)[1]=(v)>>8;(p)[2]=(v)>>16;(p)[3]=(v)>>24;\
-			(p)[4]=(v)>>32;(p)[5]=(v)>>40;(p)[6]=(v)>>48;(p)[7]=(v)>>56
+#define	PBIT8(p,v)	(p)[0]=(u8)(v)
+#define	PBIT16(p,v)	(p)[0]=(u8)(v);(p)[1]=(u8)((v)>>8)
+#define	PBIT32(p,v)	(p)[0]=(u8)(v);(p)[1]=(u8)((v)>>8);(p)[2]=(u8)((v)>>16);(p)[3]=(u8)((v)>>24)
+#define	PBIT64(p,v)	(p)[0]=(u8)(v);(p)[1]=(u8)((v)>>8);(p)[2]=(u8)((v)>>16);(p)[3]=(u8)((v)>>24);\
+			(p)[4]=(u8)((v)>>32);(p)[5]=(u8)((v)>>40);(p)[6]=(u8)((v)>>48);(p)[7]=(u8)((v)>>56)
 
 #define	BIT8SZ		1
 #define	BIT16SZ		2

@@ -36,6 +36,7 @@ STAGE = (
     ("bin/cat", "build/aspera-cat"),
     ("bin/echo", "build/aspera-echo"),
     ("boot/boot", "boot/boot"),
+    ("boot/gefs", "build/gefs-guest"),
 )
 
 
