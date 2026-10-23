@@ -90,6 +90,30 @@ that need the old Objective-9C init. The embedded GEFS bootstrap currently
 mounts storage and stays alive; loading shell and desktop programs from GEFS
 is the next userland packaging step.
 
+## Native block device (MBR + GEFS)
+
+`install_gefs.py` creates a real disk instead of exporting an image file: the
+guest writes an MBR with one type-0x39 partition, adds the partition to
+`#S/sdV0/ctl`, and reams it with `gefs -r`.  It then starts GEFS on
+`#S/sdV0/plan9`, mounts it through 9P, and copies a minimal bootable root
+(`bin/rc`, `bin/ls`, `bin/cat`, `bin/echo`, `boot/boot`) onto it.
+
+```sh
+python3 util/9vm/build_gefs_guest.py
+python3 util/9vm/build_kernel.py
+python3 util/9vm/install_gefs.py -o /tmp/9vm/gefs.img -s 192
+```
+
+The harness boots the result from the partition; `devsd` keeps partitions in
+memory only, so the bootstrap rebuilds the `plan9` entry from the MBR on every
+boot.  `ASPERA-GEFS-ROOT PASS` means the installed tree was mounted as `/`.
+
+```sh
+util/9vm/9vm -r /tmp/9vm/stage \
+  -c "bootargs=local!#9/0 nobootprompt=local gefsroot=1" \
+  -disk /tmp/9vm/gefs.img build/harvey.32bit
+```
+
 Run the image transport regression, including a 9front format/reboot and two
 9vm boots:
 
