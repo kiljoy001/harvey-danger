@@ -113,9 +113,10 @@ python3 util/9vm/build_kernel.py
 python3 util/9vm/install_gefs.py -o /tmp/9vm/gefs.img -s 192
 ```
 
-The harness boots the result from the partition; `devsd` keeps partitions in
-memory only, so the bootstrap rebuilds the `plan9` entry from the MBR on every
-boot.  `ASPERA-GEFS-ROOT PASS` means the installed tree was mounted as `/`;
+The harness boots the result from the partition.  `devsd` parses the MBR when
+a unit is first brought online, so `#S/sdV0/plan9` exists without a boot-time
+`part` command: type 0x39 maps to `plan9`, 0x83 to `linux`, and the FAT types
+to `fat`.  `ASPERA-GEFS-ROOT PASS` means the installed tree was mounted as `/`;
 the init then starts `/bin/rc -i` on the console (the desktop path takes over
 when `asperadesktop=1`).
 

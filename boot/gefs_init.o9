@@ -280,37 +280,6 @@ function start_gefs_root() int64 {
         }
     not_installing:;
 
-        /* devsd keeps partitions in memory only, so a reboot leaves
-         * '#S/sdV0/plan9' missing.  Rebuild the entry from the MBR. */
-        {
-            unsigned char mbr[512];
-            int mfd, cfd, lba, cnt;
-
-            mfd = open("#S/sdV0/data", OREAD);
-            if(mfd >= 0){
-                if(pread(mfd, mbr, 512, 0) == 512 &&
-                   mbr[510] == 0x55 && mbr[511] == 0xAA){
-                    for(i = 0; i < 4; i++){
-                        if(mbr[446 + i*16 + 4] != 0x39)
-                            continue;
-                        lba = *(unsigned int*)(mbr + 446 + i*16 + 8);
-                        cnt = *(unsigned int*)(mbr + 446 + i*16 + 12);
-                        cfd = open("#S/sdV0/ctl", OWRITE);
-                        if(cfd >= 0 && cnt > 0){
-                            nn = snprint(icmd, sizeof icmd,
-                                         "part plan9 %d %d", lba, lba + cnt - 1);
-                            if(write(cfd, icmd, nn) == nn)
-                                print("aspera: plan9 partition %d..%d from MBR\n",
-                                      lba, lba + cnt - 1);
-                            close(cfd);
-                        }
-                        break;
-                    }
-                }
-                close(mfd);
-            }
-        }
-
         /* Prefer a native GEFS partition on the virtio disk; fall back to
          * 9vm's 9P image export (#9/2) when there is no disk. */
         fd = open("#S/sdV0/plan9", OREAD);

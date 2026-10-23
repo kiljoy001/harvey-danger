@@ -180,6 +180,65 @@ sdincvers(SDunit *unit)
 	}
 }
 
+/*
+ * Enumerate the MBR primary partitions so that #S/sdXX/<name> exists
+ * without a boot-time "part" command.  Start and end are converted to
+ * the unit's logical sector size; the end is inclusive, matching the
+ * ctl "part name start end" convention.
+ */
+static void
+sdmbrmount(SDunit *unit)
+{
+	Proc *up = externup();
+	uchar mbr[4096];
+	uchar *e;
+	u64 lba, cnt, start, end;
+	int i, type;
+	char *name;
+
+	if(unit->secsize == 0 || unit->secsize > sizeof mbr)
+		return;
+	if(unit->dev->ifc->bio(unit, 0, 0, mbr, 1, 0) < 512)
+		return;
+	if(mbr[510] != 0x55 || mbr[511] != 0xAA)
+		return;
+	for(i = 0; i < 4; i++){
+		e = mbr + 446 + i*16;
+		if(e[0] != 0x00 && e[0] != 0x80)
+			continue;
+		switch(e[4]){
+		case 0x39:			/* Plan 9 */
+			name = "plan9";
+			break;
+		case 0x83:			/* Linux */
+			name = "linux";
+			break;
+		case 0x06:
+		case 0x0B:
+		case 0x0C:
+		case 0x0E:			/* FAT */
+			name = "fat";
+			break;
+		default:
+			continue;
+		}
+		lba = (u64)e[8] | (u64)e[9]<<8 | (u64)e[10]<<16 | (u64)e[11]<<24;
+		cnt = (u64)e[12] | (u64)e[13]<<8 | (u64)e[14]<<16 | (u64)e[15]<<24;
+		if(lba == 0 || cnt == 0)
+			continue;
+		start = lba * 512 / unit->secsize;
+		end = (lba + cnt) * 512 / unit->secsize;
+		if(end > unit->sectors)
+			end = unit->sectors;
+		if(start >= end)
+			continue;
+		if(!waserror()){
+			sdaddpart(unit, name, start, end - 1);
+			poperror();
+		}
+	}
+}
+
 static int
 sdinitpart(SDunit *unit)
 {
@@ -214,6 +273,7 @@ sdinitpart(SDunit *unit)
 	if(unit->sectors){
 		sdincvers(unit);
 		sdaddpart(unit, "data", 0, unit->sectors);
+		sdmbrmount(unit);
 
 		/*
 		 * Use partitions passed from boot program,
