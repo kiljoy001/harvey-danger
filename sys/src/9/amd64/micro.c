@@ -20,6 +20,8 @@ extern Dev segmentdevtab;
 extern Dev virtio9pdevtab;
 extern Dev ringdevtab;
 extern Dev ramdevtab;
+extern Dev xhcidevtab;
+extern Dev sddevtab;
 
 Dev *devtab[] = {
 	&rootdevtab,
@@ -36,6 +38,8 @@ Dev *devtab[] = {
 	&virtio9pdevtab,
 	&ringdevtab,
 	&ramdevtab,
+	&xhcidevtab,
+	&sddevtab,
 	nil,
 };
 
@@ -45,7 +49,10 @@ links(void)
 }
 
 #include "../port/sd.h"
+extern SDifc sdvirtioifc;
+
 SDifc* sdifc[] = {
+	&sdvirtioifc,
 	nil,
 };
 
