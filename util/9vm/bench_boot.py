@@ -41,7 +41,10 @@ def cpu_ticks(pid: int) -> int:
 
 def boot(args) -> tuple[dict[str, float], float, str]:
     cmd = [str(VM), "-r", str(args.stage), "-c", CMDLINE,
-           "-disk", str(args.image), str(KERNEL)]
+           "-disk", str(args.image)]
+    if args.no9ring:
+        cmd.append("-no9ring")
+    cmd.append(str(KERNEL))
     proc = subprocess.Popen(cmd, cwd=ROOT, stdin=subprocess.DEVNULL,
                             stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     sel = selectors.DefaultSelector()
@@ -93,6 +96,8 @@ def main() -> int:
     ap.add_argument("--idle", type=float, default=2.0,
                     help="idle CPU sample window in seconds (default 2)")
     ap.add_argument("--timeout", type=float, default=30.0)
+    ap.add_argument("--no9ring", action="store_true",
+                    help="disable the shared ring (VirtIO baseline)")
     ap.add_argument("-n", "--repetitions", type=int, default=3)
     args = ap.parse_args()
     if args.repetitions < 1:
@@ -110,12 +115,14 @@ def main() -> int:
         times, cpu, _ = boot(args)
         runs.append((times, cpu))
         print(f"run={rep+1} " + " ".join(
-            f"{name}={times[name]:.2f}s" for name, _ in MILESTONES) +
-            f" idle_cpu={cpu:.1f}%", flush=True)
+            (f"{name}={times[name]:.2f}s" if name in times else f"{name}=n/a")
+            for name, _ in MILESTONES) + f" idle_cpu={cpu:.1f}%", flush=True)
 
     print("\nmedian of runs:")
     for name, _ in MILESTONES:
-        print(f"  {name:9s} {statistics.median(r[0][name] for r in runs):7.2f}s")
+        values = [r[0][name] for r in runs if name in r[0]]
+        if values:
+            print(f"  {name:9s} {statistics.median(values):7.2f}s")
     print(f"  idle_cpu  {statistics.median(r[1] for r in runs):7.1f}%")
     return 0
 

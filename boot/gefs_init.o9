@@ -11,7 +11,8 @@ function start_gefs_root() int64 {
                         "/mnt/srv", "/mnt/boot", "/mnt/rom", "/mnt/lib",
                         "/mnt/lib/o9irc", "/mnt/lib/aspera", "/mnt/build",
                         "/mnt/build/aspera-live", "/mnt/mnt/o9driverfs-config",
-                        "/mnt/mnt/o9drvman-status", "/mnt/rc", "/mnt/rc/lib", nil};
+                        "/mnt/mnt/o9drvman-status", "/mnt/rc", "/mnt/rc/lib",
+                        "/mnt/n/host", nil};
         char *ircargs[] = {"o9irc-ircfs", "o9irc", "", "", "",
                            "/lib/o9irc", "262144", nil};
         char *probe = "Aspera GEFS root probe\n";
@@ -344,6 +345,16 @@ function start_gefs_root() int64 {
             print("aspera: device namespace bind failed: %r\n");
             goto gefs_done;
         }
+        /* The 9vm host filesystem over the shared 9ring, if present. */
+        fd = open("#~/host", ORDWR);
+        if(fd >= 0){
+            if(mount(fd, -1, "/n/host", MREPL, "") < 0)
+                print("aspera: host ring mount failed: %r\n");
+            else
+                print("aspera: mounted 9ring host at /n/host\n");
+            close(fd);
+        }
+
         d = dirstat("/mnt/o9/o9drvman-status");
         if(d == nil){
             fd = create("/mnt/o9/o9drvman-status", OREAD, DMDIR|0700);

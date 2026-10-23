@@ -159,11 +159,17 @@ static void *hostring_serve(void *arg) {
     (void)arg;
     while (__atomic_load_n(&hostring_running, __ATOMIC_ACQUIRE)) {
         if (!p9_tring_consume(&hostring->channel.t_ring, &slot)) {
+            /* Spin through bursts, then back off so an idle ring does
+             * not wake the host thread 20,000 times a second. */
             if (active_spins < 2000) {
                 __asm__ __volatile__("pause");
                 active_spins++;
-            } else {
+            } else if (active_spins < 4000) {
+                active_spins++;
                 nanosleep(&idle, NULL);
+            } else {
+                struct timespec slow = { .tv_sec = 0, .tv_nsec = 1000000 };
+                nanosleep(&slow, NULL);
             }
             continue;
         }
@@ -1400,7 +1406,6 @@ int main(int argc, char **argv) {
         return 1;
     }
     g_vm = vm;
-
     if (ioctl(vm, KVM_CREATE_IRQCHIP, 0) < 0) {
         perror("KVM_CREATE_IRQCHIP");
         return 1;
