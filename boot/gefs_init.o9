@@ -11,7 +11,7 @@ function start_gefs_root() int64 {
                         "/mnt/srv", "/mnt/boot", "/mnt/rom", "/mnt/lib",
                         "/mnt/lib/o9irc", "/mnt/lib/aspera", "/mnt/build",
                         "/mnt/build/aspera-live", "/mnt/mnt/o9driverfs-config",
-                        "/mnt/mnt/o9drvman-status", nil};
+                        "/mnt/mnt/o9drvman-status", "/mnt/rc", "/mnt/rc/lib", nil};
         char *ircargs[] = {"o9irc-ircfs", "o9irc", "", "", "",
                            "/lib/o9irc", "262144", nil};
         char *probe = "Aspera GEFS root probe\n";
@@ -21,9 +21,10 @@ function start_gefs_root() int64 {
         char icmd[96];
         int nn;
         Dir *d;
-        int fd, pid, srvfd, i, n, hasApp, mounted;
+        int fd, pid, srvfd, i, n, hasApp, mounted, desktopstarted;
 
         result = -1;
+        desktopstarted = 0;
 
         /* Installer mode: kernel command line contained install=1. */
         {
@@ -137,7 +138,7 @@ function start_gefs_root() int64 {
             }
             {
                 char *names[] = {"bin/rc", "bin/ls", "bin/cat", "bin/echo",
-                                 "boot/boot", nil};
+                                 "bin/test", "rc/lib/rcmain", "boot/boot", nil};
                 char sp[128], dp[128], cbuf[4096];
                 int sf, df, hfd, k, ncopy, nfail;
                 Dir *sd;
@@ -164,6 +165,10 @@ function start_gefs_root() int64 {
                 df = create("/mnt/bin", OREAD, DMDIR|0775);
                 if(df >= 0) close(df);
                 df = create("/mnt/boot", OREAD, DMDIR|0775);
+                if(df >= 0) close(df);
+                df = create("/mnt/rc", OREAD, DMDIR|0775);
+                if(df >= 0) close(df);
+                df = create("/mnt/rc/lib", OREAD, DMDIR|0775);
                 if(df >= 0) close(df);
 
                 ncopy = 0;
@@ -201,7 +206,70 @@ function start_gefs_root() int64 {
                     }
                 }
                 print("install: copied %d bytes into the new root\n", ncopy);
-                unmount(nil, "/mnt");
+                /* GEFS is write-back cached and sync() commits the tree
+                 * from the active mounts: keep /mnt mounted until after
+                 * the sync/halt, or the new files are never linked into
+                 * the snapshot and vanish on the next boot. */
+                {
+                    char vb[128];
+                    int cfd, vn;
+                    cfd = open("/srv/installgefs.cmd", ORDWR);
+                    if(cfd >= 0){
+                        print("install: syncing GEFS\n");
+                        write(cfd, "sync\n", 5);
+                        vn = read(cfd, vb, sizeof vb - 1);
+                        if(vn > 0){ vb[vn] = 0; print("install: %s", vb); }
+                        write(cfd, "halt\n", 5);
+                        vn = read(cfd, vb, sizeof vb - 1);
+                        if(vn > 0){ vb[vn] = 0; print("install: %s", vb); }
+                        close(cfd);
+                        sleep(5000);
+                        /* the server has exited; /mnt is stale and the
+                         * verify mount below replaces it. */
+                    }else
+                        print("install: no GEFS control channel: %r\n");
+                }
+                /* Re-open the partition with a fresh GEFS and check that
+                 * the committed tree really contains the payload. */
+                {
+                    char *ver[] = {"gefs", "-A", "-m", "8", "-n",
+                                   "installverify", "-f", "#S/sdV0/plan9", nil};
+                    Dir *vd;
+                    int vfd;
+                    vfd = -1;
+                    pid = rfork(RFPROC|RFFDG|RFNOWAIT);
+                    if(pid == 0){
+                        exec("/boot/gefs", ver);
+                        _exits("verify");
+                    }
+                    for(i = 0; i < 200; i++){
+                        vfd = open("/srv/installverify", OREAD);
+                        if(vfd >= 0) break;
+                        sleep(50);
+                    }
+                    if(vfd < 0)
+                        print("install: verify server did not start: %r\n");
+                    else if(mount(vfd, -1, "/mnt", MREPL, "") < 0)
+                        print("install: verify mount failed: %r\n");
+                    else {
+                        vd = dirstat("/mnt/bin/rc");
+                        if(vd != nil){
+                            print("install: verify /bin/rc %lld bytes\n", vd->length);
+                            free(vd);
+                        } else
+                            print("install: verify /bin/rc missing: %r\n");
+                        unmount(nil, "/mnt");
+                    }
+                    if(vfd >= 0){
+                        close(vfd);
+                        vfd = open("/srv/installverify.cmd", OWRITE);
+                        if(vfd >= 0){
+                            write(vfd, "halt\n", 5);
+                            close(vfd);
+                            sleep(1000);
+                        }
+                    }
+                }
                 if(nfail == 0){
                     print("INSTALL-OK\n");
                     result = 1;
@@ -480,6 +548,7 @@ function start_gefs_root() int64 {
                 free(mode);
                 goto gefs_done;
             }
+            desktopstarted = 1;
             print("ASPERA-DESKTOP-STARTED\n");
         }
         free(mode);
@@ -693,6 +762,23 @@ function start_gefs_root() int64 {
             free(d);
         print("ASPERA-GEFS-ROOT PASS\n");
         result = 1;
+        if(!desktopstarted){
+            Dir *rcd = dirstat("/bin/rc");
+            if(rcd != nil){
+                char *rcargs[] = {"rc", "-i", nil};
+                free(rcd);
+                pid = rfork(RFPROC|RFFDG|RFNOWAIT);
+                if(pid == 0){
+                    exec("/bin/rc", rcargs);
+                    print("aspera: rc exec failed: %r\n");
+                    _exits("rc");
+                } else if(pid > 0)
+                    print("aspera: started /bin/rc on the console\n");
+                else
+                    print("aspera: rc fork failed: %r\n");
+            } else
+                print("aspera: no /bin/rc on the GEFS root: %r\n");
+        }
     gefs_done:;
     }
     return result;

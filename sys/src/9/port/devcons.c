@@ -54,6 +54,7 @@ static Queue *keybqs[Nconsdevs];
 static int keybprocs[Nconsdevs];
 static Queue *keybq; /* unprocessed console input */
 static Queue *lineq; /* processed console input */
+void (*consuartpoll)(void); /* serial console receive poll */
 
 int panicking;
 
@@ -203,6 +204,14 @@ printinit(void)
 	if(lineq == nil)
 		panic("printinit");
 	qnoblock(lineq, 1);
+	/* A serial-console microVM has no PS/2 keyboard, so nothing ever
+	 * registers a keybq.  The input path (kbdputc -> kbdputcclock ->
+	 * echo) and /dev/cons both need one; create it here. */
+	if(keybq == nil){
+		keybq = qopen(4 * 1024, 0, nil, nil);
+		if(keybq == nil)
+			panic("printinit keybq");
+	}
 }
 
 int
@@ -618,6 +627,9 @@ kbdputcclock(void)
 {
 	char *iw;
 
+	if(consuartpoll != nil)
+		consuartpoll();
+
 	/* this amortizes cost of qproduce */
 	if(kbd.iw != kbd.ir){
 		iw = kbd.iw;
@@ -826,6 +838,11 @@ consread(Chan *c, void *buf, i32 n, i64 off)
 			nexterror();
 		}
 		while(!qcanread(lineq)){
+			/* A guest with no PS/2 keyboard (a microVM fed by a serial
+			 * console) never registers a keybq.  Sleep on lineq instead
+			 * of dereferencing the nil queue. */
+			if(keybq == nil)
+				break;
 			if(qread(keybq, &ch, 1) == 0)
 				continue;
 			send = 0;

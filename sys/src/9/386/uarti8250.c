@@ -520,7 +520,7 @@ i8250interrupt(Ureg *ureg, void *arg)
 		uart->ferr++;
 	if(lsr & Dr){
 		r = csr8r(ctlr, Rbr);
-		if(!(lsr & (Bi | Fe | Pe)))
+		if(!(lsr & (Bi | Fe | Pe)) && uart->iq != nil)
 			uartrecv(uart, r);
 		// This is a kludge but it's turning out to be a
 		// lifesaver until we get consoles to be better.
@@ -758,6 +758,7 @@ PhysUart i8250physuart = {
 
 extern void (*consuartputs)(char *, int);
 static Uart *i8250consuart;
+extern void (*consuartpoll)(void);
 
 static void
 i8250consputs(char *s, int n)
@@ -828,6 +829,28 @@ i8250console(char *cfg)
 	i8250uartconsole(uart, cmd);
 }
 
+static void
+i8250conspoll(void)
+{
+	Uart *uart;
+	Ctlr *ctlr;
+	int lsr, r;
+
+	uart = i8250consuart;
+	if(uart == nil)
+		return;
+	ctlr = uart->regs;
+	lsr = csr8r(ctlr, Lsr);
+	if((lsr & Dr) == 0)
+		return;
+	r = csr8r(ctlr, Rbr);
+	if(lsr & (Bi | Fe | Pe))
+		return;
+	if(r == '\r')
+		r = '\n';
+	kbdputc(nil, r);
+}
+
 void
 i8250uartconsole(Uart *uart, char *cmd)
 {
@@ -851,4 +874,8 @@ i8250uartconsole(Uart *uart, char *cmd)
 	i8250consuart = uart;
 	consuartputs = i8250consputs;
 	uart->console = 1;
+	/* 9vm feeds stdin into the emulated 16550's receive register and
+	 * raises no interrupt.  Poll it from the console clock hook so
+	 * /dev/cons actually receives input on a serial-console guest. */
+	consuartpoll = i8250conspoll;
 }

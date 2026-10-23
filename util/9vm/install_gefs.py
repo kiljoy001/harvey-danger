@@ -31,10 +31,12 @@ MIN_MIB = 160
 
 # Minimal bootable root: what the installer copies onto the new filesystem.
 STAGE = (
-    ("bin/rc", "build/rc"),
-    ("bin/ls", "build/ls"),
+    ("bin/rc", "build/aspera-rc"),
+    ("bin/ls", "build/aspera-ls"),
     ("bin/cat", "build/aspera-cat"),
+    ("bin/test", "build/aspera-test"),
     ("bin/echo", "build/aspera-echo"),
+    ("rc/lib/rcmain", "rc/lib/rcmain"),
     ("boot/boot", "boot/boot"),
     ("boot/gefs", "build/gefs-guest"),
 )

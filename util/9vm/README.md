@@ -96,7 +96,16 @@ is the next userland packaging step.
 guest writes an MBR with one type-0x39 partition, adds the partition to
 `#S/sdV0/ctl`, and reams it with `gefs -r`.  It then starts GEFS on
 `#S/sdV0/plan9`, mounts it through 9P, and copies a minimal bootable root
-(`bin/rc`, `bin/ls`, `bin/cat`, `bin/echo`, `boot/boot`) onto it.
+(`bin/rc`, `bin/ls`, `bin/cat`, `bin/test`, `bin/echo`, `rc/lib/rcmain`,
+`boot/boot`) onto it.
+
+GEFS is write-back cached, and its `sync()` only commits the tree for
+**active mounts**.  The installer therefore issues `sync` and `halt` while
+`/mnt` is still mounted, then re-opens the partition with a fresh GEFS and
+checks that `/bin/rc` is really in the committed tree.  Unmounting first
+orphans the new files and produces an image that looks fine until the next
+boot.  Once the sync is done, the installed tree also survives an unclean
+VM kill; GEFS replays its log.
 
 ```sh
 python3 util/9vm/build_gefs_guest.py
@@ -106,7 +115,9 @@ python3 util/9vm/install_gefs.py -o /tmp/9vm/gefs.img -s 192
 
 The harness boots the result from the partition; `devsd` keeps partitions in
 memory only, so the bootstrap rebuilds the `plan9` entry from the MBR on every
-boot.  `ASPERA-GEFS-ROOT PASS` means the installed tree was mounted as `/`.
+boot.  `ASPERA-GEFS-ROOT PASS` means the installed tree was mounted as `/`;
+the init then starts `/bin/rc -i` on the console (the desktop path takes over
+when `asperadesktop=1`).
 
 ```sh
 util/9vm/9vm -r /tmp/9vm/stage \
