@@ -1,0 +1,21 @@
+function raw_shell() int64 {
+    c {
+        char *argv[] = {"rc", "-i", nil};
+        bind("#c", "/dev", MAFTER);
+        bind("#d", "/dev", MAFTER);
+        bind("#p", "/proc", MREPL);
+        bind("#s", "/srv", MREPL|MCREATE);
+        bind("#ec", "/env", MREPL);
+        bind("#e", "/env", MCREATE|MAFTER);
+        print("halatha: starting /bin/rc\n");
+        exec("/bin/rc", argv);
+        fprint(2, "halatha: exec rc failed: %r\n");
+    }
+    return 0;
+}
+
+main {
+    print("\nHalatha / Harvey on v64\n");
+    Task<int64> shell = spawn raw_shell();
+    shell.await();
+}
