@@ -390,8 +390,32 @@ main {
         print("ASPERA-LIVE FAIL initial frame\n");
     } else {
         print("ASPERA-LIVE READY\n");
-        Task<int64> idle = spawn AsperaIdle();
-        idle.await();
+        int64 idle = 0;
+        while(live.ready()) {
+            Task<string> lineTask = spawn AsperaInputRaw("build/aspera-live");
+            string line = lineTask.await();
+            if(len(line) > 0) {
+                if(live.input(line) && !live.publish()) {
+                    print("ASPERA-LIVE FAIL frame\n");
+                    live.stop();
+                }
+                idle = 0;
+            } else {
+                idle = idle + 1;
+                if(idle % 2 == 0 && live.pollTerminal() && !live.publish()) {
+                    print("ASPERA-LIVE FAIL terminal frame\n");
+                    live.stop();
+                }
+                if(idle >= 12) {
+                    if(live.updateClock() && !live.publish()) {
+                        print("ASPERA-LIVE FAIL clock frame\n");
+                        live.stop();
+                    }
+                    idle = 0;
+                }
+            }
+        }
     }
     live.close();
 }
+
