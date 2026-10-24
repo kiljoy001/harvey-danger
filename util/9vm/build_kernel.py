@@ -35,9 +35,9 @@ CFLAGS = [
     "-Wno-unused-variable",
     f"-I{os.path.join(REPO_ROOT, 'sys/src/9/amd64')}",
     f"-I{os.path.join(REPO_ROOT, 'sys/src/9/port')}",
-    f"-I{os.path.join(REPO_ROOT, 'sys/src/9/ip')}",
     f"-I{os.path.join(REPO_ROOT, 'amd64/include')}",
     f"-I{os.path.join(REPO_ROOT, 'sys/include')}",
+    f"-I{os.path.join(REPO_ROOT, 'sys/src/9/ip')}",
     f"-I{os.path.join(REPO_ROOT, 'sys/src/libc/9syscall')}",
 ]
 
@@ -92,6 +92,7 @@ SOURCES = [
     "sys/src/9/amd64/micro.c",
     "sys/src/9/amd64/devxhci.c",
     "sys/src/9/amd64/sdvirtio.c",
+    "sys/src/9/amd64/ipproto.c",
     "sys/src/9/386/pci.c",
     "sys/src/9/386/uarti8250.c",
 
@@ -154,6 +155,42 @@ SOURCES = [
     "sys/src/9/port/taslock.c",
     "sys/src/9/port/tod.c",
     "sys/src/9/port/watermarks.c",
+    "sys/src/9/port/netif.c",
+
+    # IP stack, including the improved IL (protocol 40)
+    "sys/src/9/ip/arp.c",
+    "sys/src/9/ip/chandial.c",
+    "sys/src/9/ip/devip.c",
+    "sys/src/9/ip/ethermedium.c",
+    "sys/src/9/ip/gre.c",
+    "sys/src/9/ip/icmp6.c",
+    "sys/src/9/ip/icmp.c",
+    "sys/src/9/ip/il.c",
+    "sys/src/9/ip/inferno.c",
+    "sys/src/9/ip/ipaux.c",
+    "sys/src/9/ip/ip.c",
+    "sys/src/9/ip/ipifc.c",
+    "sys/src/9/ip/ipmux.c",
+    "sys/src/9/ip/iproute.c",
+    "sys/src/9/ip/ipv6.c",
+    "sys/src/9/ip/loopbackmedium.c",
+    "sys/src/9/ip/netdevmedium.c",
+    "sys/src/9/ip/netlog.c",
+    "sys/src/9/ip/nullmedium.c",
+    "sys/src/9/ip/pktmedium.c",
+    "sys/src/9/ip/ptclbsum.c",
+    "sys/src/9/ip/rudp.c",
+    "sys/src/9/ip/tcp.c",
+    "sys/src/9/ip/udp.c",
+
+    # Kernel subset of libip (klibip.json)
+    "sys/src/libip/bo.c",
+    "sys/src/libip/classmask.c",
+    "sys/src/libip/eipfmt.c",
+    "sys/src/libip/equivip.c",
+    "sys/src/libip/ipaux.c",
+    "sys/src/libip/parseether.c",
+    "sys/src/libip/parseip.c",
 ]
 
 def build_init():
