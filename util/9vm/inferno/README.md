@@ -29,7 +29,7 @@ loop.  Everything here was used to validate the state described at the bottom.
 
 ## Prerequisites
 
-- 9vm built: `make -C util/9vm 9vm`
+- 9vm built: `make -C util/9vm 9vm netfs`
 - a purgatorio checkout next to this one (`../purgatorio`; override with `$PURGATORIO`)
 - the Inferno 386 toolchain in `$PURGATORIO/Linux/386/bin` and `mk` on `PATH`
 - `$NINEVM_WORK` (default `/tmp/9vm-inferno`) is where build outputs and images go

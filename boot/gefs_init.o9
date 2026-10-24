@@ -324,8 +324,13 @@ function start_gefs_root() int64 {
         }
         free(d);
         fd = open("#9/1", ORDWR);
-        if(fd >= 0 && mount(fd, -1, "/net", MREPL, "") < 0)
-            close(fd);
+        if(fd >= 0){
+            if(mount(fd, -1, "/net", MREPL, "") < 0){
+                print("aspera: host net service mount failed: %r\n");
+                close(fd);
+            } else
+                print("aspera: mounted host net service at /net\n");
+        }
         {
             char *driverargs[] = {"o9drvman", "o9drvman", "devices",
                                   "/bin/o9driverfs", nil};

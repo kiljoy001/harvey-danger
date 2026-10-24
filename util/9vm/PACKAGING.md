@@ -60,7 +60,7 @@ for lib in libc libbio libndb libsec libauth libauthsrv libthread lib9p libdraw 
 done
 python3 util/9vm/build_gefs_guest.py
 python3 util/9vm/build_kernel.py
-make -C util/9vm 9vm
+make -C util/9vm 9vm netfs
 ./bin/aspera check
 ```
 
@@ -103,6 +103,7 @@ The installable package should contain only runtime artifacts:
 ```text
 bin/aspera                    installed launcher
 libexec/aspera/9vm           KVM runner
+libexec/aspera/netfs         host /net 9P service
 libexec/aspera/display-sdl   host window and input adapter
 libexec/aspera/harvey.32bit  guest kernel
 share/aspera/root.img        temporary compatibility image with desktop and shell

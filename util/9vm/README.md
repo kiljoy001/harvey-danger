@@ -41,7 +41,7 @@ is separate from the host transport and is not a memory-mapped user API.
 Build and run both guest transports:
 
 ```sh
-make -C util/9vm 9vm
+make -C util/9vm 9vm netfs
 python3 util/9vm/build_boot.py
 python3 util/9vm/build_kernel.py
 python3 util/9vm/test_boot.py
@@ -66,10 +66,30 @@ The kernel keeps only two transports and the core 9P machinery:
 
 The earlier in-kernel IP stack and IL were a bring-up and have been
 removed from the microVM build; `sys/src/9/ip/il.c` remains as the
-user-space implementation of the improved IL.  Networking is a `/net`
-9P service: today the host's netfs mock is mounted at `/net`, and the
-next step is a real `/net` server (host-side or a guest user-space
-lib9p server) with TCP/UDP/IL behind it.
+user-space implementation of the improved IL. Networking is a `/net`
+9P service: `util/9vm/netfs` is a user-space 9P2000 server that exposes
+the Plan 9 `/net` tree over a Unix socket, and 9vm connects it to the
+VirtIO 9P tag `net` (`#9/1`). It implements `clone`, `ctl`, `data`,
+`listen`, `local`, `remote`, `status`, and `err`, with TCP and UDP carried
+by host sockets and `/net/cs` using the host resolver. TCP clients can
+`announce`, `listen`, and `accept`; UDP clients use `dial` and connected
+data sockets.
+
+The net virtqueue completes asynchronously. A guest read that blocks for
+socket data copies the request out of guest memory and parks it; the vCPU
+continues running while a reader thread waits for the reply. Replies can
+therefore arrive out of order, which the kernel 9P client matches by tag.
+
+`#9/1` is optional. A boot without `netfs` leaves networking absent rather
+than starting an in-kernel stack. `/net/il` currently reports that IL is
+not provided by the host service; the long-term replacement is a guest
+user-space `/net` server with `pkt`, IL, and Yggdrasil.
+
+```sh
+make -C util/9vm netfs
+python3 util/9vm/test_netfs.py   # host 9P: TCP/UDP, cs, announce/listen
+python3 util/9vm/test_net.py     # guest: dial, full-duplex, announce/listen
+```
 
 Storage follows the same rule: `-gefs-image` exports the disk image as a
 9P file (`#9/2`), a user-space GEFS server runs on `/mnt/image`, and the

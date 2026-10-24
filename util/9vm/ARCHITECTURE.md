@@ -48,6 +48,12 @@ fill the others.
 The kernel keeps process, memory, namespace, and 9P mount mechanisms. Its
 external I/O transports are `#~` (9ring) and `#9` (virtio-9P). Serial, disk,
 network, display, and input device policy belongs to user-space 9P services.
+The `netfs` service is the network example: it owns the host sockets and
+exports the Plan 9 `/net` protocol over VirtIO tag `net` (`#9/1`). The net
+virtqueue has asynchronous completion, so a data read that waits for a peer
+does not stop the vCPU. TCP/UDP dial, TCP announce/listen, and `/net/cs` are
+implemented on the host; a guest-side `/net` with `pkt` and IL is the next
+step rather than a kernel driver.
 `sys/src/cmd/o9driverfs` is the Objective-9C device namespace: a trusted
 launcher maps named backend files into per-attach `view/drivers` trees. The
 x86 VM test verifies this filesystem over a real 9P mount. Device-specific

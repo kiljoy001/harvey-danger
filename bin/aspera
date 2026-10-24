@@ -15,11 +15,13 @@ SYSTEM_TEST = ROOT / "util/9vm/test_system_milestone.py"
 DRIVER_TEST = ROOT / "util/9vm/test_driver_manager.py"
 DRIVER_IMAGE_TEST = ROOT / "util/9vm/test_driver_image.py"
 KERNEL_TEST = ROOT / "util/9vm/test_boot.py"
+NETWORK_TEST = ROOT / "util/9vm/test_net.py"
 ARM_KERNEL_TEST = ROOT / "util/arm64/test_virtio9p.py"
 QUALITY = ROOT / "util/quality/run.sh"
 BUILD = ROOT / "build"
 PREVIEW_FILES = (
     ROOT / "util/9vm/9vm",
+    ROOT / "util/9vm/netfs",
     BUILD / "harvey.32bit",
     BUILD / "libo9.a",
     BUILD / "libdraw.a",
@@ -33,7 +35,8 @@ PREVIEW_FILES = (
     BUILD / "libbio.a",
     BUILD / "libc.a",
 )
-SYSTEM_FILES = (ROOT / "util/9vm/9vm", BUILD / "harvey.32bit")
+SYSTEM_FILES = (ROOT / "util/9vm/9vm", ROOT / "util/9vm/netfs",
+                BUILD / "harvey.32bit")
 
 
 def check(command: str, image: Path) -> list[str]:
@@ -58,6 +61,8 @@ def check(command: str, image: Path) -> list[str]:
             problems.append("missing util/9vm/test_driver_image.py")
         if not KERNEL_TEST.is_file():
             problems.append("missing util/9vm/test_boot.py")
+        if not NETWORK_TEST.is_file():
+            problems.append("missing util/9vm/test_net.py")
         if not ARM_KERNEL_TEST.is_file():
             problems.append("missing util/arm64/test_virtio9p.py")
     if command == "preview":
@@ -116,8 +121,8 @@ def main() -> int:
         os.chdir(ROOT)
         # The kernel test rebuilds PID 1 and the amd64 kernel first. Run it
         # before tests that reuse those artifacts.
-        for test in (KERNEL_TEST, SYSTEM_TEST, ARM_KERNEL_TEST, DRIVER_TEST,
-                     DRIVER_IMAGE_TEST):
+        for test in (KERNEL_TEST, NETWORK_TEST, SYSTEM_TEST, ARM_KERNEL_TEST,
+                     DRIVER_TEST, DRIVER_IMAGE_TEST):
             result = subprocess.run([sys.executable, str(test)])
             if result.returncode != 0:
                 return result.returncode

@@ -24,6 +24,7 @@
 #include <termios.h>
 #include <pthread.h>
 #include <sched.h>
+#include <sys/prctl.h>
 #include "hostfs.h"
 #include "../../sys/include/9ring.h"
 
@@ -777,7 +778,44 @@ struct virtio_9p {
     struct hostfs *hostfs;
     uint32_t irq;
     uint64_t bar_addr;
+    void    *async_ctx;
 };
+
+/*
+ * The network 9P service blocks a read until socket data is available.  A
+ * synchronous virtio-9p handler would therefore stop the vCPU while an
+ * application waits for a packet.  The net device instead has a writer and
+ * a reader thread: requests are copied out of guest memory, handed to the
+ * service, and completed on the used ring whenever the reply arrives.
+ */
+struct v9_request {
+    struct v9_request *next;
+    uint16_t head;
+    uint16_t tag;
+    uint8_t *req;
+    uint32_t req_len;
+    uint64_t resp_gpa;
+    uint32_t resp_max;
+};
+
+struct v9_async {
+    struct virtio_9p *v9;
+    int vm;
+    uint8_t *ram;
+    size_t ram_size;
+    int fd;
+    pthread_t writer;
+    pthread_t reader;
+    pthread_mutex_t lock;
+    pthread_cond_t cond;
+    struct v9_request *queue_head;
+    struct v9_request *queue_tail;
+    struct v9_request *pending;
+    int stop;
+};
+
+static void *virtio_9p_async_writer(void *arg);
+static void *virtio_9p_async_reader(void *arg);
 
 static void virtio_9p_init(struct virtio_9p *v9, int srv_fd, const char *tag, uint32_t irq, uint64_t bar_addr) {
     memset(v9, 0, sizeof(*v9));
@@ -808,7 +846,311 @@ static inline int is_valid_ram_range(uint64_t addr, uint64_t len, size_t ram_siz
     return 1;
 }
 
+static int v9_write_full(int fd, const void *buf, size_t len) {
+    const uint8_t *p = buf;
+    while (len > 0) {
+        ssize_t n = write(fd, p, len);
+        if (n < 0) {
+            if (errno == EINTR)
+                continue;
+            return -1;
+        }
+        if (n == 0)
+            return -1;
+        p += n;
+        len -= (size_t)n;
+    }
+    return 0;
+}
+
+static int v9_read_full(int fd, void *buf, size_t len) {
+    uint8_t *p = buf;
+    while (len > 0) {
+        ssize_t n = read(fd, p, len);
+        if (n < 0) {
+            if (errno == EINTR)
+                continue;
+            return -1;
+        }
+        if (n == 0)
+            return -1;
+        p += n;
+        len -= (size_t)n;
+    }
+    return 0;
+}
+
+static void v9_async_complete(struct v9_async *a, struct v9_request *r,
+                              const uint8_t *resp, uint32_t len) {
+    struct virtio_9p *v9 = a->v9;
+    uint64_t used_ring_pa = *(uint64_t *)(v9->bar0 + 0x30);
+    uint16_t queue_size = *(uint16_t *)(v9->bar0 + 0x18);
+    if (queue_size == 0 || used_ring_pa >= a->ram_size ||
+        used_ring_pa + 4 + (uint64_t)queue_size * 8 + 2 > a->ram_size)
+        return;
+    uint32_t out_len = len;
+    if (resp == NULL || out_len > r->resp_max ||
+        !is_valid_ram_range(r->resp_gpa, out_len, a->ram_size))
+        out_len = 0;
+    if (out_len > 0)
+        memcpy(a->ram + r->resp_gpa, resp, out_len);
+    pthread_mutex_lock(&a->lock);
+    uint16_t used_idx = *(uint16_t *)(a->ram + used_ring_pa + 2);
+    uint16_t slot = used_idx % queue_size;
+    *(uint32_t *)(a->ram + used_ring_pa + 4 + slot * 8) = r->head;
+    *(uint32_t *)(a->ram + used_ring_pa + 4 + slot * 8 + 4) = out_len;
+    __sync_synchronize();
+    *(uint16_t *)(a->ram + used_ring_pa + 2) = used_idx + 1;
+    v9->bar0[0x200] |= 1;
+    pthread_mutex_unlock(&a->lock);
+    struct kvm_irq_level irq = { .irq = v9->irq, .level = 1 };
+    ioctl(a->vm, KVM_IRQ_LINE, &irq);
+}
+
+static void *virtio_9p_async_writer(void *arg) {
+    struct v9_async *a = arg;
+    for (;;) {
+        pthread_mutex_lock(&a->lock);
+        while (a->queue_head == NULL && !a->stop)
+            pthread_cond_wait(&a->cond, &a->lock);
+        if (a->stop && a->queue_head == NULL) {
+            pthread_mutex_unlock(&a->lock);
+            break;
+        }
+        struct v9_request *r = a->queue_head;
+        a->queue_head = r->next;
+        if (a->queue_head == NULL)
+            a->queue_tail = NULL;
+        r->next = a->pending;
+        a->pending = r;
+        pthread_mutex_unlock(&a->lock);
+
+        if (v9_write_full(a->fd, r->req, r->req_len) < 0) {
+            pthread_mutex_lock(&a->lock);
+            struct v9_request **pp = &a->pending;
+            while (*pp != NULL) {
+                if (*pp == r) {
+                    *pp = r->next;
+                    break;
+                }
+                pp = &(*pp)->next;
+            }
+            a->stop = 1;
+            pthread_cond_broadcast(&a->cond);
+            pthread_mutex_unlock(&a->lock);
+            uint8_t err[64];
+            const char *msg = "netfs request write failed";
+            size_t elen = strlen(msg);
+            uint32_t total = (uint32_t)(4 + 1 + 2 + 2 + elen);
+            *(uint32_t *)err = total;
+            err[4] = 107; /* Rerror */
+            *(uint16_t *)(err + 5) = r->tag;
+            *(uint16_t *)(err + 7) = (uint16_t)elen;
+            memcpy(err + 9, msg, elen);
+            v9_async_complete(a, r, err, total);
+            free(r->req);
+            free(r);
+            shutdown(a->fd, SHUT_RDWR);
+            break;
+        }
+    }
+    return NULL;
+}
+
+static void *virtio_9p_async_reader(void *arg) {
+    struct v9_async *a = arg;
+    while (!a->stop) {
+        uint8_t hdr[4];
+        if (v9_read_full(a->fd, hdr, sizeof(hdr)) < 0)
+            break;
+        uint32_t total = *(uint32_t *)hdr;
+        if (total < 7 || total > 65536 + 24) {
+            fprintf(stderr, "[9vm] async netfs invalid reply size %u\n", total);
+            break;
+        }
+        uint8_t *resp = malloc(total);
+        if (resp == NULL)
+            break;
+        memcpy(resp, hdr, 4);
+        if (v9_read_full(a->fd, resp + 4, total - 4) < 0) {
+            free(resp);
+            break;
+        }
+        uint16_t tag = *(uint16_t *)(resp + 5);
+        pthread_mutex_lock(&a->lock);
+        struct v9_request **pp = &a->pending;
+        struct v9_request *r = NULL;
+        while (*pp != NULL) {
+            if ((*pp)->tag == tag) {
+                r = *pp;
+                *pp = r->next;
+                break;
+            }
+            pp = &(*pp)->next;
+        }
+        pthread_mutex_unlock(&a->lock);
+        if (r != NULL) {
+            v9_async_complete(a, r, resp, total);
+            free(r->req);
+            free(r);
+        }
+        free(resp);
+    }
+    return NULL;
+}
+
+static int virtio_9p_start_async(struct virtio_9p *v9, int vm,
+                                 uint8_t *ram, size_t ram_size) {
+    if (v9->srv_fd < 0)
+        return 0;
+    struct v9_async *a = calloc(1, sizeof(*a));
+    if (a == NULL)
+        return -1;
+    a->v9 = v9;
+    a->vm = vm;
+    a->ram = ram;
+    a->ram_size = ram_size;
+    a->fd = v9->srv_fd;
+    pthread_mutex_init(&a->lock, NULL);
+    pthread_cond_init(&a->cond, NULL);
+    if (pthread_create(&a->writer, NULL, virtio_9p_async_writer, a) != 0) {
+        pthread_mutex_destroy(&a->lock);
+        pthread_cond_destroy(&a->cond);
+        free(a);
+        return -1;
+    }
+    if (pthread_create(&a->reader, NULL, virtio_9p_async_reader, a) != 0) {
+        pthread_mutex_lock(&a->lock);
+        a->stop = 1;
+        pthread_cond_broadcast(&a->cond);
+        pthread_mutex_unlock(&a->lock);
+        pthread_join(a->writer, NULL);
+        pthread_mutex_destroy(&a->lock);
+        pthread_cond_destroy(&a->cond);
+        free(a);
+        return -1;
+    }
+    v9->async_ctx = a;
+    fprintf(stderr, "[9vm] virtio9p tag 'net' using asynchronous completion\n");
+    return 0;
+}
+
+static void virtio_9p_stop_async(struct virtio_9p *v9) {
+    struct v9_async *a = v9->async_ctx;
+    if (a == NULL)
+        return;
+    pthread_mutex_lock(&a->lock);
+    a->stop = 1;
+    pthread_cond_broadcast(&a->cond);
+    pthread_mutex_unlock(&a->lock);
+    shutdown(a->fd, SHUT_RDWR);
+    pthread_join(a->writer, NULL);
+    pthread_join(a->reader, NULL);
+    struct v9_request *r = a->queue_head;
+    while (r != NULL) {
+        struct v9_request *next = r->next;
+        free(r->req);
+        free(r);
+        r = next;
+    }
+    r = a->pending;
+    while (r != NULL) {
+        struct v9_request *next = r->next;
+        free(r->req);
+        free(r);
+        r = next;
+    }
+    pthread_mutex_destroy(&a->lock);
+    pthread_cond_destroy(&a->cond);
+    free(a);
+    v9->async_ctx = NULL;
+}
+
+static void virtio_9p_async_kick(struct v9_async *a) {
+    struct virtio_9p *v9 = a->v9;
+    uint16_t queue_enable = *(uint16_t *)(v9->bar0 + 0x1C);
+    if (!queue_enable)
+        return;
+    uint64_t desc_table_pa = *(uint64_t *)(v9->bar0 + 0x20);
+    uint64_t avail_ring_pa = *(uint64_t *)(v9->bar0 + 0x28);
+    uint16_t queue_size = *(uint16_t *)(v9->bar0 + 0x18);
+    if (queue_size == 0 || queue_size > 32768)
+        return;
+    uint64_t desc_bytes = (uint64_t)queue_size * 16;
+    uint64_t avail_bytes = 4 + (uint64_t)queue_size * 2 + 2;
+    if (!is_valid_ram_range(desc_table_pa, desc_bytes, a->ram_size) ||
+        !is_valid_ram_range(avail_ring_pa, avail_bytes, a->ram_size))
+        return;
+    uint16_t avail_idx = *(uint16_t *)(a->ram + avail_ring_pa + 2);
+    while (v9->last_avail_idx != avail_idx) {
+        uint16_t ring_idx = v9->last_avail_idx % queue_size;
+        uint16_t head = *(uint16_t *)(a->ram + avail_ring_pa + 4 + ring_idx * 2);
+        v9->last_avail_idx++;
+        if (head >= queue_size)
+            continue;
+        uint16_t desc_idx = head;
+        uint8_t *req_buf = NULL;
+        uint32_t req_len = 0;
+        uint8_t *resp_buf = NULL;
+        uint32_t resp_max = 0;
+        int desc_ok = 1;
+        for (int i = 0; i < queue_size; i++) {
+            if (desc_idx >= queue_size) {
+                desc_ok = 0;
+                break;
+            }
+            uint64_t d_addr = *(uint64_t *)(a->ram + desc_table_pa + desc_idx * 16);
+            uint32_t d_len = *(uint32_t *)(a->ram + desc_table_pa + desc_idx * 16 + 8);
+            uint16_t d_flags = *(uint16_t *)(a->ram + desc_table_pa + desc_idx * 16 + 12);
+            uint16_t d_next = *(uint16_t *)(a->ram + desc_table_pa + desc_idx * 16 + 14);
+            if (!is_valid_ram_range(d_addr, d_len, a->ram_size)) {
+                desc_ok = 0;
+                break;
+            }
+            if (d_flags & 2) {
+                resp_buf = a->ram + d_addr;
+                resp_max = d_len;
+            } else {
+                req_buf = a->ram + d_addr;
+                req_len = d_len;
+            }
+            if (d_flags & 1)
+                desc_idx = d_next;
+            else
+                break;
+        }
+        if (!desc_ok || req_buf == NULL || resp_buf == NULL || req_len < 7)
+            continue;
+        struct v9_request *r = calloc(1, sizeof(*r));
+        if (r == NULL)
+            break;
+        r->req = malloc(req_len);
+        if (r->req == NULL) {
+            free(r);
+            break;
+        }
+        memcpy(r->req, req_buf, req_len);
+        r->req_len = req_len;
+        r->head = head;
+        r->tag = *(uint16_t *)(r->req + 5);
+        r->resp_gpa = (uint64_t)(resp_buf - a->ram);
+        r->resp_max = resp_max;
+        pthread_mutex_lock(&a->lock);
+        if (a->queue_tail != NULL)
+            a->queue_tail->next = r;
+        else
+            a->queue_head = r;
+        a->queue_tail = r;
+        pthread_cond_signal(&a->cond);
+        pthread_mutex_unlock(&a->lock);
+    }
+}
+
 static void virtio_9p_process_queue(int vm, uint8_t *ram, size_t ram_size, struct virtio_9p *v9) {
+    if (v9->async_ctx != NULL) {
+        virtio_9p_async_kick(v9->async_ctx);
+        return;
+    }
     if (v9->hostfs)
         virtio_host_kicks++;
     uint16_t queue_enable = *(uint16_t *)(v9->bar0 + 0x1C);
@@ -1191,7 +1533,10 @@ int main(int argc, char **argv) {
     bool legacy_host_root = false;
     bool isolated_gefs_root;
     char image_cmdline[256];
-    const char *netfs_path = "/tmp/netfs.sock";
+    char netfs_default[PATH_MAX];
+    snprintf(netfs_default, sizeof(netfs_default), "/tmp/netfs.%ld.sock",
+             (long)getpid());
+    const char *netfs_path = netfs_default;
     size_t ram_mb = DEFAULT_RAM_MB;
     bool use_hostring = true;
 
@@ -1308,10 +1653,31 @@ int main(int argc, char **argv) {
         fprintf(stderr, "[9vm] In-process hostfs online serving '%s'\n", root_dir);
 
     int netfs_fd = connect_unix_socket(netfs_path);
-    if (netfs_fd < 0 && (access("util/9vm/netfs", X_OK) == 0 || access("/home/scott/Repo/harvey/util/9vm/netfs", X_OK) == 0)) {
-        const char *netfs_bin = access("util/9vm/netfs", X_OK) == 0 ? "util/9vm/netfs" : "/home/scott/Repo/harvey/util/9vm/netfs";
+    char netfs_bin[PATH_MAX] = "";
+    if (netfs_fd < 0) {
+        if (access("util/9vm/netfs", X_OK) == 0) {
+            snprintf(netfs_bin, sizeof(netfs_bin), "util/9vm/netfs");
+        } else {
+            char exe[PATH_MAX];
+            ssize_t n = readlink("/proc/self/exe", exe, sizeof(exe) - 1);
+            if (n > 0) {
+                exe[n] = '\0';
+                char *slash = strrchr(exe, '/');
+                if (slash != NULL) {
+                    *slash = '\0';
+                    snprintf(netfs_bin, sizeof(netfs_bin), "%s/netfs", exe);
+                    if (access(netfs_bin, X_OK) != 0)
+                        netfs_bin[0] = '\0';
+                }
+            }
+        }
+    }
+    if (netfs_fd < 0 && netfs_bin[0] != '\0') {
         pid_t npid = fork();
         if (npid == 0) {
+            prctl(PR_SET_PDEATHSIG, SIGTERM);
+            if (getppid() == 1)
+                _exit(1);
             int devnull = open("/dev/null", O_RDWR);
             if (devnull >= 0) {
                 dup2(devnull, 0);
@@ -1322,7 +1688,7 @@ int main(int argc, char **argv) {
             execl(netfs_bin, "netfs", "-s", netfs_path, NULL);
             _exit(1);
         }
-        for (int retry = 0; retry < 50; retry++) {
+        for (int retry = 0; retry < 500; retry++) {
             usleep(1000);
             netfs_fd = connect_unix_socket(netfs_path);
             if (netfs_fd >= 0) break;
@@ -1341,7 +1707,10 @@ int main(int argc, char **argv) {
     pci_dev_init(&pci_9p_host, 0x1049, 9, VIRTIO_9P_HOST_BAR0_ADDR, 10);
 
     struct pci_dev pci_9p_net;
-    pci_dev_init(&pci_9p_net, 0x1049, 9, VIRTIO_9P_NET_BAR0_ADDR, 11);
+    if (netfs_fd >= 0)
+        pci_dev_init(&pci_9p_net, 0x1049, 9, VIRTIO_9P_NET_BAR0_ADDR, 11);
+    else
+        memset(&pci_9p_net, 0, sizeof(pci_9p_net));
 
     struct pci_dev pci_9p_disk;
     if (gefs_image != NULL)
@@ -1426,6 +1795,11 @@ int main(int argc, char **argv) {
     size_t early_ram = ram_size < (64 * 1024 * 1024) ? ram_size : (64 * 1024 * 1024);
     madvise(ram, early_ram, MADV_WILLNEED);
     madvise(ram, ram_size, MADV_HUGEPAGE);
+
+    if (virtio_9p_start_async(&v9_net, vm, ram, ram_size) < 0) {
+        fprintf(stderr, "[9vm] cannot start asynchronous netfs transport\n");
+        return 1;
+    }
 
     struct kvm_userspace_memory_region region = {
         .slot = 0,
@@ -1638,13 +2012,14 @@ int main(int argc, char **argv) {
                     hostring_stop();
                     hostfs_free(&hostfs_inst);
                     if (diskfs_inst != NULL) { hostfs_free(diskfs_inst); free(diskfs_inst); }
+                    virtio_9p_stop_async(&v9_net);
                     if (netfs_fd >= 0) close(netfs_fd);
                     return 0;
                 } else if (run->io.port == 0x80) {
                     /* POST debug port */
                 } else if (run->io.port >= 0xCF8 && run->io.port <= 0xCFF) {
                     for (__u32 i = 0; i < run->io.count; i++) {
-                        pci_io_write(&pci_9p_host, &pci_9p_net, gefs_image != NULL ? &pci_9p_disk : NULL, vblk.fd >= 0 ? &pci_blk : NULL, &pci_addr_reg, run->io.port, data + i * run->io.size, run->io.size);
+                        pci_io_write(&pci_9p_host, netfs_fd >= 0 ? &pci_9p_net : NULL, gefs_image != NULL ? &pci_9p_disk : NULL, vblk.fd >= 0 ? &pci_blk : NULL, &pci_addr_reg, run->io.port, data + i * run->io.size, run->io.size);
                     }
                 }
             } else {
@@ -1667,7 +2042,7 @@ int main(int argc, char **argv) {
                     *data = uart_scr;
                 } else if (run->io.port >= 0xCF8 && run->io.port <= 0xCFF) {
                     for (__u32 i = 0; i < run->io.count; i++) {
-                        pci_io_read(&pci_9p_host, &pci_9p_net, gefs_image != NULL ? &pci_9p_disk : NULL, vblk.fd >= 0 ? &pci_blk : NULL, &pci_addr_reg, run->io.port, data + i * run->io.size, run->io.size);
+                        pci_io_read(&pci_9p_host, netfs_fd >= 0 ? &pci_9p_net : NULL, gefs_image != NULL ? &pci_9p_disk : NULL, vblk.fd >= 0 ? &pci_blk : NULL, &pci_addr_reg, run->io.port, data + i * run->io.size, run->io.size);
                     }
                 } else {
                     memset(data, 0xFF, run->io.size);
@@ -1753,6 +2128,7 @@ int main(int argc, char **argv) {
     hostring_stop();
     hostfs_free(&hostfs_inst);
     if (diskfs_inst != NULL) { hostfs_free(diskfs_inst); free(diskfs_inst); }
+    virtio_9p_stop_async(&v9_net);
     if (netfs_fd >= 0) close(netfs_fd);
     return 0;
 }

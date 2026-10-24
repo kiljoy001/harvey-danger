@@ -1,0 +1,202 @@
+function raw_blocking_read(int64 fd) int64 {
+    int64 result;
+    c {
+        char buf[32];
+        int n = read((int)fd, buf, sizeof(buf));
+        result = n;
+        if(n == 4 && memcmp(buf, "pong", 4) == 0)
+            result = 4;
+        else if(n > 0)
+            result = -n;
+    }
+    return result;
+}
+
+function raw_ping_write(int64 fd) int64 {
+    int64 result;
+    c {
+        result = write((int)fd, "ping", 4);
+    }
+    return result;
+}
+
+function raw_sleep_ms(int64 ms) int64 {
+    c {
+        sleep((long)ms);
+    }
+    return 0;
+}
+
+function raw_fullduplex_test() int64 {
+    int64 result;
+    int64 fd;
+    int64 rn;
+    int64 wn;
+    c {
+        int lfd;
+        result = 0;
+        lfd = dial("tcp!127.0.0.1!19998", nil, nil, nil);
+        if(lfd < 0){
+            print("o9-netfs: FAIL full-duplex dial: %r\n");
+            result = -1;
+        } else {
+            result = lfd;
+        }
+    }
+    if(result < 0){
+        return 0;
+    }
+    fd = result;
+    Task<int64> reader = spawn raw_blocking_read(fd);
+    Task<int64> delay = spawn raw_sleep_ms(150);
+    delay.await();
+    Task<int64> writer = spawn raw_ping_write(fd);
+    rn = reader.await();
+    wn = writer.await();
+    c {
+        close((int)fd);
+    }
+    if(rn == 4 && wn == 4){
+        print("o9-netfs: full-duplex read/write OK\n");
+        return 1;
+    }
+    print("o9-netfs: FAIL full-duplex rn=%d wn=%d\n", rn, wn);
+    return 0;
+}
+
+function raw_server_test() int64 {
+    int64 result;
+    c {
+        char dir[NETPATHLEN];
+        char newdir[NETPATHLEN];
+        char buf[64];
+        int ctl, lfd, dfd, n;
+
+        result = 0;
+        ctl = announce("tcp!127.0.0.1!19999", dir);
+        if(ctl < 0){
+            print("o9-netfs: FAIL announce: %r\n");
+        } else {
+            lfd = listen(dir, newdir);
+            if(lfd < 0){
+                print("o9-netfs: FAIL listen: %r\n");
+            } else {
+                dfd = accept(lfd, newdir);
+                if(dfd < 0){
+                    print("o9-netfs: FAIL accept: %r\n");
+                } else {
+                    n = read(dfd, buf, sizeof(buf));
+                    if(n == 12 && memcmp(buf, "guest-server", 12) == 0){
+                        if(write(dfd, "guest-ok", 8) == 8){
+                            print("o9-netfs: announce/listen/accept OK\n");
+                            result = 1;
+                        } else {
+                            print("o9-netfs: FAIL server write: %r\n");
+                        }
+                    } else {
+                        print("o9-netfs: FAIL server read n=%d: %r\n", n);
+                    }
+                    close(dfd);
+                }
+                close(lfd);
+            }
+            close(ctl);
+        }
+    }
+    return result;
+}
+
+function raw_net_test() int64 {
+    int64 result;
+    c {
+        int netfd, fd, n, total, wlen;
+        char buf[256];
+        char *tcp = "tcp!127.0.0.1!19996";
+        char *udp = "udp!127.0.0.1!19997";
+        char *tcpmsg = "harvey-netfs-tcp\n";
+        char *udpmsg = "harvey-netfs-udp";
+        int tcp_ok = 0;
+        int udp_ok = 0;
+
+        result = 0;
+        netfd = open("#9/1", ORDWR);
+        if(netfd < 0){
+            print("o9-netfs: FAIL open #9/1: %r\n");
+        } else if(mount(netfd, -1, "/net", MREPL, "") < 0){
+            print("o9-netfs: FAIL mount #9/1: %r\n");
+        } else {
+            print("o9-netfs: mounted #9/1 -> /net\n");
+
+            fd = dial(tcp, nil, nil, nil);
+            if(fd < 0){
+                print("o9-netfs: FAIL tcp dial: %r\n");
+            } else {
+                wlen = strlen(tcpmsg);
+                if(write(fd, tcpmsg, wlen) == wlen){
+                    total = 0;
+                    while(total < wlen){
+                        n = read(fd, buf + total, wlen - total);
+                        if(n <= 0)
+                            break;
+                        total += n;
+                    }
+                    if(total == wlen && memcmp(buf, tcpmsg, wlen) == 0){
+                        print("o9-netfs: tcp echo OK\n");
+                        tcp_ok = 1;
+                    } else {
+                        print("o9-netfs: FAIL tcp echo (%d/%d): %r\n", total, wlen);
+                    }
+                } else {
+                    print("o9-netfs: FAIL tcp write: %r\n");
+                }
+                close(fd);
+            }
+
+            fd = dial(udp, nil, nil, nil);
+            if(fd < 0){
+                print("o9-netfs: FAIL udp dial: %r\n");
+            } else {
+                wlen = strlen(udpmsg);
+                if(write(fd, udpmsg, wlen) == wlen){
+                    total = 0;
+                    while(total < wlen){
+                        n = read(fd, buf + total, wlen - total);
+                        if(n <= 0)
+                            break;
+                        total += n;
+                    }
+                    if(total == wlen && memcmp(buf, udpmsg, wlen) == 0){
+                        print("o9-netfs: udp echo OK\n");
+                        udp_ok = 1;
+                    } else {
+                        print("o9-netfs: FAIL udp echo (%d/%d): %r\n", total, wlen);
+                    }
+                } else {
+                    print("o9-netfs: FAIL udp write: %r\n");
+                }
+                close(fd);
+            }
+
+            if(tcp_ok == 1 && udp_ok == 1){
+                print("o9-netfs: PASS tcp and udp\n");
+                result = 1;
+            } else {
+                print("o9-netfs: FAIL tcp=%d udp=%d\n", tcp_ok, udp_ok);
+            }
+        }
+    }
+    return result;
+}
+
+main {
+    print("\n==================================================\n");
+    print("  Harvey host /net service test\n");
+    print("==================================================\n");
+    Task<int64> t = spawn raw_net_test();
+    int64 ok = t.await();
+    Task<int64> f = spawn raw_fullduplex_test();
+    int64 fd_ok = f.await();
+    Task<int64> s = spawn raw_server_test();
+    int64 server_ok = s.await();
+    print("o9-netfs: done ok=%d full_duplex=%d server=%d\n", ok, fd_ok, server_ok);
+}
