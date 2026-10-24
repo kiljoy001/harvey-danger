@@ -127,6 +127,7 @@ struct Ctlr {
 	Block   *tx_blocks[Qsize / 2];
 
 	Ether   *edev;
+	int     attached;
 };
 
 static Pcicap*
@@ -215,6 +216,9 @@ ethervirtioattach(Ether *edev)
 	Vqueue *rxq = c->rxq;
 	int n = rxq->size / 2;
 
+	if(c->attached)
+		return;
+	c->attached = 1;
 	ilock(&rxq->l);
 	for(int i = 0; i < n; i++){
 		Block *b = allocb(ETHERMAXTU + 64);
