@@ -20,11 +20,11 @@ BUILD_KERNEL = os.path.join(REPO_ROOT, "util/9vm/build_kernel.py")
 REQUIRED_ASSERTIONS = [
     ("kernel_banner", "Harvey"),
     ("virtio9p_probe", "#9/0: virtio9p tag \"host\""),
-    ("virtio9p_net_probe", "#9/1: virtio9p tag \"net\""),
     ("pid1_banner", "Prism Microkernel (Harvey amd64)"),
     ("pid1_supervisor", "PID 1 Objective-9C Actor Supervisor Online"),
     ("ns_bind_dev", "o9-boot: bound #c -> /dev"),
     ("ns_bind_host", "o9-boot: bound / -> /n/host"),
+    ("guest_netd", "o9-boot: mounted guest /net"),
     ("bio_read", "o9-bio: Brdline read"),
     ("hostfs_rw", "o9-hostfs-rw: PASS 100000-byte write/read"),
     ("local_9ring_reject", "o9-local9ring: PASS invalid framing and duplicate tags rejected"),

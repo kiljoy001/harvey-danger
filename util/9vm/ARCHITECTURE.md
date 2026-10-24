@@ -14,14 +14,14 @@ services in either case.
  |                                                               |
  | 9vm runner                                                    |
  |   + KVM vCPU and guest RAM                                     |
- |   + hostfs 9P server and optional netfs                        |
+ |   + hostfs 9P server                                           |
  |   + shared host 9ring or VirtIO 9P devices                     |
  |            |                                                  |
  |============ guest / host boundary ============================|
  | Harvey amd64 kernel                                           |
  |   + Plan 9 processes, per-process namespaces, 9P mount       |
  |   + #~/host shared-ring host transport                        |
- |   + #9/0 VirtIO hostfs fallback, #9/1 netfs                   |
+ |   + #9/0 VirtIO hostfs fallback                               |
  |   + #~!name/listen and #~name/connect local IPC               |
  |            |                                                  |
  | o9c PID 1 supervisor: boot/init.o9                             |
@@ -48,12 +48,11 @@ fill the others.
 The kernel keeps process, memory, namespace, and 9P mount mechanisms. Its
 external I/O transports are `#~` (9ring) and `#9` (virtio-9P). Serial, disk,
 network, display, and input device policy belongs to user-space 9P services.
-The `netfs` service is the network example: it owns the host sockets and
-exports the Plan 9 `/net` protocol over VirtIO tag `net` (`#9/1`). The net
-virtqueue has asynchronous completion, so a data read that waits for a peer
-does not stop the vCPU. TCP/UDP dial, TCP announce/listen, and `/net/cs` are
-implemented on the host; a guest-side `/net` with `pkt` and IL is the next
-step rather than a kernel driver.
+The network example is a guest user-space service, `o9net`/`netd`, not a
+host `/net`. `netd` owns `/net`, the IL state machine, and the IPv6 packet
+boundary. A separate user program, Yggdrasil, binds the `pkt` interface and
+owns peer links, routing, and encryption. The host provides no version of
+`/net` in the target path.
 `sys/src/cmd/o9driverfs` is the Objective-9C device namespace: a trusted
 launcher maps named backend files into per-attach `view/drivers` trees. The
 x86 VM test verifies this filesystem over a real 9P mount. Device-specific

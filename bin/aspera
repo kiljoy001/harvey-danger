@@ -21,7 +21,7 @@ QUALITY = ROOT / "util/quality/run.sh"
 BUILD = ROOT / "build"
 PREVIEW_FILES = (
     ROOT / "util/9vm/9vm",
-    ROOT / "util/9vm/netfs",
+    BUILD / "netd",
     BUILD / "harvey.32bit",
     BUILD / "libo9.a",
     BUILD / "libdraw.a",
@@ -35,8 +35,7 @@ PREVIEW_FILES = (
     BUILD / "libbio.a",
     BUILD / "libc.a",
 )
-SYSTEM_FILES = (ROOT / "util/9vm/9vm", ROOT / "util/9vm/netfs",
-                BUILD / "harvey.32bit")
+SYSTEM_FILES = (ROOT / "util/9vm/9vm", BUILD / "harvey.32bit")
 
 
 def check(command: str, image: Path) -> list[str]:

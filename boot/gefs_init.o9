@@ -323,13 +323,35 @@ function start_gefs_root() int64 {
             goto gefs_done;
         }
         free(d);
-        fd = open("#9/1", ORDWR);
-        if(fd >= 0){
-            if(mount(fd, -1, "/net", MREPL, "") < 0){
-                print("aspera: host net service mount failed: %r\n");
+        if(dirstat("/net") == nil){
+            fd = create("/net", OREAD, DMDIR|0777);
+            if(fd >= 0)
                 close(fd);
-            } else
-                print("aspera: mounted host net service at /net\n");
+        }
+        fd = open("/bin/netd", OEXEC);
+        if(fd >= 0){
+            char *netdargs[] = {"netd", nil};
+            close(fd);
+            pid = rfork(RFPROC|RFFDG|RFNOWAIT);
+            if(pid == 0){
+                exec("/bin/netd", netdargs);
+                print("aspera: exec netd: %r\n");
+                _exits("exec");
+            }
+            fd = -1;
+            for(i = 0; i < 100; i++){
+                fd = open("/srv/netd", ORDWR);
+                if(fd >= 0)
+                    break;
+                sleep(50);
+            }
+            if(fd >= 0 && mount(fd, -1, "/net", MREPL, "") >= 0)
+                print("aspera: mounted guest /net\n");
+            else {
+                print("aspera: guest netd mount failed\n");
+                if(fd >= 0)
+                    close(fd);
+            }
         }
         {
             char *driverargs[] = {"o9drvman", "o9drvman", "devices",

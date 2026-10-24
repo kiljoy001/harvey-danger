@@ -14,6 +14,7 @@ BOOT_OBJ = os.path.join(REPO_ROOT, "build/boot_init.o")
 LOCAL_RING_TEST_C = os.path.join(REPO_ROOT, "boot/test_local_9ring.c")
 LOCAL_RING_TEST_OBJ = os.path.join(REPO_ROOT, "build/test_local_9ring.o")
 BOOT_OUT = os.path.join(REPO_ROOT, "boot/boot")
+BUILD_NETD = os.path.join(REPO_ROOT, "util/9vm/build_netd.py")
 
 LIBO9_A = os.path.join(REPO_ROOT, "build/libo9.a")
 LIBTHREAD_A = os.path.join(REPO_ROOT, "build/libthread.a")
@@ -68,6 +69,9 @@ def main():
         if res.returncode != 0:
             print("o9c transpilation failed!", file=sys.stderr)
             sys.exit(1)
+
+    print("Building guest netd...")
+    subprocess.run([sys.executable, BUILD_NETD], check=True)
 
     print(f"Compiling {BOOT_C}...")
     subprocess.run([CC] + CFLAGS + [BOOT_C, "-o", BOOT_OBJ], check=True)

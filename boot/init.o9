@@ -15,22 +15,52 @@ function raw_bind(string dev, string target, int64 flags) int64 {
     return res;
 }
 
-function raw_mount_net() int64 {
+function raw_start_netd() int64 {
     int64 res;
     c {
-        int fd = open("#9/1", ORDWR);
+        char *args[] = {"netd", nil};
+        char *path = "/n/host/build/netd";
+        int fd, pid, i;
+
         res = -1;
-        if(fd < 0){
-            fprint(2, "o9-boot: open #9/1 failed: %r\n");
-        } else {
-            if(mount(fd, -1, "/net", MREPL, "") < 0){
-                fprint(2, "o9-boot: mount #9/1 -> /net failed: %r\n");
+        print("o9-boot: starting guest netd\n");
+        if(dirstat("/net") == nil){
+            fd = create("/net", OREAD, DMDIR|0777);
+            if(fd >= 0)
                 close(fd);
-            } else {
-                print("o9-boot: mounted #9/1 -> /net\n");
-                res = 0;
-            }
         }
+        fd = open(path, OEXEC);
+        if(fd < 0){
+            fprint(2, "o9-boot: no guest netd at %s: %r\n", path);
+            goto out;
+        }
+        close(fd);
+        pid = rfork(RFPROC|RFFDG|RFNOWAIT);
+        if(pid == 0){
+            exec(path, args);
+            fprint(2, "o9-boot: exec netd: %r\n");
+            _exits("exec");
+        }
+        fd = -1;
+        for(i = 0; i < 100; i++){
+            fd = open("/srv/netd", ORDWR);
+            if(fd >= 0)
+                break;
+            sleep(50);
+        }
+        if(fd < 0){
+            fprint(2, "o9-boot: netd did not post /srv/netd: %r\n");
+            goto out;
+        }
+        if(mount(fd, -1, "/net", MREPL, "") < 0){
+            fprint(2, "o9-boot: mount guest /net failed: %r\n");
+            close(fd);
+            goto out;
+        }
+        print("o9-boot: mounted guest /net\n");
+        res = 0;
+out:
+        ;
     }
     return res;
 }
@@ -423,7 +453,7 @@ main {
     b7.await();
     Task<int64> b8 = spawn raw_bind("/n/host/amd64/bin", "/bin", 2);
     b8.await();
-    Task<int64> b_net = spawn raw_mount_net();
+    Task<int64> b_net = spawn raw_start_netd();
     b_net.await();
 
     Task<int64> disk_test = spawn raw_gefs_image_test();

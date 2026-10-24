@@ -41,7 +41,8 @@ is separate from the host transport and is not a memory-mapped user API.
 Build and run both guest transports:
 
 ```sh
-make -C util/9vm 9vm netfs
+make -C util/9vm 9vm
+python3 util/9vm/build_netd.py
 python3 util/9vm/build_boot.py
 python3 util/9vm/build_kernel.py
 python3 util/9vm/test_boot.py
@@ -65,30 +66,24 @@ The kernel keeps only two transports and the core 9P machinery:
   Anything that speaks 9P can provide those services.
 
 The earlier in-kernel IP stack and IL were a bring-up and have been
-removed from the microVM build; `sys/src/9/ip/il.c` remains as the
-user-space implementation of the improved IL. Networking is a `/net`
-9P service: `util/9vm/netfs` is a user-space 9P2000 server that exposes
-the Plan 9 `/net` tree over a Unix socket, and 9vm connects it to the
-VirtIO 9P tag `net` (`#9/1`). It implements `clone`, `ctl`, `data`,
-`listen`, `local`, `remote`, `status`, and `err`, with TCP and UDP carried
-by host sockets and `/net/cs` using the host resolver. TCP clients can
-`announce`, `listen`, and `accept`; UDP clients use `dial` and connected
-data sockets.
+removed from the microVM build. Networking is a guest user-space 9P
+service: `sys/src/cmd/o9net` builds `netd`, which owns `/net`, allocates
+conversations, and implements the IL transport over an IPv6 packet
+interface. The guest boots `netd`, posts `/srv/netd`, and mounts that 9P
+tree at `/net`.
 
-The net virtqueue completes asynchronously. A guest read that blocks for
-socket data copies the request out of guest memory and parks it; the vCPU
-continues running while a reader thread waits for the reply. Replies can
-therefore arrive out of order, which the kernel 9P client matches by tag.
+Yggdrasil is not part of `netd`. It is a separate user program that binds
+`/net/ipifc/0/pkt` and owns peer links, routing, and encryption. The
+network server exposes the packet boundary and the protocol engines; it
+does not know about Yggdrasil.
 
-`#9/1` is optional. A boot without `netfs` leaves networking absent rather
-than starting an in-kernel stack. `/net/il` currently reports that IL is
-not provided by the host service; the long-term replacement is a guest
-user-space `/net` server with `pkt`, IL, and Yggdrasil.
+The host has no `/net` server in this path. Host `netfs` is retired from
+the default boot; an explicit `-netfs` remains only as a development
+socket backend.
 
 ```sh
-make -C util/9vm netfs
-python3 util/9vm/test_netfs.py   # host 9P: TCP/UDP, cs, announce/listen
-python3 util/9vm/test_net.py     # guest: dial, full-duplex, announce/listen
+python3 util/9vm/build_netd.py
+python3 util/9vm/test_net.py     # guest netd: announce/listen/dial IL
 ```
 
 Storage follows the same rule: `-gefs-image` exports the disk image as a
@@ -230,7 +225,7 @@ The image contains `/bin/o9irc-ircfs`, `/bin/o9irc-gui`, and
 read-only `#/boot`; Aspera starts it when the image contains o9irc and mounts
 its 9P view at `/n/o9irc`. The Objective-9C runtime tree at `/mnt/o9` is in
 RAM, while IRC history is configured under persistent `/lib/o9irc`. Aspera
-mounts the optional `#9/1` network service at `/net` when available.
+mounts the guest `/net` service when `/bin/netd` is installed.
 
 The Harvey build returns a clear error for TLS connections because its older
 libsec lacks the 9front certificate verification API used by o9irc. Plain IRC

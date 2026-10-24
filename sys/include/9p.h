@@ -219,6 +219,7 @@ struct Srv {
 	int	outfd;
 	int	nopipe;
 	int	srvfd;
+	int	threaded;	/* run blocking read/write requests in their own process */
 	int	leavefdsopen;	/* magic for acme win */
 	char*	keyspec;
 	int	authok;

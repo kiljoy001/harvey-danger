@@ -689,6 +689,36 @@ rwstat(Req* r, char* c)
 {
 }
 
+static void
+handlereq(void *v)
+{
+	Req *r = v;
+	Srv *srv = r->srv;
+
+	if(r->error){
+		respond(r, r->error);
+		return;
+	}
+	switch(r->ifcall.type){
+	default:
+		respond(r, "unknown message");
+		break;
+	case Tversion:	sversion(srv, r);	break;
+	case Tauth:	sauth(srv, r);	break;
+	case Tattach:	sattach(srv, r);	break;
+	case Tflush:	sflush(srv, r);	break;
+	case Twalk:	swalk(srv, r);	break;
+	case Topen:	sopen(srv, r);	break;
+	case Tcreate:	screate(srv, r);	break;
+	case Tread:	sread(srv, r);	break;
+	case Twrite:	swrite(srv, r);	break;
+	case Tclunk:	sclunk(srv, r);	break;
+	case Tremove:	sremove(srv, r);	break;
+	case Tstat:	sstat(srv, r);	break;
+	case Twstat:	swstat(srv, r);	break;
+	}
+}
+
 void
 srv(Srv *srv)
 {
@@ -710,28 +740,13 @@ srv(Srv *srv)
 	srv->rpool->srv = srv;
 
 	while((r = getreq(srv)) != nil){
-		if(r->error){
-			respond(r, r->error);
+		if(srv->threaded && (r->ifcall.type == Tread || r->ifcall.type == Twrite)){
+			int th = proccreate((void(*)(void*))handlereq, r, 65536);
+			if(th < 0)
+				fprint(2, "srv: proccreate failed\n");
 			continue;
 		}
-		switch(r->ifcall.type){
-		default:
-			respond(r, "unknown message");
-			break;
-		case Tversion:	sversion(srv, r);	break;
-		case Tauth:	sauth(srv, r);	break;
-		case Tattach:	sattach(srv, r);	break;
-		case Tflush:	sflush(srv, r);	break;
-		case Twalk:	swalk(srv, r);	break;
-		case Topen:	sopen(srv, r);	break;
-		case Tcreate:	screate(srv, r);	break;
-		case Tread:	sread(srv, r);	break;
-		case Twrite:	swrite(srv, r);	break;
-		case Tclunk:	sclunk(srv, r);	break;
-		case Tremove:	sremove(srv, r);	break;
-		case Tstat:	sstat(srv, r);	break;
-		case Twstat:	swstat(srv, r);	break;
-		}
+		handlereq(r);
 	}
 
 	free(srv->rbuf);

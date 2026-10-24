@@ -24,7 +24,6 @@
 #include <termios.h>
 #include <pthread.h>
 #include <sched.h>
-#include <sys/prctl.h>
 #include "hostfs.h"
 #include "../../sys/include/9ring.h"
 
@@ -1537,6 +1536,7 @@ int main(int argc, char **argv) {
     snprintf(netfs_default, sizeof(netfs_default), "/tmp/netfs.%ld.sock",
              (long)getpid());
     const char *netfs_path = netfs_default;
+    bool netfs_explicit = false;
     size_t ram_mb = DEFAULT_RAM_MB;
     bool use_hostring = true;
 
@@ -1563,6 +1563,7 @@ int main(int argc, char **argv) {
             i++; /* legacy u9fs option ignored: now in-process */
         } else if (strcmp(argv[i], "-netfs") == 0 && i + 1 < argc) {
             netfs_path = argv[++i];
+            netfs_explicit = true;
         } else if (strcmp(argv[i], "-no9ring") == 0) {
             use_hostring = false;
         } else if (strcmp(argv[i], "-t") == 0 && i + 1 < argc) {
@@ -1652,53 +1653,11 @@ int main(int argc, char **argv) {
     else
         fprintf(stderr, "[9vm] In-process hostfs online serving '%s'\n", root_dir);
 
-    int netfs_fd = connect_unix_socket(netfs_path);
-    char netfs_bin[PATH_MAX] = "";
-    if (netfs_fd < 0) {
-        if (access("util/9vm/netfs", X_OK) == 0) {
-            snprintf(netfs_bin, sizeof(netfs_bin), "util/9vm/netfs");
-        } else {
-            char exe[PATH_MAX];
-            ssize_t n = readlink("/proc/self/exe", exe, sizeof(exe) - 1);
-            if (n > 0) {
-                exe[n] = '\0';
-                char *slash = strrchr(exe, '/');
-                if (slash != NULL) {
-                    *slash = '\0';
-                    snprintf(netfs_bin, sizeof(netfs_bin), "%s/netfs", exe);
-                    if (access(netfs_bin, X_OK) != 0)
-                        netfs_bin[0] = '\0';
-                }
-            }
-        }
-    }
-    if (netfs_fd < 0 && netfs_bin[0] != '\0') {
-        pid_t npid = fork();
-        if (npid == 0) {
-            prctl(PR_SET_PDEATHSIG, SIGTERM);
-            if (getppid() == 1)
-                _exit(1);
-            int devnull = open("/dev/null", O_RDWR);
-            if (devnull >= 0) {
-                dup2(devnull, 0);
-                dup2(devnull, 1);
-                dup2(devnull, 2);
-                close(devnull);
-            }
-            execl(netfs_bin, "netfs", "-s", netfs_path, NULL);
-            _exit(1);
-        }
-        for (int retry = 0; retry < 500; retry++) {
-            usleep(1000);
-            netfs_fd = connect_unix_socket(netfs_path);
-            if (netfs_fd >= 0) break;
-        }
-    }
-    if (netfs_fd >= 0) {
-        fprintf(stderr, "[9vm] Connected virtio9p tag 'net' to '%s' (fd %d)\n", netfs_path, netfs_fd);
-    } else {
-        fprintf(stderr, "[9vm] Note: netfs socket not found at '%s', virtio9p net idle\n", netfs_path);
-    }
+    int netfs_fd = netfs_explicit ? connect_unix_socket(netfs_path) : -1;
+    if (netfs_fd >= 0)
+        fprintf(stderr, "[9vm] Connected explicit virtio9p tag 'net' to '%s' (fd %d)\n", netfs_path, netfs_fd);
+    else if (netfs_explicit)
+        fprintf(stderr, "[9vm] Note: explicit netfs socket not found at '%s'; tag net idle\n", netfs_path);
 
     if (getenv("VM_TRACE")) fprintf(stderr, "[perf +%.2f ms] netfs init\n", get_boot_ms());
 

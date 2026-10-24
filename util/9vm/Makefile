@@ -2,7 +2,7 @@ CC = clang
 CFLAGS = -Wall -Wextra -O2
 PAYLOAD_CFLAGS = -m32 -ffreestanding -nostdlib -fno-pie -no-pie
 
-all: 9vm netfs test_payload.elf
+all: 9vm test_payload.elf
 
 9vm: 9vm.c hostfs.c hostfs.h vmdisplay.h
 	$(CC) $(CFLAGS) -pthread -o 9vm 9vm.c hostfs.c

@@ -1,0 +1,112 @@
+function raw_netd_test() int64 {
+    int64 result;
+    c {
+        char *args[] = {"netd", nil};
+        char *path = "/build/netd";
+        char dir[256], newdir[256];
+        int fd, lfd, dfd, n, i, child;
+        char buf[64];
+
+        result = 0;
+        bind("#c", "/dev", MAFTER);
+        bind("#s", "/srv", MAFTER);
+        if(dirstat("/net") == nil){
+            fd = create("/net", OREAD, DMDIR|0777);
+            if(fd >= 0) close(fd);
+        }
+
+        fd = open(path, OEXEC);
+        if(fd < 0){
+            print("o9-netd: FAIL open %s: %r\n", path);
+            goto out;
+        }
+        close(fd);
+        child = rfork(RFPROC|RFFDG|RFNOWAIT);
+        if(child == 0){
+            exec(path, args);
+            print("o9-netd: exec failed: %r\n");
+            _exits("exec");
+        }
+
+        fd = -1;
+        for(i = 0; i < 100; i++){
+            fd = open("/srv/netd", ORDWR);
+            if(fd >= 0) break;
+            sleep(50);
+        }
+        if(fd < 0){
+            print("o9-netd: FAIL /srv/netd: %r\n");
+            goto out;
+        }
+        if(mount(fd, -1, "/net", MREPL, "") < 0){
+            print("o9-netd: FAIL mount /net: %r\n");
+            close(fd);
+            goto out;
+        }
+        print("o9-netd: mounted guest /net\n");
+
+        child = rfork(RFPROC|RFFDG);
+        if(child == 0){
+            lfd = announce("il!::1!19990", dir);
+            if(lfd < 0){
+                print("o9-netd: FAIL announce: %r\n");
+                _exits("announce");
+            }
+            dfd = listen(dir, newdir);
+            if(dfd < 0){
+                print("o9-netd: FAIL listen: %r\n");
+                _exits("listen");
+            }
+            dfd = accept(dfd, newdir);
+            if(dfd < 0){
+                print("o9-netd: FAIL accept: %r\n");
+                _exits("accept");
+            }
+            n = read(dfd, buf, sizeof buf);
+            if(n == 5 && memcmp(buf, "hello", 5) == 0){
+                if(write(dfd, "world", 5) == 5)
+                    print("o9-netd: server read/write OK\n");
+                else
+                    print("o9-netd: FAIL server write: %r\n");
+            } else
+                print("o9-netd: FAIL server read n=%d: %r\n", n);
+            close(dfd);
+            close(lfd);
+            _exits(nil);
+        }
+
+        sleep(300);
+        fd = dial("il!::1!19990", nil, nil, nil);
+        if(fd < 0){
+            print("o9-netd: FAIL dial: %r\n");
+            goto out;
+        }
+        print("o9-netd: client dial OK\n");
+        if(write(fd, "hello", 5) != 5){
+            print("o9-netd: FAIL client write: %r\n");
+            close(fd);
+            goto out;
+        }
+        n = read(fd, buf, sizeof buf);
+        if(n == 5 && memcmp(buf, "world", 5) == 0)
+            print("o9-netd: client read/write OK\n");
+        else
+            print("o9-netd: FAIL client read n=%d: %r\n", n);
+        close(fd);
+        sleep(200);
+        print("o9-netd: done\n");
+        result = 1;
+out:
+        ;
+    }
+    return result;
+}
+
+main {
+    print("\n==================================================\n");
+    print("  o9net guest /net test\n");
+    print("==================================================\n");
+    Task<int64> t = spawn raw_netd_test();
+    int64 ok = t.await();
+    print("o9-netd: result %d\n", ok);
+}

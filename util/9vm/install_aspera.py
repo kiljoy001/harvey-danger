@@ -80,6 +80,14 @@ def provision(base: Path, image: Path, stage: Path, work: Path) -> None:
                 if "differ" in output or "cmp:" in output:
                     raise RuntimeError(f"{installed} copy differs: {output[-600:]}")
                 print(f"Installed {installed}")
+            for staged, installed in (("netd", "/bin/netd"),):
+                target = f"/n/asperagefs{installed}"
+                console.run(f"cp /n/asperastage/{staged} {target}", 180)
+                console.run(f"chmod 755 {target}")
+                output = console.run(f"cmp /n/asperastage/{staged} {target}", 120)
+                if "differ" in output or "cmp:" in output:
+                    raise RuntimeError(f"{installed} copy differs: {output[-600:]}")
+                print(f"Installed {installed}")
             for staged, installed in TOOLS.items():
                 target = f"/n/asperagefs{installed}"
                 console.run(f"cp /n/asperastage/{staged} {target}", 180)
@@ -124,6 +132,8 @@ def main() -> None:
         compile_o9(str(source), str(ROOT / "build" / f"aspera-{staged}"),
                    extra_sources=tuple(map(str, extras)))
     build_tools()
+    subprocess.run([sys.executable, str(ROOT / "util/9vm/build_netd.py")],
+                   check=True)
     with tempfile.TemporaryDirectory(prefix="aspera-install-", dir=ROOT / "build") as tmp:
         work = Path(tmp)
         stage = work / "stage.img"
@@ -135,6 +145,8 @@ def main() -> None:
             subprocess.run(["mcopy", "-o", "-i", str(stage),
                             str(ROOT / "build" / f"aspera-{staged}"),
                             "::" + staged], check=True)
+        subprocess.run(["mcopy", "-o", "-i", str(stage),
+                        str(ROOT / "build/netd"), "::netd"], check=True)
         for staged in TOOLS:
             source = rcmain if staged == "rcmain" else ROOT / "build" / f"aspera-{staged}"
             subprocess.run(["mcopy", "-o", "-i", str(stage),
