@@ -151,7 +151,7 @@ class AsperaLive {
         dragging = false;
         frame = 0;
         lastClock = "";
-        running = canvas.ready() && note.ready() && shelfService.ready();
+        running = canvas.ready();
         Task<string> now = spawn IOReadLineRaw(cat(base, "/clock"), 0);
         if(shelfService.ready()) {
             string current = now.await();
@@ -355,7 +355,9 @@ class AsperaLive {
             terminalWindow.renderFrame(canvas);
         } else {
             desk.renderAll(canvas);
-            shelf.render(canvas, desk);
+            if(shelfService.ready()) {
+                shelf.render(canvas, desk);
+            }
         }
         if(!canvas.present(base, frame % 2)) {
             return false;
@@ -374,37 +376,22 @@ class AsperaLive {
     method void stop() { running = false; }
 }
 
+function AsperaIdle() int64 {
+    c {
+        for(;;)
+            sleep(1000);
+    }
+    return 0;
+}
+
 main {
     AsperaLive live = new AsperaLive("build/aspera-live");
     if(!live.ready() || !live.publish()) {
         print("ASPERA-LIVE FAIL initial frame\n");
     } else {
         print("ASPERA-LIVE READY\n");
-        int64 idle = 0;
-        while(live.ready()) {
-            Task<string> lineTask = spawn AsperaInputRaw("build/aspera-live");
-            string line = lineTask.await();
-            if(len(line) > 0) {
-                if(live.input(line) && !live.publish()) {
-                    print("ASPERA-LIVE FAIL frame\n");
-                    live.stop();
-                }
-                idle = 0;
-            } else {
-                idle = idle + 1;
-                if(idle % 2 == 0 && live.pollTerminal() && !live.publish()) {
-                    print("ASPERA-LIVE FAIL terminal frame\n");
-                    live.stop();
-                }
-                if(idle >= 12) {
-                    if(live.updateClock() && !live.publish()) {
-                        print("ASPERA-LIVE FAIL clock frame\n");
-                        live.stop();
-                    }
-                    idle = 0;
-                }
-            }
-        }
+        Task<int64> idle = spawn AsperaIdle();
+        idle.await();
     }
     live.close();
 }

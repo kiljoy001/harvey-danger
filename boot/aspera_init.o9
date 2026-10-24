@@ -1,0 +1,21 @@
+function raw_desktop() int64 {
+    c {
+        char *argv[] = {"aspera-live", nil};
+        bind("#c", "/dev", MAFTER);
+        bind("#d", "/dev", MAFTER);
+        bind("#p", "/proc", MREPL);
+        bind("#s", "/srv", MREPL|MCREATE);
+        bind("#ec", "/env", MREPL);
+        bind("#e", "/env", MCREATE|MAFTER);
+        print("halatha: starting /bin/aspera-live\n");
+        exec("/bin/aspera-live", argv);
+        fprint(2, "halatha: exec aspera-live failed: %r\n");
+    }
+    return 0;
+}
+
+main {
+    print("\nHalatha / Aspera on Harvey v64\n");
+    Task<int64> desktop = spawn raw_desktop();
+    desktop.await();
+}
