@@ -54,33 +54,31 @@ The 32-KiB buffer bounds one 9P message, not a file. The guest negotiates
 an `msize` of 32,768 bytes and uses an `iounit` of at most 32,744 bytes;
 larger file operations are split into multiple messages.
 
-## Kernel IP stack and IL
+## The 9P-only kernel
 
-The amd64 kernel now builds the real `#I` stack (`devip`, `ip`, `ipifc`,
-`iproute`, `tcp`, `udp`, `rudp`, `icmp`, `icmp6`, `ipmux`, `gre`) and the
-improved IL in `sys/src/9/ip/il.c`: IPv6, credit-based flow control, a send
-window, and congestion control.  `il.c` is listed in `sys/src/9/ip/ip.json`;
-the amd64 build adds the IP sources and the `klibip` subset, while
-`sys/src/9/amd64/ipproto.c` supplies the protocol init order that `mkdevc`
-normally generates.
+The kernel keeps only two transports and the core 9P machinery:
 
-The GEFS init binds `#I` at `/net` and brings up `127.0.0.1/8` on loopback.
-The old netfs 9P mock is mounted at `/net9p` so it cannot shadow the real
-stack.  `nettest=1` runs an IL announce/connect/listen round trip over
-loopback:
+- `virtio-9p` (PCI) and `9ring` (shared-memory) provide 9P byte streams.
+- Core devices: root, cons, env, proc, mnt, srv, pipe, dup, segment, cap,
+  ram, arch.
+- No storage, network, USB or display drivers belong in the kernel.
+  Anything that speaks 9P can provide those services.
 
-```sh
-util/9vm/9vm -r /tmp/9vm/stage \
-  -c "bootargs=local!#9/0 nobootprompt=local gefsroot=1 nettest=1" \
-  -disk /tmp/9vm/gefs.img build/harvey.32bit
-```
+The earlier in-kernel IP stack and IL were a bring-up and have been
+removed from the microVM build; `sys/src/9/ip/il.c` remains as the
+user-space implementation of the improved IL.  Networking is a `/net`
+9P service: today the host's netfs mock is mounted at `/net`, and the
+next step is a real `/net` server (host-side or a guest user-space
+lib9p server) with TCP/UDP/IL behind it.
 
-It prints `nettest: server got 'ping'` and `nettest: client got 'pong'`.
-There is no external NIC yet: 9vm still exposes the netfs 9P service rather
-than a virtio-net device, and `test_net.py` exercises that mock.  The next
-step is a virtio-net device in 9vm plus a Harvey ethernet driver.
+Storage is the remaining exception: `sdvirtio` + `devsd` still carry
+the native GEFS partition.  Under this rule the disk image is exported
+as a 9P file (`-gefs-image`, `#9/2`), a user-space GEFS server runs on
+that file, and the kernel mounts the exported tree.  That removes the
+block drivers from the kernel and lets GEFS and the installer keep
+their current logic over a 9P image instead of a block device.
 
-## Opaque GEFS image
+## Opaque GEFS image## Opaque GEFS image
 
 Create a new 512 MiB image using an installed 9front VM as the formatter:
 

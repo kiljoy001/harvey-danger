@@ -21,7 +21,6 @@ extern Dev virtio9pdevtab;
 extern Dev ringdevtab;
 extern Dev ramdevtab;
 extern Dev xhcidevtab;
-extern Dev ipdevtab;
 extern Dev sddevtab;
 
 Dev *devtab[] = {
@@ -40,19 +39,13 @@ Dev *devtab[] = {
 	&ringdevtab,
 	&ramdevtab,
 	&xhcidevtab,
-	&ipdevtab,
 	&sddevtab,
 	nil,
 };
 
-extern void ethermediumlink(void);
-extern void loopbackmediumlink(void);
-
 void
 links(void)
 {
-	ethermediumlink();
-	loopbackmediumlink();
 }
 
 #include "../port/sd.h"

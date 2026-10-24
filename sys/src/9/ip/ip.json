@@ -9,7 +9,6 @@
 			"../ip/gre.c",
 			"../ip/icmp6.c",
 			"../ip/icmp.c",
-			"../ip/il.c",
 			"../ip/inferno.c",
 			"../ip/ipaux.c",
 			"../ip/ip.c",

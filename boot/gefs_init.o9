@@ -12,7 +12,7 @@ function start_gefs_root() int64 {
                         "/mnt/lib/o9irc", "/mnt/lib/aspera", "/mnt/build",
                         "/mnt/build/aspera-live", "/mnt/mnt/o9driverfs-config",
                         "/mnt/mnt/o9drvman-status", "/mnt/rc", "/mnt/rc/lib",
-                        "/mnt/n/host", "/mnt/net9p", nil};
+                        "/mnt/n/host", nil};
         char *ircargs[] = {"o9irc-ircfs", "o9irc", "", "", "",
                            "/lib/o9irc", "262144", nil};
         char *probe = "Aspera GEFS root probe\n";
@@ -336,8 +336,7 @@ function start_gefs_root() int64 {
             if(srvfd >= 0) close(srvfd);
             goto gefs_done;
         }
-        if(bind("#I", "/net", MREPL) < 0 ||
-           bind("#c", "/dev", MAFTER) < 0 ||
+        if(bind("#c", "/dev", MAFTER) < 0 ||
            bind("#d", "/fd", MREPL) < 0 ||
            bind("#s", "/srv", MREPL|MCREATE) < 0 ||
            bind("#e", "/env", MREPL|MCREATE) < 0 ||
@@ -346,117 +345,6 @@ function start_gefs_root() int64 {
             print("aspera: device namespace bind failed: %r\n");
             goto gefs_done;
         }
-        /* Bring up loopback so the IP stack (TCP/UDP/IL) is usable. */
-        {
-            char nb[16], np[64];
-            int nfd, nctl, nn;
-            nfd = open("/net/ipifc/clone", ORDWR);
-            if(nfd >= 0){
-                nn = read(nfd, nb, sizeof nb - 1);
-                if(nn > 0){
-                    while(nn > 0 && (nb[nn-1] == '\n' || nb[nn-1] == '\r'))
-                        nn--;
-                    nb[nn] = 0;
-                    snprint(np, sizeof np, "/net/ipifc/%s/ctl", nb);
-                    nctl = open(np, OWRITE);
-                    if(nctl >= 0){
-                        if(fprint(nctl, "bind loopback") < 0 ||
-                           fprint(nctl, "add 127.0.0.1 /8") < 0)
-                            print("net: loopback config failed: %r\n");
-                        else
-                            print("net: loopback 127.0.0.1/8 up\n");
-                        close(nctl);
-                    } else
-                        print("net: open %s: %r\n", np);
-                } else
-                    print("net: ipifc clone read failed: %r\n");
-                /* nfd stays open: closing it frees the interface */
-            } else
-                print("net: no #I: %r\n");
-        }
-
-        /* End-to-end IL self-test over loopback (nettest=1). */
-        mode = getenv("nettest");
-        if(mode != nil && strcmp(mode, "1") == 0){
-            char nb[32], np[64], nd[64];
-            int lfd, lctl, ll, cfd2, cctl, cd, ad, nn2, cpid;
-            free(mode);
-            lfd = open("/net/il/clone", ORDWR);
-            if(lfd < 0)
-                print("nettest: il clone: %r\n");
-            else{
-                nn2 = read(lfd, nb, sizeof nb - 1);
-                if(nn2 <= 0)
-                    print("nettest: clone read: %r\n");
-                else{
-                    nb[nn2] = 0;
-                    while(nn2 > 0 && (nb[nn2-1] == '\n' || nb[nn2-1] == ' '))
-                        nb[--nn2] = 0;
-                    snprint(np, sizeof np, "/net/il/%s/ctl", nb);
-                    lctl = open(np, OWRITE);
-                    if(lctl < 0)
-                        print("nettest: ctl %s: %r\n", np);
-                    else{
-                        fprint(lctl, "announce *!9999");
-                        close(lctl);
-                        cpid = rfork(RFPROC|RFFDG);
-                        if(cpid == 0){
-                            cfd2 = open("/net/il/clone", ORDWR);
-                            nn2 = read(cfd2, nb, sizeof nb - 1);
-                            if(nn2 > 0){
-                                nb[nn2] = 0;
-                                while(nn2 > 0 && (nb[nn2-1] == '\n' || nb[nn2-1] == ' '))
-                                    nb[--nn2] = 0;
-                                snprint(np, sizeof np, "/net/il/%s/ctl", nb);
-                                cctl = open(np, OWRITE);
-                                if(cctl >= 0){
-                                    fprint(cctl, "connect 127.0.0.1!9999");
-                                    close(cctl);
-                                    snprint(nd, sizeof nd, "/net/il/%s/data", nb);
-                                    cd = open(nd, ORDWR);
-                                    if(cd < 0)
-                                        print("nettest: client data: %r\n");
-                                    else{
-                                        write(cd, "ping", 4);
-                                        nn2 = read(cd, nb, sizeof nb - 1);
-                                        if(nn2 > 0) nb[nn2] = 0; else nb[0] = 0;
-                                        print("nettest: client got '%s'\n", nb);
-                                    }
-                                } else
-                                    print("nettest: client ctl: %r\n");
-                            }
-                            _exits("ilclient");
-                        }
-                        snprint(np, sizeof np, "/net/il/%s/listen", nb);
-                        ll = open(np, OREAD);
-                        if(ll < 0)
-                            print("nettest: listen: %r\n");
-                        else{
-                            nn2 = read(ll, nb, sizeof nb - 1);
-                            if(nn2 <= 0)
-                                print("nettest: accept: %r\n");
-                            else{
-                                nb[nn2] = 0;
-                                while(nn2 > 0 && (nb[nn2-1] == '\n' || nb[nn2-1] == ' '))
-                                    nb[--nn2] = 0;
-                                snprint(nd, sizeof nd, "/net/il/%s/data", nb);
-                                ad = open(nd, ORDWR);
-                                if(ad < 0)
-                                    print("nettest: server data: %r\n");
-                                else{
-                                    nn2 = read(ad, nb, sizeof nb - 1);
-                                    if(nn2 > 0) nb[nn2] = 0; else nb[0] = 0;
-                                    print("nettest: server got '%s'\n", nb);
-                                    write(ad, "pong", 4);
-                                }
-                            }
-                        }
-                    }
-                }
-                /* lfd/listen fds stay open until exit */
-            }
-        }
-
         /* The 9vm host filesystem over the shared 9ring, if present. */
         fd = open("#~/host", ORDWR);
         if(fd >= 0){
@@ -487,7 +375,7 @@ function start_gefs_root() int64 {
         }
         free(d);
         fd = open("#9/1", ORDWR);
-        if(fd >= 0 && mount(fd, -1, "/net9p", MREPL, "") < 0)
+        if(fd >= 0 && mount(fd, -1, "/net", MREPL, "") < 0)
             close(fd);
         {
             char *driverargs[] = {"o9drvman", "o9drvman", "devices",
