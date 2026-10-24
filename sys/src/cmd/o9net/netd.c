@@ -2,7 +2,10 @@
  * o9net - guest user-space /net service.
  *
  * The kernel has no network stack.  This process owns /net, an IPv6 packet
- * interface, and the IL transport.  Yggdrasil is a separate user program:
+ * interface, and the IL transport.  The IL state machine and wire format
+ * follow sys/src/9/ip/il.c (the improved kernel IL); kernel Block/Queue/Conv
+ * are replaced by the user-space packet/channel model below.  Yggdrasil is
+ * a separate user program:
  * it binds /net/ipifc/0/pkt for its encrypted/routed link and is not part of
  * this server.  TCP/UDP are added on top of the same packet interface later.
  */
@@ -57,6 +60,29 @@ struct Ifc {
 	Channel *out;
 };
 
+typedef struct Iltx Iltx;
+struct Iltx {
+	Iltx *next;
+	u32 id;
+	int len;
+	u8 *pkt;
+};
+
+typedef struct Ilbuf Ilbuf;
+struct Ilbuf {
+	Ilbuf *next;
+	int len;
+	u8 data[Maxdata];
+};
+
+typedef struct Ilrx Ilrx;
+struct Ilrx {
+	Ilrx *next;
+	u32 id;
+	int len;
+	u8 data[Maxdata];
+};
+
 struct Il {
 	int idx;
 	int state;
@@ -70,10 +96,42 @@ struct Il {
 	u32 recvd;
 	u32 rstart;
 	u32 window;
+	u32 cwind;
+	u32 ssthresh;
+	u32 flight;
+	u32 txbytes;
+	int rexmit;
+	int rxtot;
+	u64 timeout;
+	u64 lastrecv;
+	Iltx *unacked;
+	Iltx *unackedtail;
+	Ilbuf *wq;
+	Ilbuf *wqtail;
+	Ilrx *rxq;
 	Channel *rq;
 	Channel *acceptq;
 	File *dir;
 	char err[ERRMAX];
+};
+
+enum {
+	EvConnect,
+	EvAnnounce,
+	EvWrite,
+	EvClose,
+	EvInput,
+	EvTick,
+};
+
+typedef struct Ilev Ilev;
+struct Ilev {
+	int type;
+	Il *il;
+	u8 *pkt;
+	int len;
+	char addr[256];
+	int port;
 };
 
 enum {
@@ -112,7 +170,11 @@ static u16 nextport = Firstport;
 static Srv fs;
 
 static void ilinput(u8 *pkt, int len);
+static void ilinputsync(u8 *pkt, int len);
 static Il *newconv(void);
+static Channel *ilev;
+static void ilworker(void *);
+static void ilticker(void *);
 
 static u16
 be16(u8 *p)
@@ -337,8 +399,8 @@ deliver(Il *il, u8 *data, int n)
 		free(p);
 }
 
-static void
-iloutput(Il *il, int type, u32 id, u32 ack, u8 *data, int dlen, int spec)
+static u8 *
+ilbuild(Il *il, int type, u32 id, u32 ack, u8 *data, int dlen, int spec, int *plen)
 {
 	u8 *pkt;
 	u8 *ih;
@@ -346,16 +408,15 @@ iloutput(Il *il, int type, u32 id, u32 ack, u8 *data, int dlen, int spec)
 	u16 c;
 
 	if(dlen < 0 || dlen > Maxdata)
-		return;
+		return nil;
 	total = Ilip6len + Ilhdrlen + dlen;
 	pkt = malloc(total);
 	if(pkt == nil)
-		return;
+		return nil;
 	memset(pkt, 0, total);
-	/* IPv6 header */
 	pkt[0] = 0x60;
 	put16(pkt+4, Ilhdrlen+dlen);
-	pkt[6] = 40; /* IP protocol 40, IL */
+	pkt[6] = 40;
 	pkt[7] = 64;
 	ip6copy(pkt+8, il->laddr);
 	ip6copy(pkt+24, il->raddr);
@@ -371,10 +432,17 @@ iloutput(Il *il, int type, u32 id, u32 ack, u8 *data, int dlen, int spec)
 		memmove(ih+Ilhdrlen, data, dlen);
 	c = csum(ih, Ilhdrlen+dlen);
 	put16(ih, c);
+	*plen = total;
+	return pkt;
+}
 
+static void
+ilsendpkt(Il *il, u8 *pkt, int len)
+{
+	if(pkt == nil)
+		return;
 	if(ip6loopback(il->raddr) || ip6eq(il->raddr, ifc.addr)){
-		/* Local delivery.  ilinput takes ownership of pkt. */
-		ilinput(pkt, total);
+		ilinputsync(pkt, len); /* takes ownership */
 		return;
 	}
 	if(ifc.pktbound){
@@ -385,7 +453,241 @@ iloutput(Il *il, int type, u32 id, u32 ack, u8 *data, int dlen, int spec)
 }
 
 static void
+iloutput(Il *il, int type, u32 id, u32 ack, u8 *data, int dlen, int spec)
+{
+	u8 *pkt;
+	int len;
+
+	pkt = ilbuild(il, type, id, ack, data, dlen, spec, &len);
+	ilsendpkt(il, pkt, len);
+}
+
+static void
+iltimeout(Il *il, int ms)
+{
+	il->timeout = (u64)(nsec()/1000000) + (u64)ms;
+}
+
+static void
+ilpump(Il *il)
+{
+	Ilbuf *b;
+	u8 *pkt;
+	int len;
+	Iltx *tx;
+
+	if(il->state != Cestablished)
+		return;
+	while(il->flight < il->cwind && (b = il->wq) != nil){
+		il->wq = b->next;
+		if(il->wq == nil)
+			il->wqtail = nil;
+		pkt = ilbuild(il, IlData, il->next, il->recvd, b->data, b->len, 0, &len);
+		if(pkt == nil){
+			free(b);
+			continue;
+		}
+		tx = mallocz(sizeof(*tx), 1);
+		if(tx == nil){
+			free(pkt);
+			free(b);
+			continue;
+		}
+		tx->id = il->next++;
+		tx->len = len;
+		tx->pkt = malloc(len);
+		if(tx->pkt == nil){
+			free(tx);
+			free(pkt);
+			free(b);
+			continue;
+		}
+		memmove(tx->pkt, pkt, len);
+		if(il->unackedtail != nil)
+			il->unackedtail->next = tx;
+		else
+			il->unacked = tx;
+		il->unackedtail = tx;
+		il->flight++;
+		il->txbytes += b->len;
+		if(il->flight == 1)
+			iltimeout(il, 250);
+		free(b);
+		ilsendpkt(il, pkt, len);
+	}
+}
+
+static void
+ilackto(Il *il, u32 ack)
+{
+	Iltx *tx;
+	int acked;
+
+	acked = 0;
+	while((tx = il->unacked) != nil && tx->id <= ack){
+		il->unacked = tx->next;
+		free(tx->pkt);
+		free(tx);
+		if(il->flight > 0)
+			il->flight--;
+		acked++;
+	}
+	if(il->unacked == nil)
+		il->unackedtail = nil;
+	if(acked){
+		il->rexmit = 0;
+		if(il->cwind < il->ssthresh){
+			il->cwind += acked;
+			if(il->cwind > il->window)
+				il->cwind = il->window;
+		}
+		if(il->unacked != nil)
+			iltimeout(il, 250);
+		else
+			il->timeout = 0;
+		ilpump(il);
+	}
+}
+
+static void
+ilrxadd(Il *il, u32 id, u8 *data, int n)
+{
+	Ilrx *r, *p, **l;
+
+	if(id <= il->recvd || id > il->recvd + il->window)
+		return;
+	r = mallocz(sizeof(*r), 1);
+	if(r == nil)
+		return;
+	r->id = id;
+	r->len = n;
+	memmove(r->data, data, n);
+	l = &il->rxq;
+	for(p = *l; p != nil; p = p->next){
+		if(id < p->id){
+			r->next = p;
+			*l = r;
+			return;
+		}
+		if(id == p->id){
+			free(r);
+			return;
+		}
+		l = &p->next;
+	}
+	*l = r;
+}
+
+static void
+ilrxpull(Il *il)
+{
+	Ilrx *r;
+	Ilrx **l;
+
+	for(;;){
+		l = &il->rxq;
+		while((r = *l) != nil && r->id <= il->recvd)
+			*l = r->next, free(r);
+		r = il->rxq;
+		if(r == nil || r->id != il->recvd+1)
+			break;
+		il->recvd = r->id;
+		deliver(il, r->data, r->len);
+		il->rxq = r->next;
+		free(r);
+	}
+}
+
+static void
+ilrxfree(Il *il)
+{
+	Ilrx *r, *n;
+
+	for(r = il->rxq; r != nil; r = n){
+		n = r->next;
+		free(r);
+	}
+	il->rxq = nil;
+}
+
+static void
+ilclear(Il *il)
+{
+	Iltx *tx, *tn;
+	Ilbuf *b, *bn;
+
+	for(tx = il->unacked; tx != nil; tx = tn){
+		tn = tx->next;
+		free(tx->pkt);
+		free(tx);
+	}
+	il->unacked = nil;
+	il->unackedtail = nil;
+	for(b = il->wq; b != nil; b = bn){
+		bn = b->next;
+		free(b);
+	}
+	il->wq = nil;
+	il->wqtail = nil;
+	ilrxfree(il);
+	il->flight = 0;
+}
+
+static void
+ilqueue(Il *il, u8 *data, int n)
+{
+	Ilbuf *b;
+	int off, m;
+
+	for(off = 0; off < n; off += m){
+		m = n-off;
+		if(m > Maxdata)
+			m = Maxdata;
+		b = mallocz(sizeof(*b), 1);
+		if(b == nil)
+			return;
+		b->len = m;
+		memmove(b->data, data+off, m);
+		if(il->wqtail != nil)
+			il->wqtail->next = b;
+		else
+			il->wq = b;
+		il->wqtail = b;
+	}
+	ilpump(il);
+}
+
+static void
+ilclose(Il *il)
+{
+	if(il->state == Cclosed)
+		return;
+	il->state = Cclosing;
+	iloutput(il, IlClose, il->next, il->recvd, nil, 0, 0);
+	iltimeout(il, 1000);
+}
+
+static void
 ilinput(u8 *pkt, int len)
+{
+	Ilev *ev;
+
+	ev = mallocz(sizeof(*ev), 1);
+	if(ev == nil){
+		free(pkt);
+		return;
+	}
+	ev->type = EvInput;
+	ev->pkt = pkt;
+	ev->len = len;
+	if(ilev == nil || nbsendp(ilev, ev) != 1){
+		free(pkt);
+		free(ev);
+	}
+}
+
+static void
+ilinputsync(u8 *pkt, int len)
 {
 	u8 *ih, *src, *dst, *data;
 	u16 plen, illen, sp, dp;
@@ -393,31 +695,21 @@ ilinput(u8 *pkt, int len)
 	int type, spec, dlen;
 	Il *il, *n;
 
-	if(len < Ilip6len+Ilhdrlen){
-		free(pkt);
-		return;
-	}
-	if((pkt[0]>>4) != 6 || pkt[6] != 40){
-		free(pkt);
-		return;
-	}
+	if(len < Ilip6len+Ilhdrlen)
+		goto drop;
+	if((pkt[0]>>4) != 6 || pkt[6] != 40)
+		goto drop;
 	plen = be16(pkt+4);
-	if(plen < Ilhdrlen || Ilip6len+plen > len){
-		free(pkt);
-		return;
-	}
+	if(plen < Ilhdrlen || Ilip6len+plen > len)
+		goto drop;
 	src = pkt+8;
 	dst = pkt+24;
 	ih = pkt+Ilip6len;
 	illen = be16(ih+2);
-	if(illen < Ilhdrlen || illen > plen){
-		free(pkt);
-		return;
-	}
-	if(csum(ih, illen) != 0){
-		free(pkt);
-		return;
-	}
+	if(illen < Ilhdrlen || illen > plen)
+		goto drop;
+	if(csum(ih, illen) != 0)
+		goto drop;
 	type = ih[4];
 	spec = ih[5];
 	sp = be16(ih+6);
@@ -431,9 +723,6 @@ ilinput(u8 *pkt, int len)
 	if(il == nil && type == IlSync){
 		il = findlistener(dst, dp);
 		if(il != nil){
-			n = convs[il->idx]; /* placeholder, replaced below */
-			(void)n;
-			/* The listener allocates the new conversation. */
 			n = newconv();
 			if(n != nil){
 				n->listener = 0;
@@ -447,28 +736,30 @@ ilinput(u8 *pkt, int len)
 				n->recvd = id;
 				n->rstart = id;
 				n->window = 20;
+				n->cwind = 2;
+				n->ssthresh = 20;
 				iloutput(n, IlSync, n->start, n->recvd, nil, 0, 0);
+				iltimeout(n, 1000);
 				if(nbsendp(il->acceptq, n) != 1)
-					(void)0; /* listener queue full; connection still usable */
+					(void)0;
 				il = n;
-			} else {
-				free(pkt);
-				return;
 			}
 		}
 	}
-	if(il == nil){
-		free(pkt);
-		return;
-	}
+	if(il == nil)
+		goto drop;
 
+	il->lastrecv = (u64)(nsec()/1000000);
 	switch(il->state){
 	case Csyncer:
 		if(type == IlSync && ack == il->start){
 			il->recvd = id;
 			il->rstart = id;
 			il->state = Cestablished;
+			il->rexmit = 0;
+			il->timeout = 0;
 			iloutput(il, IlAck, il->next, il->recvd, nil, 0, 0);
+			ilpump(il);
 		} else if(type == IlClose && ack == il->start){
 			il->state = Cclosed;
 			snprint(il->err, sizeof il->err, "connection rejected");
@@ -478,37 +769,189 @@ ilinput(u8 *pkt, int len)
 	case Csyncee:
 		if(type == IlSync && id == il->rstart && ack == 0){
 			iloutput(il, IlSync, il->start, il->recvd, nil, 0, 0);
+			iltimeout(il, 1000);
 		} else if(type == IlAck && ack == il->start){
 			il->state = Cestablished;
-			iloutput(il, IlAck, il->next, il->recvd, nil, 0, 0);
+			il->rexmit = 0;
+			il->timeout = 0;
+			ilpump(il);
 		} else if(type == IlData && ack == il->start){
 			il->state = Cestablished;
-			/* fall through below by reprocessing */
-			if(id == il->recvd+1){
+			if(id == il->recvd + 1){
 				il->recvd = id;
 				deliver(il, data, dlen);
+				ilrxpull(il);
 				iloutput(il, IlAck, il->next, il->recvd, nil, 0, 0);
-			}
+			} else if(id > il->recvd + 1)
+				ilrxadd(il, id, data, dlen);
+			ilpump(il);
 		}
 		break;
 	case Cestablished:
 		if(type == IlData){
-			if(id == il->recvd+1){
+			if(id == il->recvd + 1){
 				il->recvd = id;
 				deliver(il, data, dlen);
+				ilrxpull(il);
 				iloutput(il, IlAck, il->next, il->recvd, nil, 0, 0);
 			} else if(id <= il->recvd){
 				iloutput(il, IlAck, il->next, il->recvd, nil, 0, 0);
-			}
+			} else
+				ilrxadd(il, id, data, dlen);
+		} else if(type == IlAck){
+			ilackto(il, ack);
+		} else if(type == IlDataQuery){
+			ilackto(il, ack);
+			iloutput(il, IlState, il->next, il->recvd, nil, 0, spec);
+		} else if(type == IlQuery || type == IlState){
+			if(type == IlState)
+				ilackto(il, ack);
+			iloutput(il, IlState, il->next, il->recvd, nil, 0, spec);
 		} else if(type == IlClose){
 			il->state = Cclosed;
+			iloutput(il, IlClose, il->next, il->recvd, nil, 0, 0);
+			ilclear(il);
 			chanclose(il->rq);
-		} else if(type == IlQuery || type == IlDataQuery){
-			iloutput(il, IlState, il->next, il->recvd, nil, 0, spec);
 		}
 		break;
 	}
+drop:
 	free(pkt);
+}
+
+static void
+iltick(void)
+{
+	Iltx *tx;
+	u8 *pkt;
+	int len;
+	u64 now;
+	int i;
+	Il *il;
+
+	now = (u64)(nsec()/1000000);
+	for(i = 0; i < Maxconv; i++){
+		il = convs[i];
+		if(il == nil)
+			continue;
+		if((il->state == Csyncer || il->state == Csyncee) && il->timeout && now >= il->timeout){
+			il->rexmit++;
+			if(il->rexmit > 16){
+				il->state = Cclosed;
+				snprint(il->err, sizeof il->err, "connection timed out");
+				ilclear(il);
+				chanclose(il->rq);
+				continue;
+			}
+			iloutput(il, IlSync, il->start, il->recvd, nil, 0, 0);
+			iltimeout(il, 250 << (il->rexmit > 5 ? 5 : il->rexmit));
+		} else if(il->state == Cclosing && il->timeout && now >= il->timeout){
+			il->rexmit++;
+			if(il->rexmit > 8){
+				il->state = Cclosed;
+				ilclear(il);
+				chanclose(il->rq);
+				continue;
+			}
+			iloutput(il, IlClose, il->next, il->recvd, nil, 0, 0);
+			iltimeout(il, 500 << (il->rexmit > 4 ? 4 : il->rexmit));
+		} else if(il->state == Cestablished && il->timeout && now >= il->timeout && il->unacked != nil){
+			tx = il->unacked;
+			il->rexmit++;
+			il->rxtot++;
+			if(il->rexmit > 16){
+				il->state = Cclosed;
+				snprint(il->err, sizeof il->err, "connection timed out");
+				ilclear(il);
+				chanclose(il->rq);
+				continue;
+			}
+			len = tx->len;
+			pkt = malloc(len);
+			if(pkt != nil){
+				memmove(pkt, tx->pkt, len);
+				ilsendpkt(il, pkt, len);
+			}
+			iltimeout(il, 250 << (il->rexmit > 5 ? 6 : il->rexmit));
+		}
+	}
+}
+
+static void
+ilworker(void *v)
+{
+	Ilev *ev;
+	Il *il;
+	u8 addr[16];
+
+	USED(v);
+	for(;;){
+		if(recv(ilev, &ev) <= 0)
+			break;
+		il = ev->il;
+		switch(ev->type){
+		case EvInput:
+			ilinputsync(ev->pkt, ev->len);
+			ev->pkt = nil;
+			break;
+		case EvConnect:
+		case EvAnnounce:
+			if(il == nil || parseip6(ev->addr, addr) < 0)
+				break;
+			ip6copy(il->laddr, ifc.addr);
+			if(ev->type == EvAnnounce){
+				ip6copy(il->laddr, addr);
+				il->lport = ev->port;
+				il->state = Clistening;
+				il->listener = 1;
+			} else {
+				il->lport = allocport();
+				il->rport = ev->port;
+				ip6copy(il->raddr, addr);
+				il->state = Csyncer;
+				il->start = (u32)rand();
+				il->next = il->start+1;
+				il->recvd = 0;
+				il->rstart = 0;
+				il->window = 20;
+				il->cwind = 2;
+				il->ssthresh = 20;
+				iloutput(il, IlSync, il->start, 0, nil, 0, 0);
+				iltimeout(il, 250);
+			}
+			break;
+		case EvWrite:
+			if(il != nil && ev->pkt != nil)
+				ilqueue(il, ev->pkt, ev->len);
+			break;
+		case EvClose:
+			if(il != nil)
+				ilclose(il);
+			break;
+		case EvTick:
+			iltick();
+			break;
+		}
+		free(ev->pkt);
+		free(ev);
+	}
+}
+
+static void
+ilticker(void *v)
+{
+	Ilev *ev;
+
+	USED(v);
+	for(;;){
+		sleep(20);
+		ev = mallocz(sizeof(*ev), 1);
+		if(ev == nil)
+			continue;
+		ev->type = EvTick;
+		if(ilev == nil || nbsendp(ilev, ev) != 1)
+			free(ev);
+	}
 }
 
 static Il *
@@ -572,6 +1015,7 @@ static int
 connsetup(Il *il, char *dest, int announce)
 {
 	char *bang;
+	Ilev *ev;
 	u8 addr[16];
 	int port;
 
@@ -584,42 +1028,61 @@ connsetup(Il *il, char *dest, int announce)
 	port = atoi(bang);
 	if(port <= 0 || port > Maxport)
 		return -1;
-	il->lport = announce ? port : allocport();
-	if(il->lport == 0)
+	ev = mallocz(sizeof(*ev), 1);
+	if(ev == nil)
 		return -1;
-	ip6copy(il->laddr, ifc.addr);
-	if(announce){
-		ip6copy(il->laddr, addr);
-		il->state = Clistening;
-		il->listener = 1;
-		return 0;
+	ev->type = announce ? EvAnnounce : EvConnect;
+	ev->il = il;
+	ev->port = port;
+	snprint(ev->addr, sizeof ev->addr, "%s", dest);
+	if(ilev == nil || nbsendp(ilev, ev) != 1){
+		free(ev);
+		return -1;
 	}
-	ip6copy(il->raddr, addr);
-	il->rport = port;
-	il->state = Csyncer;
-	il->start = (u32)rand();
-	il->next = il->start+1;
-	il->recvd = 0;
-	il->rstart = 0;
-	il->window = 20;
-	iloutput(il, IlSync, il->start, 0, nil, 0, 0);
 	return 0;
 }
 
 static int
 ilwrite(Il *il, u8 *data, int n)
 {
-	int off, m;
+	Ilev *ev;
 
-	if(il->state != Cestablished)
+	if(n < 0)
 		return -1;
-	for(off = 0; off < n; off += m){
-		m = n-off;
-		if(m > Maxdata)
-			m = Maxdata;
-		iloutput(il, IlData, il->next++, il->recvd, data+off, m, 0);
+	if(n == 0)
+		return 0;
+	ev = mallocz(sizeof(*ev), 1);
+	if(ev == nil)
+		return -1;
+	ev->type = EvWrite;
+	ev->il = il;
+	ev->pkt = malloc(n);
+	if(ev->pkt == nil){
+		free(ev);
+		return -1;
+	}
+	memmove(ev->pkt, data, n);
+	ev->len = n;
+	if(ilev == nil || nbsendp(ilev, ev) != 1){
+		free(ev->pkt);
+		free(ev);
+		return -1;
 	}
 	return n;
+}
+
+static void
+ilcloseevent(Il *il)
+{
+	Ilev *ev;
+
+	ev = mallocz(sizeof(*ev), 1);
+	if(ev == nil)
+		return;
+	ev->type = EvClose;
+	ev->il = il;
+	if(ilev == nil || nbsendp(ilev, ev) != 1)
+		free(ev);
 }
 
 static int
@@ -870,8 +1333,7 @@ ctl:
 				return;
 			}
 		} else if(strcmp(cmd, "hangup") == 0 || strcmp(cmd, "close") == 0){
-			il->state = Cclosed;
-			chanclose(il->rq);
+			ilcloseevent(il);
 		} else {
 			respond(r, "unsupported ctl command");
 			return;
@@ -1008,6 +1470,14 @@ netdmain(int argc, char **argv)
 	fs.read = fsread;
 	fs.write = fswrite;
 	fs.destroyfid = nil;
+
+	ilev = chancreate(sizeof(Ilev*), 512);
+	if(ilev == nil)
+		sysfatal("il event channel");
+	if(proccreate(ilworker, nil, 65536) < 0)
+		sysfatal("il worker");
+	if(proccreate(ilticker, nil, 8192) < 0)
+		sysfatal("il ticker");
 
 	if(pipe(fd) < 0)
 		sysfatal("pipe: %r");
