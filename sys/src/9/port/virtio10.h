@@ -40,4 +40,6 @@ void vout16(Vio *, int, u16int);
 void vout32(Vio *, int, u32int);
 void vout64(Vio *, int, u64int);
 void virtiounmap(Vio *, usize);
-Vio *virtiomapregs(Pcidev *, Pcicap *, int, Vio *);
+struct Pcidev;
+struct Pcicap;
+Vio *virtiomapregs(struct Pcidev *, struct Pcicap *, int, Vio *);

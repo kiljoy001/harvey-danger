@@ -376,7 +376,6 @@ pcicfginit(void)
 	n = inl(PciADDR);
 	if(!(n & 0x7F000000)){
 		outl(PciADDR, 0x80000000);
-		outb(PciADDR + 3, 0);
 		if(inl(PciADDR) & 0x80000000)
 			pcicfgmode = 1;
 	}
