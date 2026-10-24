@@ -758,7 +758,7 @@ getreply(Ctlr *c)
 #ifdef __aarch64__
 		       1);
 #else
-		       1000);
+		       10);
 #endif
 		poperror();
 		if(c->donehd == nil)
