@@ -1,0 +1,141 @@
+function raw_kernel_net_test() int64 {
+    int64 result;
+    c {
+        char nb[32], np[64], nd[64], buf[64];
+        int fd, ctl, n, lfd, lctl, ll, cpid, cfd, cctl, cd, ad;
+
+        result = 0;
+        bind("#c", "/dev", MAFTER);
+        bind("#s", "/srv", MAFTER);
+        if(dirstat("/net") == nil){
+            fd = create("/net", OREAD, DMDIR|0777);
+            if(fd >= 0)
+                close(fd);
+        }
+        if(bind("#I", "/net", MREPL) < 0){
+            print("o9-knet: FAIL bind #I: %r\n");
+            goto out;
+        }
+
+        fd = open("/net/ipifc/clone", ORDWR);
+        if(fd < 0){
+            print("o9-knet: FAIL ipifc clone: %r\n");
+            goto out;
+        }
+        n = read(fd, nb, sizeof nb - 1);
+        if(n <= 0){
+            print("o9-knet: FAIL ipifc read: %r\n");
+            goto out;
+        }
+        nb[n] = 0;
+        while(n > 0 && (nb[n-1] == '\n' || nb[n-1] == ' '))
+            nb[--n] = 0;
+        snprint(np, sizeof np, "/net/ipifc/%s/ctl", nb);
+        ctl = open(np, OWRITE);
+        if(ctl < 0 || fprint(ctl, "bind loopback") < 0 ||
+           fprint(ctl, "add 127.0.0.1 /8") < 0){
+            print("o9-knet: FAIL loopback config: %r\n");
+            if(ctl >= 0)
+                close(ctl);
+            goto out;
+        }
+        close(ctl);
+        print("o9-knet: loopback 127.0.0.1/8 up\n");
+
+        lfd = open("/net/il/clone", ORDWR);
+        if(lfd < 0){
+            print("o9-knet: FAIL il clone: %r\n");
+            goto out;
+        }
+        n = read(lfd, nb, sizeof nb - 1);
+        if(n <= 0){
+            print("o9-knet: FAIL il clone read: %r\n");
+            goto out;
+        }
+        nb[n] = 0;
+        while(n > 0 && (nb[n-1] == '\n' || nb[n-1] == ' '))
+            nb[--n] = 0;
+        snprint(np, sizeof np, "/net/il/%s/ctl", nb);
+        lctl = open(np, OWRITE);
+        if(lctl < 0 || fprint(lctl, "announce 127.0.0.1!9999") < 0){
+            print("o9-knet: FAIL il announce: %r\n");
+            if(lctl >= 0)
+                close(lctl);
+            goto out;
+        }
+        close(lctl);
+
+        cpid = rfork(RFPROC|RFFDG);
+        if(cpid == 0){
+            cfd = open("/net/il/clone", ORDWR);
+            if(cfd < 0)
+                _exits("client clone");
+            n = read(cfd, nb, sizeof nb - 1);
+            if(n <= 0)
+                _exits("client read clone");
+            nb[n] = 0;
+            while(n > 0 && (nb[n-1] == '\n' || nb[n-1] == ' '))
+                nb[--n] = 0;
+            snprint(np, sizeof np, "/net/il/%s/ctl", nb);
+            cctl = open(np, OWRITE);
+            if(cctl < 0 || fprint(cctl, "connect 127.0.0.1!9999") < 0)
+                _exits("client connect");
+            close(cctl);
+            snprint(nd, sizeof nd, "/net/il/%s/data", nb);
+            cd = open(nd, ORDWR);
+            if(cd < 0)
+                _exits("client data");
+            write(cd, "ping", 4);
+            n = read(cd, buf, sizeof buf - 1);
+            if(n > 0) buf[n] = 0; else buf[0] = 0;
+            print("o9-knet: client got <%s>\n", buf);
+            _exits(n == 4 && memcmp(buf, "pong", 4) == 0 ? nil : "bad reply");
+        }
+
+        snprint(np, sizeof np, "/net/il/%s/listen", nb);
+        ll = open(np, OREAD);
+        if(ll < 0){
+            print("o9-knet: FAIL il listen: %r\n");
+            goto out;
+        }
+        n = read(ll, nb, sizeof nb - 1);
+        if(n <= 0){
+            print("o9-knet: FAIL il accept: %r\n");
+            close(ll);
+            goto out;
+        }
+        nb[n] = 0;
+        while(n > 0 && (nb[n-1] == '\n' || nb[n-1] == ' '))
+            nb[--n] = 0;
+        snprint(nd, sizeof nd, "/net/il/%s/data", nb);
+        ad = open(nd, ORDWR);
+        if(ad < 0){
+            print("o9-knet: FAIL server data: %r\n");
+            close(ll);
+            goto out;
+        }
+        n = read(ad, buf, sizeof buf - 1);
+        if(n > 0) buf[n] = 0; else buf[0] = 0;
+        print("o9-knet: server got <%s>\n", buf);
+        if(n == 4 && memcmp(buf, "ping", 4) == 0){
+            write(ad, "pong", 4);
+            print("o9-knet: IL loopback PASS\n");
+            result = 1;
+            sleep(200);
+        }
+        close(ad);
+        close(ll);
+out:
+        ;
+    }
+    return result;
+}
+
+main {
+    print("\n==================================================\n");
+    print("  Harvey kernel #I test\n");
+    print("==================================================\n");
+    Task<int64> t = spawn raw_kernel_net_test();
+    int64 ok = t.await();
+    print("o9-knet: result %d\n", ok);
+}

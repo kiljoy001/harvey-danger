@@ -61,7 +61,6 @@ done
 python3 util/9vm/build_gefs_guest.py
 python3 util/9vm/build_kernel.py
 make -C util/9vm 9vm
-python3 util/9vm/build_netd.py
 ./bin/aspera check
 ```
 
@@ -74,7 +73,7 @@ The built guest kernel is `build/harvey.32bit`, the host runner is
 missing inputs. The build instructions and transport tests are in
 [README.md](README.md).
 
-`install_aspera.py` also installs `/bin/o9drvman` and `/bin/o9driverfs`.
+`install_aspera.py` also installs `/bin/o9drvman`.
 The GEFS bootstrap maps the console through the device filesystem and starts
 the manager after the root pivot. Lifecycle markers live under the RAM-backed
 `/mnt/o9` tree; trusted device configuration remains under the persistent
@@ -104,7 +103,6 @@ The installable package should contain only runtime artifacts:
 ```text
 bin/aspera                    installed launcher
 libexec/aspera/9vm           KVM runner
-libexec/aspera/netd          guest /net service (installed in image)
 libexec/aspera/display-sdl   host window and input adapter
 libexec/aspera/harvey.32bit  guest kernel
 share/aspera/root.img        temporary compatibility image with desktop and shell

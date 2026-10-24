@@ -40,7 +40,6 @@ STAGE = (
     ("bin/echo", "build/aspera-echo"),
     ("rc/lib/rcmain", "rc/lib/rcmain"),
     ("boot/boot", "boot/boot"),
-    ("bin/netd", "build/netd"),
     ("boot/gefs", "build/gefs-guest"),
 )
 
@@ -124,9 +123,6 @@ def main() -> int:
     print(f"created {image} ({args.size} MiB)")
 
     stage = Path(args.stage)
-    if not (ROOT / "build/netd").is_file():
-        subprocess.run([sys.executable, str(ROOT / "util/9vm/build_netd.py")],
-                       cwd=ROOT, check=True)
     make_stage(stage)
     log = run(image, stage, args.timeout)
     if "INSTALL-OK" not in log:

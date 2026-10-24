@@ -48,25 +48,24 @@ fill the others.
 The kernel keeps process, memory, namespace, and 9P mount mechanisms. Its
 external I/O transports are `#~` (9ring) and `#9` (virtio-9P). Serial, disk,
 network, display, and input device policy belongs to user-space 9P services.
-The network example is a guest user-space service, `o9net`/`netd`, not a
-host `/net`. `netd` owns `/net`, the IL state machine, and the IPv6 packet
-boundary. A separate user program, Yggdrasil, binds the `pkt` interface and
-owns peer links, routing, and encryption. The host provides no version of
-`/net` in the target path.
-`sys/src/cmd/o9driverfs` is the Objective-9C device namespace: a trusted
-launcher maps named backend files into per-attach `view/drivers` trees. The
-x86 VM test verifies this filesystem over a real 9P mount. Device-specific
-services still need to be built on this interface. `sys/src/cmd/o9drvman`
-owns their generation-safe lifecycle policy. Its Objective-9C 9P service
-publishes tabular state and control records while a portable C core rejects
-stale process events, enforces heartbeat deadlines, and bounds restart
-backoff. It now launches Objective-9C driver executables in private namespace,
-environment, descriptor, rendezvous, and note groups. Detached monitors own
-the child wait messages, while PID and exit state remain visible through the
-manager's tabular view. Managed services receive a generation-scoped status
-mailbox in their inherited namespace; `o9driverfs` uses it to publish readiness
-only after its configured view exists, renew its liveness lease with monotonic
-progress serials, and receive generation-safe graceful-stop requests. The C core must pass unit, generated property, ASan/UBSan,
+Network is a kernel subsystem, as in Plan 9. The microkernel includes `#I`
+with the IP, IL, TCP, UDP, and ICMP stacks; `#I` is bound at `/net`.
+`virtio-net` is the Ethernet driver (`#l`). Yggdrasil remains a separate
+user program using `/net` and, when needed, the kernel `pkt` interface.
+
+`#~` is still the fast shared-memory 9P transport; `#9` is the standard
+VirtIO 9P transport. Neither is specific to networking, and both remain in
+the host/service plane.
+`sys/src/cmd/o9drvman` owns device-service lifecycle policy. Its Objective-9C
+9P service publishes tabular state and control records while a portable C core
+rejects stale process events, enforces heartbeat deadlines, and bounds restart
+backoff. It launches driver executables in private namespace, environment,
+descriptor, rendezvous, and note groups. Detached monitors own the child wait
+messages, while PID and exit state remain visible through the manager's tabular
+view. Managed services receive a generation-scoped status mailbox in their
+inherited namespace and use the shared `DriverHealth` writer to publish
+readiness only after their service exists, renew their liveness lease with
+monotonic progress, and receive generation-safe graceful-stop requests. The C core must pass unit, generated property, ASan/UBSan,
 libFuzzer, and semantic mutation tests through `bin/aspera quality`.
 The same gate applies those layers plus ThreadSanitizer stress to the shared
 9ring and VirtIO-9P validation primitives. `bin/aspera verify` boots the real

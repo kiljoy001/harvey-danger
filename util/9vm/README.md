@@ -42,7 +42,6 @@ Build and run both guest transports:
 
 ```sh
 make -C util/9vm 9vm
-python3 util/9vm/build_netd.py
 python3 util/9vm/build_boot.py
 python3 util/9vm/build_kernel.py
 python3 util/9vm/test_boot.py
@@ -55,37 +54,30 @@ The 32-KiB buffer bounds one 9P message, not a file. The guest negotiates
 an `msize` of 32,768 bytes and uses an `iounit` of at most 32,744 bytes;
 larger file operations are split into multiple messages.
 
-## The 9P-only kernel
-
-The kernel keeps only two transports and the core 9P machinery:
+## Kernel transports and devices
 
 - `virtio-9p` (PCI) and `9ring` (shared-memory) provide 9P byte streams.
+- `virtio-net` provides the Ethernet device for the in-kernel IP stack.
+- `#I` provides IP, IL, TCP, UDP, ICMP, and `/net`.
 - Core devices: root, cons, env, proc, mnt, srv, pipe, dup, segment, cap,
   ram, arch.
-- No storage, network, USB or display drivers belong in the kernel.
-  Anything that speaks 9P can provide those services.
+- Storage, USB, and display drivers remain user-space 9P services.
 
-The earlier in-kernel IP stack and IL were a bring-up and have been
-removed from the microVM build. Networking is a guest user-space 9P
-service: `sys/src/cmd/o9net` builds `netd`, which owns `/net`, allocates
-conversations, and implements the IL transport over an IPv6 packet
-interface. The guest boots `netd`, posts `/srv/netd`, and mounts that 9P
-tree at `/net`.
+Network is back in the kernel, as in Plan 9. The amd64 microkernel now
+includes `#I`: `devip`, `ip`, `ipifc`, `iproute`, `arp`, `tcp`, `udp`,
+`icmp`/`icmp6`, and the improved `il.c`. `#I` is bound at `/net`; loopback
+is configured during boot. `virtio-net` is built as `#l`, with the host
+side attached to a TAP device named by `-net-tap <if>`.
 
-Yggdrasil is not part of `netd`. It is a separate user program that binds
-`/net/ipifc/0/pkt` and owns peer links, routing, and encryption. The
-network server exposes the packet boundary and the protocol engines; it
-does not know about Yggdrasil.
-
-The host has no `/net` server in this path. Host `netfs` is retired from
-the default boot; an explicit `-netfs` remains only as a development
-socket backend.
+`#~` remains the fast shared-memory 9P transport, not a network service.
+`#9` remains the VirtIO 9P transport. The host `netfs` and guest `netd`
+experiments are retired; they are not in the boot path.
 
 ```sh
-python3 util/9vm/build_netd.py
-python3 util/9vm/test_net.py     # guest netd: announce/listen/dial IL
+python3 util/9vm/build_kernel.py
+python3 util/9vm/test_net.py   # kernel #I IL loopback
+util/9vm/9vm -net-tap tap0 ... # virtio-net + host TAP
 ```
-
 Storage follows the same rule: `-gefs-image` exports the disk image as a
 9P file (`#9/2`), a user-space GEFS server runs on `/mnt/image`, and the
 kernel mounts the exported tree.  The microVM kernel no longer contains
@@ -225,7 +217,7 @@ The image contains `/bin/o9irc-ircfs`, `/bin/o9irc-gui`, and
 read-only `#/boot`; Aspera starts it when the image contains o9irc and mounts
 its 9P view at `/n/o9irc`. The Objective-9C runtime tree at `/mnt/o9` is in
 RAM, while IRC history is configured under persistent `/lib/o9irc`. Aspera
-mounts the guest `/net` service when `/bin/netd` is installed.
+uses the kernel `/net` stack; `#~` remains the fast 9P transport.
 
 The Harvey build returns a clear error for TLS connections because its older
 libsec lacks the 9front certificate verification API used by o9irc. Plain IRC

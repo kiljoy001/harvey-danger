@@ -24,7 +24,7 @@ REQUIRED_ASSERTIONS = [
     ("pid1_supervisor", "PID 1 Objective-9C Actor Supervisor Online"),
     ("ns_bind_dev", "o9-boot: bound #c -> /dev"),
     ("ns_bind_host", "o9-boot: bound / -> /n/host"),
-    ("guest_netd", "o9-boot: mounted guest /net"),
+    ("kernel_net", "o9-boot: kernel /net up"),
     ("bio_read", "o9-bio: Brdline read"),
     ("hostfs_rw", "o9-hostfs-rw: PASS 100000-byte write/read"),
     ("local_9ring_reject", "o9-local9ring: PASS invalid framing and duplicate tags rejected"),

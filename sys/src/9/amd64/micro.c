@@ -20,6 +20,8 @@ extern Dev segmentdevtab;
 extern Dev virtio9pdevtab;
 extern Dev ringdevtab;
 extern Dev ramdevtab;
+extern Dev ipdevtab;
+extern Dev etherdevtab;
 
 Dev *devtab[] = {
 	&rootdevtab,
@@ -36,12 +38,21 @@ Dev *devtab[] = {
 	&virtio9pdevtab,
 	&ringdevtab,
 	&ramdevtab,
+	&ipdevtab,
+	&etherdevtab,
 	nil,
 };
+
+extern void	ethermediumlink(void);
+extern void	loopbackmediumlink(void);
+extern void	ethervirtiolink(void);
 
 void
 links(void)
 {
+	ethermediumlink();
+	loopbackmediumlink();
+	ethervirtiolink();
 }
 
 PhysUart* physuart[] = {
