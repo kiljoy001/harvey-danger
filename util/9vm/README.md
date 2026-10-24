@@ -71,14 +71,13 @@ user-space implementation of the improved IL.  Networking is a `/net`
 next step is a real `/net` server (host-side or a guest user-space
 lib9p server) with TCP/UDP/IL behind it.
 
-Storage is the remaining exception: `sdvirtio` + `devsd` still carry
-the native GEFS partition.  Under this rule the disk image is exported
-as a 9P file (`-gefs-image`, `#9/2`), a user-space GEFS server runs on
-that file, and the kernel mounts the exported tree.  That removes the
-block drivers from the kernel and lets GEFS and the installer keep
-their current logic over a 9P image instead of a block device.
+Storage follows the same rule: `-gefs-image` exports the disk image as a
+9P file (`#9/2`), a user-space GEFS server runs on `/mnt/image`, and the
+kernel mounts the exported tree.  The microVM kernel no longer contains
+`sd`, `sdvirtio`, or `xhci`; the xHCI work returns as a user-space file
+server when it is ready.
 
-## Opaque GEFS image## Opaque GEFS image
+## Opaque GEFS image
 
 Create a new 512 MiB image using an installed 9front VM as the formatter:
 
@@ -114,22 +113,23 @@ that need the old Objective-9C init. The embedded GEFS bootstrap currently
 mounts storage and stays alive; loading shell and desktop programs from GEFS
 is the next userland packaging step.
 
-## Native block device (MBR + GEFS)
+## GEFS image installer
 
-`install_gefs.py` creates a real disk instead of exporting an image file: the
-guest writes an MBR with one type-0x39 partition, adds the partition to
-`#S/sdV0/ctl`, and reams it with `gefs -r`.  It then starts GEFS on
-`#S/sdV0/plan9`, mounts it through 9P, and copies a minimal bootable root
-(`bin/rc`, `bin/ls`, `bin/cat`, `bin/test`, `bin/echo`, `rc/lib/rcmain`,
-`boot/boot`) onto it.
+`install_gefs.py` creates a raw GEFS image and boots the kernel with the
+image exported as the VirtIO 9P tag `gefs-image` (`#9/2`) and the host tree
+exported with `-legacy-host-root`.  The guest:
 
-GEFS is write-back cached, and its `sync()` only commits the tree for
-**active mounts**.  The installer therefore issues `sync` and `halt` while
-`/mnt` is still mounted, then re-opens the partition with a fresh GEFS and
-checks that `/bin/rc` is really in the committed tree.  Unmounting first
-orphans the new files and produces an image that looks fine until the next
-boot.  Once the sync is done, the installed tree also survives an unclean
-VM kill; GEFS replays its log.
+1. mounts `#9/2` at `/mnt`,
+2. runs `gefs -r` on `/mnt/image`,
+3. serves it, copies the minimal root (`bin/rc`, `bin/ls`, `bin/cat`,
+   `bin/test`, `bin/echo`, `rc/lib/rcmain`, `boot/boot`) onto it,
+4. syncs and halts while `/mnt` is mounted (GEFS only commits the tree for
+   active mounts),
+5. re-opens the image through the held file descriptor (`#d/N`) with a fresh
+   GEFS and checks `/bin/rc`.
+
+There is no MBR, partition, `#S`, or block driver in the microVM; GEFS runs
+entirely in user space on a 9P file.
 
 ```sh
 python3 util/9vm/build_gefs_guest.py
@@ -137,18 +137,15 @@ python3 util/9vm/build_kernel.py
 python3 util/9vm/install_gefs.py -o /tmp/9vm/gefs.img -s 192
 ```
 
-The harness boots the result from the partition.  `devsd` parses the MBR when
-a unit is first brought online, so `#S/sdV0/plan9` exists without a boot-time
-`part` command: type 0x39 maps to `plan9`, 0x83 to `linux`, and the FAT types
-to `fat`.  `ASPERA-GEFS-ROOT PASS` means the installed tree was mounted as `/`;
-the init then starts `/bin/rc -i` on the console (the desktop path takes over
-when `asperadesktop=1`).
+Boot the installed image (isolated: only the image is exported):
 
 ```sh
-util/9vm/9vm -r /tmp/9vm/stage \
-  -c "bootargs=local!#9/0 nobootprompt=local gefsroot=1" \
-  -disk /tmp/9vm/gefs.img build/harvey.32bit
+util/9vm/9vm -gefs-image /tmp/9vm/gefs.img build/harvey.32bit
 ```
+
+`ASPERA-GEFS-ROOT PASS` means the GEFS tree was mounted as `/`; the init then
+starts `/bin/rc -i` on the console (the desktop path takes over when
+`asperadesktop=1`).
 
 `bench_boot.py` timestamps the kernel, host-ring, GEFS-root and rc-shell
 milestones from the serial log and samples the 9vm process CPU over an idle

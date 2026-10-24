@@ -90,8 +90,6 @@ SOURCES = [
     "sys/src/9/amd64/mpacpi.c",
     "sys/src/9/amd64/devacpi.c",
     "sys/src/9/amd64/micro.c",
-    "sys/src/9/amd64/devxhci.c",
-    "sys/src/9/amd64/sdvirtio.c",
     "sys/src/9/386/pci.c",
     "sys/src/9/386/uarti8250.c",
 
@@ -112,7 +110,6 @@ SOURCES = [
     "sys/src/9/port/devproc.c",
     "sys/src/9/port/devramfs.c",
     "sys/src/9/port/devroot.c",
-    "sys/src/9/port/devsd.c",
     "sys/src/9/port/devsegment.c",
     "sys/src/9/port/devsrv.c",
     "sys/src/9/port/devtab.c",

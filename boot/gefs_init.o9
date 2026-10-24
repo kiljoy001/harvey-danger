@@ -30,12 +30,10 @@ function start_gefs_root() int64 {
         /* Installer mode: kernel command line contained install=1. */
         {
             char ib[4], mbuf[512], icmd[64];
-            char *fmt[] = {"gefs", "-r", "glenda", "-f", "#S/sdV0/plan9", nil};
+            char *fmt[] = {"gefs", "-r", "glenda", "-f", "/mnt/image", nil};
             char *srv[] = {"gefs", "-A", "-m", "32", "-n", "installgefs",
-                           "-f", "#S/sdV0/plan9", nil};
-            Dir *dd;
-            unsigned long long sec, lba, cnt, cy, hh, ss;
-            int ifd, k, nn;
+                           "-f", "/mnt/image", nil};
+            int ifd, k, nn, imgfd;
 
             ifd = open("#e/install", OREAD);
             if(ifd >= 0){
@@ -46,62 +44,16 @@ function start_gefs_root() int64 {
             if(k <= 0 || ib[0] != '1')
                 goto not_installing;
 
-            dd = dirstat("#S/sdV0/data");
-            if(dd == nil){
-                print("install: no virtio disk (#S/sdV0): %r\n");
+            fd = open("#9/2", ORDWR);
+            if(fd < 0 || mount(fd, -1, "/mnt", MREPL, "") < 0){
+                print("install: image transport mount failed: %r\n");
+                if(fd >= 0) close(fd);
                 goto gefs_done;
             }
-            sec = dd->length / 512;
-            free(dd);
-            if(sec < 8192){
-                print("install: disk too small (%llud sectors)\n", sec);
-                goto gefs_done;
-            }
-            print("install: %llu sectors (%llu MB)\n", sec, sec / 2048);
-
-            memset(mbuf, 0, sizeof mbuf);
-            mbuf[446] = 0x00;
-            lba = 2048;
-            cy = lba / (255*63); hh = (lba / 63) % 255; ss = lba % 63 + 1;
-            mbuf[447] = hh; mbuf[448] = ss | ((cy >> 2) & 0xC0);
-            mbuf[449] = cy & 0xFF;
-            mbuf[450] = 0x39;                    /* Plan 9 partition */
-            lba = sec - 1;
-            cy = lba / (255*63); hh = (lba / 63) % 255; ss = lba % 63 + 1;
-            mbuf[451] = hh; mbuf[452] = ss | ((cy >> 2) & 0xC0);
-            mbuf[453] = cy & 0xFF;
-            mbuf[454] = 0x00; mbuf[455] = 0x08;
-            mbuf[456] = 0x00; mbuf[457] = 0x00;
-            cnt = sec - 2048;
-            mbuf[458] = cnt; mbuf[459] = cnt >> 8;
-            mbuf[460] = cnt >> 16; mbuf[461] = cnt >> 24;
-            mbuf[510] = 0x55; mbuf[511] = 0xAA;
-
-            fd = open("#S/sdV0/data", ORDWR);
-            if(fd < 0){
-                print("install: open data: %r\n");
-                goto gefs_done;
-            }
-            if(pwrite(fd, mbuf, 512, 0) != 512){
-                print("install: MBR write failed: %r\n");
-                close(fd);
-                goto gefs_done;
-            }
-            close(fd);
-
-            fd = open("#S/sdV0/ctl", OWRITE);
-            if(fd < 0){
-                print("install: open ctl: %r\n");
-                goto gefs_done;
-            }
-            nn = snprint(icmd, sizeof icmd, "part plan9 2048 %llu", sec - 1);
-            if(write(fd, icmd, nn) != nn){
-                print("install: part command failed: %r\n");
-                close(fd);
-                goto gefs_done;
-            }
-            close(fd);
-            print("install: MBR written, plan9 partition 2048..%llu\n", sec - 1);
+            print("install: GEFS image at #9/2\n");
+            imgfd = open("/mnt/image", ORDWR);
+            if(imgfd < 0)
+                print("install: open image fd: %r\n");
 
             pid = rfork(RFPROC|RFFDG);
             if(pid == 0){
@@ -230,13 +182,17 @@ function start_gefs_root() int64 {
                     }else
                         print("install: no GEFS control channel: %r\n");
                 }
-                /* Re-open the partition with a fresh GEFS and check that
-                 * the committed tree really contains the payload. */
+                /* Re-open the image through the held descriptor and check
+                 * that the committed tree really contains the payload. */
+                unmount(nil, "/mnt");
                 {
                     char *ver[] = {"gefs", "-A", "-m", "8", "-n",
-                                   "installverify", "-f", "#S/sdV0/plan9", nil};
+                                   "installverify", "-f", "/mnt/image", nil};
+                    char ipath[32];
                     Dir *vd;
                     int vfd;
+                    snprint(ipath, sizeof ipath, "#d/%d", imgfd);
+                    ver[7] = ipath;
                     vfd = -1;
                     pid = rfork(RFPROC|RFFDG|RFNOWAIT);
                     if(pid == 0){
@@ -281,21 +237,14 @@ function start_gefs_root() int64 {
         }
     not_installing:;
 
-        /* Prefer a native GEFS partition on the virtio disk; fall back to
-         * 9vm's 9P image export (#9/2) when there is no disk. */
-        fd = open("#S/sdV0/plan9", OREAD);
-        if(fd >= 0){
-            close(fd);
-            args[7] = "#S/sdV0/plan9";
-            print("aspera: GEFS root on %s\n", args[7]);
-        } else {
-            fd = open("#9/2", ORDWR);
-            if(fd < 0 || mount(fd, -1, "/mnt", MREPL, "") < 0){
-                print("aspera: image transport mount failed: %r\n");
-                if(fd >= 0) close(fd);
-                goto gefs_done;
-            }
+        fd = open("#9/2", ORDWR);
+        if(fd < 0 || mount(fd, -1, "/mnt", MREPL, "") < 0){
+            print("aspera: image transport mount failed: %r\n");
+            if(fd >= 0) close(fd);
+            goto gefs_done;
         }
+        print("aspera: GEFS root on #9/2\n");
+
         pid = rfork(RFPROC|RFFDG|RFNOWAIT);
         if(pid == 0){
             exec("/boot/gefs", args);

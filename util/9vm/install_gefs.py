@@ -1,16 +1,18 @@
 #!/usr/bin/env python3
-"""Create a GEFS block device for 9vm: MBR plus one Plan 9 partition.
+"""Create a GEFS filesystem in a 9P-exported image for 9vm.
 
-Boots the Harvey kernel with ``install=1`` on the command line and the
-target image attached as virtio-blk.  The guest (boot/gefs_init.o9):
+Boots the Harvey kernel with ``install=1`` and the target image exported
+as VirtIO 9P tag ``gefs-image`` (#9/2).  The host tree is exported too
+(``-legacy-host-root``) so the guest can copy the staged root.  The guest
+(boot/gefs_init.o9):
 
-  1. writes an MBR with one type-0x39 partition starting at LBA 2048,
-  2. adds the corresponding ``plan9`` partition to /dev/sdV0/ctl,
-  3. runs ``gefs -r`` on '#S/sdV0/plan9' and verifies by serving it.
+  1. mounts #9/2 at /mnt,
+  2. runs ``gefs -r`` on /mnt/image,
+  3. serves it, copies the staged root, syncs and halts,
+  4. re-opens the image with a fresh GEFS and verifies /bin/rc.
 
-GEFS refuses to ream anything smaller than 128 MiB + one block, and the
-partition loses the first MiB to the MBR/alignment, so the minimum image
-is about 130 MiB.  The default is 256 MiB.
+The kernel has no block driver: GEFS runs in user space on the 9P file.
+GEFS requires at least 128 MiB; the default is 256 MiB.
 
     ./install_gefs.py -o /tmp/9vm/gefs.img -s 256
 """
@@ -55,8 +57,8 @@ def make_stage(stage: Path) -> None:
 
 def run(image: Path, stage: Path, timeout: float) -> str:
     proc = subprocess.Popen(
-        [str(VM), "-r", str(stage), "-c", CMDLINE,
-         "-disk", str(image), str(KERNEL)],
+        [str(VM), "-legacy-host-root", "-r", str(stage),
+         "-gefs-image", str(image), "-c", CMDLINE, str(KERNEL)],
         cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     sel = selectors.DefaultSelector()
     sel.register(proc.stdout, selectors.EVENT_READ)
@@ -90,19 +92,8 @@ def run(image: Path, stage: Path, timeout: float) -> str:
 def verify(image: Path) -> list[str]:
     problems = []
     with image.open("rb") as f:
-        mbr = f.read(512)
-        if mbr[510:512] != b"\x55\xaa":
-            problems.append("no MBR signature")
-            return problems
-        if mbr[450] != 0x39:
-            problems.append(f"partition type {mbr[450]:#x}, expected 0x39")
-        start = int.from_bytes(mbr[454:458], "little")
-        count = int.from_bytes(mbr[458:462], "little")
-        if start != 2048 or count == 0:
-            problems.append(f"odd partition geometry lba={start} count={count}")
-        f.seek(start * 512)
         if f.read(len(GEFS_MAGIC)) != GEFS_MAGIC:
-            problems.append("no gefs superblock magic in the partition")
+            problems.append("no gefs superblock magic at offset 0")
     return problems
 
 
@@ -147,7 +138,7 @@ def main() -> int:
     if problems:
         print("verification failed: " + "; ".join(problems), file=sys.stderr)
         return 1
-    print(f"{image}: MBR + type-0x39 partition + GEFS superblock verified")
+    print(f"{image}: GEFS superblock verified")
     return 0
 
 
