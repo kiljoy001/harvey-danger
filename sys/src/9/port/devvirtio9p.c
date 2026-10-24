@@ -20,6 +20,7 @@
 #endif
 #include "../port/error.h"
 #include "virtio9p_core.h"
+#include "virtio10.h"
 
 typedef struct Vconfig Vconfig;
 typedef struct Vring Vring;
@@ -141,9 +142,9 @@ struct Ctlr {
 	int version;
 #else
 	Pcidev  *pci;
-	Vconfig *cfg;
-	u8      *isr;
-	u8      *notify;
+	Vio     cfg;
+	Vio     isr;
+	Vio     notify;
 	u32     notifyoffmult;
 #endif
 	u32     feat[2];
@@ -439,22 +440,13 @@ findvirtiocap(Pcidev *p, int typ)
 	return nil;
 }
 
-static void*
-virtiomapregs(Pcidev *p, Pcicap *cap)
-{
-	if(cap == nil || cap->bar >= nelem(p->mem))
-		return nil;
-	u64 base = p->mem[cap->bar].bar & ~0xFULL;
-	u64 addr = base + cap->offset;
-	return vmap(addr, cap->length);
-}
 
 static void
 readtag(Ctlr *c)
 {
 	Pcicap *cap;
-	V9cfg *dc;
-	int n;
+	Vio dc;
+	int n, i;
 
 	c->tag[0] = 0;
 	if((c->feat[0] & Fmounttag) == 0)
@@ -462,21 +454,21 @@ readtag(Ctlr *c)
 	cap = findvirtiocap(c->pci, 4);
 	if(cap == nil)
 		return;
-	dc = virtiomapregs(c->pci, cap);
-	if(dc == nil)
+	if(virtiomapregs(c->pci, cap, 2, &dc) == nil)
 		return;
-	n = dc->taglen;
+	n = vin16(&dc, 0);
 	if(n >= sizeof(c->tag))
 		n = sizeof(c->tag) - 1;
-	memmove(c->tag, (u8*)dc + sizeof(dc->taglen), n);
+	for(i = 0; i < n; i++)
+		c->tag[i] = vin8(&dc, 2+i);
 	c->tag[n] = 0;
+	virtiounmap(&dc, 2 + n);
 }
 
 static void
 v9probe(void)
 {
 	Ctlr *c, **tail;
-	Vconfig *cfg;
 	Pcidev *p;
 	Vqueue *q;
 	Slot *s;
@@ -501,11 +493,15 @@ v9probe(void)
 		}
 
 		cap1 = findvirtiocap(p, 1);
-		if(cap1 == nil)
+		if(cap1 == nil){
+			print("v9probe: no cap1\n");
 			continue;
-		cfg = virtiomapregs(p, cap1);
-		if(cfg == nil)
+		}
+		Vio cfg;
+		if(virtiomapregs(p, cap1, Vconf_sz, &cfg) == nil){
+			print("v9probe: no cfg map bar %d len %d bar0 %ux\n", cap1->bar, cap1->length, p->mem[cap1->bar].bar);
 			continue;
+		}
 
 		cap3 = findvirtiocap(p, 3);
 		if(cap3 == nil)
@@ -522,42 +518,40 @@ v9probe(void)
 		}
 		c->pci = p;
 		c->cfg = cfg;
-		c->isr = virtiomapregs(p, cap3);
-		if(c->isr == nil){
+		if(virtiomapregs(p, cap3, 1, &c->isr) == nil){
 baddev:
 			free(c);
 			continue;
 		}
 
-		c->notify = virtiomapregs(p, cap2);
-		if(c->notify == nil)
+		if(virtiomapregs(p, cap2, 2, &c->notify) == nil)
 			goto baddev;
 		c->notifyoffmult = pcicfgr32(p, cap2->offset + 16);
 
 		/* Reset then acknowledge */
-		cfg->status = 0;
-		while(cfg->status != 0)
+		vout8(&c->cfg, Vconf_status, 0);
+		while(vin8(&c->cfg, Vconf_status) != 0)
 			delay(1);
-		cfg->status = Acknowledge | Driver;
+		vout8(&c->cfg, Vconf_status, Acknowledge | Driver);
 
 		/* Negotiate features: VERSION_1 (bit 32) and mount tag */
-		cfg->devfeatsel = 1;
-		c->feat[1] = cfg->devfeat;
-		cfg->devfeatsel = 0;
-		c->feat[0] = cfg->devfeat;
-		cfg->drvfeatsel = 1;
-		cfg->drvfeat = c->feat[1] & 1;
-		cfg->drvfeatsel = 0;
-		cfg->drvfeat = c->feat[0] & Fmounttag;
-		cfg->status |= FeaturesOk;
-		if((cfg->status & FeaturesOk) == 0){
+		vout32(&c->cfg, Vconf_devfeatsel, 1);
+		c->feat[1] = vin32(&c->cfg, Vconf_devfeat);
+		vout32(&c->cfg, Vconf_devfeatsel, 0);
+		c->feat[0] = vin32(&c->cfg, Vconf_devfeat);
+		vout32(&c->cfg, Vconf_drvfeatsel, 1);
+		vout32(&c->cfg, Vconf_drvfeat, c->feat[1] & 1);
+		vout32(&c->cfg, Vconf_drvfeatsel, 0);
+		vout32(&c->cfg, Vconf_drvfeat, c->feat[0] & Fmounttag);
+		vout8(&c->cfg, Vconf_status, vin8(&c->cfg, Vconf_status) | FeaturesOk);
+		if((vin8(&c->cfg, Vconf_status) & FeaturesOk) == 0){
 			print("virtio9p: device rejected features\n");
 			goto baddev;
 		}
 
 		/* Request queue 0 */
-		cfg->queuesel = 0;
-		n = v9pqueuesize(cfg->queuesize, Maxslot * 2);
+		vout16(&c->cfg, Vconf_queuesel, 0);
+		n = v9pqueuesize(vin16(&c->cfg, Vconf_queuesize), Maxslot * 2);
 		if(n == 0){
 			print("virtio9p: bad queue size %d\n", n);
 			goto baddev;
@@ -566,12 +560,11 @@ baddev:
 		if(q == nil)
 			goto baddev;
 		q->idx = 0;
-		q->notify = (u8*)c->notify + c->notifyoffmult * cfg->queuenotifyoff;
 		c->vq = q;
 		coherence();
-		cfg->queuedesc = PADDR(q->desc);
-		cfg->queueavail = PADDR(q->avail);
-		cfg->queueused = PADDR(q->used);
+		vout64(&c->cfg, Vconf_queuedesc, PADDR(q->desc));
+		vout64(&c->cfg, Vconf_queueavail, PADDR(q->avail));
+		vout64(&c->cfg, Vconf_queueused, PADDR(q->used));
 
 		readtag(c);
 
@@ -599,6 +592,8 @@ baddev:
 		print("#9/%d: virtio9p tag \"%s\" nslot %d msize %d\n",
 			ndev++, c->tag, c->nslot, Msize);
 	}
+	if(ctlrs == nil)
+		probed = 0;
 }
 
 static void
@@ -609,9 +604,9 @@ v9start(Ctlr *c)
 	pcisetbme(c->pci);
 	intrenable(c->pci->intl, v9interrupt, c, c->pci->tbdf, "virtio9p");
 	coherence();
-	c->cfg->queuesel = 0;
-	c->cfg->queueenable = 1;
-	c->cfg->status |= DriverOk;
+	vout16(&c->cfg, Vconf_queuesel, 0);
+	vout16(&c->cfg, Vconf_queueenable, 1);
+	vout8(&c->cfg, Vconf_status, vin8(&c->cfg, Vconf_status) | DriverOk);
 	c->started = 1;
 }
 #endif
@@ -681,7 +676,7 @@ v9interrupt(Ureg *ur, void *arg)
 {
 	Ctlr *c = arg;
 	USED(ur);
-	if(c->isr[0] & 1)
+	if(vin8(&c->isr, 0) & 1)
 		vqharvest(c);
 }
 #endif
@@ -812,7 +807,13 @@ submit(Ctlr *c, Slot *s, long outlen)
 #ifdef __aarch64__
 		mmwrite(c, Vnotify, q->idx);
 #else
-		*((u16*)q->notify) = q->idx;
+		{
+			int off = c->notifyoffmult * vin16(&c->cfg, Vconf_queuenotifyoff);
+			if(c->notify.type == Vio_port)
+				outs(c->notify.port + off, q->idx);
+			else
+				*(u16*)(c->notify.mem + off) = q->idx;
+		}
 #endif
 	}
 }
@@ -857,6 +858,8 @@ v9gen(Chan *c, char *unused, Dirtab *dt, int ndt, int s, Dir *dp)
 	USED(dt);
 	USED(ndt);
 
+	if(ctlrs == nil)
+		v9probe();
 	if(s == DEVDOTDOT){
 		mkqid(&q, 0, 0, QTDIR);
 		devdir(c, q, "#9", 0, eve, DMDIR | 0555, dp);
@@ -899,8 +902,11 @@ v9open(Chan *c, int omode)
 {
 	Ctlr *cl;
 
-	if(c->qid.type & QTDIR)
+	if(c->qid.type & QTDIR){
+		if(ctlrs == nil)
+			v9probe();
 		return devopen(c, omode, nil, 0, v9gen);
+	}
 	cl = ctlrindex(c->qid.path - 1);
 	if(cl == nil)
 		error(Enonexist);

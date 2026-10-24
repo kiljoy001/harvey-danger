@@ -115,6 +115,7 @@ SOURCES = [
     "sys/src/9/port/devsegment.c",
     "sys/src/9/port/devsrv.c",
     "sys/src/9/port/devether.c",
+    "sys/src/9/port/virtio10.c",
     "sys/src/9/port/devtab.c",
     "sys/src/9/port/devuart.c",
     # Single External I/O Driver

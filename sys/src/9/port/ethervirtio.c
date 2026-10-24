@@ -11,6 +11,7 @@
 #include "io.h"
 #include "../port/error.h"
 #include "../port/netif.h"
+#include "virtio10.h"
 #include "../amd64/etherif.h"
 
 enum {
@@ -95,7 +96,7 @@ struct Vqueue {
 	int    idx;
 	int    size;
 
-	void   *notify;
+	struct Ctlr *c;
 
 	Vdesc  *desc;
 	Vring  *avail;
@@ -111,9 +112,9 @@ struct Vqueue {
 typedef struct Ctlr Ctlr;
 struct Ctlr {
 	Pcidev  *pci;
-	Vconfig *cfg;
-	u8      *isr;
-	u8      *notify;
+	Vio     cfg;
+	Vio     isr;
+	Vio     notify;
 	u32     notifyoffmult;
 	u32     feat[2];
 
@@ -140,15 +141,6 @@ findvirtiocap(Pcidev *p, int typ)
 	return nil;
 }
 
-static void*
-virtiomapregs(Pcidev *p, Pcicap *cap)
-{
-	if(cap == nil || cap->bar >= nelem(p->mem))
-		return nil;
-	u64 base = p->mem[cap->bar].bar & ~0xFULL;
-	u64 addr = base + cap->offset;
-	return vmap(addr, cap->length);
-}
 
 static Vqueue*
 mkvqueue(int size)
@@ -205,8 +197,16 @@ mkvqueue(int size)
 static void
 ethervirtionotify(Vqueue *q)
 {
-	if(q->notify != nil && (q->used->flags & 1) == 0)
-		*((u16*)q->notify) = q->idx;
+	Ctlr *c = q->c;
+	int off;
+
+	if(c == nil || (q->used->flags & 1) != 0)
+		return;
+	off = c->notifyoffmult * vin16(&c->cfg, Vconf_queuenotifyoff);
+	if(c->notify.type == Vio_port)
+		outs(c->notify.port + off, q->idx);
+	else
+		*(u16*)(c->notify.mem + off) = q->idx;
 }
 
 static void
@@ -301,7 +301,7 @@ ethervirtiointr(Ureg *ur, void *arg)
 	Ctlr *c = edev->ctlr;
 	USED(ur);
 
-	u8 isr = c->isr[0];
+	u8 isr = vin8(&c->isr, 0);
 	if((isr & 1) == 0)
 		return;
 
@@ -392,12 +392,11 @@ ethervirtioreset(Ether *edev)
 	if(cap1 == nil || cap2 == nil || cap3 == nil || cap4 == nil)
 		return -1;
 
-	Vconfig *cfg = virtiomapregs(p, cap1);
-	u8 *notify = virtiomapregs(p, cap2);
-	u8 *isr = virtiomapregs(p, cap3);
-	Vnetcfg *netcfg = virtiomapregs(p, cap4);
-
-	if(cfg == nil || notify == nil || isr == nil || netcfg == nil)
+	Vio cfg, notify, isr, netcfg;
+	if(virtiomapregs(p, cap1, Vconf_sz, &cfg) == nil ||
+	   virtiomapregs(p, cap2, 2, &notify) == nil ||
+	   virtiomapregs(p, cap3, 1, &isr) == nil ||
+	   virtiomapregs(p, cap4, 12, &netcfg) == nil)
 		return -1;
 
 	Ctlr *c = mallocz(sizeof(*c), 1);
@@ -412,29 +411,30 @@ ethervirtioreset(Ether *edev)
 	c->edev = edev;
 
 	/* Reset then acknowledge */
-	cfg->status = 0;
-	while(cfg->status != 0)
+	vout8(&c->cfg, Vconf_status, 0);
+	while(vin8(&c->cfg, Vconf_status) != 0)
 		delay(1);
-	cfg->status = Acknowledge | Driver;
+	vout8(&c->cfg, Vconf_status, Acknowledge | Driver);
 
 	/* Negotiate features: VERSION_1, MAC, STATUS */
-	cfg->devfeatsel = 1;
-	c->feat[1] = cfg->devfeat;
-	cfg->devfeatsel = 0;
-	c->feat[0] = cfg->devfeat;
+	vout32(&c->cfg, Vconf_devfeatsel, 1);
+	c->feat[1] = vin32(&c->cfg, Vconf_devfeat);
+	vout32(&c->cfg, Vconf_devfeatsel, 0);
+	c->feat[0] = vin32(&c->cfg, Vconf_devfeat);
 
-	cfg->drvfeatsel = 1;
-	cfg->drvfeat = c->feat[1] & 1;
-	cfg->drvfeatsel = 0;
-	cfg->drvfeat = c->feat[0] & (Fmac | Fstatus);
-	cfg->status |= FeaturesOk;
+	vout32(&c->cfg, Vconf_drvfeatsel, 1);
+	vout32(&c->cfg, Vconf_drvfeat, c->feat[1] & 1);
+	vout32(&c->cfg, Vconf_drvfeatsel, 0);
+	vout32(&c->cfg, Vconf_drvfeat, c->feat[0] & (Fmac | Fstatus));
+	vout8(&c->cfg, Vconf_status, vin8(&c->cfg, Vconf_status) | FeaturesOk);
 
 	/* Read MAC address */
-	memmove(edev->ea, netcfg->mac, 6);
+	for(int i = 0; i < 6; i++)
+		edev->ea[i] = vin8(&netcfg, i);
 
 	/* Initialize Queue 0 (RX) */
-	cfg->queuesel = 0;
-	int rx_size = cfg->queuesize;
+	vout16(&c->cfg, Vconf_queuesel, 0);
+	int rx_size = vin16(&c->cfg, Vconf_queuesize);
 	if(rx_size == 0 || rx_size > Qsize)
 		rx_size = Qsize;
 	c->rxq = mkvqueue(rx_size);
@@ -443,15 +443,15 @@ ethervirtioreset(Ether *edev)
 		return -1;
 	}
 	c->rxq->idx = 0;
-	c->rxq->notify = (u8*)c->notify + c->notifyoffmult * cfg->queuenotifyoff;
-	cfg->queuedesc = PADDR(c->rxq->desc);
-	cfg->queueavail = PADDR(c->rxq->avail);
-	cfg->queueused = PADDR(c->rxq->used);
-	cfg->queueenable = 1;
+	c->rxq->c = c;
+	vout64(&c->cfg, Vconf_queuedesc, PADDR(c->rxq->desc));
+	vout64(&c->cfg, Vconf_queueavail, PADDR(c->rxq->avail));
+	vout64(&c->cfg, Vconf_queueused, PADDR(c->rxq->used));
+	vout16(&c->cfg, Vconf_queueenable, 1);
 
 	/* Initialize Queue 1 (TX) */
-	cfg->queuesel = 1;
-	int tx_size = cfg->queuesize;
+	vout16(&c->cfg, Vconf_queuesel, 1);
+	int tx_size = vin16(&c->cfg, Vconf_queuesize);
 	if(tx_size == 0 || tx_size > Qsize)
 		tx_size = Qsize;
 	c->txq = mkvqueue(tx_size);
@@ -461,13 +461,13 @@ ethervirtioreset(Ether *edev)
 		return -1;
 	}
 	c->txq->idx = 1;
-	c->txq->notify = (u8*)c->notify + c->notifyoffmult * cfg->queuenotifyoff;
-	cfg->queuedesc = PADDR(c->txq->desc);
-	cfg->queueavail = PADDR(c->txq->avail);
-	cfg->queueused = PADDR(c->txq->used);
-	cfg->queueenable = 1;
+	c->txq->c = c;
+	vout64(&c->cfg, Vconf_queuedesc, PADDR(c->txq->desc));
+	vout64(&c->cfg, Vconf_queueavail, PADDR(c->txq->avail));
+	vout64(&c->cfg, Vconf_queueused, PADDR(c->txq->used));
+	vout16(&c->cfg, Vconf_queueenable, 1);
 
-	cfg->status |= DriverOk;
+	vout8(&c->cfg, Vconf_status, vin8(&c->cfg, Vconf_status) | DriverOk);
 
 	pcisetbme(p);
 

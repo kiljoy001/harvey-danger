@@ -142,6 +142,24 @@ cpuidhz(u32 *info0, u32 *info1, CpuHypervisor hypervisor)
 		u32 cpusig = info1[0] & 0x0fff3ff0;
 		print("CPU Signature: %x\n", cpusig);
 
+		/*
+		 * v86/v64 reports a Core 2 signature (0x670) but does not
+		 * implement MSR 0x2a.  It is a virtual CPU with no meaningful
+		 * FSB, so use a fixed 1 GHz rather than taking a #GP here.
+		 * Real 0x670 parts do implement 0x2a and are not affected by
+		 * this early return only when the CPUID hypervisor bit is set
+		 * or the boot loader identifies v86; until then, keep the
+		 * fallback narrow and explicit.
+		 */
+		/*
+		 * v64 advertises a Core 2 signature (0x670) but, unlike a
+		 * real 0x670 part, also advertises AVX and does not implement
+		 * MSR 0x2a.  Do not take a #GP in that virtual CPU.  Real
+		 * 0x670 hardware has no AVX.
+		 */
+		if(cpusig == 0x00000670 && (info1[2] & (1u<<28)))
+			return 1000000000ll;
+
 		switch(cpusig){
 		default:
 			return 0;
@@ -273,6 +291,24 @@ cpuidhz(u32 *info0, u32 *info1, CpuHypervisor hypervisor)
 	} else if(strcmp("AuthenticAMD", vendorid) == 0){
 		u32 cpusig = info1[0] & 0x0fff0ff0;
 		print("CPU Signature: %x\n", cpusig);
+
+		/*
+		 * v86/v64 reports a Core 2 signature (0x670) but does not
+		 * implement MSR 0x2a.  It is a virtual CPU with no meaningful
+		 * FSB, so use a fixed 1 GHz rather than taking a #GP here.
+		 * Real 0x670 parts do implement 0x2a and are not affected by
+		 * this early return only when the CPUID hypervisor bit is set
+		 * or the boot loader identifies v86; until then, keep the
+		 * fallback narrow and explicit.
+		 */
+		/*
+		 * v64 advertises a Core 2 signature (0x670) but, unlike a
+		 * real 0x670 part, also advertises AVX and does not implement
+		 * MSR 0x2a.  Do not take a #GP in that virtual CPU.  Real
+		 * 0x670 hardware has no AVX.
+		 */
+		if(cpusig == 0x00000670 && (info1[2] & (1u<<28)))
+			return 1000000000ll;
 
 		switch(cpusig){
 		default:
