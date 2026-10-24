@@ -232,6 +232,14 @@ function raw_sleep(int64 ms) int64 {
     return 0;
 }
 
+function raw_idle() int64 {
+    c {
+        for(;;)
+            sleep(10000);
+    }
+    return 0;
+}
+
 function raw_hostfs_rw_test() int64 {
     int64 result;
     c {
@@ -503,13 +511,15 @@ main {
     while(tick < 3) {
         tick = tick + 1;
         sup.heartbeat();
-        Task<int64> s = spawn raw_sleep(100);
-        s.await();
     }
 
     print("o9-supervisor: steady-state loop active (pid 1 staying alive)\n");
-    while(tick > 0) {
-        Task<int64> s = spawn raw_sleep(10000);
-        s.await();
-    }
+    /*
+     * Keep PID 1 alive in one non-returning task.  Repeatedly spawning
+     * and freeing short-lived task channels exposes a v64 use-after-free
+     * in alt(): the result channel can be freed while the parent awaits.
+     */
+    Task<int64> idle = spawn raw_idle();
+    idle.await();
+
 }
