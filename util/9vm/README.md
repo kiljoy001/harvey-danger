@@ -54,6 +54,32 @@ The 32-KiB buffer bounds one 9P message, not a file. The guest negotiates
 an `msize` of 32,768 bytes and uses an `iounit` of at most 32,744 bytes;
 larger file operations are split into multiple messages.
 
+## Kernel IP stack and IL
+
+The amd64 kernel now builds the real `#I` stack (`devip`, `ip`, `ipifc`,
+`iproute`, `tcp`, `udp`, `rudp`, `icmp`, `icmp6`, `ipmux`, `gre`) and the
+improved IL in `sys/src/9/ip/il.c`: IPv6, credit-based flow control, a send
+window, and congestion control.  `il.c` is listed in `sys/src/9/ip/ip.json`;
+the amd64 build adds the IP sources and the `klibip` subset, while
+`sys/src/9/amd64/ipproto.c` supplies the protocol init order that `mkdevc`
+normally generates.
+
+The GEFS init binds `#I` at `/net` and brings up `127.0.0.1/8` on loopback.
+The old netfs 9P mock is mounted at `/net9p` so it cannot shadow the real
+stack.  `nettest=1` runs an IL announce/connect/listen round trip over
+loopback:
+
+```sh
+util/9vm/9vm -r /tmp/9vm/stage \
+  -c "bootargs=local!#9/0 nobootprompt=local gefsroot=1 nettest=1" \
+  -disk /tmp/9vm/gefs.img build/harvey.32bit
+```
+
+It prints `nettest: server got 'ping'` and `nettest: client got 'pong'`.
+There is no external NIC yet: 9vm still exposes the netfs 9P service rather
+than a virtio-net device, and `test_net.py` exercises that mock.  The next
+step is a virtio-net device in 9vm plus a Harvey ethernet driver.
+
 ## Opaque GEFS image
 
 Create a new 512 MiB image using an installed 9front VM as the formatter:
