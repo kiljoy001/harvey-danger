@@ -615,8 +615,9 @@ function AsperaPresentRaw(int64 ptr, string directory, int64 preferred) int64 {
         AsperaBuffer *b = (AsperaBuffer*)ptr;
         char *base, path[512], command[32];
         int ctl, fd, slot, attempt, n, sent, total, good, committed, delta;
-        int x, y, row, changed, dirty, width, height;
+        int x, y, row, changed, dirty, width, height, batchlen;
         u8 tile[8 + 32*16*sizeof(u32)];
+        u8 *batch;
 
         out = -1;
         base = o9_string_cstr(directory);
@@ -643,7 +644,7 @@ function AsperaPresentRaw(int64 ptr, string directory, int64 preferred) int64 {
                 int candidate = (preferred + attempt) % 2;
                 ctl = open(path, OWRITE);
                 if(ctl >= 0){
-                    if(haveprior && dirty <= 128){
+                    if(haveprior && dirty <= 1536){
                         n = snprint(command, sizeof command, "begin-delta %d\n", candidate);
                         if(write(ctl, command, n) == n){
                             slot = candidate;
@@ -668,6 +669,12 @@ function AsperaPresentRaw(int64 ptr, string directory, int64 preferred) int64 {
                 if(delta){
                     width = 32;
                     height = 16;
+                    /* Accumulate every changed tile into one buffer and
+                     * write it in a few large chunks. The 9P transport is
+                     * latency-bound (each small write costs a round trip), so
+                     * per-tile writes are far slower than one batched write. */
+                    batch = malloc(dirty * (int)sizeof(tile) + 1);
+                    batchlen = 0;
                     for(y = 0; good && y < b->height; y += height)
                         for(x = 0; good && x < b->width; x += width){
                             changed = 0;
@@ -689,9 +696,20 @@ function AsperaPresentRaw(int64 ptr, string directory, int64 preferred) int64 {
                                 memmove(tile + 8 + row*width*sizeof(u32),
                                         b->pixels + (y + row)*b->width + x,
                                         width*sizeof(u32));
-                            if(write(fd, tile, sizeof tile) != sizeof tile)
-                                good = 0;
+                            memmove(batch + batchlen, tile, sizeof tile);
+                            batchlen += sizeof tile;
                         }
+                    if(good && batchlen > 0){
+                        sent = 0;
+                        while(good && sent < batchlen){
+                            n = write(fd, batch + sent, batchlen - sent);
+                            if(n <= 0)
+                                good = 0;
+                            else
+                                sent += n;
+                        }
+                    }
+                    free(batch);
                 }else{
                     while(good && sent < total){
                         n = write(fd, (u8*)b->pixels + sent, total - sent);
@@ -862,28 +880,30 @@ function AsperaInputRaw(string directory) string {
     string out;
     c {
         char *base, path[512], record[96];
-        int fd, n, attempt;
+        int fd, n;
 
         out = nil;
         base = o9_string_cstr(directory);
         if(base != nil && snprint(path, sizeof path, "%s/dev/input", base) < sizeof path){
-            for(attempt = 0; attempt < 10 && out == nil; attempt++){
-                fd = open(path, OREAD);
-                if(fd >= 0){
-                    n = read(fd, record, sizeof record - 1);
-                    if(n > 0){
-                        if(record[n-1] == '\n') n--;
-                        out = o9_string_new(record, n);
-                    }
-                    close(fd);
+            fd = open(path, OREAD);
+            if(fd >= 0){
+                n = read(fd, record, sizeof record - 1);
+                if(n > 0){
+                    if(record[n-1] == '\n') n--;
+                    out = o9_string_new(record, n);
                 }
-                if(out == nil && attempt + 1 < 10)
-                    sleep(8);
+                close(fd);
             }
         }
         free(base);
-        if(out == nil)
+        if(out == nil){
+            /* Idle pacing: the host 9P read returns immediately when no
+             * record is queued, so sleep here instead of re-opening the
+             * file up to ten times. One read keeps input latency near the
+             * cost of a single 9P round trip. */
+            sleep(5);
             out = o9_string_new("", 0);
+        }
     }
     return out;
 }
