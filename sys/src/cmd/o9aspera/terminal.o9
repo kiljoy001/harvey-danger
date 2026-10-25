@@ -177,6 +177,9 @@ class AsperaTerminal {
     private string history;
     private string input;
     private bool exitRequested;
+    private int64 columns;
+    private int64 rows;
+    private int64 historyLines;
 
     method AsperaTerminal(WindowActor owner) {
         window = owner;
@@ -185,6 +188,9 @@ class AsperaTerminal {
         process = started.await();
         history = "Aspera rc  |  /bin is on GEFS\n";
         input = "";
+        columns = (owner.contentWidth() - 16) / 8;
+        rows = (owner.contentHeight() - 44) / 16;
+        historyLines = 1;
         exitRequested = false;
         if(process == 0) { history = "Could not start /bin/rc\n"; }
         if(surface.ready()) {
@@ -203,6 +209,8 @@ class AsperaTerminal {
             Task<string> tail = spawn AsperaTermTailRaw(history);
             history = tail.await();
         }
+        Task<int64> lc = spawn AsperaNoteLineCountRaw(history, columns);
+        historyLines = lc.await();
     }
 
     method bool key(int64 value) {
@@ -220,10 +228,15 @@ class AsperaTerminal {
             render();
             return true;
         }
-        if(value == 8 || (value >= 32 && value <= 126 && len(input) < 512)) {
-            Task<string> edited = spawn AsperaNoteEditRaw(input, value);
-            input = edited.await();
-            render();
+        if(value == 8) {
+            if(len(input) == 0) { return false; }
+            input = slice(input, 0, len(input) - 1);
+            renderInput();
+            return true;
+        }
+        if(value >= 32 && value <= 126 && len(input) < 512) {
+            input = cat(input, chr(value));
+            renderInput();
             return true;
         }
         return false;
@@ -247,6 +260,17 @@ class AsperaTerminal {
         if(surface.ready()) {
             Task<int64> painted = spawn AsperaNoteRenderRaw(surface.bufferAddress(),
                 cat(cat(history, "% "), input), 0, "Aspera Terminal  |  rc");
+            painted.await();
+        }
+    }
+
+    // Redraw only the current input line(s), leaving the scrollback and title
+    // bar untouched. Used on keystrokes; render() still handles full redraws
+    // (initial, output, Enter).
+    private method void renderInput() {
+        if(surface.ready() && rows > 0 && columns > 0) {
+            Task<int64> painted = spawn AsperaTermInputRaw(surface.bufferAddress(),
+                cat("% ", input), historyLines);
             painted.await();
         }
     }
