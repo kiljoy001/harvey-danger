@@ -136,7 +136,7 @@ function ShelfPrepareRaw(string srv, string mnt) int64 {
             bind("#s", "/srv", MREPL|MCREATE);
             create(m, OREAD, DMDIR|0755);
             fd = -1;
-            for(tries = 0; tries < 800; tries++){
+            for(tries = 0; tries < 40; tries++){
                 fd = open(s, OREAD);
                 if(fd >= 0)
                     break;
