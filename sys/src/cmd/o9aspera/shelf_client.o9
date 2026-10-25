@@ -123,6 +123,50 @@ function AsperaShelfClickRaw(string root, int64 x, int64 y) int64 {
     return out;
 }
 
+function ShelfPrepareRaw(string srv, string mnt) int64 {
+    int64 out;
+    c {
+        char *s, *m, path[256], buf[64];
+        int fd, tries, n;
+
+        out = 0;
+        s = o9_string_cstr(srv);
+        m = o9_string_cstr(mnt);
+        if(s != nil && m != nil){
+            bind("#s", "/srv", MREPL|MCREATE);
+            create(m, OREAD, DMDIR|0755);
+            fd = -1;
+            for(tries = 0; tries < 800; tries++){
+                fd = open(s, OREAD);
+                if(fd >= 0)
+                    break;
+                sleep(25);
+            }
+            print("[shelf] service fd=", fd, " tries=", tries, "\n");
+            if(fd >= 0){
+                if(mount(fd, -1, m, MREPL|MCREATE, "") >= 0){
+                    close(fd);
+                    snprint(path, sizeof path, "%s/protocol", m);
+                    fd = open(path, OREAD);
+                    if(fd >= 0){
+                        n = read(fd, buf, sizeof buf - 1);
+                        close(fd);
+                        if(n > 0){
+                            buf[n] = 0;
+                            print("[shelf] proto=<", buf, ">\n");
+                            out = strcmp(buf, "o9shelf 1\n") == 0;
+                        }
+                    }
+                } else
+                    close(fd);
+            }
+            free(s);
+            free(m);
+        }
+    }
+    return out;
+}
+
 class ShelfClient {
     private string root;
     private bool mounted;
@@ -132,27 +176,8 @@ class ShelfClient {
         mounted = false;
         Task<int64> pid = spawn AsperaShelfStartRaw(serviceBinary);
         if(pid.await() >= 0) {
-            File mountPoint = new File("/mnt/shelf");
-            if(mountPoint.mkdirAll()) {
-                File service = new File("/srv/ShelfViews");
-                int64 tries = 0;
-                while(!service.exists() && tries < 40) {
-                    Task<int64> pause = spawn TimeSleepRaw(25);
-                    pause.await();
-                    tries = tries + 1;
-                }
-                if(service.exists()) {
-                    Namespace ns = new Namespace();
-                    mounted = ns.root("/mnt") &&
-                              ns.mountsrvReplace("/srv/ShelfViews", "shelf", "") &&
-                              ns.apply();
-                    ns.close();
-                    if(mounted) {
-                        Task<string> proto = spawn AsperaShelfReadRaw(cat(root, "/protocol"));
-                        mounted = cmp(proto.await(), "o9shelf 1\n") == 0;
-                    }
-                }
-            }
+            Task<int64> prep = spawn ShelfPrepareRaw("/srv/ShelfViews", "/mnt/shelf");
+            mounted = prep.await() == 1;
         }
     }
 
