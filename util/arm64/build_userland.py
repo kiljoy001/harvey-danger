@@ -294,6 +294,33 @@ SECTIONS {{
     return image, entry
 
 
+def write_archive(path: Path, files: dict[str, bytes]) -> None:
+    """Emit the boot archive U-Boot loads next to the kernel.
+
+    Layout (little endian): magic[8], version, count, total, reserved,
+    then count entries of {name[32], offset, size, mode, reserved}, then
+    the blobs, 8-byte aligned.  Offsets are from the start of the blob.
+    """
+    names = sorted(files)
+    table_size = 24 + 48 * len(names)
+    data = bytearray()
+    entries = []
+    for name in names:
+        while (table_size + len(data)) % 8:
+            data.append(0)
+        offset = table_size + len(data)
+        blob = files[name]
+        data += blob
+        entries.append((name, offset, len(blob)))
+    table = b"".join(struct.pack("<32sIIII", name.encode(), offset, size,
+                                 0o555, 0)
+                     for name, offset, size in entries)
+    total = table_size + len(data)
+    header = struct.pack("<8sIIII", b"O9BOOT01", 1, len(names), total, 0)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(header + table + bytes(data))
+
+
 def userland_signature() -> str:
     files = [Path(__file__).resolve()]
     for p in (ROOT / "sys/src/cmd").rglob("*"):
@@ -309,6 +336,7 @@ def userland_signature() -> str:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--archive", type=Path)
     args = parser.parse_args()
     subprocess.run([sys.executable,
                     str(ROOT / "util/arm64/build_o9_services.py")],
@@ -316,7 +344,8 @@ def main() -> None:
     out = args.output.parent / "userland"
     stamp = args.output.parent / "userland.sig"
     sig = userland_signature()
-    if args.output.exists() and buildcache.up_to_date(stamp, sig):
+    if (args.output.exists() and buildcache.up_to_date(stamp, sig)
+            and (args.archive is None or args.archive.exists())):
         print("ARM64 userland up to date")
         return
     shutil.rmtree(out, ignore_errors=True)
@@ -748,6 +777,28 @@ main(int argc, char **argv)
     emit_array(lines, "arm64displaytestelf", displaytest)
     emit_array(lines, "arm64rcmain", rcmain.encode())
     args.output.write_text("\n".join(lines))
+    programs = {
+        "o9drvman": o9drvman,
+        "o9display": o9display,
+        "o9aspera-screen": asperascreen,
+        "o9xhci": o9xhci,
+        "test-xhci": testxhci,
+        "test-xhci1": testxhci1,
+        "test-audio": testaudio,
+        "uartfs": uartfs,
+        "gpiofs": gpiofs,
+        "hubfs": hubfs,
+        "drvman": drvman,
+        "i2cfs": i2cfs,
+        "usbpower": usbpower,
+        "rc": rc,
+        "echo": echo,
+        "cat": cat,
+        "displaytest": displaytest,
+        "rcmain": rcmain.encode(),
+    }
+    if args.archive is not None:
+        write_archive(args.archive, programs)
     buildcache.record(stamp, sig)
 
 

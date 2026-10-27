@@ -11,6 +11,7 @@ void _assert(char *);
 void accounttime(void);
 void acsched(void);
 void addbootfile(char *, unsigned char *, u32);
+void setbootfile(char *, unsigned char *, u32);
 Timer *addclock0link(void (*)(void), int);
 int addconsdev(Queue *, void (*fn)(char *, int), int, int);
 int addkbdq(Queue *, int);

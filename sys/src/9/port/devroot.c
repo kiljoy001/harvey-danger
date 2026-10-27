@@ -95,6 +95,24 @@ addbootfile(char *name, u8 *contents, u32 len)
 }
 
 /*
+ *  Add a boot file, replacing any embedded file of the same name.
+ *  Used for programs supplied by an external boot archive.
+ */
+void
+setbootfile(char *name, u8 *contents, u32 len)
+{
+	int i;
+
+	for(i = 0; i < bootlist.ndir; i++)
+		if(strcmp(bootlist.dir[i].name, name) == 0){
+			bootlist.data[i] = contents;
+			bootlist.dir[i].length = len;
+			return;
+		}
+	addbootfile(name, contents, len);
+}
+
+/*
  *  add a root directory
  */
 static void

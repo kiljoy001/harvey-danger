@@ -16,6 +16,8 @@ int arm64contextprobe(void);
 extern char arm64vectors[];
 extern char _start[], __image_end[];
 extern u64 arm64dmabase, arm64dmasize;
+extern u64 arm64bootarchbase;
+extern u32 arm64bootarchsize;
 
 enum {
 	Uartdr = 0x00 / 4,
@@ -59,6 +61,11 @@ arm64uartputs(char *s)
 	}
 }
 #define uartputs arm64uartputs
+
+/* Optional U-Boot-supplied boot archive (programs for /boot). */
+enum { BootarchiveAddr = 0x50000000 };
+u64 arm64bootarchbase;
+u32 arm64bootarchsize;
 
 static u32
 beget4(u8 *p)
@@ -229,6 +236,30 @@ arm64main(usize dtb)
 			info.reserve[info.nreserve].base = base;
 			info.reserve[info.nreserve++].size = arm64dmasize;
 			arm64dmabase = base;
+		}
+	}
+	/*
+	 * U-Boot may load a boot archive next to the kernel (see the board
+	 * boot command).  Reserve it before the page allocator exists so the
+	 * blobs stay intact; program names in it replace the embedded ones.
+	 */
+	if(info.nreserve < Maxfdtreserve){
+		u8 *ap = (u8 *)BootarchiveAddr;
+		u32 total = 0;
+
+		if(ap[0]=='O' && ap[1]=='9' && ap[2]=='B' && ap[3]=='O' &&
+		   ap[4]=='O' && ap[5]=='T' && ap[6]=='0' && ap[7]=='1')
+			total = (u32)ap[16] | (u32)ap[17]<<8 |
+			        (u32)ap[18]<<16 | (u32)ap[19]<<24;
+		if(total < 24 || total > 64*1024*1024 ||
+		   BootarchiveAddr < (u64)__image_end ||
+		   BootarchiveAddr+total > info.rambase+info.ramsize)
+			total = 0;
+		if(total != 0){
+			info.reserve[info.nreserve].base = BootarchiveAddr;
+			info.reserve[info.nreserve++].size = total;
+			arm64bootarchbase = BootarchiveAddr;
+			arm64bootarchsize = total;
 		}
 	}
 	if(arm64physinit(&info, dtb, size) < 0 ||

@@ -122,6 +122,7 @@ def main() -> None:
         subprocess.run([
             sys.executable, str(ROOT / "util/arm64/build_userland.py"),
             "--output", str(OUT / "userland.h"),
+            "--archive", str(OUT / "userland.img"),
         ], check=True)
     elif not (OUT / "userprobe.h").is_file() or not (OUT / "userland.h").is_file():
         raise SystemExit("ARM64_REUSE_USERLAND=1 needs existing generated headers")

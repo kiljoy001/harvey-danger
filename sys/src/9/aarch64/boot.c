@@ -335,6 +335,56 @@ startinitprocess(void)
 	ready(p);
 }
 
+extern u64 arm64bootarchbase;
+extern u32 arm64bootarchsize;
+
+static u32
+le32(u8 *p)
+{
+	return (u32)p[0] | (u32)p[1]<<8 | (u32)p[2]<<16 | (u32)p[3]<<24;
+}
+
+/*
+ * Register the programs from an external boot archive, replacing the
+ * embedded copies with the same names.  The archive is reserved by
+ * arm64main() before the page allocator starts.
+ */
+static int
+bootarchive(void)
+{
+	u8 *base, *entry;
+	u32 count, total, offset, size, i, n;
+	char name[33];
+
+	if(arm64bootarchbase == 0 || arm64bootarchsize < 24)
+		return 0;
+	base = (u8 *)(usize)arm64bootarchbase;
+	if(memcmp(base, "O9BOOT01", 8) != 0)
+		return 0;
+	count = le32(base+12);
+	total = le32(base+16);
+	if(count > 64 || total > arm64bootarchsize || 24 + count*48 > total)
+		return 0;
+	n = 0;
+	for(i = 0; i < count; i++){
+		entry = base + 24 + i*48;
+		offset = le32(entry+32);
+		size = le32(entry+36);
+		if(offset > total || size > total-offset)
+			continue;
+		memmove(name, entry, 32);
+		name[32] = 0;
+		if(name[0] == 0)
+			continue;
+		setbootfile(name, base+offset, size);
+		n++;
+	}
+	arm64uartputs("HARVEY-ARM64 BOOT-ARCHIVE ");
+	arm64uartputs("PASS\n");
+	USED(n);
+	return 1;
+}
+
 static int
 physseginit(Fdtinfo *info)
 {
@@ -512,6 +562,7 @@ arm64kernelstart(Fdtinfo *info)
 	addbootfile("displaytest", (u8 *)arm64displaytestelf,
 		    sizeof(arm64displaytestelf));
 	addbootfile("rcmain", (u8 *)arm64rcmain, sizeof(arm64rcmain));
+	bootarchive();
 	arm64uartputs("HARVEY-ARM64 DEVICE-RESET PASS\n");
 	pageinit();
 	{
