@@ -20,16 +20,185 @@ enum {
 	Qdma,
 	Qdmabase,
 	Qdmasize,
+	Qdmaalloc,
+	Qdmafree,
+	Qdmaclean,
+	Qdmainval,
+	Qdmacivac,
 };
 
-#define TYPE(x) ((int)((x)->qid.path & 0xf))
-#define DEV(x)  ((int)(((x)->qid.path >> 4) & 0xfff))
-#define QPATH(d, t) (((u64)(d) << 4) | (t))
+/* 6 type bits: the DMA control files are past the old 4-bit field. */
+#define TYPE(x) ((int)((x)->qid.path & 0x3f))
+#define DEV(x)  ((int)(((x)->qid.path >> 6) & 0x3ff))
+#define QPATH(d, t) (((u64)(d) << 6) | (t))
 
 static Fdtdev pnpdev[Maxfdtdev];
 static u32 npnpdev;
 static u64 consolebase;
 extern u64 arm64dmabase, arm64dmasize;
+
+/*
+ * DMA sub-allocation inside the reserved arena.  A driver maps the arena
+ * once with segattach("dma") and then asks here for aligned chunks; the
+ * kernel owns the free list so two drivers cannot hand out the same page.
+ */
+enum { Maxdmahole = 64 };
+typedef struct Dmahole Dmahole;
+struct Dmahole {
+	u64 base;
+	u64 size;
+};
+static Dmahole dmahole[Maxdmahole];
+static int ndmahole;
+static u64 dmabump;
+static Lock dmalock;
+
+/* Most recent allocation, reported by reading #P/dma/alloc. */
+static struct {
+	u64 pa;
+	u64 len;
+} dmalast;
+
+/*
+ * DMA commands are newline terminated: a text program may write the
+ * command in several pieces, and a driver must not allocate once per
+ * write.
+ */
+enum { Dmactlmax = 96 };
+typedef struct Dmactl Dmactl;
+struct Dmactl {
+	char buf[Dmactlmax];
+	int n;
+};
+
+static u64
+dmaalloc(u64 size, u64 align)
+{
+	u64 a, end;
+	int i;
+
+	if(size == 0 || size > arm64dmasize)
+		error(Ebadarg);
+	if(align == 0)
+		align = 4096;
+	if(align > BIGPGSZ || (align & (align - 1)) != 0)
+		error(Ebadarg);
+	size = PGROUND(size);
+	lock(&dmalock);
+	if(dmabump == 0)
+		dmabump = arm64dmabase;
+	for(i = 0; i < ndmahole; i++){
+		a = (dmahole[i].base + align - 1) & ~(align - 1);
+		end = dmahole[i].base + dmahole[i].size;
+		if(a + size > end)
+			continue;
+		if(a + size == end)
+			dmahole[i].size = a - dmahole[i].base;
+		else{
+			dmahole[i].base = a + size;
+			dmahole[i].size = end - dmahole[i].base;
+		}
+		if(dmahole[i].size == 0){
+			dmahole[i] = dmahole[--ndmahole];
+		}
+		unlock(&dmalock);
+		return a;
+	}
+	a = (dmabump + align - 1) & ~(align - 1);
+	if(a + size > arm64dmabase + arm64dmasize){
+		unlock(&dmalock);
+		error(Enomem);
+	}
+	dmabump = a + size;
+	unlock(&dmalock);
+	return a;
+}
+
+static void
+dmafree(u64 pa, u64 len)
+{
+	Dmahole h;
+	int i, j;
+
+	if(len == 0 || pa < arm64dmabase ||
+	   pa - arm64dmabase > arm64dmasize || len > arm64dmasize - (pa - arm64dmabase))
+		error(Ebadarg);
+	len = PGROUND(len);
+	lock(&dmalock);
+	if(ndmahole >= Maxdmahole){
+		unlock(&dmalock);
+		error(Enomem);
+	}
+	h.base = pa;
+	h.size = len;
+	for(i = 0; i < ndmahole && dmahole[i].base < pa; i++)
+		;
+	for(j = ndmahole; j > i; j--)
+		dmahole[j] = dmahole[j-1];
+	dmahole[i] = h;
+	ndmahole++;
+	/* coalesce with the next and previous holes */
+	for(i = 0; i + 1 < ndmahole; ){
+		if(dmahole[i].base + dmahole[i].size == dmahole[i+1].base){
+			dmahole[i].size += dmahole[i+1].size;
+			for(j = i + 1; j + 1 < ndmahole; j++)
+				dmahole[j] = dmahole[j+1];
+			ndmahole--;
+		}else
+			i++;
+	}
+	unlock(&dmalock);
+}
+
+enum { Dclean, Dinval, Dcleaninval };
+
+static void
+dmacache(int op, u64 pa, u64 len)
+{
+	u64 a, end;
+
+	if(len == 0 || pa < arm64dmabase ||
+	   pa - arm64dmabase > arm64dmasize || len > arm64dmasize - (pa - arm64dmabase))
+		error(Ebadarg);
+	a = (u64)KADDR(pa) & ~63ULL;
+	end = (u64)KADDR(pa) + len;
+	for(; a < end; a += 64){
+		if(op == Dclean)
+			__asm__ volatile("dc cvac, %0" :: "r"(a) : "memory");
+		else if(op == Dinval)
+			__asm__ volatile("dc ivac, %0" :: "r"(a) : "memory");
+		else
+			__asm__ volatile("dc civac, %0" :: "r"(a) : "memory");
+	}
+	__asm__ volatile("dsb sy" ::: "memory");
+}
+
+static int
+number(char **pp, u64 *v)
+{
+	char *p = *pp;
+	u64 x = 0;
+	int n = 0, d;
+
+	while(*p == ' ' || *p == '\t')
+		p++;
+	if(p[0] == '0' && (p[1] == 'x' || p[1] == 'X')){
+		p += 2;
+		for(;; p++, n++){
+			if(*p >= '0' && *p <= '9') d = *p - '0';
+			else if(*p >= 'a' && *p <= 'f') d = *p - 'a' + 10;
+			else if(*p >= 'A' && *p <= 'F') d = *p - 'A' + 10;
+			else break;
+			x = x*16 + d;
+		}
+	}else{
+		for(; *p >= '0' && *p <= '9'; p++, n++)
+			x = x*10 + (*p - '0');
+	}
+	*pp = p;
+	*v = x;
+	return n ? 0 : -1;
+}
 
 void
 arm64pnpinit(Fdtinfo *info)
@@ -137,6 +306,36 @@ pnpgen(Chan *c, char *name, Dirtab *tab, int ntab, int s, Dir *dp)
 			devdir(c, q, "size", 0, eve, 0444, dp);
 			return 1;
 		}
+		if(s == 2){
+			q.path = QPATH(npnpdev, Qdmaalloc);
+			q.type = QTFILE;
+			devdir(c, q, "alloc", 0, eve, 0666, dp);
+			return 1;
+		}
+		if(s == 3){
+			q.path = QPATH(npnpdev, Qdmafree);
+			q.type = QTFILE;
+			devdir(c, q, "free", 0, eve, 0666, dp);
+			return 1;
+		}
+		if(s == 4){
+			q.path = QPATH(npnpdev, Qdmaclean);
+			q.type = QTFILE;
+			devdir(c, q, "clean", 0, eve, 0666, dp);
+			return 1;
+		}
+		if(s == 5){
+			q.path = QPATH(npnpdev, Qdmainval);
+			q.type = QTFILE;
+			devdir(c, q, "inval", 0, eve, 0666, dp);
+			return 1;
+		}
+		if(s == 6){
+			q.path = QPATH(npnpdev, Qdmacivac);
+			q.type = QTFILE;
+			devdir(c, q, "cleaninval", 0, eve, 0666, dp);
+			return 1;
+		}
 		return -1;
 	}
 	return -1;
@@ -163,7 +362,17 @@ pnpstat(Chan *c, u8 *db, i32 n)
 static Chan *
 pnpopen(Chan *c, int omode)
 {
-	if(omode != OREAD)
+	int t, m;
+
+	t = TYPE(c);
+	m = openmode(omode) & 3;
+	if(c->qid.type & QTDIR){
+		if(m != OREAD)
+			error(Eperm);
+	}else if(t == Qdmaalloc || t == Qdmafree || t == Qdmaclean ||
+	         t == Qdmainval || t == Qdmacivac){
+		/* DMA control files accept reads and writes. */
+	}else if(m != OREAD)
 		error(Eperm);
 	c->mode = openmode(omode);
 	c->flag |= COPEN;
@@ -174,18 +383,73 @@ pnpopen(Chan *c, int omode)
 static void
 pnpclose(Chan *c)
 {
-	USED(c);
+	free(c->aux);
+	c->aux = nil;
 }
 
 static i32
 pnpwrite(Chan *c, void *a, i32 n, i64 off)
 {
-	USED(c);
-	USED(a);
-	USED(n);
+	Dmactl *ct;
+	char buf[Dmactlmax], *p;
+	u64 v, len, pa;
+	int i, done;
+
 	USED(off);
-	error(Eperm);
-	return 0;
+	if(n <= 0)
+		error(Ebadarg);
+	if((ct = c->aux) == nil){
+		ct = malloc(sizeof *ct);
+		if(ct == nil)
+			error(Enomem);
+		ct->n = 0;
+		c->aux = ct;
+	}
+	done = 0;
+	for(i = 0; i < n; i++){
+		if(ct->n >= Dmactlmax-1){
+			ct->n = 0;
+			error(Ebadarg);
+		}
+		ct->buf[ct->n++] = ((char*)a)[i];
+		if(((char*)a)[i] == '\n')
+			done = 1;
+	}
+	if(!done)
+		return n;
+	memmove(buf, ct->buf, ct->n);
+	buf[ct->n] = 0;
+	ct->n = 0;
+	p = buf;
+	switch(TYPE(c)){
+	case Qdmaalloc:
+		if(number(&p, &v) < 0)
+			error(Ebadarg);
+		if(number(&p, &len) < 0 || len == 0)
+			len = 4096;
+		pa = dmaalloc(v, len);
+		lock(&dmalock);
+		dmalast.pa = pa;
+		dmalast.len = PGROUND(v);
+		unlock(&dmalock);
+		break;
+	case Qdmafree:
+		if(number(&p, &v) < 0 || number(&p, &len) < 0)
+			error(Ebadarg);
+		dmafree(v, len);
+		break;
+	case Qdmaclean:
+	case Qdmainval:
+	case Qdmacivac:
+		if(number(&p, &v) < 0 || number(&p, &len) < 0)
+			error(Ebadarg);
+		dmacache(TYPE(c) == Qdmaclean ? Dclean :
+		         TYPE(c) == Qdmainval ? Dinval : Dcleaninval, v, len);
+		break;
+	default:
+		error(Eperm);
+	}
+	return n;
 }
 
 static i32
@@ -205,6 +469,19 @@ pnpread(Chan *c, void *a, i32 n, i64 off)
 	if(TYPE(c) == Qdmasize){
 		char dbuf[64];
 		snprint(dbuf, sizeof dbuf, "0x%llx\n", arm64dmasize);
+		return readstr(off, a, n, dbuf);
+	}
+	if(TYPE(c) == Qdmaalloc){
+		char dbuf[64];
+
+		lock(&dmalock);
+		if(dmalast.len == 0){
+			unlock(&dmalock);
+			return 0;
+		}
+		snprint(dbuf, sizeof dbuf, "0x%llx %llux\n", dmalast.pa,
+		        dmalast.len);
+		unlock(&dmalock);
 		return readstr(off, a, n, dbuf);
 	}
 	dev = DEV(c);	if(dev < 0 || dev >= (int)npnpdev)
