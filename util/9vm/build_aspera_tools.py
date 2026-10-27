@@ -67,12 +67,44 @@ def build_simple(name: str) -> None:
                    check=True)
 
 
+# Core userland ported from the 9front tree (sibling checkout).
+# Sources are compiled unmodified; Harvey's libc lacks only the
+# IOUNIT constant, supplied here.  Some commands need libbio or
+# libString at link time.
+NINEFRONT = Path(__file__).resolve().parents[3] / "plan9front"
+CORE9_BIO = ("cal", "comm", "sort", "tail", "uniq")
+CORE9_STRING = ("du", "tar")
+CORE9_PLAIN = ("basename", "chmod", "cleanname", "cmp", "cp", "dd",
+               "mkdir", "mv", "seq", "tee", "tr", "wc")
+CORE9 = CORE9_PLAIN + CORE9_BIO + CORE9_STRING
+
+
+def build_core9() -> None:
+    cmd = NINEFRONT / "sys/src/cmd"
+    if not cmd.is_dir():
+        print(f"9front tree not found at {NINEFRONT}; skipping core tools")
+        return
+    for name in CORE9:
+        obj = BUILD / f"aspera-{name}.o"
+        compile_file(cmd / f"{name}.c", obj, ("-DIOUNIT=32768",))
+        libs = []
+        if name in CORE9_BIO:
+            libs.append(str(BUILD / "libbio.a"))
+        if name in CORE9_STRING:
+            libs.append(str(BUILD / "aspera-libString.a"))
+        subprocess.run(["ld.lld", *LDFLAGS, str(obj), *libs,
+                        str(BUILD / "libc.a"),
+                        "-o", str(BUILD / f"aspera-{name}")], check=True)
+    print(f"Built {len(CORE9)} core tools from 9front sources")
+
+
 def main() -> None:
     BUILD.mkdir(parents=True, exist_ok=True)
     build_rc()
-    for name in ("ls", "cat", "test", "echo"):
+    for name in ("ls", "cat", "test", "echo", "sleep", "rm"):
         build_simple(name)
-    print("Built native Aspera rc, ls, cat, test, and echo")
+    build_core9()
+    print("Built native Aspera rc, ls, cat, test, echo, and sleep")
 
 
 if __name__ == "__main__":

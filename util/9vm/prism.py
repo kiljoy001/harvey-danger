@@ -252,7 +252,6 @@ def main():
             print(f"[prism] Error: {e}", file=sys.stderr)
             sys.exit(1)
     elif args.subcommand == "view":
-        aspera_bin = os.path.join(REPO_ROOT, "build/aspera_interactive")
         aspera_bin = os.path.join(REPO_ROOT, "build/o9aspera_interactive")
         src_host = os.path.join(REPO_ROOT, "sys/src/cmd/o9aspera/aspera_host.c")
         src_engine = os.path.join(REPO_ROOT, "sys/src/cmd/o9aspera/aspera_engine.c")
@@ -269,12 +268,6 @@ def main():
                 src_host, src_engine,
                 "-o", aspera_bin, "-lSDL2", "-lm"
             ], check=True)
-            try:
-                if os.path.islink(aspera_bin) or os.path.exists(aspera_bin):
-                    os.remove(aspera_bin)
-                os.symlink(aspera_bin, aspera_bin)
-            except Exception:
-                pass
         if "DISPLAY" not in os.environ and "WAYLAND_DISPLAY" not in os.environ:
             os.environ["DISPLAY"] = ":1"
         print("[prism] Launching Aspera Window System...")

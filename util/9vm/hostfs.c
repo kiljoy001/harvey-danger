@@ -222,25 +222,29 @@ static int display_write(struct vmdisplay *d, int slot, const uint8_t *data,
     pthread_mutex_lock(&display_lock);
     if (__atomic_load_n(&d->state[slot], __ATOMIC_ACQUIRE) == VMDISPLAY_WRITING &&
         d->written[slot] == VMDISPLAY_DELTA_WRITES) {
-        unsigned x, y, width, height;
-
-        if (count >= 8) {
-            x = data[0] | (data[1] << 8);
-            y = data[2] | (data[3] << 8);
-            width = data[4] | (data[5] << 8);
-            height = data[6] | (data[7] << 8);
+        uint32_t off = 0;
+        const uint32_t tile_size = 8 + VMDISPLAY_TILE_WIDTH * VMDISPLAY_TILE_HEIGHT * 4;
+        while (off + tile_size <= count) {
+            const uint8_t *tdata = data + off;
+            unsigned x = tdata[0] | (tdata[1] << 8);
+            unsigned y = tdata[2] | (tdata[3] << 8);
+            unsigned width = tdata[4] | (tdata[5] << 8);
+            unsigned height = tdata[6] | (tdata[7] << 8);
             if (width == VMDISPLAY_TILE_WIDTH &&
                 height == VMDISPLAY_TILE_HEIGHT &&
                 x % width == 0 && y % height == 0 &&
                 x + width <= VMDISPLAY_WIDTH &&
-                y + height <= VMDISPLAY_HEIGHT &&
-                count == 8 + width * height * 4) {
+                y + height <= VMDISPLAY_HEIGHT) {
                 for (unsigned row = 0; row < height; row++)
                     memcpy(&d->pixels[slot][(y + row) * VMDISPLAY_WIDTH + x],
-                           data + 8 + row * width * 4, width * 4);
-                ok = count;
+                           tdata + 8 + row * width * 4, width * 4);
+                off += tile_size;
+            } else {
+                break;
             }
         }
+        if (off == count && count > 0)
+            ok = count;
     } else if (__atomic_load_n(&d->state[slot], __ATOMIC_ACQUIRE) == VMDISPLAY_WRITING &&
                offset == d->written[slot] && offset <= VMDISPLAY_FRAME_BYTES &&
                count <= VMDISPLAY_FRAME_BYTES - offset) {

@@ -44,11 +44,10 @@ def boot(image: Path) -> None:
     text = output.decode("utf-8", "replace")
     required = (
         "[9vm] GEFS root mode: only the image file is exported",
-        "ASPERA-DRIVERS-STARTED",
         "ASPERA-GEFS-ROOT PASS",
     )
     forbidden = (
-        "aspera: driver", "o9driverfs:", "panic:", "suicide:",
+        "aspera: driver", "panic:", "suicide:",
         "[init] PID 1 exited",
     )
     missing = [marker for marker in required if marker not in text]

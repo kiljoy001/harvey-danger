@@ -2137,6 +2137,8 @@ int main(int argc, char **argv) {
                     return 0;
                 } else if (run->io.port == 0x80) {
                     /* POST debug port */
+                } else if (run->io.port == 0x9009) {
+                    /* Doorbell kick for 9ring - hostring_serve handles consumption */
                 } else if (run->io.port >= 0xCF8 && run->io.port <= 0xCFF) {
                     for (__u32 i = 0; i < run->io.count; i++) {
                         pci_io_write(&pci_9p_host, tapfd >= 0 ? &pci_vnet : NULL, gefs_image != NULL ? &pci_9p_disk : NULL, vblk.fd >= 0 ? &pci_blk : NULL, &pci_addr_reg, run->io.port, data + i * run->io.size, run->io.size);
