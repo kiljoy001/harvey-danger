@@ -33,6 +33,107 @@ arm64clockready(void)
 
 static int isgicv3;
 
+#ifdef ARM64_FULL_KERNEL
+/*
+ * Device interrupts.  A driver opens a wait file for its device; the
+ * handler then counts the line and wakes the reader.  Nothing here is
+ * touched until a driver asks for an interrupt, so a board with no IRQ
+ * consumers behaves exactly as before.
+ */
+enum { Nirqwait = 256 };
+typedef struct Irqwait Irqwait;
+struct Irqwait {
+	Rendez r;
+	u32 count;
+	u32 seen;
+	int open;
+};
+static Irqwait irqwait[Nirqwait];
+
+static int
+irqready(void *a)
+{
+	Irqwait *w;
+
+	w = a;
+	return w->count != w->seen;
+}
+
+static Irqwait *
+irqslot(u32 irq)
+{
+	if(irq < 32 || irq >= 32 + Nirqwait)
+		return nil;
+	return &irqwait[irq - 32];
+}
+
+int
+arm64irqenable(u32 irq)
+{
+	Irqwait *w;
+	u32 mask, prio, shift;
+
+	if(gicdist == nil || (w = irqslot(irq)) == nil)
+		return -1;
+	mask = 1U << (irq % 32);
+	prio = 0x400/4 + irq/4;
+	shift = (irq % 4) * 8;
+	gicdist[prio] = (gicdist[prio] & ~(0xffU << shift)) | (0xa0U << shift);
+	if(irq > 15)
+		if(isgicv3){
+			*(volatile u64 *)((u8 *)gicdist + 0x6000 + irq*8) = 0;
+			gicdist[0x080/4] |= mask;
+		}else{
+			u32 t = 0x800/4 + (irq & ~3)/4;
+			u32 s = (irq & 3) * 8;
+			gicdist[t] = (gicdist[t] & ~(0xffU << s)) | (0x01U << s);
+			gicdist[0x080/4] &= ~mask;
+		}
+	gicdist[0x100/4 + irq/32] = mask;
+	w->open = 1;
+	__asm__ volatile("dsb sy; isb" ::: "memory");
+	return 0;
+}
+
+void
+arm64irqdisable(u32 irq)
+{
+	Irqwait *w;
+
+	if(gicdist == nil || (w = irqslot(irq)) == nil)
+		return;
+	gicdist[0x180/4 + irq/32] = 1U << (irq % 32);
+	w->open = 0;
+	__asm__ volatile("dsb sy" ::: "memory");
+}
+
+int
+arm64irqwait(u32 irq)
+{
+	Irqwait *w;
+
+	if((w = irqslot(irq)) == nil || !w->open)
+		return -1;
+	while(w->count == w->seen)
+		sleep(&w->r, irqready, w);
+	w->seen = w->count;
+	return (int)w->count;
+}
+
+static void
+irqnote(u32 irq)
+{
+	Irqwait *w;
+
+	if((w = irqslot(irq)) == nil || !w->open)
+		return;
+	w->count++;
+	wakeup(&w->r);
+}
+#else
+#define irqnote(irq)
+#endif
+
 int
 arm64timerinit(Fdtinfo *info)
 {
@@ -132,9 +233,13 @@ arm64irq(
 		if(clockready)
 			timerintr(ureg, 0);
 #endif
-	}else if(!isgicv3){
-		giccpu[0x000/4] = 0;
-		gicdist[0x000/4] = 0;
+	}else{
+		irqnote(irq);
+		/* Complete the interrupt so the line can fire again. */
+		if(isgicv3)
+			__asm__ volatile("msr S3_0_C12_C12_1, %0; isb" :: "r"((u64)irq) : "memory");
+		else
+			giccpu[0x010/4] = irq;
 	}
 }
 

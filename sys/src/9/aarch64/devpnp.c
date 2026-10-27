@@ -25,6 +25,7 @@ enum {
 	Qdmaclean,
 	Qdmainval,
 	Qdmacivac,
+	Qwait,
 };
 
 /* 6 type bits: the DMA control files are past the old 4-bit field. */
@@ -253,7 +254,7 @@ pnpgen(Chan *c, char *name, Dirtab *tab, int ntab, int s, Dir *dp)
 			return 1;
 		}
 		dev = DEV(c);
-		if(dev < 0 || dev >= (int)npnpdev || s < 0 || s > Qconsole-Qreg)
+		if(dev < 0 || dev >= (int)npnpdev || s < 0 || s > Qwait-Qreg)
 			return -1;
 		q.type = QTFILE;
 		switch(s + Qreg){
@@ -284,6 +285,10 @@ pnpgen(Chan *c, char *name, Dirtab *tab, int ntab, int s, Dir *dp)
 		case Qconsole:
 			q.path = QPATH(dev, Qconsole);
 			devdir(c, q, "console", 0, eve, 0444, dp);
+			break;
+		case Qwait:
+			q.path = QPATH(dev, Qwait);
+			devdir(c, q, "wait", 0, eve, 0444, dp);
 			break;
 		}
 		return 1;
@@ -374,6 +379,15 @@ pnpopen(Chan *c, int omode)
 		/* DMA control files accept reads and writes. */
 	}else if(m != OREAD)
 		error(Eperm);
+	if(t == Qwait){
+		int dev;
+
+		dev = DEV(c);
+		if(dev < 0 || dev >= (int)npnpdev)
+			error(Ebadarg);
+		if(arm64irqenable(pnpdev[dev].irq) < 0)
+			error("no interrupt");
+	}
 	c->mode = openmode(omode);
 	c->flag |= COPEN;
 	c->offset = 0;
@@ -509,6 +523,15 @@ pnpread(Chan *c, void *a, i32 n, i64 off)
 	case Qconsole:
 		snprint(buf, sizeof buf, "%u\n", d->base == consolebase);
 		break;
+	case Qwait: {
+		int n;
+
+		n = arm64irqwait(d->irq);
+		if(n < 0)
+			error("no interrupt");
+		snprint(buf, sizeof buf, "%d\n", n);
+		break;
+	}
 	default:
 		error(Ebadarg);
 	}
