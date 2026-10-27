@@ -44,6 +44,7 @@ struct Mouseinfo {
 	int dy;
 	int track;	      /* dx & dy updated */
 	int redraw;	      /* update cursor on screen */
+	Rendez redrawr;	      /* wait for cursor screen updates */
 	u32 lastcounter; /* value when /dev/mouse read */
 	u32 lastresize;
 	u32 resize;
@@ -85,6 +86,7 @@ void Cursortocursor(Cursor *);
 int mousechanged(void *);
 
 static void mouseclock(void);
+static void mouseproc(void *);
 
 enum {
 	Qdir,
@@ -154,6 +156,7 @@ mouseinit(void)
 	cursoron(1);
 	kbdmouse = mousefromkbd;
 	mousetime = seconds();
+	kproc("mouse", mouseproc, 0);
 }
 
 static Chan *
@@ -392,8 +395,7 @@ mousewrite(Chan *c, void *va, i32 n, i64 r)
 			Cursortocursor(&curs);
 		}
 		qlock(&mouse.ql);
-		mouse.redraw = 1;
-		mouseclock();
+		mouseredraw();
 		qunlock(&mouse.ql);
 		cursoron(1);
 		return n;
@@ -468,7 +470,7 @@ mousewrite(Chan *c, void *va, i32 n, i64 r)
 		qlock(&mouse.ql);
 		if(ptinrect(pt, gscreen->r)){
 			mouse.Mousestate.xy = pt;
-			mouse.redraw = 1;
+			mouseredraw();
 			mouse.track = 1;
 			mouseclock();
 		}
@@ -511,7 +513,48 @@ Cursortocursor(Cursor *c)
 }
 
 /*
- *  called by the clock routine to redraw the cursor
+ *  schedule a cursor redraw by the mouse process;
+ *  called when a screen draw hides the software cursor.
+ */
+void
+mouseredraw(void)
+{
+	mouse.redraw = 1;
+	wakeup(&mouse.redrawr);
+}
+
+static int
+shouldredraw(void *)
+{
+	return mouse.redraw != 0;
+}
+
+/*
+ * process that redraws the cursor, serialized with devdraw:
+ * the screen backend composites the cursor under drawlock, so
+ * cursor drawing can never interleave with a draw batch (which
+ * would bake cursor pixels into backup images and leave drops).
+ */
+static void
+mouseproc(void *)
+{
+	Proc *up = externup();
+
+	while(waserror())
+		;
+	for(;;){
+		sleep(&mouse.redrawr, shouldredraw, nil);
+		mouse.redraw = 0;
+		/* no cursor.l here: the backend sleeps on drawlock
+		   inside cursoroff/cursoron, and mouse readers
+		   canlock(cursor.l) must never be starved. */
+		cursoroff(0);
+		cursoron(0);
+	}
+}
+
+/*
+ *  called by the clock routine for tracked relative motion
  */
 static void
 mouseclock(void)
@@ -521,12 +564,6 @@ mouseclock(void)
 		mouse.track = 0;
 		mouse.dx = 0;
 		mouse.dy = 0;
-	}
-	if(mouse.redraw && canlock(&cursor.l)){
-		mouse.redraw = 0;
-		cursoroff(0);
-		mouse.redraw = cursoron(0);
-		unlock(&cursor.l);
 	}
 	drawactive(0);
 }
@@ -589,7 +626,7 @@ mousetrack(int dx, int dy, int b, int msec)
 	lastb = mouse.Mousestate.buttons;
 	mouse.Mousestate.xy = Pt(x, y);
 	mouse.Mousestate.buttons = b | kbdbuttons;
-	mouse.redraw = 1;
+	mouseredraw();
 	mouse.Mousestate.counter++;
 	mouse.Mousestate.msec = msec;
 

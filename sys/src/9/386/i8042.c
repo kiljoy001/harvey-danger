@@ -1219,6 +1219,8 @@ i8042intr(Ureg *u, void *v)
 	 *  if it's the aux port...
 	 */
 	if(s & Minready){
+		extern void ps2mouseputc(int);
+		ps2mouseputc(c);
 		if(mouseq != nil)
 			qiwrite(mouseq, &c, 1);
 		return;
@@ -1369,7 +1371,9 @@ mouseenable(void)
 	}
 	iunlock(&i8042lock);
 
-	intrenable(IrqAUX, i8042intr, 0, BUSUNKNOWN, "mouse");
+	/* Register as ISA like the keyboard (keybenable); BUSUNKNOWN left
+	   IRQ12 unrouted in the ioapic, so no mouse interrupt ever fired. */
+	intrenable(IrqAUX, i8042intr, 0, MKBUS(BusISA, 0xff, 0xff, 0xff), "mouse");
 	addarchfile("ps2mouse", 0666, mouseread, mouserwrite);
 }
 

@@ -12,16 +12,37 @@
 #include "io.h"
 #include "fns.h"
 tree *treenodes;
+static tree *treefree, *treepend;
 /*
  * create and clear a new tree node, and add it
  * to the node list.
+ *
+ * Nodes are recycled rather than returned to malloc.  The
+ * parser reads one token of lookahead before the action for a
+ * command runs, so the node holding that token is still live
+ * when freenodes() runs at the end of the command; returning
+ * it to malloc (or reusing it immediately) corrupts the next
+ * command's tree.  Nodes freed by freenodes() therefore wait
+ * one command cycle in treepend before becoming reusable in
+ * treefree.  The recycling itself mirrors the 9front rc
+ * allocator.
  */
 
 tree*
 newtree(void)
 {
-	tree *t = new(tree);
+	tree *t;
+
+	t = treefree;
+	if(t==0)
+		t = new(tree);
+	else
+		treefree = t->next;
 	t->iskw = 0;
+	t->quoted = 0;
+	t->rtype = 0;
+	t->fd0 = 0;
+	t->fd1 = 0;
 	t->str = 0;
 	t->child[0] = t->child[1] = t->child[2] = 0;
 	t->next = treenodes;
@@ -32,13 +53,23 @@ newtree(void)
 void
 freenodes(void)
 {
-	tree *t, *u;
-	for(t = treenodes;t;t = u){
-		u = t->next;
-		if(t->str)
+	tree *t;
+
+	for(t = treenodes;t;t = t->next){
+		if(t->str){
 			efree(t->str);
-		efree((char *)t);
+			t->str = 0;
+		}
+		t->child[0] = t->child[1] = t->child[2] = 0;
 	}
+	/* last cycle's pending nodes are now safe to reuse */
+	if(treepend){
+		for(t = treepend;t->next;t = t->next)
+			;
+		t->next = treefree;
+		treefree = treepend;
+	}
+	treepend = treenodes;
 	treenodes = 0;
 }
 

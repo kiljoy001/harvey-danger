@@ -18,6 +18,8 @@ extern Dev dupdevtab;
 extern Dev capdevtab;
 extern Dev segmentdevtab;
 extern Dev virtio9pdevtab;
+extern Dev drawdevtab;
+extern Dev mousedevtab;
 extern Dev ringdevtab;
 extern Dev ramdevtab;
 extern Dev ipdevtab;
@@ -36,6 +38,8 @@ Dev *devtab[] = {
 	&capdevtab,
 	&segmentdevtab,
 	&virtio9pdevtab,
+	&drawdevtab,
+	&mousedevtab,
 	&ringdevtab,
 	&ramdevtab,
 	&ipdevtab,
@@ -78,10 +82,7 @@ u32 kerndate = 1;
 
 char* conffile = "micro";
 
-/* Stubs for devices stripped from headless microkernel */
-void keybinit(void) {}
-void keybenable(void) {}
-void mouseenable(void) {}
+/* Stub for devices stripped from headless microkernel */
 void virtiosetup(void) {}
 
 i32

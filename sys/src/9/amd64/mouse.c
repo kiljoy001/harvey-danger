@@ -195,6 +195,48 @@ resetmouse(void)
 	}
 }
 
+/*
+ * PS/2 packet parser, fed one byte at a time from the i8042 aux
+ * interrupt. Harvey never registered a consumer for the aux queue,
+ * so mouse movement and buttons never reached devmouse at all.
+ * Packet format is documented above resetmouse's siblings: byte 0
+ * has L/R/M in bits 0/1/2 (Plan 9 wants L/M/R as 1/2/4); an
+ * intellimouse fourth byte carries the wheel.
+ */
+static uchar mpacket[4];
+static int mcount;
+static u64 mlasttick;
+
+void
+ps2mouseputc(int c)
+{
+	int dx, dy, buttons, dz, n;
+	u64 now;
+
+	now = machp()->ticks;
+	if(TK2SEC(now - mlasttick) > 2)
+		mcount = 0;
+	mlasttick = now;
+	if(mcount == 0 && (c & 0x08) == 0)
+		return;	/* byte 0 always has bit 3 set */
+	mpacket[mcount++] = (uchar)c;
+	n = packetsize > 0 ? packetsize : 3;
+	if(mcount < n)
+		return;
+	mcount = 0;
+	dx = (mpacket[0] & 0x10) ? mpacket[1] - 256 : mpacket[1];
+	dy = (mpacket[0] & 0x20) ? 256 - mpacket[2] : -(int)mpacket[2];
+	buttons = (mpacket[0] & 0x01) | ((mpacket[0] & 0x04) >> 1) | ((mpacket[0] & 0x02) << 1);
+	if(n >= 4){
+		dz = (char)mpacket[3];
+		if(dz > 0)
+			buttons |= 8;
+		else if(dz < 0)
+			buttons |= 16;
+	}
+	mousetrack(dx, dy, buttons, TK2MS(machp()->ticks));
+}
+
 void
 mousectl(Cmdbuf *cb)
 {

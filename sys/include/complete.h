@@ -17,6 +17,7 @@ struct Completion{
 	int nmatch;		/* number of files that matched */
 	int nfile;			/* number of files returned */
 	char **filename;	/* their names */
+	int force;		/* user initiated (9front parity, for rio) */
 };
 
 Completion* complete(char *dir, char *s);

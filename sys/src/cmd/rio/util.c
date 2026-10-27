@@ -1,12 +1,3 @@
-/*
- * This file is part of the UCB release of Plan 9. It is subject to the license
- * terms in the LICENSE file found in the top-level directory of this
- * distribution and at http://akaros.cs.berkeley.edu/files/Plan9License. No
- * part of the UCB release of Plan 9, including this file, may be copied,
- * modified, propagated, or distributed except according to the terms contained
- * in the LICENSE file.
- */
-
 #include <u.h>
 #include <libc.h>
 #include <draw.h>
@@ -22,7 +13,7 @@
 void
 cvttorunes(char *p, int n, Rune *r, int *nb, int *nr, int *nulls)
 {
-	u8 *q;
+	uchar *q;
 	Rune *s;
 	int j, w;
 
@@ -33,7 +24,7 @@ cvttorunes(char *p, int n, Rune *r, int *nb, int *nr, int *nulls)
 	 * knows this.  If n is a firm limit, the caller should
 	 * set p[n] = 0.
 	 */
-	q = (u8*)p;
+	q = (uchar*)p;
 	s = r;
 	for(j=0; j<n; j+=w){
 		if(*q < Runeself){
@@ -62,22 +53,24 @@ error(char *s)
 }
 
 void*
-erealloc(void *p, u32 n)
+erealloc(void *p, uint n)
 {
 	p = realloc(p, n);
 	if(p == nil)
 		error("realloc failed");
+	setrealloctag(p, getcallerpc());
 	return p;
 }
 
 void*
-emalloc(u32 n)
+emalloc(uint n)
 {
 	void *p;
 
 	p = malloc(n);
 	if(p == nil)
 		error("malloc failed");
+	setmalloctag(p, getcallerpc());
 	memset(p, 0, n);
 	return p;
 }
@@ -90,6 +83,7 @@ estrdup(char *s)
 	p = malloc(strlen(s)+1);
 	if(p == nil)
 		error("strdup failed");
+	setmalloctag(p, getcallerpc());
 	strcpy(p, s);
 	return p;
 }
@@ -111,6 +105,13 @@ isalnum(Rune c)
 	return TRUE;
 }
 
+int
+isspace(Rune c)
+{
+	return c == 0 || c == ' ' || c == '\t' ||
+		c == '\n' || c == '\r' || c == '\v';
+}
+
 Rune*
 strrune(Rune *s, Rune c)
 {
@@ -122,27 +123,27 @@ strrune(Rune *s, Rune c)
 		return s-1;
 	}
 
-	while((c1 = *s++) != 0)
+	while(c1 = *s++)
 		if(c1 == c)
 			return s-1;
 	return nil;
 }
 
-int
-min(int a, int b)
-{
-	if(a < b)
-		return a;
-	return b;
-}
+/* int */
+/* min(int a, int b) */
+/* { */
+/* 	if(a < b) */
+/* 		return a; */
+/* 	return b; */
+/* } */
 
-int
-max(int a, int b)
-{
-	if(a > b)
-		return a;
-	return b;
-}
+/* int */
+/* max(int a, int b) */
+/* { */
+/* 	if(a > b) */
+/* 		return a; */
+/* 	return b; */
+/* } */
 
 char*
 runetobyte(Rune *r, int n, int *ip)
@@ -155,3 +156,4 @@ runetobyte(Rune *r, int n, int *ip)
 	*ip = m;
 	return s;
 }
+

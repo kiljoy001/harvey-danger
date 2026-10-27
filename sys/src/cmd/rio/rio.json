@@ -10,12 +10,18 @@
 			"rio.c",
 			"data.c",
 			"fsys.c",
+			"line.c",
+			"props.c",
 			"scrl.c",
 			"time.c",
+			"ui1.c",
+			"undo.c",
 			"util.c",
 			"wctl.c",
 			"wind.c",
-			"xfid.c"
+			"xfid.c",
+			"compat.c",
+			"frcol.c"
 		]
 	}
 ]

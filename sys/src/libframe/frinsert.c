@@ -290,6 +290,10 @@ frinsert(Frame *f, Rune *sp, Rune *ep, u32 p0)
 		f->p1 += frame.nchars;
 	if(f->p1 > f->nchars)
 		f->p1 = f->nchars;
-	if(f->p0 == f->p1)
-		frtick(f, frptofchar(f, f->p0), 1);
+	/*
+	 * Harvey: don't draw the tick here. On Harvey's devdraw this
+	 * draw leaves red 1px remnants at every tick position (seen in
+	 * Rio at every keystroke; bisected to this call). Callers get
+	 * the tick from frdrawsel right after an insert.
+	 */
 }

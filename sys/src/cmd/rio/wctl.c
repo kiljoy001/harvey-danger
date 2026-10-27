@@ -1,12 +1,3 @@
-/*
- * This file is part of the UCB release of Plan 9. It is subject to the license
- * terms in the LICENSE file found in the top-level directory of this
- * distribution and at http://akaros.cs.berkeley.edu/files/Plan9License. No
- * part of the UCB release of Plan 9, including this file, may be copied,
- * modified, propagated, or distributed except according to the terms contained
- * in the LICENSE file.
- */
-
 #include <u.h>
 #include <libc.h>
 #include <draw.h>
@@ -23,6 +14,7 @@
 
 char	Ebadwr[]		= "bad rectangle in wctl request";
 char	Ewalloc[]		= "window allocation failed in wctl request";
+char	Ebadcolor[]		= "invalid color specification";
 
 /* >= Top are disallowed if mouse button is pressed */
 enum
@@ -39,6 +31,8 @@ enum
 	Hide,
 	Unhide,
 	Delete,
+	Color,
+	ECommand,
 };
 
 static char *cmds[] = {
@@ -54,6 +48,8 @@ static char *cmds[] = {
 	[Hide]	= "hide",
 	[Unhide]	= "unhide",
 	[Delete]	= "delete",
+	[Color]	= "color",
+	[ECommand]	= "cmd",
 	nil
 };
 
@@ -72,6 +68,8 @@ enum
 	R,
 	Scrolling,
 	Noscrolling,
+	Bg,
+	Fg,
 };
 
 static char *params[] = {
@@ -88,8 +86,67 @@ static char *params[] = {
 	[R]				= "-r",
 	[Scrolling]			= "-scroll",
 	[Noscrolling]		= "-noscroll",
+	[Bg]				= "-bg",
+	[Fg]				= "-fg",
 	nil
 };
+
+/*
+ * Parse a color name or RGB triple into a ulong
+ * Supports: "black", "white", "red", "green", "blue", "yellow", "cyan", "magenta"
+ * Or: "RRGGBB" (hex), "0xRRGGBB", "#RRGGBB", "RRGGBBAA"
+ */
+static ulong
+parsecolor(char *s, char *err)
+{
+	ulong c;
+	char *t;
+	int r, g, b, a;
+
+	/* Skip whitespace */
+	while(isspace(*s))
+		s++;
+	
+	/* Check for named colors */
+	if(cistrncmp(s, "black", 5) == 0) return 0x000000FF;
+	if(cistrncmp(s, "white", 5) == 0) return 0xFFFFFFFF;
+	if(cistrncmp(s, "red", 3) == 0) return 0xFF0000FF;
+	if(cistrncmp(s, "green", 5) == 0) return 0x00FF00FF;
+	if(cistrncmp(s, "blue", 4) == 0) return 0x0000FFFF;
+	if(cistrncmp(s, "yellow", 6) == 0) return 0xFFFF00FF;
+	if(cistrncmp(s, "cyan", 4) == 0) return 0x00FFFFFF;
+	if(cistrncmp(s, "magenta", 7) == 0) return 0xFF00FFFF;
+		
+	/* Parse hex RGB/RGBA */
+	if(s[0] == '0' && (s[1] == 'x' || s[1] == 'X'))
+		s += 2;
+	else if(s[0] == '#')
+		s++;
+	
+	c = strtoul(s, &t, 16);
+	if(t == s){
+		strcpy(err, Ebadcolor);
+		return ~0;
+	}
+	
+	/* Convert based on number of hex digits parsed */
+	switch(t - s){
+	case 6: /* RRGGBB */
+		r = (c >> 16) & 0xFF;
+		g = (c >> 8) & 0xFF;
+		b = c & 0xFF;
+		return (r << 24) | (g << 16) | (b << 8) | 0xFF;
+	case 8: /* RRGGBBAA */
+		r = (c >> 24) & 0xFF;
+		g = (c >> 16) & 0xFF;
+		b = (c >> 8) & 0xFF;
+		a = c & 0xFF;
+		return (r << 24) | (g << 16) | (b << 8) | a;
+	default:
+		strcpy(err, Ebadcolor);
+		return ~0;
+	}
+}
 
 /*
  * Check that newly created window will be of manageable size
@@ -97,17 +154,25 @@ static char *params[] = {
 int
 goodrect(Rectangle r)
 {
-	if(!eqrect(canonrect(r), r))
-		return 0;
-	if(Dx(r)<100 || Dy(r)<3*font->height)
-		return 0;
-	/* must have some screen and border visible so we can move it out of the way */
-	if(Dx(r) >= Dx(screen->r) && Dy(r) >= Dy(screen->r))
+	if(badrect(r) || !eqrect(canonrect(r), r))
 		return 0;
 	/* reasonable sizes only please */
 	if(Dx(r) > BIG*Dx(screen->r))
 		return 0;
-	if(Dy(r) > BIG*Dx(screen->r))
+	if(Dy(r) > BIG*Dy(screen->r))
+		return 0;
+	/*
+	 * the height has to be big enough to fit one line of text.
+	 * that includes the border on each side with an extra pixel
+	 * so that the text is still drawn
+	 */
+	if(Dx(r) < 100 || Dy(r) < 2*(Borderwidth+1)+font->height)
+		return 0;
+	/* window must be on screen */
+	if(!rectXrect(screen->r, r))
+		return 0;
+	/* must have some screen and border visible so we can move it out of the way */
+	if(rectinrect(screen->r, insetrect(r, Borderwidth)))
 		return 0;
 	return 1;
 }
@@ -162,13 +227,15 @@ newrect(void)
 void
 shift(int *minp, int *maxp, int min, int max)
 {
-	if(*minp < min){
-		*maxp += min-*minp;
-		*minp = min;
-	}
 	if(*maxp > max){
 		*minp += max-*maxp;
 		*maxp = max;
+	}
+	if(*minp < min){
+		*maxp += min-*minp;
+		if(*maxp > max)
+			*maxp = max;
+		*minp = min;
 	}
 }
 
@@ -199,18 +266,18 @@ riostrtol(char *s, char **t)
 
 
 int
-parsewctl(char **argp, Rectangle r, Rectangle *rp, int *pidp, int *idp,
-	  int *hiddenp, int *scrollingp, char **cdp, char *s,
-	  char *err)
+parsewctl(char **argp, Rectangle r, Rectangle *rp, int *pidp, int *idp, int *hiddenp, int *scrollingp, char **cdp, char *s, char *err)
 {
-	int cmd, param, xy, sign;
-	char *t;
+	int cmd, n, nt, param, xy, sign;
+	char *f[2], *t;
 
 	*pidp = 0;
 	*hiddenp = 0;
 	*scrollingp = scrolling;
 	*cdp = nil;
 	cmd = word(&s, cmds);
+	/* Don't parse color here */
+	if (cmd == Color || cmd == ECommand) return cmd;
 	if(cmd < 0){
 		strcpy(err, "unrecognized wctl command");
 		return -1;
@@ -253,10 +320,12 @@ parsewctl(char **argp, Rectangle r, Rectangle *rp, int *pidp, int *idp,
 			s++;
 		if(param == Cd){
 			*cdp = s;
-			while(*s && !isspace(*s))
-				s++;
-			if(*s != '\0')
-				*s++ = '\0';
+			if((nt = gettokens(*cdp, f, nelem(f), " \t\r\n\v\f")) < 1)
+				return -1;
+			n = strlen(*cdp);
+			if((*cdp)[0] == '\'' && (*cdp)[n-1] == '\'')
+				((*cdp)++)[n-1] = '\0'; /* drop quotes */
+			s += n+(nt-1);
 			continue;
 		}
 		sign = 0;
@@ -319,8 +388,7 @@ parsewctl(char **argp, Rectangle r, Rectangle *rp, int *pidp, int *idp,
 }
 
 int
-wctlnew(Rectangle rect, char *arg, int pid, int hideit, int scrollit,
-	char *dir, char *err)
+wctlnew(Rectangle rect, char *arg, int pid, int hideit, int scrollit, char *dir, char *err)
 {
 	char **argv;
 	Image *i;
@@ -342,14 +410,13 @@ wctlnew(Rectangle rect, char *arg, int pid, int hideit, int scrollit,
 		argv[3] = nil;
 	}
 	if(hideit)
-		i = allocimage(display, rect, screen->chan, 0, DWhite);
+		i = allocimage(display, rect, screen->chan, 0, DNofill);
 	else
-		i = allocwindow(wscreen, rect, Refbackup, DWhite);
+		i = allocwindow(wscreen, rect, Refbackup, DNofill);
 	if(i == nil){
 		strcpy(err, Ewalloc);
 		return -1;
 	}
-	border(i, rect, Selborder, red, ZP);
 
 	new(i, hideit, scrollit, pid, dir, "/bin/rc", argv);
 
@@ -357,70 +424,77 @@ wctlnew(Rectangle rect, char *arg, int pid, int hideit, int scrollit,
 	return 1;
 }
 
-int
-writewctl(Xfid *x, char *err)
+/*
+ * Apply color changes to a window
+ */
+static int
+wctlcolor(Window *w, Image *newfg, Image *newbg, char *err)
 {
-	int cnt, cmd, j, id, hideit, scrollit, pid;
+    /* If no colors specified, restore defaults */
+    if(newfg == nil && newbg == nil){
+        strcpy(err, "reset - no colors specified");        
+		w->cols[TEXT] = cols[TEXT];
+		w->cols[BACK] = cols[BACK];
+        
+        return -1;
+    }
+    
+    /* Apply new foreground image */
+    if(newfg != nil){
+		if (!wcolinuse(w, w->cols[TEXT]))
+			freeimage(w->cols[TEXT]);
+		w->cols[TEXT] = newfg;
+    }
+    
+    /* Apply new background image */
+    if(newbg != nil){
+		if (!wcolinuse(w, w->cols[BACK]))
+			freeimage(w->cols[BACK]);
+		w->cols[BACK] = newbg;
+    }
+
+    waddcolorspan(w, w->q0, 1);
+    /* Request redraw */
+    wsendctlmesg(w, Wakeup, ZR, nil);
+    
+    return 1;
+}
+
+int
+wctlcmd(Window *w, Rectangle r, int cmd, char *err)
+{
 	Image *i;
-	char *arg, *dir;
-	Rectangle rect;
-	Window *w;
-
-	w = x->f->w;
-	cnt = x->Fcall.count;
-	x->Fcall.data[cnt] = '\0';
-	id = 0;
-
-	rect = rectsubpt(w->screenr, screen->r.min);
-	cmd = parsewctl(&arg, rect, &rect, &pid, &id, &hideit, &scrollit, &dir, x->Fcall.data, err);
-	if(cmd < 0)
-		return -1;
-
-	if(mouse->buttons!=0 && cmd>=Top){
-		strcpy(err, "action disallowed when mouse active");
-		return -1;
-	}
-
-	if(id != 0){
-		for(j=0; j<nwindow; j++)
-			if(window[j]->id == id)
-				break;
-		if(j == nwindow){
-			strcpy(err, "no such window id");
-			return -1;
-		}
-		w = window[j];
-		if(w->deleted || w->i==nil){
-			strcpy(err, "window deleted");
-			return -1;
-		}
-	}
 
 	switch(cmd){
-	case New:
-		return wctlnew(rect, arg, pid, hideit, scrollit, dir, err);
-	case Set:
-		if(pid > 0)
-			wsetpid(w, pid, 0);
-		return 1;
 	case Move:
-		rect = Rect(rect.min.x, rect.min.y, rect.min.x+Dx(w->screenr), rect.min.y+Dy(w->screenr));
-		rect = rectonscreen(rect);
+		r = Rect(r.min.x, r.min.y, r.min.x+Dx(w->screenr), r.min.y+Dy(w->screenr));
+		r = rectonscreen(r);
 		/* fall through */
 	case Resize:
-		if(!goodrect(rect)){
+		if(!goodrect(r)){
 			strcpy(err, Ebadwr);
 			return -1;
 		}
-		if(eqrect(rect, w->screenr))
-			return 1;
-		i = allocwindow(wscreen, rect, Refbackup, DWhite);
+		if(Dx(w->screenr) > 0){
+			if(eqrect(r, w->screenr))
+				return 1;
+			if(w != input){
+				strcpy(err, "window not current");
+				return -1;
+			}
+			i = allocwindow(wscreen, r, Refbackup, DNofill);
+		} else { /* hidden */
+			if(eqrect(r, w->i->r))
+				return 1;
+			wuncurrent(w);
+			i = allocimage(display, r, w->i->chan, 0, DNofill);
+			r = ZR;
+		}
 		if(i == nil){
 			strcpy(err, Ewalloc);
 			return -1;
 		}
-		border(i, rect, Selborder, red, ZP);
-		wsendctlmesg(w, Reshaped, i->r, i);
+		wsendctlmesg(w, Reshaped, r, i);
 		return 1;
 	case Scroll:
 		w->scrolling = 1;
@@ -438,7 +512,13 @@ writewctl(Xfid *x, char *err)
 		wbottomme(w);
 		return 1;
 	case Current:
+		if(Dx(w->screenr)<=0){
+			strcpy(err, "window is hidden");
+			return -1;
+		}
 		wcurrent(w);
+		wtopme(w);
+		wsendctlmesg(w, Topped, ZR, nil);
 		return 1;
 	case Hide:
 		switch(whide(w)){
@@ -453,75 +533,125 @@ writewctl(Xfid *x, char *err)
 		}
 		return 1;
 	case Unhide:
-		for(j=0; j<nhidden; j++)
-			if(hidden[j] == w)
-				break;
-		if(j == nhidden){
+		switch(wunhide(w)){
+		case -1:
 			strcpy(err, "window not hidden");
 			return -1;
-		}
-		if(wunhide(j) == 0){
+		case 0:
 			strcpy(err, "hide failed");
 			return -1;
+		default:
+			break;
 		}
 		return 1;
 	case Delete:
 		wsendctlmesg(w, Deleted, ZR, nil);
 		return 1;
 	}
+
 	strcpy(err, "invalid wctl message");
 	return -1;
 }
 
-void
-wctlthread(void *v)
+int
+writewctl(Xfid *x, char *err)
 {
-	char *buf, *arg, *dir;
-	int cmd, id, pid, hideit, scrollit;
-	Rectangle rect;
-	char err[ERRMAX];
-	Channel *c;
+	int cnt, cmd, id, hideit, scrollit, pid;
+	char *arg, *dir, *p;
+	Rectangle r;
+	Window *w;
+	ulong fg, bg;
+	int param;
+	Image *newbg, *newfg;
 
-	c = v;
+	w = x->f->w;
+	cnt = x->count;
+	x->data[cnt] = '\0';
+	*err = 0;
+	id = 0;
+	fg = bg = ~0;  /* not specified */
 
-	threadsetname("WCTLTHREAD");
+	if(w == nil)
+		r = ZR;
+	else
+		r = rectsubpt(w->screenr, screen->r.min);
 
-	for(;;){
-		buf = recvp(c);
-		cmd = parsewctl(&arg, ZR, &rect, &pid, &id, &hideit, &scrollit, &dir, buf, err);
+	cmd = parsewctl(&arg, r, &r, &pid, &id, &hideit, &scrollit, &dir, x->data, err);
+	if(cmd < 0)
+		return -1;
 
-		switch(cmd){
-		case New:
-			wctlnew(rect, arg, pid, hideit, scrollit, dir, err);
+	if(id != 0){
+		w = wlookid(id);
+		if(w == 0){
+			strcpy(err, "no such window id");
+			return -1;
 		}
-		free(buf);
 	}
-}
 
-void
-wctlproc(void *v)
-{
-	char *buf;
-	int n, eofs;
-	Channel *c;
+	if(w == nil && cmd != New){
+		strcpy(err, "command needs to be run within a window");
+		return -1;
+	}
 
-	threadsetname("WCTLPROC");
-	c = v;
+	switch(cmd){
+	case New:
+		return wctlnew(r, arg, pid, hideit, scrollit, dir, err);
+	case Set:
+		if(pid > 0)
+			wsetpid(w, pid, 0);
+		return 1;
+	case Color:
+		/* Parse -fg and -bg from arg using word() */
+		p = x->data;
+		newfg = newbg = nil;
 
-	eofs = 0;
-	for(;;){
-		buf = emalloc(messagesize);
-		n = read(wctlfd, buf, messagesize-1);	/* room for \0 */
-		if(n < 0)
+		word(&p, cmds);		/* skip "color" command word */
+		while((param = word(&p, params)) >= 0){
+		  switch(param){
+		  case Fg:
+			while(isspace(*p)) p++;
+			if(*p){
+			  fg = parsecolor(p, err);
+			  if(*err) return -1;
+			  /* Create new foreground image */
+			  newfg = allocimage(display, Rect(0,0,1,1), screen->chan, 1, fg);
+			  if(newfg == nil){
+				strcpy(err, "failed to allocate foreground color");
+				return -1;
+			  }
+			  /* skip to end of color token */
+			  while(*p && !isspace(*p)) p++;
+			}
 			break;
-		if(n == 0){
-			if(++eofs > 20)
-				break;
-			continue;
+		  case Bg:
+			while(isspace(*p)) p++;
+			if(*p){
+			  bg = parsecolor(p, err);
+			  if(*err) return -1;
+			  /* Create new background image */
+			  newbg = allocimage(display, Rect(0,0,1,1), screen->chan, 1, bg);
+			  if(newbg == nil){
+				strcpy(err, "failed to allocate background color");
+				return -1;
+			  }
+			  /* skip to end of color token */
+			  while(*p && !isspace(*p)) p++;
+			}
+			break;
+		  }
 		}
-		eofs = 0;
-
-		buf[n] = '\0';
-		sendp(c, buf);
+	
+		return wctlcolor(w, newfg, newbg, err);
+	case ECommand:
+		p = x->data;
+		word(&p, cmds);		/* skip "cmd" command word */
+		execprim(w, p);
+		return 1;
 	}
+
+	incref(w);
+	id = wctlcmd(w, r, cmd, err);
+	wclose(w);
+
+	return id;
 }

@@ -1,12 +1,3 @@
-/*
- * This file is part of the UCB release of Plan 9. It is subject to the license
- * terms in the LICENSE file found in the top-level directory of this
- * distribution and at http://akaros.cs.berkeley.edu/files/Plan9License. No
- * part of the UCB release of Plan 9, including this file, may be copied,
- * modified, propagated, or distributed except according to the terms contained
- * in the LICENSE file.
- */
-
 #include <u.h>
 #include <libc.h>
 #include <draw.h>
@@ -22,43 +13,45 @@
 char Eperm[] = "permission denied";
 char Eexist[] = "file does not exist";
 char Enotdir[] = "not a directory";
-char	Ebadfcall[] = "bad fcall type";
-char	Eoffset[] = "illegal offset";
+char Ebadfcall[] = "bad fcall type";
+char Eoffset[] = "illegal offset";
+char Enomem[] = "out of memory";
 
 int	messagesize = 8192+IOHDRSZ;	/* good start */
-
-enum{
-	DEBUG = 0
-};
 
 Dirtab dirtab[]=
 {
 	{ ".",			QTDIR,	Qdir,			0500|DMDIR },
+	{ "screen",		QTFILE,	Qscreen,		0600 },
+	{ "snarf",		QTFILE,	Qsnarf,		0600 },
+	{ "wctl",		QTFILE,	Qwctl,		0600 },
+	{ "kbdtap",	QTFILE,	Qtap,	0660 },
+	{ "wsys",		QTDIR,	Qwsys,		0500|DMDIR },
+
 	{ "cons",		QTFILE,	Qcons,		0600 },
 	{ "cursor",		QTFILE,	Qcursor,		0600 },
 	{ "consctl",	QTFILE,	Qconsctl,		0200 },
 	{ "winid",		QTFILE,	Qwinid,		0400 },
 	{ "winname",	QTFILE,	Qwinname,	0400 },
-	{ "kbdin",		QTFILE,	Qkbdin,		0200 },
 	{ "label",		QTFILE,	Qlabel,		0600 },
+	{ "kbd",	QTFILE,	Qkbd,		0600 },
 	{ "mouse",	QTFILE,	Qmouse,		0600 },
-	{ "screen",		QTFILE,	Qscreen,		0400 },
-	{ "snarf",		QTFILE,	Qsnarf,		0600 },
-	{ "text",		QTFILE,	Qtext,		0400 },
+	{ "text",		QTFILE,	Qtext,		0600 },
 	{ "wdir",		QTFILE,	Qwdir,		0600 },
-	{ "wctl",		QTFILE,	Qwctl,		0600 },
 	{ "window",	QTFILE,	Qwindow,		0400 },
-	{ "wsys",		QTDIR,	Qwsys,		0500|DMDIR },
 	{ nil, }
 };
 
-static u32		getclock(void);
+static uint		getclock(void);
 static void		filsysproc(void*);
 static Fid*		newfid(Filsys*, int);
-static int		dostat(Filsys*, int, Dirtab*, u8*, int, u32);
+static int		dostat(Filsys*, int, Dirtab*, uchar*, int, uint);
 
 int	clockfd;
 int	firstmessage = 1;
+
+char	srvpipe[64];
+char	srvwctl[64];
 
 static	Xfid*	filsysflush(Filsys*, Xfid*, Fid*);
 static	Xfid*	filsysversion(Filsys*, Xfid*, Fid*);
@@ -100,7 +93,7 @@ post(char *name, char *envname, int srvfd)
 	fd = create(name, OWRITE|ORCLOSE|OCEXEC, 0600);
 	if(fd < 0)
 		error(name);
-	sprint(buf, "%d",srvfd);
+	snprint(buf, sizeof(buf), "%d", srvfd);
 	if(write(fd, buf, strlen(buf)) != strlen(buf))
 		error("srv write");
 	putenv(envname, name);
@@ -114,7 +107,7 @@ int
 cexecpipe(int *p0, int *p1)
 {
 	/* pipe the hard way to get close on exec */
-	if(bind("#|", "/mnt/temp", MREPL) < 0)
+	if(bind("#|", "/mnt/temp", MREPL) == -1)
 		return -1;
 	*p0 = open("/mnt/temp/data", ORDWR);
 	*p1 = open("/mnt/temp/data1", ORDWR|OCEXEC);
@@ -127,51 +120,21 @@ cexecpipe(int *p0, int *p1)
 Filsys*
 filsysinit(Channel *cxfidalloc)
 {
-	int n, fd, pid, p0;
 	Filsys *fs;
-	Channel *c;
-	char buf[128];
 
 	fs = emalloc(sizeof(Filsys));
 	if(cexecpipe(&fs->cfd, &fs->sfd) < 0)
 		goto Rescue;
 	fmtinstall('F', fcallfmt);
 	clockfd = open("/dev/time", OREAD|OCEXEC);
-	fd = open("/dev/user", OREAD);
-	strcpy(buf, "Jean-Paul_Belmondo");
-	if(fd >= 0){
-		n = read(fd, buf, sizeof buf-1);
-		if(n > 0)
-			buf[n] = 0;
-		close(fd);
-	}
-	fs->user = estrdup(buf);
+	fs->user = getuser();
+	fs->csyncflush = chancreate(sizeof(int), 0);
+	if(fs->csyncflush == nil)
+		error("chancreate syncflush");
 	fs->cxfidalloc = cxfidalloc;
-	pid = getpid();
 
-	/*
-	 * Create and post wctl pipe
-	 */
-	if(cexecpipe(&p0, &wctlfd) < 0)
-		goto Rescue;
-	sprint(srvwctl, "/srv/riowctl.%s.%d", fs->user, pid);
-	post(srvwctl, "wctl", p0);
-	close(p0);
-
-	/*
-	 * Start server processes
-	 */
-	c = chancreate(sizeof(char*), 0);
-	if(c == nil)
-		error("wctl channel");
-	proccreate(wctlproc, c, 4096);
-	threadcreate(wctlthread, c, 4096);
 	proccreate(filsysproc, fs, 10000);
-
-	/*
-	 * Post srv pipe
-	 */
-	sprint(srvpipe, "/srv/rio.%s.%d", fs->user, pid);
+	snprint(srvpipe, sizeof(srvpipe), "/srv/rio.%s.%lud", fs->user, (ulong)getpid());
 	post(srvpipe, "wsys", fs->cfd);
 
 	return fs;
@@ -189,7 +152,7 @@ filsysproc(void *arg)
 	Xfid *x;
 	Fid *f;
 	Fcall t;
-	u8 *buf;
+	uchar *buf;
 	Filsys *fs;
 
 	threadsetname("FILSYSPROC");
@@ -197,7 +160,9 @@ filsysproc(void *arg)
 	fs->pid = getpid();
 	x = nil;
 	for(;;){
-		buf = emalloc(messagesize+UTFmax);	/* UTFmax for appending partial rune in xfidwrite */
+		buf = malloc(messagesize+UTFmax);	/* UTFmax for appending partial rune in xfidwrite */
+		if(buf == nil)
+			error(Enomem);
 		n = read9pmsg(fs->sfd, buf, messagesize);
 		if(n <= 0){
 			yield();	/* if threadexitsall'ing, will not return */
@@ -211,19 +176,19 @@ filsysproc(void *arg)
 			x->fs = fs;
 		}
 		x->buf = buf;
-		if(convM2S(buf, n, &x->Fcall) != n)
+		if(convM2S(buf, n, x) != n)
 			error("convert error in convM2S");
-		if(DEBUG)
+		if(debug)
 			fprint(2, "rio:<-%F\n", &x->Fcall);
-		if(fcall[x->Fcall.type] == nil)
+		if(fcall[x->type] == nil)
 			x = filsysrespond(fs, x, &t, Ebadfcall);
 		else{
-			if(x->Fcall.type==Tversion || x->Fcall.type==Tauth)
+			if(x->type==Tversion || x->type==Tauth)
 				f = nil;
 			else
-				f = newfid(fs, x->Fcall.fid);
+				f = newfid(fs, x->fid);
 			x->f = f;
-			x  = (*fcall[x->Fcall.type])(fs, x, f);
+			x  = (*fcall[x->type])(fs, x, f);
 		}
 		firstmessage = 0;
 	}
@@ -238,12 +203,12 @@ filsysmount(Filsys *fs, int id)
 	char buf[32];
 
 	close(fs->sfd);	/* close server end so mount won't hang if exiting */
-	sprint(buf, "%d", id);
-	if(mount(fs->cfd, -1, "/mnt/wsys", MREPL, buf, 'M') < 0){
+	snprint(buf, sizeof buf, "%d", id);
+	if(mount(fs->cfd, -1, "/mnt/wsys", MREPL, buf) == -1){
 		fprint(2, "mount failed: %r\n");
 		return -1;
 	}
-	if(bind("/mnt/wsys", "/dev", MBEFORE) < 0){
+	if(bind("/mnt/wsys", "/dev", MBEFORE) == -1){
 		fprint(2, "bind failed: %r\n");
 		return -1;
 	}
@@ -259,20 +224,21 @@ filsysrespond(Filsys *fs, Xfid *x, Fcall *t, char *err)
 		t->type = Rerror;
 		t->ename = err;
 	}else
-		t->type = x->Fcall.type+1;
-	t->fid = x->Fcall.fid;
-	t->tag = x->Fcall.tag;
+		t->type = x->type+1;
+	t->fid = x->fid;
+	t->tag = x->tag;
 	if(x->buf == nil)
-		x->buf = malloc(messagesize);
+		error("no buffer in respond");
 	n = convS2M(t, x->buf, messagesize);
 	if(n <= 0)
 		error("convert error in convS2M");
 	if(write(fs->sfd, x->buf, n) != n)
 		error("write error in respond");
-	if(DEBUG)
+	if(debug)
 		fprint(2, "rio:->%F\n", t);
 	free(x->buf);
 	x->buf = nil;
+	x->flushtag = -1;
 	return x;
 }
 
@@ -287,46 +253,53 @@ filsyscancel(Xfid *x)
 
 static
 Xfid*
-filsysversion(Filsys *fs, Xfid *x, Fid* f)
+filsysversion(Filsys *fs, Xfid *x, Fid*)
 {
 	Fcall t;
 
 	if(!firstmessage)
 		return filsysrespond(x->fs, x, &t, "version request not first message");
-	if(x->Fcall.msize < 256)
+	if(x->msize < 256)
 		return filsysrespond(x->fs, x, &t, "version: message size too small");
-	messagesize = x->Fcall.msize;
+	messagesize = x->msize;
 	t.msize = messagesize;
-	if(strncmp(x->Fcall.version, "9P2000", 6) != 0)
-		return filsysrespond(x->fs, x, &t, "unrecognized 9P version");
 	t.version = "9P2000";
+	if(strncmp(x->version, "9P", 2) != 0)
+		t.version = "unknown";
 	return filsysrespond(fs, x, &t, nil);
 }
 
 static
 Xfid*
-filsysauth(Filsys *fs, Xfid *x, Fid* f)
+filsysauth(Filsys *fs, Xfid *x, Fid*)
 {
 	Fcall t;
 
-		return filsysrespond(fs, x, &t, "rio: authentication not required");
+	return filsysrespond(fs, x, &t, "rio: authentication not required");
 }
 
 static
 Xfid*
-filsysflush(Filsys* fs, Xfid *x, Fid* f)
+filsysflush(Filsys *fs, Xfid *x, Fid*)
 {
 	sendp(x->c, xfidflush);
+
+	/*
+	 * flushes need to be replied in order. xfidflush() will
+	 * awaken us when the flush has been queued.
+	 */
+	recv(fs->csyncflush, nil);
+
 	return nil;
 }
 
 static
 Xfid*
-filsysattach(Filsys * fs, Xfid *x, Fid *f)
+filsysattach(Filsys *, Xfid *x, Fid *f)
 {
 	Fcall t;
 
-	if(strcmp(x->Fcall.uname, x->fs->user) != 0)
+	if(strcmp(x->uname, x->fs->user) != 0)
 		return filsysrespond(x->fs, x, &t, Eperm);
 	f->busy = TRUE;
 	f->open = FALSE;
@@ -350,14 +323,28 @@ numeric(char *s)
 }
 
 static
+int
+skipdir(char *name)
+{
+	/* don't serve these if it's provided in the environment */
+	if(snarffd>=0 && strcmp(name, "snarf")==0)
+		return 1;
+	if(gotscreen && strcmp(name, "screen")==0)
+		return 1;
+	if(!servekbd && strcmp(name, "kbd")==0)
+		return 1;
+	return 0;
+}
+
+static
 Xfid*
 filsyswalk(Filsys *fs, Xfid *x, Fid *f)
 {
 	Fcall t;
 	Fid *nf;
 	int i, id;
-	u8 type;
-	u32 path;
+	uchar type;
+	ulong path;
 	Dirtab *d, *dir;
 	Window *w;
 	char *err;
@@ -366,9 +353,9 @@ filsyswalk(Filsys *fs, Xfid *x, Fid *f)
 	if(f->open)
 		return filsysrespond(fs, x, &t, "walk of open file");
 	nf = nil;
-	if(x->Fcall.fid  != x->Fcall.newfid){
+	if(x->fid  != x->newfid){
 		/* BUG: check exists */
-		nf = newfid(fs, x->Fcall.newfid);
+		nf = newfid(fs, x->newfid);
 		if(nf->busy)
 			return filsysrespond(fs, x, &t, "clone to busy fid");
 		nf->busy = TRUE;
@@ -376,7 +363,8 @@ filsyswalk(Filsys *fs, Xfid *x, Fid *f)
 		nf->dir = f->dir;
 		nf->qid = f->qid;
 		nf->w = f->w;
-		incref(&f->w->Ref);
+		if(f->w != nil)
+			incref(f->w);
 		nf->nrpart = 0;	/* not open, so must be zero */
 		f = nf;	/* walk f */
 	}
@@ -388,13 +376,13 @@ filsyswalk(Filsys *fs, Xfid *x, Fid *f)
 	qid = f->qid;
 	dir = f->dir;
 
-	if(x->Fcall.nwname > 0){
-		for(i=0; i<x->Fcall.nwname; i++){
+	if(x->nwname > 0){
+		for(i=0; i<x->nwname; i++){
 			if((qid.type & QTDIR) == 0){
 				err = Enotdir;
 				break;
 			}
-			if(strcmp(x->Fcall.wname[i], "..") == 0){
+			if(strcmp(x->wname[i], "..") == 0){
 				type = QTDIR;
 				path = Qdir;
 				dir = dirtab;
@@ -415,10 +403,10 @@ filsyswalk(Filsys *fs, Xfid *x, Fid *f)
 
 			if(qid.path == Qwsys){
 				/* is it a numeric name? */
-				if(!numeric(x->Fcall.wname[i]))
+				if(!numeric(x->wname[i]))
 					break;
 				/* yes: it's a directory */
-				id = atoi(x->Fcall.wname[i]);
+				id = atoi(x->wname[i]);
 				qlock(&all);
 				w = wlookid(id);
 				if(w == nil){
@@ -428,20 +416,22 @@ filsyswalk(Filsys *fs, Xfid *x, Fid *f)
 				path = Qwsysdir;
 				type = QTDIR;
 				qunlock(&all);
-				incref(&w->Ref);
-				sendp(winclosechan, f->w);
+				incref(w);
+				if(f->w)
+					sendp(winclosechan, f->w);
 				f->w = w;
 				dir = dirtab;
 				goto Accept;
 			}
-
-			if(snarffd>=0 && strcmp(x->Fcall.wname[i], "snarf")==0)
-				break;	/* don't serve /dev/snarf if it's provided in the environment */
+			if(skipdir(x->wname[i]))
+				break;
 			id = WIN(f->qid);
 			d = dirtab;
 			d++;	/* skip '.' */
 			for(; d->name; d++)
-				if(strcmp(x->Fcall.wname[i], d->name) == 0){
+				if(strcmp(x->wname[i], d->name) == 0){
+					if(f->w == nil && d->qid >= Qglobal)
+						break;
 					path = d->qid;
 					type = d->type;
 					dir = d;
@@ -455,14 +445,14 @@ filsyswalk(Filsys *fs, Xfid *x, Fid *f)
 			err = Eexist;
 	}
 
-	if(err!=nil || t.nwqid<x->Fcall.nwname){
+	if(err!=nil || t.nwqid<x->nwname){
 		if(nf){
 			if(nf->w)
 				sendp(winclosechan, nf->w);
 			nf->open = FALSE;
 			nf->busy = FALSE;
 		}
-	}else if(t.nwqid == x->Fcall.nwname){
+	}else if(t.nwqid == x->nwname){
 		f->dir = dir;
 		f->qid = qid;
 	}
@@ -477,12 +467,14 @@ filsysopen(Filsys *fs, Xfid *x, Fid *f)
 	Fcall t;
 	int m;
 
-	/* can't truncate anything, so just disregard */
-	x->Fcall.mode &= ~(OTRUNC|OCEXEC);
+	/* can't truncate anything but Qtext, so just disregard */
+	if(FILE(f->qid) != Qtext)
+		x->mode &= ~OTRUNC;
+	x->mode &= ~OCEXEC;
 	/* can't execute or remove anything */
-	if(x->Fcall.mode==OEXEC || (x->Fcall.mode&ORCLOSE))
+	if(x->mode==OEXEC || (x->mode&ORCLOSE))
 		goto Deny;
-	switch(x->Fcall.mode){
+	switch(x->mode & ~OTRUNC){
 	default:
 		goto Deny;
 	case OREAD:
@@ -507,7 +499,7 @@ filsysopen(Filsys *fs, Xfid *x, Fid *f)
 
 static
 Xfid*
-filsyscreate(Filsys *fs, Xfid *x, Fid*f)
+filsyscreate(Filsys *fs, Xfid *x, Fid*)
 {
 	Fcall t;
 
@@ -516,7 +508,7 @@ filsyscreate(Filsys *fs, Xfid *x, Fid*f)
 
 static
 int
-idcmp(const void *a, const void *b)
+idcmp(void *a, void *b)
 {
 	return *(int*)a - *(int*)b;
 }
@@ -526,35 +518,39 @@ Xfid*
 filsysread(Filsys *fs, Xfid *x, Fid *f)
 {
 	Fcall t;
-	u8 *b;
+	uchar *b;
 	int i, n, o, e, len, j, k, *ids;
 	Dirtab *d, dt;
-	u32 clock;
-	char buf[16];
+	uint clock;
+	char buf[32];
 
 	if((f->qid.type & QTDIR) == 0){
 		sendp(x->c, xfidread);
 		return nil;
 	}
-	o = x->Fcall.offset;
-	e = x->Fcall.offset+x->Fcall.count;
+	o = x->offset;
+	e = x->offset+x->count;
 	clock = getclock();
 	b = malloc(messagesize-IOHDRSZ);	/* avoid memset of emalloc */
 	if(b == nil)
-		return filsysrespond(fs, x, &t, "out of memory");
+		return filsysrespond(fs, x, &t, Enomem);
 	n = 0;
 	switch(FILE(f->qid)){
 	case Qdir:
 	case Qwsysdir:
 		d = dirtab;
 		d++;	/* first entry is '.' */
-		for(i=0; d->name!=nil && i<e; i+=len){
-			len = dostat(fs, WIN(x->f->qid), d, b+n, x->Fcall.count-n, clock);
+		for(i=0; d->name!=nil && i<e; d++){
+			if(skipdir(d->name))
+				continue;
+			if(f->w == nil && d->qid >= Qglobal)
+				continue;
+			len = dostat(fs, WIN(x->f->qid), d, b+n, x->count-n, clock);
 			if(len <= BIT16SZ)
 				break;
 			if(i >= o)
 				n += len;
-			d++;
+			i += len;
 		}
 		break;
 	case Qwsys:
@@ -571,7 +567,7 @@ filsysread(Filsys *fs, Xfid *x, Fid *f)
 			dt.qid = QID(k, Qdir);
 			dt.type = QTDIR;
 			dt.perm = DMDIR|0700;
-			len = dostat(fs, k, &dt, b+n, x->Fcall.count-n, clock);
+			len = dostat(fs, k, &dt, b+n, x->count-n, clock);
 			if(len == 0)
 				break;
 			if(i >= o)
@@ -590,7 +586,7 @@ filsysread(Filsys *fs, Xfid *x, Fid *f)
 
 static
 Xfid*
-filsyswrite(Filsys* fs, Xfid *x, Fid*f)
+filsyswrite(Filsys*, Xfid *x, Fid*)
 {
 	sendp(x->c, xfidwrite);
 	return nil;
@@ -617,7 +613,7 @@ filsysclunk(Filsys *fs, Xfid *x, Fid *f)
 
 static
 Xfid*
-filsysremove(Filsys *fs, Xfid *x, Fid*f)
+filsysremove(Filsys *fs, Xfid *x, Fid*)
 {
 	Fcall t;
 
@@ -639,7 +635,7 @@ filsysstat(Filsys *fs, Xfid *x, Fid *f)
 
 static
 Xfid*
-filsyswstat(Filsys *fs, Xfid *x, Fid*f)
+filsyswstat(Filsys *fs, Xfid *x, Fid*)
 {
 	Fcall t;
 
@@ -671,7 +667,7 @@ newfid(Filsys *fs, int fid)
 }
 
 static
-u32
+uint
 getclock(void)
 {
 	char buf[32];
@@ -683,7 +679,7 @@ getclock(void)
 
 static
 int
-dostat(Filsys *fs, int id, Dirtab *dir, u8 *buf, int nbuf, u32 clock)
+dostat(Filsys *fs, int id, Dirtab *dir, uchar *buf, int nbuf, uint clock)
 {
 	Dir d;
 
