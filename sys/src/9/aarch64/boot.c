@@ -362,6 +362,7 @@ physseginit(Fdtinfo *info)
 	if(arm64dmabase != 0 && arm64dmasize != 0){
 		memset(&seg, 0, sizeof seg);
 		seg.attr = SG_PHYSICAL | SG_READ | SG_WRITE;
+		seg.pgszi = -1;	/* addphysseg defaults to 2 MiB pages */
 		seg.name = "dma";
 		seg.pa = arm64dmabase;
 		seg.size = arm64dmasize / BIGPGSZ;

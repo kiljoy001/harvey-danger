@@ -121,7 +121,10 @@ allocdma(Xhci *x, unsigned n, unsigned align, Xaddr *a)
 	if(n > x->io.size || off > x->io.size-n) return Xnomem;
 	*a = x->io.dma+off;
 	x->used = off+n;
-	return clear(x, *a, n);
+	TRACE(x, "xhci: allocdma %llux n %u align %u\n", *a, n, align);
+	TRY(clear(x, *a, n));
+	TRACE(x, "xhci: allocdma done %llux\n", *a);
+	return 0;
 }
 
 static int
@@ -286,10 +289,13 @@ static int
 capabilities(Xhci *x, Xword *hccout)
 {
 	Xword cap,hcs,hcc,v;
+	TRACE(x, "xhci: capabilities begin\n");
 	TRY(rd(x, 0, &cap));
+	TRACE(x, "xhci: capabilities cap %x\n", cap);
 	if((cap>>16) < 0x100 || (cap&255) < 0x20 || (cap&3)) return Xunsupported;
 	x->op = cap&255;
 	TRY(rd(x, 4, &hcs));
+	TRACE(x, "xhci: hcs %x\n", hcs);
 	x->slots = (hcs&255) > Xslots ? Xslots : hcs&255;
 	x->ports = hcs>>24;
 	if(!x->slots || !x->ports) return Xunsupported;
@@ -299,6 +305,8 @@ capabilities(Xhci *x, Xword *hccout)
 	x->ctxsize = (hcc&4) ? 64 : 32;
 	TRY(rd(x, 0x14, &v)); x->doorbell = v&~3U;
 	TRY(rd(x, 0x18, &v)); x->runtime = v&~31U;
+	TRACE(x, "xhci: op %x slots %u ports %u ctx %u doorbell %x runtime %x\n",
+	      x->op, x->slots, x->ports, x->ctxsize, x->doorbell, x->runtime);
 	if(x->doorbell > x->io.mmiosize-(x->slots+1)*4 ||
 	   x->runtime > x->io.mmiosize-0x40 ||
 	   x->op+0x400+x->ports*16 > x->io.mmiosize) return Xinvalid;
@@ -308,7 +316,9 @@ static int
 resetcontroller(Xhci *x, Xword hcc)
 {
 	Xword v;
+	TRACE(x, "xhci: reset begin\n");
 	TRY(extcaps(x, hcc));
+	TRACE(x, "xhci: extcaps done\n");
 	TRY(wr(x, x->op, 0));
 	TRY(waitreg(x, x->op+4, Halted, Halted));
 	TRY(wr(x, x->op, Reset));
@@ -316,17 +326,20 @@ resetcontroller(Xhci *x, Xword hcc)
 	TRY(waitreg(x, x->op+4, Notready, 0));
 	TRY(rd(x, x->op+8, &v));
 	if(!(v&1)) return Xunsupported;
+	TRACE(x, "xhci: reset done\n");
 	return 0;
 }
 static int
 allocrings(Xhci *x)
 {
+	TRACE(x, "xhci: allocrings begin\n");
 	TRY(allocdma(x, (x->slots+1)*8, 64, &x->dcbaa));
 	TRY(ringinit(x, &x->command));
 	TRY(allocdma(x, Xevents*16, 64, &x->events));
 	TRY(allocdma(x, 16, 64, &x->erst));
 	TRY(mw64(x, x->erst, x->events));
 	TRY(mw32(x, x->erst+8, Xevents));
+	TRACE(x, "xhci: allocrings done\n");
 	return 0;
 }
 static int
@@ -337,6 +350,7 @@ scratchpads(Xhci *x)
 	unsigned i;
 	TRY(rd(x, 8, &v));
 	scratch = ((v>>27)&31) | ((v>>16)&0x3e0);
+	TRACE(x, "xhci: scratchpads %u\n", scratch);
 	if(scratch){
 		TRY(allocdma(x, scratch*8, 64, &array));
 		for(i=0; i<scratch; i++){
@@ -406,13 +420,21 @@ xhci_init(Xhci *x, const Xio *io)
 	   io->dma+io->size < io->dma) return Xinvalid;
 	zero(x,sizeof *x);
 	x->io=*io;
+	TRACE(x, "xhci: init begin\n");
 	TRY(capabilities(x,&hcc));
+	TRACE(x, "xhci: capabilities done\n");
 	TRY(resetcontroller(x,hcc));
+	TRACE(x, "xhci: resetcontroller done\n");
 	TRY(allocrings(x));
+	TRACE(x, "xhci: allocrings done\n");
 	TRY(scratchpads(x));
+	TRACE(x, "xhci: scratchpads done\n");
 	TRY(startcontroller(x));
+	TRACE(x, "xhci: startcontroller done\n");
 	TRY(powerports(x));
+	TRACE(x, "xhci: powerports done\n");
 	TRY(settleports(x));
+	TRACE(x, "xhci: settleports done\n");
 	return xhci_noop(x);
 }
 

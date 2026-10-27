@@ -4,6 +4,8 @@
 #include "xhci.h"
 #include "../o9drvman/health.h"
 
+static void trace(void *, const char *, ...);
+
 static Xhci controller;
 static QLock controllerlock;
 static int fd=-1;
@@ -77,6 +79,7 @@ board_dma(void)
 {
 	char buf[128], *p;
 	u64 base, size;
+	unsigned i;
 
 	fprint(2,"o9xhci: dma: read grant\n");
 	if(readtext("#P/dma/base",buf,sizeof buf)<0)
@@ -95,6 +98,18 @@ board_dma(void)
 		return -1;
 	boarddmabase=base;
 	boarddmasz=size;
+	fprint(2,"o9xhci: dma mapped at %p\n",boarddma);
+	for(i=0; i<size; i+=Bigpage){
+		boarddma[i]=0x5a;
+		fprint(2,"o9xhci: dma page %ud write %ux\n",i/Bigpage,boarddma[i]);
+	}
+	boarddma[size-1]=0xa5;
+	fprint(2,"o9xhci: dma last write ok\n");
+	if(boarddma[0]!=0x5a || boarddma[size-1]!=0xa5){
+		fprint(2,"o9xhci: dma self-test failed\n");
+		return -1;
+	}
+	fprint(2,"o9xhci: dma self-test ok\n");
 	return 0;
 }
 
@@ -260,7 +275,7 @@ board_start(void)
 	io.mmiosize=boardmmiosz;
 	io.read32=bread32; io.write32=bwrite32;
 	io.readmem=breadmem; io.writemem=bwritemem;
-	io.delay=bdelay; io.trace=0;
+	io.delay=bdelay; io.trace=trace;
 	boardmode=1;
 	fprint(2,"o9xhci: xhci_init: begin\n");
 	if(xhci_init(&controller,&io)<0){

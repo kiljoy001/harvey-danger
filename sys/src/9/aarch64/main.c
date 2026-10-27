@@ -283,6 +283,28 @@ arm64main(usize dtb)
 		return;
 	}
 	uartputs("HARVEY-ARM64 MMU-ON PASS\n");
+	/*
+	 * Probe the reserved DMA arena through its identity mapping.  This is
+	 * the physical range user space receives as #P/dma; a bus abort here
+	 * names the failing block instead of leaving a user fault looping.
+	 */
+	if(arm64dmabase != 0 && arm64dmasize != 0){
+		u64 off;
+		volatile u64 *q;
+
+		for(off = 0; off < arm64dmasize; off += 2*1024*1024){
+			q = (volatile u64 *)(arm64dmabase + off);
+			*q = 0x0123456789abcdefULL;
+			if(*q != 0x0123456789abcdefULL){
+				uartputs("ARM64 DMA-PROBE FAIL ");
+				uarthex(arm64dmabase + off);
+				uartputs("\n");
+				break;
+			}
+		}
+		if(off >= arm64dmasize)
+			uartputs("HARVEY-ARM64 DMA-PROBE PASS\n");
+	}
 	if(arm64timerinit(&info) < 0){
 		uartputs("timer: initialization failed\n");
 		return;

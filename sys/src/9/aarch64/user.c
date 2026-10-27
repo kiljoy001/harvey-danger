@@ -33,6 +33,8 @@ static volatile u32 diagstage;
 static volatile u64 diagresult;
 #ifdef ARM64_FULL_KERNEL
 static volatile u32 processactive;
+static u64 lastfaultfar, lastfaultpc;
+static unsigned faultrepeat;
 #endif
 
 static void
@@ -191,6 +193,27 @@ arm64usertrap(Arm64ureg *r)
 	}
 	if(p != nil && p->kp == 0 &&
 	   (ec == 0x20 || ec == 0x21 || ec == 0x24 || ec == 0x25)){
+		/*
+		 * A fault that keeps retrying at the same pc and address means the
+		 * mapping succeeded but the access still aborts: usually a bus
+		 * error on the physical page.  Say so instead of looping silently.
+		 */
+		if(r->far == lastfaultfar && r->elr == lastfaultpc){
+			if(++faultrepeat == 3){
+				u64 pa;
+
+				print("ARM64 repeat fault esr %#llux far %#p pc %#p\n",
+				      r->esr, r->far, r->elr);
+				if(arm64mmutranslate(r->far, &pa) == 0)
+					print("ARM64 repeat fault maps %#p\n", pa);
+				else
+					print("ARM64 repeat fault unmapped\n");
+			}
+		}else{
+			lastfaultfar = r->far;
+			lastfaultpc = r->elr;
+			faultrepeat = 0;
+		}
 		ftype = (ec == 0x20 || ec == 0x21) ? FT_EXEC :
 			((r->esr & (1ULL<<6)) != 0 ? FT_WRITE : FT_READ);
 		insyscall = p->insyscall;

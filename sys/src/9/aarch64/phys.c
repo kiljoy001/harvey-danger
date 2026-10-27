@@ -10,6 +10,7 @@
 enum { Pagesz = 4096 };
 
 extern char _start[], __image_end[];
+extern u64 arm64dmabase, arm64dmasize;
 
 static u64 nextpage, ramend;
 #ifdef ARM64_FULL_KERNEL
@@ -94,6 +95,18 @@ startfree(void)
 		if(stop > p)
 			addextent(p, stop-p);
 		p = stop;
+	}
+	/* The DMA arena is published to user space; it must never be free. */
+	if(arm64dmabase != 0 && arm64dmasize != 0){
+		u64 abase = arm64dmabase, aend = arm64dmabase + arm64dmasize;
+		for(i = 0; i < (u32)nfreeext; i++){
+			if(freeext[i].base < aend &&
+			   abase < freeext[i].base + freeext[i].size){
+				print("ARM64 DMA-ARENA FREE %#llux+%#llux overlaps %#llux+%#llux\n",
+				      abase, arm64dmasize, freeext[i].base, freeext[i].size);
+				break;
+			}
+		}
 	}
 	physready = 1;
 }

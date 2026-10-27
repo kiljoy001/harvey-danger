@@ -15,6 +15,8 @@ enum {
 
 static const u64 Maxidentity = 16ULL * 1024 * 1024 * 1024;
 static u64 kernelroot;
+extern u64 arm64dmabase, arm64dmasize;
+static int dmatrace;
 
 enum {
 	Ptevalid = 1,
@@ -170,6 +172,24 @@ arm64mmubuild(Fdtinfo *info)
 		}
 		l2 = (u64 *)(root[i] & ~(u64)(Pagesz-1));
 		l2[j] = blockpte(pa, 1);
+	}
+	/*
+	 * The DMA arena is handed to user space through #P/dma as a Device
+	 * segment.  Map the kernel identity alias with the same attributes:
+	 * two mappings of one physical range with different cacheability are
+	 * architecturally unpredictable.
+	 */
+	extern u64 arm64dmabase, arm64dmasize;
+	if(arm64dmasize != 0 && (arm64dmabase % L2blocksz) == 0){
+		for(pa = arm64dmabase; pa < arm64dmabase + arm64dmasize;
+		    pa += L2blocksz){
+			i = pa/L1blocksz;
+			j = (pa%L1blocksz)/L2blocksz;
+			if(root[i] == 0 || (root[i] & Ptevalid) == 0)
+				return 0;
+			l2 = (u64 *)(root[i] & ~(u64)(Pagesz-1));
+			l2[j] = blockpte(pa, 0);
+		}
 	}
 	device[0].base = info->uartbase;
 	device[0].size = Pagesz;
@@ -351,6 +371,12 @@ mmuput(usize va, Page *page, u32 attr)
 	size = sys->pgsz[page->pgszi];
 	if(size != PGSZ && size != BIGPGSZ)
 		panic("ARM64 mmuput: unsupported page size");
+	if(dmatrace < 24 && arm64dmasize != 0 &&
+	   page->pa >= arm64dmabase && page->pa < arm64dmabase + arm64dmasize){
+		dmatrace++;
+		print("mmuput dma va %p pa %p pgszi %ud size %ud ref %d\n",
+		      va, page->pa, page->pgszi, size, page->ref);
+	}
 	if((va | page->pa) & (size - 1))
 		panic("ARM64 mmuput: unaligned mapping");
 	kernel = (u64 *)arm64mmukernelroot();
