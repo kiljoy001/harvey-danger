@@ -67,6 +67,7 @@ monitorproc(int slot, uint generation, char *manager, char *name, char *path, in
 		snprint(generationtext, sizeof generationtext, "%u", generation);
 		putenv("O9_DRIVER_GENERATION", generationtext);
 		putenv("O9_DRIVER_NAME", name);
+		putenv("O9_DRIVER_STATUS", manager);
 		execl(path, path, name, generationtext, slottext, manager, nil);
 		fprint(2, "o9drvman: exec %s failed: %r\n", path);
 		exits("exec");
@@ -210,9 +211,12 @@ o9drvmanhealthtext(int slot, int field)
 	else if(field == 1)
 		result = (char *)drv_health_recommendation_name(
 			health[slot].report.recommendation);
-	else if(field == 2)
-		result = health[slot].report.error_code;
-	else
+	else if(field == 2){
+		static char errbuf[DrvHealthErrorSize];
+		snprint(errbuf, sizeof errbuf, "%.*s", DrvHealthErrorSize-1,
+		        health[slot].report.error_code);
+		result = errbuf;
+	}else
 		result = "invalid";
 	unlock(&driverlock);
 	return result;

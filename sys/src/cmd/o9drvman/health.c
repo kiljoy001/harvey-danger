@@ -4,6 +4,7 @@
 #include <libc.h>
 #else
 #include <limits.h>
+#include <stdio.h>
 #include <string.h>
 #endif
 
@@ -190,3 +191,193 @@ drv_health_recommendation_name(DrvHealthRecommendation recommendation)
 		return "invalid";
 	return names[recommendation];
 }
+
+int
+drvhealth_format(char *out, size_t capacity, uint32_t generation,
+                 uint64_t sequence, uint64_t timestamp, DrvHealthState state,
+                 uint64_t progress, uint64_t inflight, uint64_t completed,
+                 uint64_t errors, uint64_t timeouts, uint64_t resets,
+                 DrvHealthRecommendation recommendation, const char *error_code)
+{
+	const char *state_name, *recommendation_name, *code;
+	int n;
+
+	if(out == NULL || capacity == 0 || generation == 0 || sequence == 0 ||
+	   state <= DrvHealthUnknown || state >= DrvHealthStateCount ||
+	   recommendation < 0 || recommendation >= DrvHealthRecommendationCount)
+		return -1;
+	code = error_code != NULL && *error_code != 0 ? error_code : "none";
+	if(!token(code))
+		return -1;
+	state_name = drv_health_state_name(state);
+	recommendation_name = drv_health_recommendation_name(recommendation);
+#ifdef __HARVEY__
+	n = snprint(out, (int)capacity,
+	            "o9health/1\t%u\t%llu\t%llu\t%s\t%llu\t%llu\t%llu\t%llu\t%llu\t%llu\t%s\t%s\n",
+	            (unsigned)generation, (unsigned long long)sequence,
+	            (unsigned long long)timestamp, state_name,
+	            (unsigned long long)progress, (unsigned long long)inflight,
+	            (unsigned long long)completed, (unsigned long long)errors,
+	            (unsigned long long)timeouts, (unsigned long long)resets,
+	            recommendation_name, code);
+#else
+	n = snprintf(out, capacity,
+	             "o9health/1\t%u\t%llu\t%llu\t%s\t%llu\t%llu\t%llu\t%llu\t%llu\t%llu\t%s\t%s\n",
+	             (unsigned)generation, (unsigned long long)sequence,
+	             (unsigned long long)timestamp, state_name,
+	             (unsigned long long)progress, (unsigned long long)inflight,
+	             (unsigned long long)completed, (unsigned long long)errors,
+	             (unsigned long long)timeouts, (unsigned long long)resets,
+	             recommendation_name, code);
+	if(n < 0 || (size_t)n >= capacity)
+		return -1;
+#endif
+	return n > 0 && (size_t)n < capacity ? n : -1;
+}
+
+#ifdef __HARVEY__
+struct DrvHealth {
+	char *ready;
+	char *health;
+	char *stop;
+	uint32_t generation;
+	uint64_t sequence;
+	int active;
+};
+
+DrvHealth*
+drvhealth_open(const char *name, uint32_t generation, uint32_t slot,
+               const char *statusdir)
+{
+	DrvHealth *h;
+
+	USED(slot);
+	h = mallocz(sizeof *h, 1);
+	if(h == nil)
+		return nil;
+	h->generation = generation;
+	if(name == nil || *name == 0 || statusdir == nil || *statusdir == 0)
+		return h;
+	h->ready = smprint("%s/%s.%u", statusdir, name, generation);
+	h->health = smprint("%s/%s.%u.health", statusdir, name, generation);
+	h->stop = smprint("%s/%s.%u.stop", statusdir, name, generation);
+	if(h->ready == nil || h->health == nil || h->stop == nil)
+		return h;
+	h->active = 1;
+	return h;
+}
+
+DrvHealth*
+drvhealth_openenv(void)
+{
+	char *name, *gen, *status, *p;
+	uint32_t generation;
+
+	name = getenv("O9_DRIVER_NAME");
+	gen = getenv("O9_DRIVER_GENERATION");
+	status = getenv("O9_DRIVER_STATUS");
+	if(name == nil || gen == nil || status == nil)
+		return nil;
+	generation = (uint32_t)strtoul(gen, &p, 10);
+	if(*p != 0 || generation == 0)
+		return nil;
+	return drvhealth_open(name, generation, 0, status);
+}
+
+int
+drvhealth_ready(DrvHealth *h)
+{
+	int fd;
+	int n;
+
+	if(h == nil || !h->active || h->ready == nil)
+		return 0;
+	fd = create(h->ready, OWRITE, 0600);
+	if(fd < 0)
+		return -1;
+	n = write(fd, "ready\n", 6);
+	close(fd);
+	return n == 6 ? 0 : -1;
+}
+
+int
+drvhealth_report(DrvHealth *h, DrvHealthState state,
+                 uint64_t progress, uint64_t inflight, uint64_t completed,
+                 uint64_t errors, uint64_t timeouts, uint64_t resets,
+                 DrvHealthRecommendation recommendation, const char *error_code)
+{
+	char buf[512];
+	int fd, n;
+
+	if(h == nil || !h->active || h->health == nil)
+		return 0;
+	if(h->sequence == 0)
+		h->sequence = 1;
+	else
+		h->sequence++;
+	n = drvhealth_format(buf, sizeof buf, h->generation, h->sequence,
+	                     nsec()/1000000ULL, state, progress, inflight,
+	                     completed, errors, timeouts, resets,
+	                     recommendation, error_code);
+	if(n <= 0 || n >= (int)sizeof buf)
+		return -1;
+	fd = create(h->health, OWRITE, 0600);
+	if(fd < 0)
+		return -1;
+	if(write(fd, buf, n) != n){
+		close(fd);
+		return -1;
+	}
+	close(fd);
+	return 0;
+}
+
+int
+drvhealth_stopwait(DrvHealth *h, int milliseconds)
+{
+	char buf[32];
+	int fd, n;
+
+	if(h == nil || !h->active || h->stop == nil)
+		return 0;
+	fd = open(h->stop, OREAD);
+	if(fd >= 0){
+		n = read(fd, buf, sizeof buf - 1);
+		close(fd);
+		if(n > 0){
+			buf[n] = 0;
+			if(strncmp(buf, "shutdown", 8) == 0)
+				return 1;
+		}
+	}
+	if(milliseconds > 0)
+		sleep(milliseconds);
+	return 0;
+}
+
+void
+drvhealth_close(DrvHealth *h)
+{
+	if(h == nil)
+		return;
+	free(h->ready);
+	free(h->health);
+	free(h->stop);
+	free(h);
+}
+
+#else
+
+struct DrvHealth { int unused; };
+DrvHealth *drvhealth_open(const char *n, uint32_t g, uint32_t s, const char *d)
+{ (void)n; (void)g; (void)s; (void)d; return 0; }
+DrvHealth *drvhealth_openenv(void) { return 0; }
+int drvhealth_ready(DrvHealth *h) { (void)h; return 0; }
+int drvhealth_report(DrvHealth *h, DrvHealthState s, uint64_t a, uint64_t b,
+                     uint64_t c, uint64_t d, uint64_t e, uint64_t f,
+                     DrvHealthRecommendation r, const char *x)
+{ (void)h; (void)s; (void)a; (void)b; (void)c; (void)d; (void)e; (void)f; (void)r; (void)x; return 0; }
+int drvhealth_stopwait(DrvHealth *h, int m) { (void)h; (void)m; return 0; }
+void drvhealth_close(DrvHealth *h) { (void)h; }
+
+#endif

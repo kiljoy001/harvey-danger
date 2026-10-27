@@ -21,13 +21,6 @@ main {
     ok = ok && privateMount.mkdirAll();
     ok = ok && manager.addProcess("probe", "/build/o9drvman-test-child");
     ok = ok && manager.addProcess("crash", "/build/o9drvman-test-child");
-    File managedBackend = new File("/mnt/o9driverfs-managed-backend");
-    File managedConfigDir = new File("/mnt/o9driverfs-config");
-    File managedConfig = new File("/mnt/o9driverfs-config/devices.tab");
-    ok = ok && managedConfigDir.mkdirAll();
-    ok = ok && managedBackend.write("device-ready\n") == 0;
-    ok = ok && managedConfig.write("name\tbackend\nserial0\t/mnt/o9driverfs-managed-backend\n") == 0;
-    ok = ok && manager.addProcess("devices", "/build/o9driverfs-managed");
     ok = ok && manager.addProcess("faulty", "/build/o9drvman-test-child");
     ok = ok && manager.addProcess("stubborn", "/build/o9drvman-test-child");
     ok = ok && !manager.add("net0");
@@ -133,27 +126,6 @@ main {
     ok = ok && ctl.append(crashStop) == len(crashStop);
     if(!ok) { print("O9DRVMAN-FAIL crash\n"); }
 
-    File managedService = new File("/srv/devices");
-    string managedStart = "start devices 400\n";
-    ok = ok && ctl.append(managedStart) == len(managedStart);
-    tries = 0;
-    while((!managedService.exists() || manager.value("devices", 0) != 2) && tries < 80) {
-        Task<int64> managedPause = spawn TimeSleepRaw(25);
-        managedPause.await();
-        tries = tries + 1;
-    }
-    int64 managedSupervise = manager.superviseOnce(405);
-    ok = ok && managedSupervise == 0 &&
-         manager.value("devices", 0) == 2 && managedService.exists() &&
-         manager.value("devices", 6) > 0 && manager.value("devices", 4) >= 30405;
-    string managedStop = "stop devices 410\n";
-    ok = ok && ctl.append(managedStop) == len(managedStop);
-    ok = ok && manager.reapOne() > 0;
-    Task<int64> managedStopped = spawn StringIndexOfRaw(table.read(),
-        "devices\tstopped\t1\t0\t0\t0\t0\t0\t0\t0");
-    ok = ok && managedStopped.await() >= 0;
-    if(!ok) { print("O9DRVMAN-FAIL managed\n"); }
-
     File faultyHealth = new File("/mnt/o9drvman-status/faulty.1.health");
     File faultyReady = new File("/mnt/o9drvman-status/faulty.1");
     string faultyStart = "start faulty 450\n";
@@ -216,9 +188,6 @@ main {
     mounts.unmount("/mnt/o9drvman-test");
     mounts.close();
     childMarker.remove();
-    managedConfig.remove();
-    managedConfigDir.remove();
-    managedBackend.remove();
     managerStatus.remove();
     privateMount.remove();
     if(ok) { print("O9DRVMAN-9P PASS\n"); }

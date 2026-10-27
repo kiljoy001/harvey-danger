@@ -24,6 +24,7 @@ static Driver drivers[] = {
 	{ "uart",	"/boot/uartfs",	"uart" },
 	{ "gpio",	"/boot/gpiofs",	"gpio" },
 	{ "i2c",	"/boot/i2cfs",	"i2c" },
+	{ "usb",	"/boot/usbpower",	"usbpower" },
 	{ nil,	nil,	nil },
 };
 
@@ -31,6 +32,19 @@ static void
 say(char *s)
 {
 	write(1, s, strlen(s));
+}
+
+static void
+markdone(int failed)
+{
+	char *status = failed ? "fail\n" : "pass\n";
+	int fd;
+
+	fd = create("/mnt/o9drvman-status/complete", OWRITE, 0600);
+	if(fd >= 0){
+		write(fd, status, strlen(status));
+		close(fd);
+	}
 }
 
 static long
@@ -78,6 +92,12 @@ waitfor(char *path, int tries)
 }
 
 static int
+waitusbpower(int tries)
+{
+	return waitfor("/mnt/usbpower.ready", tries);
+}
+
+static int
 launch(Driver *d)
 {
 	char *argv[2];
@@ -89,6 +109,10 @@ launch(Driver *d)
 	if(pid < 0)
 		return -1;
 	if(pid == 0){
+		putenv("O9_DRIVER_NAME", d->class);
+		putenv("O9_DRIVER_GENERATION", "1");
+		putenv("O9_DRIVER_SLOT", "0");
+		putenv("O9_DRIVER_STATUS", "/mnt/o9drvman-status");
 		exec(argv[0], argv);
 		_exits("exec");
 	}
@@ -105,9 +129,13 @@ main(int argc, char **argv)
 	long n, m;
 	Dir d;
 	Driver *drv;
+	int failed = 0;
 
 	USED(argc);
 	USED(argv);
+	fd = create("/mnt/o9drvman-status", OREAD, DMDIR|0755);
+	if(fd >= 0)
+		close(fd);
 	npresent = 0;
 	fd = open("#P", OREAD);
 	if(fd < 0)
@@ -141,16 +169,24 @@ main(int argc, char **argv)
 		if(j == npresent && npresent < (int)(sizeof present / sizeof present[0]))
 			strcpy(present[npresent++], cls);
 	}
-	for(i = 0; i < npresent; i++){
-		drv = finddriver(present[i]);
+	for(i = 0; drivers[i].class != nil; i++){
+		for(j = 0; j < npresent; j++)
+			if(strcmp(present[j], drivers[i].class) == 0)
+				break;
+		if(j == npresent)
+			continue;
+		drv = &drivers[i];
 		snprint(srvpath, sizeof srvpath, "/srv/%s", drv->srv);
 		if(launch(drv) < 0){
 			say("HARVEY-ARM64 DRVMAN ");
 			say(drv->class);
 			say(" EXEC FAIL\n");
+			failed = 1;
 			continue;
 		}
-		if(waitfor(srvpath, 50) == 0){
+		j = strcmp(drv->class, "usb") == 0 ? waitusbpower(50) :
+		    waitfor(srvpath, 50);
+		if(j == 0){
 			say("HARVEY-ARM64 DRVMAN ");
 			say(drv->class);
 			say(" PASS\n");
@@ -158,7 +194,9 @@ main(int argc, char **argv)
 			say("HARVEY-ARM64 DRVMAN ");
 			say(drv->class);
 			say(" FAIL\n");
+			failed = 1;
 		}
 	}
-	exits(nil);
+	markdone(failed);
+	exits(failed ? "driver" : nil);
 }

@@ -65,6 +65,11 @@ applying a deadline tick, avoiding a false timeout when a valid report is
 already waiting. A report is removed only after a complete parse, so polling
 cannot discard a file while its writer is still filling it.
 
+The writer side is the shared `DriverHealth` component in `health.c`, linked
+into `uartfs`, `gpiofs`, `i2cfs`, and `o9xhci`. It owns the record format,
+ready marker, stop marker, and sequence numbering; drivers only report state
+and counters. See `doc/drivers/health-class.md`.
+
 The manager must run in the supervisor's private namespace; a read-only status
 service can be bound into broader namespaces later. AppUser authorization is
 still needed before any control view may be exported over a network.
@@ -72,10 +77,9 @@ still needed before any control view may be exported over a network.
 The VM integration test launches Objective-9C drivers, verifies that a child
 namespace mutation does not escape, reports ready and progress through the 9P
 control view, consumes clean and crashed exits, and exercises a
-crash/backoff/relaunch generation. It also launches the real `o9driverfs`,
-consumes its readiness and health markers, restarts a child reporting failed
-hardware, and stops and reaps the blocked 9P service. A noncooperative child
-verifies forced termination after the grace deadline.
+crash/backoff/relaunch generation. A faulty child reports failed hardware
+through the shared health protocol, and a noncooperative child verifies forced
+termination after the grace deadline.
 
 Build or test it with the generic Objective-9C C source support:
 

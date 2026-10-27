@@ -258,6 +258,44 @@ property_sequences(void)
 	}
 }
 
+static void
+test_format(void)
+{
+	char record[256];
+	const char *expected =
+		"o9health/1\t7\t3\t1234\thealthy\t10\t2\t9\t1\t2\t3\trestart\tio-timeout\n";
+	DrvHealthReport parsed;
+
+	CHECK(drvhealth_format(record, sizeof record, 7, 3, 1234,
+	                       DrvHealthHealthy, 10, 2, 9, 1, 2, 3,
+	                       DrvHealthRecommendRestart, "io-timeout") ==
+	      (int)strlen(expected));
+	CHECK(strcmp(record, expected) == 0);
+	CHECK(drv_health_parse(record, strlen(record), &parsed) == 0);
+	CHECK(parsed.generation == 7 && parsed.sequence == 3 &&
+	      parsed.timestamp_ms == 1234 && parsed.state == DrvHealthHealthy &&
+	      parsed.progress == 10 && parsed.inflight == 2 &&
+	      parsed.completed == 9 && parsed.errors == 1 &&
+	      parsed.timeouts == 2 && parsed.resets == 3 &&
+	      parsed.recommendation == DrvHealthRecommendRestart &&
+	      strcmp(parsed.error_code, "io-timeout") == 0);
+	CHECK(drvhealth_format(record, 16, 7, 3, 1234, DrvHealthHealthy,
+	                       10, 2, 9, 1, 2, 3,
+	                       DrvHealthRecommendRestart, "io-timeout") < 0);
+	CHECK(drvhealth_format(record, sizeof record, 0, 3, 1234,
+	                       DrvHealthHealthy, 0, 0, 0, 0, 0, 0,
+	                       DrvHealthRecommendNone, "none") < 0);
+	CHECK(drvhealth_format(record, sizeof record, 7, 3, 1234,
+	                       DrvHealthUnknown, 0, 0, 0, 0, 0, 0,
+	                       DrvHealthRecommendNone, "none") < 0);
+	CHECK(drvhealth_format(record, sizeof record, 7, 3, 1234,
+	                       DrvHealthHealthy, 0, 0, 0, 0, 0, 0,
+	                       DrvHealthRecommendNone, "bad code") < 0);
+	CHECK(drvhealth_format(record, sizeof record, 7, 3, 1234,
+	                       DrvHealthHealthy, 0, 0, 0, 0, 0, 0,
+	                       DrvHealthRecommendRestart, "none") > 0);
+}
+
 int
 main(int argc, char **argv)
 {
@@ -272,6 +310,7 @@ main(int argc, char **argv)
 	if(rununit){
 		test_parse();
 		test_accept();
+		test_format();
 	}
 	if(runproperty)
 		property_sequences();

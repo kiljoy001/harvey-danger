@@ -1,0 +1,121 @@
+// SPDX-License-Identifier: GPL-2.0-only
+function Probe() int64 {
+    int64 out;
+    print("audio: probe begin\n");
+    c {
+        extern int o9xhci_start(char *);
+        extern int o9xhci_stop(void);
+        extern uchar *o9xhci_request(uvlong, uchar *, int, int *);
+        extern void o9xhci_release(uvlong);
+        uchar request[32], *reply, *config;
+        uchar configbuf[4096];
+        int n, port, handle, total, off, len, i, frame, got;
+        unsigned iface, alt, ep, packet, interval, channels, subframe, bits, rate;
+
+        alarm(5000);
+        out = o9xhci_start("#X/0");
+        if(out != 0)
+            goto finish;
+        for(port = 1; port <= 8; port++){
+            memset(request, 0, sizeof request);
+            memmove(request, "XHC1", 4);
+            request[4] = 2; request[8] = port;
+            reply = o9xhci_request(1, request, 24, &n);
+            if(reply == nil || n != 16 || reply[0] != 0){
+                free(reply);
+                continue;
+            }
+            handle = reply[4]; free(reply);
+            request[4] = 4; request[8] = handle; request[16] = 9;
+            request[24] = 0x80; request[25] = 6; request[27] = 2;
+            request[30] = 9;
+            reply = o9xhci_request(1, request, 32, &n);
+            if(reply == nil || n < 25 || reply[0] != 9){
+                free(reply);
+                continue;
+            }
+            total = reply[18] | reply[19]<<8;
+            free(reply);
+            if(total < 9 || total > 4096)
+                continue;
+            request[16] = total;
+            request[17] = total>>8;
+            request[30] = total;
+            request[31] = total>>8;
+            reply = o9xhci_request(1, request, 32, &n);
+            if(reply == nil || n != 16+total){
+                free(reply);
+                continue;
+            }
+            config = reply + 16;
+            memmove(configbuf, config, total);
+            config = configbuf;
+
+            memset(request, 0, sizeof request);
+            memmove(request, "XHC1", 4);
+            request[4] = 5; request[8] = handle;
+            request[16] = total; request[17] = total>>8;
+            memmove(request+24, config, total);
+            free(reply);
+            reply = o9xhci_request(1, request, 24+total, &n);
+            print("audio: configure %d (%r)\n", reply == nil ? -999 : (int)(reply[0]|reply[1]<<8|reply[2]<<16|reply[3]<<24));
+            free(reply);
+
+            memset(request, 0, sizeof request);
+            memmove(request, "XHC1", 4);
+            request[4] = 19; request[16] = total; request[17] = total>>8;
+            memmove(request+24, config, total);
+            reply = o9xhci_request(1, request, 24+total, &n);
+            if(reply == nil || n != 16+36){
+                free(reply);
+                continue;
+            }
+            iface = reply[16]|reply[17]<<8|reply[18]<<16|reply[19]<<24;
+            alt = reply[20]|reply[21]<<8|reply[22]<<16|reply[23]<<24;
+            ep = reply[24]|reply[25]<<8|reply[26]<<16|reply[27]<<24;
+            packet = reply[28]|reply[29]<<8|reply[30]<<16|reply[31]<<24;
+            interval = reply[32]|reply[33]<<8|reply[34]<<16|reply[35]<<24;
+            channels = reply[36]|reply[37]<<8|reply[38]<<16|reply[39]<<24;
+            subframe = reply[40]|reply[41]<<8|reply[42]<<16|reply[43]<<24;
+            bits = reply[44]|reply[45]<<8|reply[46]<<16|reply[47]<<24;
+            rate = reply[48]|reply[49]<<8|reply[50]<<16|reply[51]<<24;
+            print("audio: UAC1 iface %d alt %d ep %02x packet %d interval %d %dch/%db/%dHz\n",
+                  iface, alt, ep, packet, interval, channels, bits, rate);
+            free(reply);
+
+            for(i = 0; i < 16; i++){
+                memset(request, 0, sizeof request);
+                memmove(request, "XHC1", 4);
+                request[4] = 18;
+                reply = o9xhci_request(1, request, 24, &n);
+                if(reply == nil || n != 20){ free(reply); break; }
+                frame = reply[16]|reply[17]<<8|reply[18]<<16|reply[19]<<24;
+                free(reply);
+                frame = (frame + 4) & 0x7ff;
+                memset(request, 0, sizeof request);
+                memmove(request, "XHC1", 4);
+                request[4] = 17; request[8] = handle; request[12] = ep;
+                request[16] = packet; request[17] = packet>>8;
+                request[24] = frame; request[25] = frame>>8;
+                reply = o9xhci_request(1, request, 32, &n);
+                got = reply == nil ? -1 : (int)(reply[0]|reply[1]<<8|reply[2]<<16|reply[3]<<24);
+                if(got > 0)
+                    print("audio: frame %d got %d %02ux %02ux\n", frame, got,
+                          reply[16], reply[17]);
+                free(reply);
+            }
+            o9xhci_release(1);
+            out = 0;
+            goto finish;
+        }
+        out = -1;
+    finish:
+        o9xhci_stop();
+        print("AUDIO %s\n", out == 0 ? "PASS" : "FAIL");
+    }
+    return out;
+}
+main {
+    Task<int64> probe = spawn Probe();
+    probe.await();
+}

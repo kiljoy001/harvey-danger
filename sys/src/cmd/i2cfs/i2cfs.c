@@ -17,6 +17,7 @@
 #include <fcall.h>
 #include <thread.h>
 #include <9p.h>
+#include "../o9drvman/health.h"
 #include <rockchip/rk356x.h>
 
 enum {
@@ -496,6 +497,7 @@ Srv fs = {
 void
 main(int argc, char **argv)
 {
+	DrvHealth *health;
 	File *d;
 	char name[16];
 	int i;
@@ -519,5 +521,18 @@ main(int argc, char **argv)
 	}
 
 	postmountsrv(&fs, "i2c", nil, MREPL | MCREATE);
+	health = drvhealth_openenv();
+	if(health != nil){
+		drvhealth_ready(health);
+		for(;;){
+			drvhealth_report(health, DrvHealthHealthy, 0, 0, 0,
+			                 0, 0, 0, DrvHealthRecommendNone, "none");
+			if(drvhealth_stopwait(health, 1000))
+				break;
+		}
+		drvhealth_close(health);
+	}else
+		for(;;)
+			sleep(1000);
 	exits(nil);
 }

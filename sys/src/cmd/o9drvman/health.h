@@ -86,4 +86,28 @@ DrvHealthDecision drv_health_accept(DrvHealthTracker *,
 const char *drv_health_state_name(DrvHealthState);
 const char *drv_health_recommendation_name(DrvHealthRecommendation);
 
+/* Canonical o9health/1 record formatter shared by writers and tests. */
+int drvhealth_format(char *out, size_t capacity, uint32_t generation,
+                     uint64_t sequence, uint64_t timestamp,
+                     DrvHealthState state, uint64_t progress,
+                     uint64_t inflight, uint64_t completed, uint64_t errors,
+                     uint64_t timeouts, uint64_t resets,
+                     DrvHealthRecommendation recommendation,
+                     const char *error_code);
+
+/* Shared writer used by every managed driver. */
+typedef struct DrvHealth DrvHealth;
+DrvHealth *drvhealth_open(const char *name, uint32_t generation,
+                          uint32_t slot, const char *statusdir);
+DrvHealth *drvhealth_openenv(void);
+int drvhealth_ready(DrvHealth *);
+int drvhealth_report(DrvHealth *, DrvHealthState state,
+                     uint64_t progress, uint64_t inflight,
+                     uint64_t completed, uint64_t errors,
+                     uint64_t timeouts, uint64_t resets,
+                     DrvHealthRecommendation recommendation,
+                     const char *error_code);
+int drvhealth_stopwait(DrvHealth *, int milliseconds);
+void drvhealth_close(DrvHealth *);
+
 #endif

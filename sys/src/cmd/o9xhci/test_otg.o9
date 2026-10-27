@@ -1,0 +1,45 @@
+// SPDX-License-Identifier: GPL-2.0-only
+function Probe() int64 {
+    int64 out;
+    c {
+        extern int o9xhci_start(char *);
+        extern int o9xhci_stop(void);
+        extern uchar *o9xhci_request(uvlong, uchar *, int, int *);
+        extern void o9xhci_release(uvlong);
+        uchar request[32], *reply;
+        int n, port, found = 0;
+        out = o9xhci_start("#X/1");
+        print("xhci-otg: startup %lld (%r)\n", out);
+        if(out == 0){
+            for(port = 1; port <= 8; port++){
+                memset(request, 0, sizeof request);
+                memmove(request, "XHC1", 4);
+                request[4] = 1; request[8] = port;
+                reply = o9xhci_request(1, request, 24, &n);
+                print("xhci-otg: port %d status %d\n", port,
+                      reply == nil || n < 20 ? -1 :
+                      (int)(reply[16]|reply[17]<<8|reply[18]<<16|reply[19]<<24));
+                free(reply);
+                memset(request, 0, sizeof request);
+                memmove(request, "XHC1", 4);
+                request[4] = 2; request[8] = port;
+                reply = o9xhci_request(1, request, 24, &n);
+                print("xhci-otg: attach port %d result %d\n", port,
+                      reply == nil ? -999 :
+                      (int)(reply[0]|reply[1]<<8|reply[2]<<16|reply[3]<<24));
+                if(reply != nil && n == 16 && reply[0] == 0)
+                    found++;
+                free(reply);
+            }
+            o9xhci_release(1);
+            out = o9xhci_stop();
+            if(found < 1) out = -1;
+        }
+        print("XHCI-OTG %s\n", out == 0 ? "PASS" : "FAIL");
+    }
+    return out;
+}
+main {
+    Task<int64> probe = spawn Probe();
+    probe.await();
+}

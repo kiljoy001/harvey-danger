@@ -6,6 +6,7 @@
 #include <fcall.h>
 #include <thread.h>
 #include <9p.h>
+#include "../o9drvman/health.h"
 
 enum {
 	Uartdw8250,	/* Synopsys DW 8250 / Rockchip rk3568 */
@@ -275,6 +276,7 @@ Srv fs = {
 void
 main(int argc, char **argv)
 {
+	DrvHealth *health;
 	u64 len;
 	void *map;
 
@@ -298,5 +300,18 @@ main(int argc, char **argv)
 	uartwrite("HARVEY-ARM64 UARTFS PASS\n",
 		sizeof("HARVEY-ARM64 UARTFS PASS\n") - 1);
 	postmountsrv(&fs, "uart", nil, MREPL | MCREATE);
+	health = drvhealth_openenv();
+	if(health != nil){
+		drvhealth_ready(health);
+		for(;;){
+			drvhealth_report(health, DrvHealthHealthy, 0, 0, 0,
+			                 0, 0, 0, DrvHealthRecommendNone, "none");
+			if(drvhealth_stopwait(health, 1000))
+				break;
+		}
+		drvhealth_close(health);
+	}else
+		for(;;)
+			sleep(1000);
 	exits(nil);
 }

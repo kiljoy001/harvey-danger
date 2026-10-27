@@ -1,0 +1,81 @@
+// SPDX-License-Identifier: GPL-2.0-only
+function Probe() int64 {
+    int64 out;
+    c {
+        extern int o9xhci_start(char *);
+        extern int o9xhci_stop(void);
+        extern uchar *o9xhci_request(uvlong, uchar *, int, int *);
+        extern void o9xhci_release(uvlong);
+        uchar request[32], *reply;
+        int n, port, handle, total, off, len, found = 0;
+        out = o9xhci_start("#X/0");
+        print("xhci-guest: startup %lld (%r)\n", out);
+        if(out == 0){
+            for(port = 1; port <= 8; port++){
+                memset(request, 0, sizeof request);
+                memmove(request, "XHC1", 4);
+                request[4] = 1; request[8] = port;
+                reply = o9xhci_request(1, request, 24, &n);
+                print("xhci-guest: port %d status %d\n", port,
+                      reply == nil || n < 20 ? -1 :
+                      (int)(reply[16]|reply[17]<<8|reply[18]<<16|reply[19]<<24));
+                free(reply);
+                memset(request, 0, sizeof request);
+                memmove(request, "XHC1", 4);
+                request[4] = 2; request[8] = port;
+                reply = o9xhci_request(1, request, 24, &n);
+                print("xhci-guest: attach port %d result %d\n", port, reply == nil ? -999 : (int)(reply[0]|reply[1]<<8|reply[2]<<16|reply[3]<<24));
+                if(reply != nil && n == 16 && reply[0] == 0){
+                    handle = reply[4]; free(reply);
+                    request[4] = 4; request[8] = handle; request[16] = 18;
+                    request[24] = 0x80; request[25] = 6; request[27] = 1; request[30] = 18;
+                    reply = o9xhci_request(1, request, 32, &n);
+                    print("xhci-guest: descriptor result %d completion %d bytes %d\n",
+                          reply == nil ? -999 : (int)(reply[0]|reply[1]<<8|reply[2]<<16|reply[3]<<24),
+                          reply == nil ? -1 : reply[12], n);
+                    if(reply != nil && n == 34 && reply[0] == 18 && reply[17] == 1){
+                        print("xhci-guest: port %d device USB %x.%02x VID %04x PID %04x EP0 %d PASS\n",
+                              port, reply[19], reply[18], reply[24]|reply[25]<<8,
+                              reply[26]|reply[27]<<8, reply[23]);
+                        found++;
+                        free(reply);
+                        request[27]=2; request[16]=9; request[30]=9;
+                        reply=o9xhci_request(1,request,32,&n);
+                        if(reply != nil && n==25 && reply[0]==9){
+                            total=reply[18]|reply[19]<<8;
+                            free(reply); reply=nil;
+                            if(total>=9 && total<=4096){
+                                request[16]=total; request[17]=total>>8;
+                                request[30]=total; request[31]=total>>8;
+                                reply=o9xhci_request(1,request,32,&n);
+                                print("xhci-guest: configuration wanted %d received %d\n",total,n-16);
+                                if(reply != nil && n==16+total){
+                                    for(off=9;off+2<=total;off+=len){
+                                        len=reply[16+off];
+                                        if(len<2 || len>total-off) break;
+                                        if(reply[17+off]==4 && len>=9)
+                                            print("xhci-guest: interface %d alt %d class %d subclass %d endpoints %d\n",
+                                                  reply[18+off],reply[19+off],reply[21+off],reply[22+off],reply[20+off]);
+                                        if(reply[17+off]==5 && len>=7)
+                                            print("xhci-guest: endpoint %02x type %d packet %d interval %d\n",
+                                                  reply[18+off],reply[19+off]&3,reply[20+off]|reply[21+off]<<8,reply[22+off]);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                free(reply);
+            }
+            o9xhci_release(1);
+            out = o9xhci_stop();
+            if(found < 1) out = -1;
+        }
+        print("XHCI-GUEST %s\n", out == 0 ? "PASS" : "FAIL");
+    }
+    return out;
+}
+main {
+    Task<int64> probe = spawn Probe();
+    probe.await();
+}
