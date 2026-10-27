@@ -73,6 +73,8 @@ Mntrpc *mntralloc(Chan *, u32);
 i32 mntrdwr(int, Chan *, void *, i32, i64);
 int mntrpcread(Mnt *, Mntrpc *);
 void mountio(Mnt *, Mntrpc *);
+void mountiostart(Mnt *, Mntrpc *);
+void mountiofinish(Mnt *, Mntrpc *);
 void mountmux(Mnt *, Mntrpc *);
 void mountrpc(Mnt *, Mntrpc *);
 int rpcattn(void *);
@@ -701,15 +703,21 @@ mntwrite(Chan *c, void *buf, i32 n, i64 off)
 	return mntrdwr(Twrite, c, buf, n, off);
 }
 
+enum {
+	MNT_PIPELINE = 4,
+};
+
 i32
 mntrdwr(int type, Chan *c, void *buf, i32 n, i64 off)
 {
 	Proc *up = externup();
 	Mnt *mnt;
-	Mntrpc *r;
+	Mntrpc *rpcs[MNT_PIPELINE];
+	u32 req_lens[MNT_PIPELINE];
 	char *uba;
-	int cache;
-	u32 cnt, nr, nreq;
+	int cache, inflight, head, tail;
+	u32 cnt, nr, nreq, chunk;
+	i64 cur_off;
 
 	mnt = mntchk(c);
 	uba = buf;
@@ -717,39 +725,110 @@ mntrdwr(int type, Chan *c, void *buf, i32 n, i64 off)
 	cache = c->flag & CCACHE;
 	if(c->qid.type & QTDIR)
 		cache = 0;
-	for(;;){
-		r = mntralloc(c, mnt->msize);
-		if(waserror()){
+
+	chunk = mnt->msize - IOHDRSZ;
+	if((c->qid.type & QTDIR) || n <= chunk){
+		for(;;){
+			Mntrpc *r = mntralloc(c, mnt->msize);
+			if(waserror()){
+				mntfree(r);
+				nexterror();
+			}
+			r->request.type = type;
+			r->request.fid = c->fid;
+			r->request.offset = off;
+			r->request.data = uba;
+			nr = n;
+			if(nr > chunk)
+				nr = chunk;
+			r->request.count = nr;
+			mountrpc(mnt, r);
+			nreq = r->request.count;
+			nr = r->reply.count;
+			if(nr > nreq)
+				nr = nreq;
+
+			if((type == Tread) || (type == Treaddir))
+				r->b = bl2mem((u8 *)uba, r->b, nr);
+			else if(cache)
+				mfcwrite(c, (u8 *)uba, nr, off);
+
+			poperror();
 			mntfree(r);
-			nexterror();
+			off += nr;
+			uba += nr;
+			cnt += nr;
+			n -= nr;
+			if(nr != nreq || n == 0 || up->nnote)
+				break;
 		}
-		r->request.type = type;
-		r->request.fid = c->fid;
-		r->request.offset = off;
-		r->request.data = uba;
-		nr = n;
-		if(nr > mnt->msize - IOHDRSZ)
-			nr = mnt->msize - IOHDRSZ;
-		r->request.count = nr;
-		mountrpc(mnt, r);
-		nreq = r->request.count;
-		nr = r->reply.count;
-		if(nr > nreq)
-			nr = nreq;
+		return cnt;
+	}
 
-		if((type == Tread) || (type == Treaddir))
-			r->b = bl2mem((u8 *)uba, r->b, nr);
-		else if(cache)
-			mfcwrite(c, (u8 *)uba, nr, off);
+	inflight = 0;
+	head = 0;
+	tail = 0;
+	cur_off = off;
 
-		poperror();
-		mntfree(r);
-		off += nr;
-		uba += nr;
-		cnt += nr;
-		n -= nr;
-		if(nr != nreq || n == 0 || up->nnote)
+	while(n > 0 || inflight > 0){
+		while(n > 0 && inflight < MNT_PIPELINE && !up->nnote){
+			Mntrpc *r = mntralloc(c, mnt->msize);
+			nr = n > chunk ? chunk : n;
+			r->request.type = type;
+			r->request.fid = c->fid;
+			r->request.offset = cur_off;
+			r->request.data = uba + (cur_off - off);
+			r->request.count = nr;
+
+			rpcs[tail] = r;
+			req_lens[tail] = nr;
+			tail = (tail + 1) % MNT_PIPELINE;
+			inflight++;
+			cur_off += nr;
+			n -= nr;
+
+			mountiostart(mnt, r);
+		}
+
+		if(inflight == 0)
 			break;
+
+		{
+			Mntrpc *r = rpcs[head];
+			nreq = req_lens[head];
+			head = (head + 1) % MNT_PIPELINE;
+			inflight--;
+
+			if(waserror()){
+				mntfree(r);
+				while(inflight > 0){
+					Mntrpc *rem = rpcs[head];
+					head = (head + 1) % MNT_PIPELINE;
+					inflight--;
+					mountiofinish(mnt, rem);
+					mntfree(rem);
+				}
+				nexterror();
+			}
+
+			mountiofinish(mnt, r);
+			nr = r->reply.count;
+			if(nr > nreq)
+				nr = nreq;
+
+			if((type == Tread) || (type == Treaddir))
+				r->b = bl2mem((u8 *)(uba + (r->request.offset - off)), r->b, nr);
+			else if(cache)
+				mfcwrite(c, (u8 *)(uba + (r->request.offset - off)), nr, r->request.offset);
+
+			poperror();
+			mntfree(r);
+			cnt += nr;
+
+			if(nr != nreq || up->nnote){
+				n = 0;
+			}
+		}
 	}
 	return cnt;
 }

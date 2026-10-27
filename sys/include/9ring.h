@@ -79,6 +79,7 @@ struct P9Channel {
 #define P9_HOST_SLOTS 8
 #define P9_HOST_MSIZE 32768
 #define P9_HOST_REGION_SIZE (2 * 1024 * 1024)
+#define P9_HOST_DOORBELL_PORT 0x9009
 typedef struct P9HostBuffer P9HostBuffer;
 struct P9HostBuffer {
 	u8 request[P9_HOST_MSIZE];

@@ -26,6 +26,7 @@ char s[] = "#s";
 char srv[] = "/srv";
 char env[] = "/env";
 char v9p[] = "#9/0";
+char nhost[] = "/n/host";
 char ringp[] = "#~/host";
 char root[] = "/";
 char readme[] = "/README.md";
@@ -122,6 +123,18 @@ startboot(char *argv0, char **argv)
 			puts(2, "init: mount failed: ");
 			puts(2, buf);
 			puts(2, "\n");
+		}
+	}
+
+	/* #9 is also the /n/host browser gateway; / stays independent. */
+	{
+		int hfd = open(v9p, ORDWR);
+		if(hfd >= 0){
+			if(mount(hfd, -1, nhost, MREPL, "", 'M') < 0)
+				puts(1, "init: mount #9/0 at /n/host failed\n");
+			else
+				puts(1, "init: mounted #9/0 at /n/host\n");
+			close(hfd);
 		}
 	}
 

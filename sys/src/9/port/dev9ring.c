@@ -124,7 +124,7 @@ static void
 hostpause(Rendez *r, int spins)
 {
 	Proc *up = externup();
-	if(spins < 50){
+	if(spins < 200){
 		microdelay(2);
 		return;
 	}
@@ -1113,6 +1113,9 @@ hostwrite(void *va, i32 n)
 	spins = 0;
 	while(p9_tring_submit(&hostshared->channel.t_ring, &slot) < 0)
 		hostpause(&hostdev.r_server, spins++);
+#if defined(__x86_64__) || defined(__i386__)
+	outb(P9_HOST_DOORBELL_PORT, i);
+#endif
 	wakeup(&hostdev.r_client);
 	poperror();
 	qunlock(&hosttxql);
