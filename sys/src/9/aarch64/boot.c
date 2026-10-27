@@ -5,6 +5,8 @@
 #include "dat.h"
 #include "fns.h"
 #include "fdt.h"
+#include "vop2.h"
+#include "rkiommu.h"
 #include "phys.h"
 #include "mmu.h"
 #include "user.h"
@@ -574,6 +576,16 @@ arm64kernelstart(Fdtinfo *info)
 		pgfree(p);
 	}
 	arm64uartputs("HARVEY-ARM64 PAGE-ALLOC PASS\n");
+	/*
+	 * VOP2 scanout and DW-HDMI.  The display engine needs the IOMMU
+	 * table and a physical framebuffer, so this has to run after the
+	 * page allocator, not with the other device-tree probes.
+	 */
+	rkiommuinit(info);
+	if(vop2init(info) < 0)
+		arm64uartputs("HARVEY-ARM64 DISPLAY FAIL\n");
+	else
+		arm64uartputs("HARVEY-ARM64 DISPLAY PASS\n");
 	arm64clockready();
 	startworker(1);
 	startworker(2);
