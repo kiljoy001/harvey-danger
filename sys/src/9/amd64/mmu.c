@@ -400,6 +400,7 @@ mmuput(usize va, Page *pg, u32 attr)
 		panic("mmuput: PML3 is nil");
 	if(pgsz == 1 * GiB){
 		*p3e = entry | PtePS;
+		invlpg(va);
 		splx(pl);
 		DBG("cpu%d: up %#p new 1GiB pte %#p = %#llx\n",
 		    machp()->machno, up, p3e, *p3e);
@@ -413,6 +414,7 @@ mmuput(usize va, Page *pg, u32 attr)
 		panic("mmuput: PML2 is nil");
 	if(pgsz == 2 * MiB){
 		*p2e = entry | PtePS;
+		invlpg(va);
 		splx(pl);
 		DBG("cpu%d: up %#p new 2MiB pte %#p = %#llx\n",
 		    machp()->machno, up, p2e, *p2e);

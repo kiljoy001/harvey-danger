@@ -96,7 +96,12 @@ punlock(Pool *p)
 {
 	Private *pv;
 	pv = p->private;
-	if(pv->pid != _tos->prof.pid)
+	/* pv->pid==0 can mean the lock was taken just after exec/rfork,
+	   before the first trap updated _tos->prof.pid from 0 (or from
+	   the parent's pid) to this process's pid, with sbrk's trap
+	   performing that update inside the locked region.  That is a
+	   stale-owner record, not lock misuse. */
+	if(pv->pid != 0 && pv->pid != _tos->prof.pid)
 		abort();
 	pv->pid = 0;
 	unlock(&pv->lk);

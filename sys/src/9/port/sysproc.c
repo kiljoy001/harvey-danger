@@ -459,6 +459,7 @@ execac(Ar0 *ar0, int flags, char *ufile, char **argv)
 	 * First, the top-of-stack structure.
 	 */
 	tos = (Tos *)(USTKTOP - sizeof(Tos));
+	tos->prof.pid = tos->nixpid = up->pid;
 	tos->cyclefreq = sys->cyclefreq;
 	cycles((u64 *)&tos->pcycles);
 	tos->pcycles = -tos->pcycles;

@@ -208,6 +208,26 @@ _fmtdispatch(Fmt *f, const void *fmt, int isrunes)
 				f->flags |= FmtLeft;
 			}
 			goto numflag;
+		case 'u': {
+			/*
+			 * 'u' is a verb in Harvey (%u) but a flag in
+			 * 9front format strings (%llud, as used by wc
+			 * and du).  If an integer verb follows, take
+			 * it as the unsigned flag; otherwise fall
+			 * through and let _ifmt treat it as the verb.
+			 */
+			Rune peek;
+			if(isrunes)
+				peek = *(Rune*)fmt;
+			else
+				peek = *(u8*)fmt;
+			if(peek == 'd' || peek == 'x' || peek == 'X' ||
+			   peek == 'o' || peek == 'b'){
+				f->flags |= FmtUnsigned;
+				continue;
+			}
+			break;
+		}
 		}
 		n = (*fmtfmt(r))(f);
 		if(n < 0){

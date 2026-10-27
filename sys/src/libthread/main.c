@@ -112,6 +112,8 @@ _schedfork(Proc *p)
 		*mainp = p;	/* write to stack, so local to proc */
 		longjmp(_mainjmp, 1);
 	default:
+		if(pid > 0)
+			p->pid = pid;
 		return pid;
 	}
 }
