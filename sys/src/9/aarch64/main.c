@@ -15,6 +15,7 @@ void arm64kernelstart(Fdtinfo *);
 int arm64contextprobe(void);
 extern char arm64vectors[];
 extern char _start[], __image_end[];
+extern u64 arm64dmabase, arm64dmasize;
 
 enum {
 	Uartdr = 0x00 / 4,
@@ -215,6 +216,21 @@ arm64main(usize dtb)
 	info.reserve[info.nreserve].base = blocked;
 	info.reserve[info.nreserve++].size = 4096;
 #endif
+	/*
+	 * Reserve a contiguous DMA arena for user-space controllers.  It is
+	 * excluded from the page allocator and published as #P/dma.
+	 */
+	if(info.nreserve < Maxfdtreserve && info.rambase+info.ramsize > info.rambase &&
+	   info.ramsize > arm64dmasize + 2*1024*1024){
+		u64 base = (info.rambase + info.ramsize - arm64dmasize) &
+		           ~((u64)(2*1024*1024 - 1));
+		if(base > (u64)__image_end &&
+		   base+arm64dmasize > base && base+arm64dmasize <= info.rambase+info.ramsize){
+			info.reserve[info.nreserve].base = base;
+			info.reserve[info.nreserve++].size = arm64dmasize;
+			arm64dmabase = base;
+		}
+	}
 	if(arm64physinit(&info, dtb, size) < 0 ||
 	   (page0 = arm64physpage()) == 0 ||
 	   (page1 = arm64physpage()) == 0 ||

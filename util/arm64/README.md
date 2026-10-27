@@ -108,8 +108,8 @@ passed the early memory, MMU, timer, EL0 isolation, scheduler, root walk, and
 `#~` boot checks. A later router-hosted TFTP boot of the same Image and the
 full OS DTB also passed every driver probe: `DRVMAN` enumerated the on-board
 I2C, UART, GPIO, MMC, GMAC, USB, PCIe, HDMI, and codec nodes; `uartfs`,
-`drvman`, `o9driverfs`, and `hubfs` reached `PASS`, and the driver manager
-reported its `i2c` and `gpio` backends `PASS`. The image now embeds Plan 9
+`drvman`, and `hubfs` reached `PASS`, and the driver manager reported its `i2c`
+and `gpio` backends `PASS`. The image now embeds Plan 9
 `rc`, its `rcmain`, and a small `/boot/echo`; `init` forks `rc` on the console
 after the driver services start and relaunches it after `exit`. UART input is
 sampled by the ARM64 clock callback and fed through the console line editor.
@@ -266,19 +266,19 @@ loaded as ELF. A second, normally segmented bootstrap process calls
 `exec("/boot/init")`; the shared ELF loader replaces its address space, and the
 filesystem-backed ARM64 init image is demand-paged through tracked per-process
 page tables. The same build cross-compiles the Objective-9C runtime and Harvey
-support libraries, then packages ARM64 `o9drvman` and `o9driverfs` ELF images
-as `/boot/o9drvman` and `/boot/o9driverfs`. Init does not launch them yet.
+support libraries, then packages the ARM64 `o9drvman`, `o9xhci`, and
+`usbpower` ELF images as `/boot/o9drvman`, `/boot/o9xhci`, and
+`/boot/usbpower`. Init launches the C `drvman` on the board; the driver manager
+starts `usbpower` after `gpiofs` and before any USB controller service.
 The shared `#9` driver uses PCI on amd64 and device-tree discovered virtio-MMIO
 on ARM64. Both legacy MMIO v1 and modern v2 work in QEMU `virt`. The ARM64
 transport currently polls for replies; device interrupts are not routed yet.
 `#~` provides named local IPC on ARM64 and has a tagged request/response boot
-check. Device services belong in the Objective-9C
-`sys/src/cmd/o9driverfs` user-space 9P filesystem, with backends supplied by a
-trusted host or VM transport. That service currently proxies named backend
-files and is tested in the x86 microVM. The ARM64 user-mode UART probe proves
-the privilege boundary needed by a driver server, but it is deliberately not
-the final Objective-9C `o9uartfs`: a restricted resource-grant interface is
-still required.
+check. Device services belong in user-space 9P servers. Each driver uses the
+shared `DriverHealth` writer for readiness, health, and stop markers and
+receives hardware access through `#P` resource grants. The ARM64 user-mode UART
+probe proves the privilege boundary needed by a driver server; a restricted
+resource-grant interface is still required.
 
 The build uses `clang-23` if present because this host's default `clang` only
 contains the x86 backend. Kernel sources and integer/text kernel libc use

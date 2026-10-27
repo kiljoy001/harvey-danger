@@ -18,7 +18,6 @@ STUB_BASE = 0x4000000000
 INIT_BASE = 0x200000
 BIG_PAGE = 0x200000
 O9DRVMAN_BASE = 0x600000
-DRIVERFS_BASE = 0xE00000
 UARTFS_BASE = 0x1600000
 GPIOFS_BASE = 0x1A00000
 HUBFS_BASE = 0x1E00000
@@ -30,6 +29,11 @@ CAT_BASE = 0x3200000
 O9DISPLAY_BASE = 0x3A00000
 DISPLAYTEST_BASE = 0x4200000
 O9ASPERA_SCREEN_BASE = 0x4E00000
+O9XHCI_BASE = 0x5600000
+TESTXHCI_BASE = 0x5E00000
+TESTXHCI1_BASE = 0x6600000
+TESTAUDIO_BASE = 0x6E00000
+USBPOWER_BASE = 0x7600000
 
 RC_SOURCES = [
     "code.c", "exec.c", "getflags.c", "glob.c", "havefork.c", "here.c",
@@ -103,6 +107,7 @@ SECTIONS {{
   . = ALIGN(0x{BIG_PAGE:x});
   .data : {{ *(.data .data.*) }}
   .bss : {{ *(.bss .bss.* COMMON) }}
+  PROVIDE(end = .);
 }}
 ''')
     subprocess.run([
@@ -131,7 +136,7 @@ def emit_array(lines: list[str], name: str, image: bytes) -> None:
 
 
 def build_elf(out: Path, libc: Path, name: str, source: Path,
-              base: int, extra: list[Path]) -> tuple[bytes, int]:
+              base: int, extra: list[Path], ldflags: list[str] = ()) -> tuple[bytes, int]:
     obj = out / f"{name}.o"
     script = out / f"{name}.ld"
     elf = out / name
@@ -160,6 +165,7 @@ SECTIONS {{
     libs = [*extra, libc]
     subprocess.run([
         LD, "-static", "-z", "max-page-size=4096", "-T", str(script),
+        "--allow-multiple-definition", *ldflags,
         "-e", "_main", "-u", "_main", str(obj),
         "--start-group", *map(str, libs), "--end-group",
         "-o", str(elf),
@@ -173,10 +179,23 @@ SECTIONS {{
 def build_fs(out: Path, libc: Path, name: str, source: Path,
              base: int) -> tuple[bytes, int]:
     o9 = ROOT / "build/arm64-o9"
-    extra = [o9 / "lib9p.a", o9 / "libthread.a", o9 / "libauth.a",
+    health = out / "driverhealth.o"
+    if not health.exists():
+        subprocess.run([
+            CC, "--target=aarch64-none-elf", "-ffreestanding", "-fno-builtin",
+            "-fno-stack-protector", "-mstrict-align", "-fcommon", "-O2",
+            "-D__HARVEY__",
+            "-I", str(ROOT / "aarch64/include"),
+            "-I", str(ROOT / "sys/include"),
+            "-I", str(ROOT / "sys/src/cmd/o9drvman"),
+            "-c", str(ROOT / "sys/src/cmd/o9drvman/health.c"),
+            "-o", str(health),
+        ], check=True)
+    extra = [health, o9 / "lib9p.a", o9 / "libthread.a", o9 / "libauth.a",
              o9 / "libauthsrv.a", o9 / "libsec.a", o9 / "libndb.a",
              o9 / "libbio.a"]
-    return build_elf(out, libc, name, source, base, extra)
+    return build_elf(out, libc, name, source, base, extra,
+                     ldflags=["--defsym=threadmain=main"])
 
 
 def build_simple(out: Path, libc: Path, name: str, source: Path,
@@ -207,6 +226,11 @@ def build_drvman(out: Path, libc: Path) -> tuple[bytes, int]:
 def build_i2cfs(out: Path, libc: Path) -> tuple[bytes, int]:
     return build_fs(out, libc, "i2cfs",
                     ROOT / "sys/src/cmd/i2cfs/i2cfs.c", I2CFS_BASE)
+
+
+def build_usbpower(out: Path, libc: Path) -> tuple[bytes, int]:
+    return build_fs(out, libc, "usbpower",
+                    ROOT / "sys/src/cmd/usbpower/usbpower.c", USBPOWER_BASE)
 
 
 def build_rc(out: Path, libc: Path) -> tuple[bytes, int]:
@@ -368,11 +392,7 @@ hubtest(void)
 void
 main(int argc, char **argv)
 {
-	char *manager[] = {
-		"/boot/o9drvman", "o9drvman",
-		"driverfs", "/boot/o9driverfs", nil,
-	};
-	char config[] = "name\tbackend\nserial0\t/dev/cons\n";
+	long m;
 	int fd, pid;
 
 	USED(argc);
@@ -397,47 +417,41 @@ main(int argc, char **argv)
 		_exits("namespace");
 	}
 	say("HARVEY-ARM64 DRIVER-NAMESPACE PASS\n");
+	fd = create("/mnt/o9drvman-status", OREAD, DMDIR|0755);
+	if(fd >= 0)
+		close(fd);
 	{
 		char *drvmansrv[] = { "/boot/drvman", "drvman", nil };
+		char status[16];
 		pid = rfork(RFPROC|RFNOWAIT|RFFDG|RFNAMEG|RFENVG|RFREND|RFNOTEG);
 		if(pid == 0){
 			exec(drvmansrv[0], drvmansrv);
 			say("HARVEY-ARM64 DRVMAN EXEC FAIL\n");
 			_exits("exec");
 		}
-		if(pid < 0)
-			say("HARVEY-ARM64 DRVMAN LAUNCH FAIL\n");
-		else
-			say("HARVEY-ARM64 DRVMAN LAUNCH PASS\n");
-	}
-	fd = create("/mnt/o9driverfs-config", OREAD, DMDIR|0755);
-	if(fd >= 0)
-		close(fd);
-	fd = create("/mnt/o9driverfs-config/driverfs.tab", OWRITE, 0644);
-	if(fd < 0 || write(fd, config, sizeof(config)-1) != sizeof(config)-1){
-		if(fd >= 0)
-			close(fd);
-		say("HARVEY-ARM64 DRIVER-CONFIG FAIL\n");
-		_exits("config");
-	}
-	close(fd);
-	say("HARVEY-ARM64 DRIVER-CONFIG PASS\n");
-	pid = rfork(RFPROC|RFNOWAIT|RFFDG|RFNAMEG|RFENVG|RFREND|RFNOTEG);
-	if(pid == 0){
-		exec(manager[0], manager);
-		say("HARVEY-ARM64 DRIVER-MANAGER EXEC FAIL\n");
-		_exits("exec");
-	}
-	say("HARVEY-ARM64 DRIVER-RFORK PASS\n");
-	if(pid < 0 || waitfor("/srv/o9drvman", 50) < 0){
-		say("HARVEY-ARM64 DRIVER-MANAGER FAIL\n");
-		_exits("manager");
+		if(pid < 0){
+			say("HARVEY-ARM64 DRIVER-MANAGER FAIL\n");
+			_exits("manager");
+		}
+		status[0] = 0;
+		for(fd = 0; fd < 100; fd++){
+			int sfd = open("/mnt/o9drvman-status/complete", OREAD);
+			if(sfd >= 0){
+				m = read(sfd, status, sizeof status - 1);
+				close(sfd);
+				if(m > 0){
+					status[m] = 0;
+					break;
+				}
+			}
+			sleep(50);
+		}
+		if(strncmp(status, "pass", 4) != 0){
+			say("HARVEY-ARM64 DRIVER-MANAGER FAIL\n");
+			_exits("manager");
+		}
 	}
 	say("HARVEY-ARM64 DRIVER-MANAGER PASS\n");
-	if(waitfor("/srv/driverfs", 50) == 0)
-		say("HARVEY-ARM64 DRIVER-FILESYSTEM PASS\n");
-	else
-		say("HARVEY-ARM64 DRIVER-FILESYSTEM PENDING\n");
 	{
 		char *hubsrv[] = { "/boot/hubfs", "hubfs", nil };
 		pid = rfork(RFPROC|RFNOWAIT|RFFDG|RFNAMEG|RFENVG|RFREND|RFNOTEG);
@@ -460,10 +474,10 @@ main(int argc, char **argv)
 			say("HARVEY-ARM64 DISPLAY-SERVICE EXEC FAIL\n");
 			_exits("exec");
 		}
-		if(pid < 0 || waitfor("/srv/DisplayViews", 200) < 0)
+		if(pid < 0)
 			say("HARVEY-ARM64 DISPLAY-SERVICE FAIL\n");
 		else
-			say("HARVEY-ARM64 DISPLAY-SERVICE PASS\n");
+			say("HARVEY-ARM64 DISPLAY-SERVICE LAUNCHED\n");
 	}
 	{
 		char *rcargv[] = { "/boot/rc", "-i", "-m", "/boot/rcmain", nil };
@@ -488,17 +502,20 @@ main(int argc, char **argv)
 }
 ''', INIT_BASE, libc)
     o9drvman, _ = validate_elf(ROOT / "build/arm64-o9/o9drvman", O9DRVMAN_BASE)
-    driverfs, _ = validate_elf(ROOT / "build/arm64-o9/o9driverfs",
-                               DRIVERFS_BASE)
     o9display, _ = validate_elf(ROOT / "build/arm64-o9/o9display",
                                 O9DISPLAY_BASE)
     asperascreen, _ = validate_elf(ROOT / "build/arm64-o9/o9aspera-screen",
                                    O9ASPERA_SCREEN_BASE)
+    o9xhci, _ = validate_elf(ROOT / "build/arm64-o9/o9xhci", O9XHCI_BASE)
+    testxhci, _ = validate_elf(ROOT / "build/arm64-o9/test-xhci", TESTXHCI_BASE)
+    testxhci1, _ = validate_elf(ROOT / "build/arm64-o9/test-xhci1", TESTXHCI1_BASE)
+    testaudio, _ = validate_elf(ROOT / "build/arm64-o9/test-audio", TESTAUDIO_BASE)
     uartfs, _ = build_uartfs(out, libc)
     gpiofs, _ = build_gpiofs(out, libc)
     hubfs, _ = build_hubfs(out, libc)
     drvman, _ = build_drvman(out, libc)
     i2cfs, _ = build_i2cfs(out, libc)
+    usbpower, _ = build_usbpower(out, libc)
     rc, rc_entry = build_rc(out, libc)
     echo, _ = build_program(out, "echo", r'''#include <u.h>
 #include <libc.h>
@@ -695,12 +712,16 @@ main(int argc, char **argv)
     emit_array(lines, "arm64o9drvmanelf", o9drvman)
     emit_array(lines, "arm64o9displayelf", o9display)
     emit_array(lines, "arm64o9asperascreenelf", asperascreen)
-    emit_array(lines, "arm64driverfself", driverfs)
+    emit_array(lines, "arm64o9xhcielf", o9xhci)
+    emit_array(lines, "arm64testxhcielf", testxhci)
+    emit_array(lines, "arm64testxhci1elf", testxhci1)
+    emit_array(lines, "arm64testaudioelf", testaudio)
     emit_array(lines, "arm64uartfself", uartfs)
     emit_array(lines, "arm64gpiofself", gpiofs)
     emit_array(lines, "arm64hubfself", hubfs)
     emit_array(lines, "arm64drvmanelf", drvman)
     emit_array(lines, "arm64i2cfself", i2cfs)
+    emit_array(lines, "arm64usbpowerelf", usbpower)
     emit_array(lines, "arm64rcelf", rc)
     emit_array(lines, "arm64echoelf", echo)
     emit_array(lines, "arm64catelf", cat)

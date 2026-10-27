@@ -70,11 +70,6 @@ SERVICES = {
         ],
         "base": 0x600000,
     },
-    "o9driverfs": {
-        "source": ROOT / "sys/src/cmd/o9driverfs/service.o9",
-        "extra": [],
-        "base": 0xE00000,
-    },
     "o9display": {
         "source": ROOT / "sys/src/cmd/o9display/service.o9",
         "extra": [],
@@ -89,6 +84,42 @@ SERVICES = {
         "source": ROOT / "sys/src/cmd/o9aspera/screen.o9",
         "extra": [],
         "base": 0x4E00000,
+    },
+    "o9xhci": {
+        "source": ROOT / "sys/src/cmd/o9xhci/service.o9",
+        "extra": [
+            ROOT / "sys/src/cmd/o9xhci/xhci.c",
+            ROOT / "sys/src/cmd/o9xhci/binding.c",
+            ROOT / "sys/src/cmd/o9drvman/health.c",
+        ],
+        "base": 0x5600000,
+    },
+    "test-xhci": {
+        "source": ROOT / "sys/src/cmd/o9xhci/test_guest.o9",
+        "extra": [
+            ROOT / "sys/src/cmd/o9xhci/xhci.c",
+            ROOT / "sys/src/cmd/o9xhci/binding.c",
+            ROOT / "sys/src/cmd/o9drvman/health.c",
+        ],
+        "base": 0x5E00000,
+    },
+    "test-xhci1": {
+        "source": ROOT / "sys/src/cmd/o9xhci/test_otg.o9",
+        "extra": [
+            ROOT / "sys/src/cmd/o9xhci/xhci.c",
+            ROOT / "sys/src/cmd/o9xhci/binding.c",
+            ROOT / "sys/src/cmd/o9drvman/health.c",
+        ],
+        "base": 0x6600000,
+    },
+    "test-audio": {
+        "source": ROOT / "sys/src/cmd/o9xhci/test_audio.o9",
+        "extra": [
+            ROOT / "sys/src/cmd/o9xhci/xhci.c",
+            ROOT / "sys/src/cmd/o9xhci/binding.c",
+            ROOT / "sys/src/cmd/o9drvman/health.c",
+        ],
+        "base": 0x6E00000,
     },
 }
 

@@ -146,7 +146,7 @@ arm64mmubuild(Fdtinfo *info)
 	u64 rootpa, l2pa, ramend, pa, start, end;
 	u64 *root, *l2;
 	u32 i, j, k, regions;
-	Fdtvirtio device[Maxfdtvirtio+7+2*Maxfdtdev];
+	Fdtvirtio device[Maxfdtvirtio+20+2*Maxfdtdev];
 
 	if(info->rambase == 0 || info->ramsize == 0 ||
 	   (info->rambase | info->ramsize) & (L2blocksz-1))
@@ -197,6 +197,19 @@ arm64mmubuild(Fdtinfo *info)
 	/* PMU CRU and power-domain/status blocks are not represented by a class. */
 	device[regions++] = (Fdtvirtio){0xfdd20000ULL, Pagesz};
 	device[regions++] = (Fdtvirtio){0xfdd90000ULL, Pagesz};
+	/* USB/DWC3 transport and the PHY/GRF/GPIO blocks it programs. */
+	device[regions++] = (Fdtvirtio){0xfd000000ULL, 0x100000};
+	device[regions++] = (Fdtvirtio){0xfcc00000ULL, 0x100000};
+	device[regions++] = (Fdtvirtio){0xfd800000ULL, 0x100000};
+	device[regions++] = (Fdtvirtio){0xfdca0000ULL, 0x8000};
+	device[regions++] = (Fdtvirtio){0xfdca8000ULL, 0x8000};
+	device[regions++] = (Fdtvirtio){0xfe8a0000ULL, 0x10000};
+	device[regions++] = (Fdtvirtio){0xfe8b0000ULL, 0x10000};
+	device[regions++] = (Fdtvirtio){0xfe830000ULL, 0x100};
+	device[regions++] = (Fdtvirtio){0xfdd60000ULL, 0x100};
+	device[regions++] = (Fdtvirtio){0xfdc20000ULL, 0x10000};
+	device[regions++] = (Fdtvirtio){0xfdc50000ULL, 0x1000};
+	device[regions++] = (Fdtvirtio){0xfdc80000ULL, 0x1000};
 #ifdef ARM64_RK3566_NPU_PROBE
 	/* Temporary register probe; a user-space driver will own these later. */
 	device[regions++] = (Fdtvirtio){0xfdd90000ULL, Pagesz};

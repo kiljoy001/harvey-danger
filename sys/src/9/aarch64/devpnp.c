@@ -17,6 +17,9 @@ enum {
 	Qcompat,
 	Qclass,
 	Qconsole,
+	Qdma,
+	Qdmabase,
+	Qdmasize,
 };
 
 #define TYPE(x) ((int)((x)->qid.path & 0xf))
@@ -26,6 +29,7 @@ enum {
 static Fdtdev pnpdev[Maxfdtdev];
 static u32 npnpdev;
 static u64 consolebase;
+extern u64 arm64dmabase, arm64dmasize;
 
 void
 arm64pnpinit(Fdtinfo *info)
@@ -59,7 +63,13 @@ pnpgen(Chan *c, char *name, Dirtab *tab, int ntab, int s, Dir *dp)
 			devdir(c, q, "#P", 0, eve, DMDIR|0555, dp);
 			return 1;
 		}
-		if(s < 0 || s >= (int)npnpdev)
+		if(arm64dmasize != 0 && s == (int)npnpdev){
+			q.path = QPATH(npnpdev, Qdma);
+			q.type = QTDIR;
+			devdir(c, q, "dma", 0, eve, DMDIR|0555, dp);
+			return 1;
+		}
+		if(s < 0 || s > (int)npnpdev || (s == (int)npnpdev && arm64dmasize == 0))
 			return -1;
 		d = &pnpdev[s];
 		q.path = QPATH(s, Qdevdir);
@@ -108,6 +118,26 @@ pnpgen(Chan *c, char *name, Dirtab *tab, int ntab, int s, Dir *dp)
 			break;
 		}
 		return 1;
+	case Qdma:
+		if(s == DEVDOTDOT){
+			q.path = QPATH(0, Qtopdir);
+			q.type = QTDIR;
+			devdir(c, q, "#P", 0, eve, DMDIR|0555, dp);
+			return 1;
+		}
+		if(s == 0){
+			q.path = QPATH(npnpdev, Qdmabase);
+			q.type = QTFILE;
+			devdir(c, q, "base", 0, eve, 0444, dp);
+			return 1;
+		}
+		if(s == 1){
+			q.path = QPATH(npnpdev, Qdmasize);
+			q.type = QTFILE;
+			devdir(c, q, "size", 0, eve, 0444, dp);
+			return 1;
+		}
+		return -1;
 	}
 	return -1;
 }
@@ -167,6 +197,16 @@ pnpread(Chan *c, void *a, i32 n, i64 off)
 
 	if(c->qid.type & QTDIR)
 		return devdirread(c, a, n, nil, 0, pnpgen);
+	if(TYPE(c) == Qdmabase){
+		char dbuf[64];
+		snprint(dbuf, sizeof dbuf, "0x%llx\n", arm64dmabase);
+		return readstr(off, a, n, dbuf);
+	}
+	if(TYPE(c) == Qdmasize){
+		char dbuf[64];
+		snprint(dbuf, sizeof dbuf, "0x%llx\n", arm64dmasize);
+		return readstr(off, a, n, dbuf);
+	}
 	dev = DEV(c);	if(dev < 0 || dev >= (int)npnpdev)
 		error(Ebadarg);
 	d = &pnpdev[dev];

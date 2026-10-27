@@ -5,8 +5,6 @@
 #include "dat.h"
 #include "fns.h"
 #include "fdt.h"
-#include "rkiommu.h"
-#include "vop2.h"
 #include "phys.h"
 #include "mmu.h"
 #include "user.h"
@@ -72,6 +70,7 @@ consoleuartinit(Fdtinfo *info)
 extern void arm64clockready(void);
 extern void arm64virtio9pconfigure(Fdtinfo *);
 extern void arm64pnpinit(Fdtinfo *);
+extern u64 arm64dmabase, arm64dmasize;
 extern Dev rootdevtab;
 extern Dev virtio9pdevtab;
 extern Dev ringdevtab;
@@ -360,6 +359,15 @@ physseginit(Fdtinfo *info)
 		if(addphysseg(&seg) == 0)
 			n++;
 	}
+	if(arm64dmabase != 0 && arm64dmasize != 0){
+		memset(&seg, 0, sizeof seg);
+		seg.attr = SG_PHYSICAL | SG_READ | SG_WRITE;
+		seg.name = "dma";
+		seg.pa = arm64dmabase;
+		seg.size = arm64dmasize / BIGPGSZ;
+		if(addphysseg(&seg) == 0)
+			n++;
+	}
 	return n;
 }
 
@@ -484,12 +492,19 @@ arm64kernelstart(Fdtinfo *info)
 	addbootfile("o9display", (u8 *)arm64o9displayelf, sizeof(arm64o9displayelf));
 	addbootfile("o9aspera-screen", (u8 *)arm64o9asperascreenelf,
 		    sizeof(arm64o9asperascreenelf));
-	addbootfile("o9driverfs", (u8 *)arm64driverfself, sizeof(arm64driverfself));
+	addbootfile("o9xhci", (u8 *)arm64o9xhcielf, sizeof(arm64o9xhcielf));
+	addbootfile("test-xhci", (u8 *)arm64testxhcielf,
+		    sizeof(arm64testxhcielf));
+	addbootfile("test-xhci1", (u8 *)arm64testxhci1elf,
+		    sizeof(arm64testxhci1elf));
+	addbootfile("test-audio", (u8 *)arm64testaudioelf,
+		    sizeof(arm64testaudioelf));
 	addbootfile("uartfs", (u8 *)arm64uartfself, sizeof(arm64uartfself));
 	addbootfile("gpiofs", (u8 *)arm64gpiofself, sizeof(arm64gpiofself));
 	addbootfile("hubfs", (u8 *)arm64hubfself, sizeof(arm64hubfself));
 	addbootfile("drvman", (u8 *)arm64drvmanelf, sizeof(arm64drvmanelf));
 	addbootfile("i2cfs", (u8 *)arm64i2cfself, sizeof(arm64i2cfself));
+	addbootfile("usbpower", (u8 *)arm64usbpowerelf, sizeof(arm64usbpowerelf));
 	addbootfile("rc", (u8 *)arm64rcelf, sizeof(arm64rcelf));
 	addbootfile("echo", (u8 *)arm64echoelf, sizeof(arm64echoelf));
 	addbootfile("cat", (u8 *)arm64catelf, sizeof(arm64catelf));
@@ -507,14 +522,6 @@ arm64kernelstart(Fdtinfo *info)
 		pgfree(p);
 	}
 	arm64uartputs("HARVEY-ARM64 PAGE-ALLOC PASS\n");
-	rkiommuinit(info);
-	vop2init(info);
-#ifdef RKIOMMU_SELFTEST
-	if(rkiommuptest() == 0)
-		arm64uartputs("HARVEY-ARM64 RKIOMMU-TABLE PASS\n");
-	else
-		arm64uartputs("HARVEY-ARM64 RKIOMMU-TABLE FAIL\n");
-#endif
 	arm64clockready();
 	startworker(1);
 	startworker(2);

@@ -166,8 +166,14 @@ static const Fdtclass classtab[] = {
 	{ "rockchip,rk3568-i2s-tdm", Fdtclassi2s },
 	{ "rockchip,rk3568-cru", Fdtclasscru },
 	{ "rockchip,rk3568-pmucru", Fdtclasscru },
+	{ "rockchip,rk3568-pmu", Fdtclassgrf },
 	{ "rockchip,rk3568-grf", Fdtclassgrf },
 	{ "rockchip,rk3568-pmugrf", Fdtclassgrf },
+	{ "rockchip,rk3568-usb2phy-grf", Fdtclassgrf },
+	{ "rockchip,rk3568-pipe-grf", Fdtclassgrf },
+	{ "rockchip,rk3568-pipe-phy-grf", Fdtclassgrf },
+	{ "rockchip,rk3568-usb2phy", Fdtclassusb },
+	{ "rockchip,rk3568-naneng-combphy", Fdtclassusb },
 	{ "rockchip,rk3568-rknpu", Fdtclassnpu },
 	{ "rockchip,rk3568-gpu", Fdtclassgpu },
 	{ "arm,mali-bifrost", Fdtclassgpu },
@@ -183,6 +189,7 @@ static const Fdtclass classtab[] = {
 	{ "rockchip,rk3568-iommu", Fdtclassiommu },
 	{ "rockchip,iommu-v2", Fdtclassiommu },
 	{ "rockchip,iommu", Fdtclassiommu },
+	{ "rockchip,rk3568-power-controller", Fdtclasspower },
 };
 
 static u32
@@ -210,7 +217,7 @@ fdtclassname(u32 clas)
 		"none", "uart", "i2c", "spi", "gpio", "pwm", "gmac", "mmc",
 		"usb", "pcie", "saradc", "tsadc", "wdt", "i2s", "cru", "grf",
 		"npu", "gpu", "vop", "hdmi", "dsi", "edp", "sfc", "vpu",
-		"iommu",
+		"iommu", "power",
 	};
 
 	if(clas >= sizeof(name)/sizeof(name[0]))

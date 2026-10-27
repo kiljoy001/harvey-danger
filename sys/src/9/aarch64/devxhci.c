@@ -169,6 +169,7 @@ dwc3init(void)
 	/* USB2 PHY0 host port: clock output enabled (0), phy_sus 0x1d2. */
 	wm(grf0, 0x0008, 1U<<4, 0);
 	wm(grf0, 0x0004, 0x1ff, 0x1d2);
+	wm(grf0, 0x0080, 1U<<1, 1U<<1);
 	microdelay(2000);
 
 	combphyinit();
@@ -290,6 +291,7 @@ ohciinit(u64 base, int n)
 	/* rk3568_phy_cfgs: PHY1 power-on = 0x1d2, suspend = 0x1d1. */
 	wm(grf1, 0x0004, 0x1ff, 0x1d2);
 	wm(grf1, 0x0000, 0x1ff, 0x1d2);
+	wm(grf1, 0x0080, (1U<<0)|(1U<<1), (1U<<0)|(1U<<1));
 	microdelay(2000);
 
 	rev = o[0/4];
@@ -387,9 +389,10 @@ dwc3init_otg0(void)
 	wm(cru, 0x328, (1U<<0)|(1U<<1)|(1U<<8)|(1U<<9)|(1U<<10), 0);
 	/* Deassert SRST_USB3OTG0 (bit 4). */
 	wm(cru, 0x424, 1U<<4, 0);
-	/* USB2 PHY0 OTG port: clock output enabled (0), phy_sus cleared. */
+	/* USB2 PHY0 OTG port: clock output enabled (0), phy_sus power-on. */
 	wm(grf0, 0x0008, 1U<<4, 0);
 	wm(grf0, 0x0000, 0x1ff, 0);
+	wm(grf0, 0x0080, 1U<<0, 1U<<0);
 	microdelay(2000);
 
 	v = dwc[0xc110/4];

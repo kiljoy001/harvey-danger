@@ -10,13 +10,12 @@
 extern Dev rootdevtab, consdevtab, envdevtab, pipedevtab, procdevtab;
 extern Dev mntdevtab, srvdevtab, dupdevtab, capdevtab, segmentdevtab;
 extern Dev ramdevtab, ringdevtab, virtio9pdevtab, pnpdevtab;
-extern Dev vopdevtab;
 
 Dev *devtab[] = {
 	&rootdevtab, &consdevtab, &envdevtab, &pipedevtab,
 	&procdevtab, &mntdevtab, &srvdevtab, &dupdevtab,
 	&capdevtab, &segmentdevtab, &ramdevtab, &ringdevtab,
-	&virtio9pdevtab, &pnpdevtab, &vopdevtab,
+	&virtio9pdevtab, &pnpdevtab,
 	nil,
 };
 
@@ -39,6 +38,9 @@ int nphysseg = 128;
 int cpuserver = 1;
 /* The host ring is supplied by the VM transport when one is available. */
 u64 ringhostpa;
+/* Reserved physically contiguous DMA arena, published through #P/dma. */
+u64 arm64dmabase;
+u64 arm64dmasize = 8*1024*1024;
 int printallsyscalls;
 u32 kerndate = KERNDATE;
 Conf conf;
