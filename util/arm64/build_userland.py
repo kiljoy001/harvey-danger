@@ -9,6 +9,9 @@ import struct
 import subprocess
 import sys
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import buildcache
+
 
 ROOT = Path(__file__).resolve().parents[2]
 CC = os.environ.get("ARM64_CC") or shutil.which("clang-23") or "clang"
@@ -291,6 +294,18 @@ SECTIONS {{
     return image, entry
 
 
+def userland_signature() -> str:
+    files = [Path(__file__).resolve()]
+    for p in (ROOT / "sys/src/cmd").rglob("*"):
+        if p.is_file() and p.suffix in (".c", ".h", ".o9", ".y", ".s", ".json"):
+            files.append(p)
+    for p in (ROOT / "sys/src/libString").rglob("*"):
+        if p.is_file() and p.suffix in (".c", ".h", ".json"):
+            files.append(p)
+    files.sort()
+    return buildcache.signature(["build_userland"], files)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--output", type=Path, required=True)
@@ -299,6 +314,11 @@ def main() -> None:
                     str(ROOT / "util/arm64/build_o9_services.py")],
                    check=True, stdout=subprocess.DEVNULL)
     out = args.output.parent / "userland"
+    stamp = args.output.parent / "userland.sig"
+    sig = userland_signature()
+    if args.output.exists() and buildcache.up_to_date(stamp, sig):
+        print("ARM64 userland up to date")
+        return
     shutil.rmtree(out, ignore_errors=True)
     out.mkdir(parents=True)
     libc = ROOT / "build/arm64-libc/libc.a"
@@ -728,6 +748,7 @@ main(int argc, char **argv)
     emit_array(lines, "arm64displaytestelf", displaytest)
     emit_array(lines, "arm64rcmain", rcmain.encode())
     args.output.write_text("\n".join(lines))
+    buildcache.record(stamp, sig)
 
 
 if __name__ == "__main__":

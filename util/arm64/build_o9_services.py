@@ -8,6 +8,9 @@ import shutil
 import subprocess
 import sys
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import buildcache
+
 
 ROOT = Path(__file__).resolve().parents[2]
 O9_ROOT = Path(os.environ.get("O9_REPO", ROOT.parent / "objective-9c")).resolve()
@@ -137,31 +140,33 @@ def display_path(path: Path) -> str:
         return str(path)
 
 
-def compile_source(source: Path, obj: Path, extra_includes=()) -> None:
+def compile_source(source: Path, obj: Path, extra_includes=()) -> bool:
     include_flags = []
     for include in [*INCLUDES, source.parent, *extra_includes]:
         include_flags.extend(("-I", str(include)))
-    result = subprocess.run(
-        [CC, *FLAGS, *include_flags, "-c", str(source), "-o", str(obj)],
-        text=True, capture_output=True,
-    )
-    if result.returncode:
+    try:
+        return buildcache.run_cached(
+            [CC, *FLAGS, *include_flags, "-c", str(source), "-o", str(obj)],
+            [obj], sources=[source])
+    except RuntimeError as error:
         raise RuntimeError(f"compiling {display_path(source)} failed:\n"
-                           f"{result.stderr}")
+                           f"{error}")
 
 
-def archive(name: str, sources: list[Path]) -> Path:
+def archive(name: str, sources: list[Path]) -> tuple[Path, bool]:
     directory = OUT / name
-    directory.mkdir()
+    directory.mkdir(exist_ok=True)
     objects = []
+    changed = False
     for index, source in enumerate(sources):
         obj = directory / f"{index:03d}-{source.stem}.o"
-        compile_source(source, obj)
+        changed |= compile_source(source, obj)
         objects.append(obj)
     destination = OUT / f"{name}.a"
-    run([AR, "rcs", str(destination), *map(str, objects)])
-    print(f"ARM64 {name}: {len(objects)} objects")
-    return destination
+    if changed or not destination.exists():
+        run([AR, "rcs", str(destination), *map(str, objects)])
+        print(f"ARM64 {name}: {len(objects)} objects")
+    return destination, changed
 
 
 def manifest_sources(manifest: Path) -> list[Path]:
@@ -175,7 +180,11 @@ def manifest_sources(manifest: Path) -> list[Path]:
     return sources
 
 
-def transpile(source: Path, destination: Path) -> None:
+def transpile(source: Path, destination: Path) -> bool:
+    stamp = destination.with_suffix(destination.suffix + ".sig")
+    sig = buildcache.signature([str(O9C)], [source])
+    if destination.exists() and buildcache.up_to_date(stamp, sig):
+        return False
     environment = os.environ.copy()
     environment.setdefault("ASAN_OPTIONS", "detect_leaks=0")
     with destination.open("w") as output:
@@ -185,6 +194,8 @@ def transpile(source: Path, destination: Path) -> None:
     if result.returncode:
         raise RuntimeError(f"transpiling {display_path(source)} failed:\n"
                            f"{result.stderr}")
+    buildcache.record(stamp, sig)
+    return True
 
 
 def linker_script(path: Path, base: int) -> None:
@@ -205,20 +216,23 @@ SECTIONS {{
 """)
 
 
-def build_service(name: str, settings: dict, libraries: list[Path]) -> Path:
+def build_service(name: str, settings: dict, libraries: list[Path],
+                  relink: bool = False) -> tuple[Path, bool]:
     directory = OUT / f"{name}-objects"
-    directory.mkdir()
+    directory.mkdir(exist_ok=True)
     generated = directory / f"{name}.o9.c"
-    transpile(settings["source"], generated)
+    changed = transpile(settings["source"], generated)
     sources = [generated, *settings["extra"]]
     objects = []
     for index, source in enumerate(sources):
         obj = directory / f"{index:02d}-{source.stem}.o"
-        compile_source(source, obj, [settings["source"].parent])
+        changed |= compile_source(source, obj, [settings["source"].parent])
         objects.append(obj)
     script = directory / f"{name}.ld"
     linker_script(script, settings["base"])
     destination = OUT / name
+    if not changed and not relink and destination.exists():
+        return destination, False
     command = [
         LD, "-static", "-z", "max-page-size=4096", "-T", str(script),
         "-e", "_main", "-u", "_main", *map(str, objects),
@@ -230,22 +244,30 @@ def build_service(name: str, settings: dict, libraries: list[Path]) -> Path:
         raise RuntimeError(f"linking {name} failed:\n{result.stderr}")
     run([STRIP, "--strip-all", str(destination)])
     print(f"ARM64 {name}: {destination.stat().st_size} bytes")
-    return destination
+    return destination, True
 
 
 def main() -> None:
     if not O9C.is_file():
         raise SystemExit(f"Objective-9C compiler not found: {O9C}")
-    shutil.rmtree(OUT, ignore_errors=True)
-    OUT.mkdir(parents=True)
+    OUT.mkdir(parents=True, exist_ok=True)
     run([sys.executable, str(ROOT / "util/arm64/build_libc.py")])
-    libraries = [archive("libo9", LIBO9_SOURCES)]
-    libraries.extend(archive(name, manifest_sources(manifest))
-                     for name, manifest in LIBRARIES.items())
+    libraries = []
+    relink = False
+    for name, sources in (("libo9", LIBO9_SOURCES),):
+        path, changed = archive(name, sources)
+        libraries.append(path)
+        relink |= changed
+    for name, manifest in LIBRARIES.items():
+        path, changed = archive(name, manifest_sources(manifest))
+        libraries.append(path)
+        relink |= changed
     libraries.append(ROOT / "build/arm64-libc/libc.a")
+    built = 0
     for name, settings in SERVICES.items():
-        build_service(name, settings, libraries)
-    print("ARM64 Objective-9C services PASS")
+        _, changed = build_service(name, settings, libraries, relink)
+        built += changed
+    print(f"ARM64 Objective-9C services PASS ({built} rebuilt)")
 
 
 if __name__ == "__main__":

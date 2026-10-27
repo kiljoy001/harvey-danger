@@ -12,6 +12,10 @@ import os
 import shutil
 import subprocess
 import sys
+from concurrent.futures import ThreadPoolExecutor
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import buildcache
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -39,21 +43,27 @@ def build_klibc(flags: list[str]) -> Path:
     # Arithmetic routines with a floating-point ABI still need FP enabled and
     # state management before they can safely be called from kernel context.
     libcflags = [flag for flag in flags if flag != "-D__HARVEY__"]
+    changed = False
     for source_name in entries:
         source = libc / source_name
         obj = OUT / ("libc_" + source_name.replace("/", "_") + ".o")
-        result = subprocess.run([CC, *libcflags, "-I", str(libc),
-                                 "-c", str(source), "-o", str(obj)],
-                                text=True, capture_output=True)
-        if result.returncode and "requires 'double' type support" in result.stderr:
+        try:
+            changed |= buildcache.run_cached(
+                [CC, *libcflags, "-I", str(libc), "-c", str(source),
+                 "-o", str(obj)], [obj], sources=[source])
+        except RuntimeError as error:
+            if "requires 'double' type support" not in str(error):
+                failures.append((source_name, str(error)))
+                continue
             fpflags = [flag for flag in libcflags if flag != "-mgeneral-regs-only"]
-            result = subprocess.run([CC, *fpflags, "-I", str(libc),
-                                     "-c", str(source), "-o", str(obj)],
-                                    text=True, capture_output=True)
-        if result.returncode:
-            failures.append((source_name, result.stderr))
-        else:
-            objects.append(obj)
+            try:
+                changed |= buildcache.run_cached(
+                    [CC, *fpflags, "-I", str(libc), "-c", str(source),
+                     "-o", str(obj)], [obj], sources=[source])
+            except RuntimeError as again:
+                failures.append((source_name, str(again)))
+                continue
+        objects.append(obj)
     if failures:
         print(f"AArch64 kernel libc compile: {len(objects)} passed, "
               f"{len(failures)} failed")
@@ -61,7 +71,8 @@ def build_klibc(flags: list[str]) -> Path:
             print(f"\n{name}:\n{error}")
         raise SystemExit(1)
     archive = OUT / "klibc.a"
-    subprocess.run([AR, "rcs", str(archive), *map(str, objects)], check=True)
+    if changed or not archive.exists():
+        subprocess.run([AR, "rcs", str(archive), *map(str, objects)], check=True)
     return archive
 
 
@@ -77,16 +88,18 @@ def build_library(name: str, flags: list[str]) -> Path:
                 "-I", str(ROOT / "aarch64/include"),
                 "-I", str(ROOT / "sys/include"),
                 "-I", str(ROOT / "sys/src/libc")]
+    changed = False
     for source_name in entries:
         source = directory / source_name
         obj = OUT / (name + "_" + source_name.replace("/", "_") + ".o")
-        result = subprocess.run([CC, *libflags, "-I", str(directory),
-                                 "-c", str(source), "-o", str(obj)],
-                                text=True, capture_output=True)
-        if result.returncode:
-            failures.append((source_name, result.stderr))
-        else:
-            objects.append(obj)
+        try:
+            changed |= buildcache.run_cached(
+                [CC, *libflags, "-I", str(directory), "-c", str(source),
+                 "-o", str(obj)], [obj], sources=[source])
+        except RuntimeError as error:
+            failures.append((source_name, str(error)))
+            continue
+        objects.append(obj)
     if failures:
         print(f"AArch64 {name} compile: {len(objects)} passed, "
               f"{len(failures)} failed")
@@ -94,7 +107,8 @@ def build_library(name: str, flags: list[str]) -> Path:
             print(f"\n{source_name}:\n{error}")
         raise SystemExit(1)
     archive = OUT / f"k{name}.a"
-    subprocess.run([AR, "rcs", str(archive), *map(str, objects)], check=True)
+    if changed or not archive.exists():
+        subprocess.run([AR, "rcs", str(archive), *map(str, objects)], check=True)
     return archive
 
 
@@ -152,17 +166,27 @@ def main() -> None:
     sources.append(ROOT / "sys/src/9/port/dev9ring.c")
     sources.append(ROOT / "sys/src/9/port/devvirtio9p.c")
     sources.append(OUT / "systab.c")
-    objects = []
-    failures = []
-    for source in sources:
+    def compile_one(source: Path):
         label = source.relative_to(ROOT) if source.is_relative_to(ROOT) else source.name
         obj = OUT / (str(label).replace("/", "_") + ".o")
-        result = subprocess.run([CC, *flags, "-c", str(source), "-o", str(obj)],
-                                text=True, capture_output=True)
-        if result.returncode:
-            failures.append((str(label), result.stderr))
-        else:
-            objects.append(obj)
+        try:
+            run = buildcache.run_cached([CC, *flags, "-c", str(source),
+                                         "-o", str(obj)], [obj],
+                                        sources=[source])
+            return str(label), obj, None, run
+        except RuntimeError as error:
+            return str(label), obj, str(error), False
+
+    objects = []
+    failures = []
+    relink = False
+    with ThreadPoolExecutor(max_workers=os.cpu_count() or 4) as pool:
+        for label, obj, error, ran in pool.map(compile_one, sources):
+            if error is not None:
+                failures.append((label, error))
+            else:
+                objects.append(obj)
+                relink |= ran
     if failures:
         print(f"AArch64 full kernel compile: {len(objects)} passed, {len(failures)} failed")
         for label, error in failures:
@@ -174,6 +198,11 @@ def main() -> None:
     klibsec = build_library("libsec", flags)
     elf = OUT / "harvey.elf"
     image = OUT / "harvey.img"
+    if not relink and elf.exists():
+        newest = max((p.stat().st_mtime_ns for p in objects), default=0)
+        if elf.stat().st_mtime_ns >= newest:
+            print(f"AArch64 kernel up to date: {elf}")
+            return
     subprocess.run([LD, "--error-limit=0", "-T", str(ARCH / "virt.ld"),
                     *map(str, objects), "--start-group",
                     str(klibc), str(klibip), str(klibsec), "--end-group",

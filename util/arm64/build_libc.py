@@ -8,6 +8,9 @@ import shutil
 import subprocess
 import sys
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import buildcache
+
 
 ROOT = Path(__file__).resolve().parents[2]
 LIBC = ROOT / "sys/src/libc"
@@ -30,9 +33,8 @@ def configured_sources() -> list[Path]:
 def main() -> None:
     objects = OUT / "objects"
     wrappers = OUT / "9syscall"
-    shutil.rmtree(OUT, ignore_errors=True)
-    objects.mkdir(parents=True)
-    wrappers.mkdir()
+    objects.mkdir(parents=True, exist_ok=True)
+    wrappers.mkdir(parents=True, exist_ok=True)
     subprocess.run([
         sys.executable, str(ROOT / "util/9vm/mksys.py"),
         "-mode=syscallfiles", "-arch=aarch64", "-o", str(wrappers),
@@ -52,22 +54,27 @@ def main() -> None:
                     wrappers):
         flags.extend(("-I", str(include)))
     built = []
+    changed = False
     failures = []
     for index, source in enumerate(sources):
         obj = objects / f"{index:03d}-{source.parent.name}-{source.stem}.o"
-        result = subprocess.run([CC, *flags, "-c", str(source), "-o", str(obj)],
-                                text=True, capture_output=True)
-        if result.returncode:
-            failures.append((source, result.stderr))
-        else:
-            built.append(obj)
+        try:
+            if buildcache.run_cached([CC, *flags, "-c", str(source),
+                                      "-o", str(obj)], [obj],
+                                     sources=[source]):
+                changed = True
+        except RuntimeError as error:
+            failures.append((source, str(error)))
+            continue
+        built.append(obj)
     if failures:
         print(f"ARM64 libc compile: {len(built)} passed, {len(failures)} failed")
         for source, error in failures:
             print(f"\n{source.relative_to(ROOT)}:\n{error}")
         raise SystemExit(1)
     archive = OUT / "libc.a"
-    subprocess.run([AR, "rcs", str(archive), *map(str, built)], check=True)
+    if changed or not archive.exists():
+        subprocess.run([AR, "rcs", str(archive), *map(str, built)], check=True)
     print(f"ARM64 libc: {len(built)} objects PASS")
     print(archive)
 
