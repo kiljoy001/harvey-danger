@@ -219,6 +219,43 @@ waitusbpower(void)
 	return -1;
 }
 
+static void
+board_phy_state(void)
+{
+	volatile u32 *p, *g;
+	char name[64];
+
+	p = mapreg(0xfe8a0000ULL, 0x10000, name, sizeof name);
+	g = mapreg(0xfdca0000ULL, 0x8000, name, sizeof name);
+	if(p == nil || g == nil)
+		return;
+	fprint(2, "o9xhci: phy0 otg %ux host %ux tune %ux ls %ux utmi %ux\n",
+	       p[0x0000/4], p[0x0004/4], p[0x0030/4], p[0x0040/4],
+	       p[0x00c0/4]);
+	fprint(2, "o9xhci: grf0 port0 %ux port1 %ux flt %ux\n",
+	       g[0x0000/4], g[0x0004/4], g[0x0040/4]);
+	segdetach((void*)p);
+	segdetach((void*)g);
+}
+
+static void
+dump_ports(void)
+{
+	unsigned p;
+	Xword s;
+	int failed;
+
+	/* A previous attach may have poisoned the controller; the port
+	 * registers are still readable and are what we need here. */
+	failed = controller.failed;
+	controller.failed = 0;
+	for(p=1; p<=controller.ports; p++)
+		if(xhci_port(&controller, p, &s)==0)
+			fprint(2,"o9xhci: port %ud status %ux pls %ud speed %ud ccs %ud ped %ud\n",
+			       p, s, (s>>5)&15, (s>>10)&15, s&1, (s>>1)&1);
+	controller.failed = failed;
+}
+
 static int
 board_start(void)
 {
@@ -282,9 +319,12 @@ board_start(void)
 		fprint(2,"o9xhci: xhci_init: failed %d (completion %u)\n",
 		       (int)controller.failed,controller.completion);
 		boardmode=0;
+		board_phy_state();
 		return -1;
 	}
 	fprint(2,"o9xhci: xhci_init: done\n");
+	dump_ports();
+	board_phy_state();
 	return 0;
 }
 
@@ -338,7 +378,11 @@ o9xhci_start(char *path)
 	int n,r=-1;
 	fprint(2,"o9xhci: start path %s\n",path == nil ? "(nil)" : path);
 	qlock(&controllerlock);
-	if(fd>=0 || boardmode){ qunlock(&controllerlock); return -1; }
+	if(fd>=0 || boardmode){
+		dump_ports();
+		qunlock(&controllerlock);
+		return 0;
+	}
 	if(strncmp(path,"#X/",3)!=0 || path[3]<'0' || path[3]>'7' || path[4])
 		goto board;
 	fprint(2,"o9xhci: start: open %s\n",path);

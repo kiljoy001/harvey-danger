@@ -14,6 +14,14 @@
 #define TRY(e) do { int xr = (e); if(xr < 0) return xr; } while(0)
 
 enum { Run=1, Reset=2, Halted=1, Notready=1<<11, Changed=0x00fe0000 };
+/* PORTSC fields.  Rw1s/Rw1c must never be written back as set by accident. */
+enum {
+	Pp	= 1<<9,
+	Ppc	= 1<<4,		/* HCCPARAMS1: port power control implemented */
+	Pls	= 0xf<<5,
+	Rw1s	= (1<<4)|(1<<31),
+	Rw1c	= 0x00fe0000,
+};
 
 static void
 zero(void *v, unsigned n)
@@ -385,27 +393,51 @@ powerports(Xhci *x)
 {
 	Xword v;
 	unsigned i;
+
+	/*
+	 * HCCPARAMS1.PPC == 0 means port power is not controllable: PP reads
+	 * as 1 and VBUS comes from the board.  Writing PORTSC in that case
+	 * only disturbs a link the controller is already training.
+	 */
+	if((x->hcc & Ppc) == 0){
+		TRACE(x, "xhci: ports always powered\n");
+		return 0;
+	}
 	for(i=1; i<=x->ports; i++){
 		TRY(rd(x, x->op+0x400+(i-1)*16, &v));
-		TRY(wr(x, x->op+0x400+(i-1)*16, (v&0x0e00c3e0U)|BIT(9)));
+		if((v & Pp) == 0)
+			TRY(wr(x, x->op+0x400+(i-1)*16,
+			       (v & ~(Rw1s|Rw1c|Pls)) | Pp));
+		TRACE(x, "xhci: port %u power %x\n", i, v);
 	}
 	return 0;
 }
 static int
 settleports(Xhci *x)
 {
-	unsigned i, j, connected;
+	unsigned i, j, training;
 	Xword v;
-	/* DWC3 links can appear after HCRST/port power. Give all ports one
-	 * shared settling interval, rather than one second per empty port. */
-	for(j=0; j<100; j++){
-		connected=0;
+
+	/*
+	 * A port that just saw a connect performs its own reset and leaves
+	 * Polling when the device answers.  Give that up to a second before
+	 * any software reset; a USB2 attach debounce is part of it.
+	 */
+	for(j=0; j<200; j++){
+		training = 0;
 		for(i=1; i<=x->ports; i++){
 			TRY(xhci_port(x, i, &v));
-			connected+=v&1;
+			if((v & 1) && !(v & 2) && ((v>>5)&15) == 7)
+				training++;
 		}
-		if(connected==x->ports) break;
-		x->io.delay(x->io.arg, 10);
+		if(training == 0)
+			break;
+		x->io.delay(x->io.arg, 5);
+	}
+	for(i=1; i<=x->ports; i++){
+		TRY(xhci_port(x, i, &v));
+		TRACE(x, "xhci: port %u settled %x pls %u speed %u\n",
+		      i, v, (v>>5)&15, (v>>10)&15);
 	}
 	return 0;
 }
@@ -422,7 +454,8 @@ xhci_init(Xhci *x, const Xio *io)
 	x->io=*io;
 	TRACE(x, "xhci: init begin\n");
 	TRY(capabilities(x,&hcc));
-	TRACE(x, "xhci: capabilities done\n");
+	x->hcc = hcc;
+	TRACE(x, "xhci: capabilities done hcc %x\n", hcc);
 	TRY(resetcontroller(x,hcc));
 	TRACE(x, "xhci: resetcontroller done\n");
 	TRY(allocrings(x));
@@ -513,17 +546,30 @@ static int
 resetport(Xhci *x,unsigned port,unsigned *speed)
 {
 	Xword v,reg;
+	unsigned j;
+
+	reg = x->op+0x400+(port-1)*16;
 	TRY(xhci_port(x, port, &v));
 	if(!(v&1)) return Xgone;
-	reg = x->op+0x400+(port-1)*16;
-	/* USB3 links normally reach enabled/U0 without a reset; USB2 needs PR. */
-	if(!(v&2)){
-		TRY(wr(x, reg, (v&0x0e00c3e0U)|BIT(9)|
-		       (x->protocol[port]==3 ? BIT(31) : BIT(4))));
+	/*
+	 * A newly attached device is reset by the controller itself.  Wait for
+	 * that to complete instead of writing PR into a training link; only a
+	 * port that has settled without enabling needs a software reset.
+	 */
+	for(j = 0; !(v & 2) && j < 200 && ((v>>5)&15) == 7; j++){
+		x->io.delay(x->io.arg, 5);
+		TRY(rd(x, reg, &v));
+	}
+	if(!(v & 2) && ((v>>5)&15) != 7){
+		TRY(wr(x, reg, (((v & 0x0e00c3e0U) & ~Pls) | Pp |
+		       (x->protocol[port]==3 ? BIT(31) : BIT(4)))));
 		TRY(waitreg(x, reg, BIT(4)|BIT(31), 0));
 		TRY(waitreg(x, reg, 3, 3));
+		TRY(rd(x, reg, &v));
 	}
-	TRY(rd(x, reg, &v));
+	TRACE(x, "xhci: port %ud reset %x pls %ud speed %ud\n",
+	      port, v, (v>>5)&15, (v>>10)&15);
+	if(!(v & 2)) return Xtimeout;
 	TRY(wr(x, reg, (v&0x0e00c3e0U)|(v&Changed)));
 	*speed = (v>>10)&15;
 	if(*speed<1 || *speed>4) return Xunsupported;

@@ -49,6 +49,7 @@ struct Xdevice {
 struct Xhci {
 	Xio io;
 	Xword op, runtime, doorbell, slots, ports, ctxsize, used;
+	Xword hcc;
 	Xword eventnext, eventcycle, running, failed, completion;
 	Xword protocol[Xports+1], slottype[Xports+1];
 	Xaddr dcbaa, events, erst;

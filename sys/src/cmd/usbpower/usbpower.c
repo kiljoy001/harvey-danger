@@ -234,8 +234,19 @@ power_on(void)
 	g0[0x004c/4] = 0xF4240;
 	g1[0x0048/4] = 0xF4240;
 	g1[0x004c/4] = 0xF4240;
+	/* Linestate filter time; the vendor driver sets this on both PHYs. */
+	g0[0x0040/4] = 0x20;
+	g1[0x0040/4] = 0x20;
 	g0[0x000c/4] = 0x80008000;
 	g1[0x000c/4] = 0x80008000;
+
+	/* Report the PHY/GRF state so a dead host port is not a mystery. */
+	fprint(2, "usbpower: grf0 port0 %ux port1 %ux clk %ux wak %ux flt %ux\n",
+	       g0[0x0000/4], g0[0x0004/4], g0[0x0008/4], g0[0x000c/4],
+	       g0[0x0040/4]);
+	fprint(2, "usbpower: phy0 otg %ux host %ux clk %ux tune %ux ls %ux utmi %ux\n",
+	       p0[0x0000/4], p0[0x0004/4], p0[0x0008/4], p0[0x0030/4],
+	       p0[0x0040/4], p0[0x00c0/4]);
 
 	/* One-shot mappings: do not hold board register blocks for the service. */
 	detachall(maps, nelem(maps));
