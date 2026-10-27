@@ -12,14 +12,22 @@ def function_source(function):
     return str(Path(filenames[0]).resolve()) if filenames else ""
 
 
-def score(function):
+def score(function, segments_by_file):
     branches = function.get("branches", [])
     complexity = 1 + len(branches)
-    if branches:
-        outcomes = 2 * len(branches)
-        covered = sum(int(branch[4] > 0) + int(branch[5] > 0)
-                      for branch in branches)
-        coverage = covered / outcomes
+    regions = function.get("regions", [])
+    filename = function_source(function)
+    segments = segments_by_file.get(filename, [])
+    line_hits = {}
+    for region in regions:
+        line = region[0]
+        executable = [s for s in segments
+                      if s[0] == line and s[3] and not s[5]]
+        if not executable:
+            continue
+        line_hits[line] = any(s[2] > 0 for s in executable)
+    if line_hits:
+        coverage = sum(line_hits.values()) / len(line_hits)
     else:
         coverage = 1.0 if function.get("count", 0) > 0 else 0.0
     value = complexity * complexity * (1.0 - coverage) ** 3 + complexity
@@ -39,11 +47,15 @@ def main():
     for export in args.exports:
         document = json.loads(Path(export).read_text())
         for unit in document.get("data", []):
+            segments_by_file = {
+                str(Path(file["filename"]).resolve()): file.get("segments", [])
+                for file in unit.get("files", [])
+            }
             for function in unit.get("functions", []):
                 source = function_source(function)
                 if source not in sources:
                     continue
-                complexity, coverage, value = score(function)
+                complexity, coverage, value = score(function, segments_by_file)
                 name = function["name"].rsplit(":", 1)[-1]
                 rows.append({
                     "source": source,
@@ -59,7 +71,7 @@ def main():
     rows.sort(key=lambda row: (-row["crap"], row["function"]))
     Path(args.output).write_text(json.dumps({
         "formula": "complexity^2 * (1 - coverage)^3 + complexity",
-        "coverage": "LLVM branch outcomes",
+        "coverage": "LLVM source line coverage",
         "maximum": args.maximum,
         "functions": rows,
     }, indent=2) + "\n")
