@@ -623,6 +623,193 @@ main(int argc, char **argv)
 			hexdump(back, 64);
 		exits(r == 0 ? nil : "mismatch");
 	}
+	if(strcmp(argv[1], "rails") == 0){
+		char ctl[64], dat[64], cmd[32], h[64];
+		int fd, m, j;
+		u8 v;
+
+		if(access("/mnt/i2c", AEXIST) < 0)
+			create("/mnt/i2c", OREAD, DMDIR|0755);
+		fd = open("/srv/i2c", OREAD);
+		if(fd < 0 || mount(fd, -1, "/mnt/i2c", MREPL|MCREATE, "") < 0)
+			fail("emmc: cannot mount i2c");
+		close(fd);
+		snprint(ctl, sizeof ctl, "/mnt/i2c/i2c0/ctl");
+		snprint(dat, sizeof dat, "/mnt/i2c/i2c0/data");
+		/* RK809 POWER_EN0..3: DCDC1-4 at 0xb1, DCDC5 at 0xb4 bit 1
+		 * with write mask bit 5 (ENABLE_MASK(1) = BIT(1)|BIT(5)). */
+		for(j = 0; j < 4; j++){
+			fd = open(ctl, ORDWR);
+			snprint(cmd, sizeof cmd, "r 32 %d 1", 0xb1 + j);
+			m = fd < 0 ? -1 : write(fd, cmd, strlen(cmd));
+			if(fd >= 0)
+				close(fd);
+			if(m != strlen(cmd)){
+				print("emmc: power_en%d read failed: %r\n", j);
+				continue;
+			}
+			fd = open(dat, OREAD);
+			m = fd < 0 ? -1 : read(fd, h, sizeof h - 1);
+			if(fd >= 0)
+				close(fd);
+			if(m <= 0){
+				print("emmc: power_en%d data failed\n", j);
+				continue;
+			}
+			h[m] = 0;
+			print("emmc: power_en%d (%#x) = 0x%s\n", j, 0xb1 + j, h);
+		}
+		/* enable DCDC5 (vcc_1v8, the eMMC vqmmc) */
+		fd = open(ctl, ORDWR);
+		write(fd, "w 32 180 34", 11);
+		close(fd);
+		sleep(30);
+		fd = open(ctl, ORDWR);
+		write(fd, "r 32 180 1", 10);
+		close(fd);
+		fd = open(dat, OREAD);
+		m = read(fd, h, sizeof h - 1);
+		close(fd);
+		h[m > 0 ? m : 0] = 0;
+		v = strtoul(h, nil, 16);
+		print("emmc: power_en3 now 0x%02ux (DCDC5 %s)\n", v,
+		      (v & 2) ? "on" : "off");
+		sleep(30);
+		if(initcard(&ocr) < 0)
+			fail("emmc: card init failed");
+		print("emmc: READY ocr %08ux ccs %d\n", ocr, (ocr>>30)&1);
+		if(readblock(0, buf) < 0)
+			fail("emmc: read lba0 failed");
+		print("emmc: lba0 %02x%02x %02x%02x\n", buf[510], buf[511], buf[0], buf[1]);
+		hexdump(buf, 32);
+		exits(nil);
+	}
+	if(strcmp(argv[1], "pmicfix") == 0){
+		char ctl[64], dat[64], cmd[32], h[64];
+		int fd, m;
+		u8 v;
+
+		if(access("/mnt/i2c", AEXIST) < 0)
+			create("/mnt/i2c", OREAD, DMDIR|0755);
+		fd = open("/srv/i2c", OREAD);
+		if(fd < 0 || mount(fd, -1, "/mnt/i2c", MREPL|MCREATE, "") < 0)
+			fail("emmc: cannot mount i2c");
+		close(fd);
+		snprint(ctl, sizeof ctl, "/mnt/i2c/i2c0/ctl");
+		snprint(dat, sizeof dat, "/mnt/i2c/i2c0/data");
+		fd = open(ctl, ORDWR);
+		snprint(cmd, sizeof cmd, "r 32 177 1");
+		write(fd, cmd, strlen(cmd));
+		close(fd);
+		fd = open(dat, OREAD);
+		m = read(fd, h, sizeof h - 1);
+		close(fd);
+		if(m < 2)
+			fail("emmc: pmic read failed");
+		h[m] = 0;
+		v = strtoul(h, nil, 16);
+		print("emmc: power_en0 %02ux\n", v);
+		v |= 1<<4;			/* DCDC5 = vcc_1v8 */
+		fd = open(ctl, ORDWR);
+		snprint(cmd, sizeof cmd, "w 32 177 %d", v);
+		write(fd, cmd, strlen(cmd));
+		close(fd);
+		sleep(20);
+		fd = open(ctl, ORDWR);
+		write(fd, "r 32 177 1", 10);
+		close(fd);
+		fd = open(dat, OREAD);
+		m = read(fd, h, sizeof h - 1);
+		close(fd);
+		if(m > 0){
+			h[m] = 0;
+			print("emmc: power_en0 now 0x%s\n", h);
+		}
+		if(initcard(&ocr) < 0)
+			fail("emmc: card init failed after pmic fix");
+		print("emmc: READY ocr %08ux\n", ocr);
+		if(readblock(0, buf) < 0)
+			fail("emmc: read failed");
+		print("emmc: lba0 sig %02x%02x\n", buf[510], buf[511]);
+		exits(nil);
+	}
+	if(strcmp(argv[1], "pmic") == 0){
+		/* Dump RK809 POWER_EN (0xb1..0xb5) over the i2c server so the
+		 * rail enables can be compared with the bootloader's. */
+		char ctl[64], dat[64], cmd[32], h[64];
+		int fd, bus, m, j;
+
+		if(access("/mnt/i2c", AEXIST) < 0)
+			create("/mnt/i2c", OREAD, DMDIR|0755);
+		fd = open("/srv/i2c", OREAD);
+		if(fd < 0 || mount(fd, -1, "/mnt/i2c", MREPL|MCREATE, "") < 0)
+			fail("emmc: cannot mount i2c");
+		close(fd);
+		bus = 0;	/* fdd40000 is the first controller discovered */
+		snprint(ctl, sizeof ctl, "/mnt/i2c/i2c%d/ctl", bus);
+		snprint(dat, sizeof dat, "/mnt/i2c/i2c%d/data", bus);
+		fd = open(ctl, ORDWR);
+		if(fd < 0)
+			fail("emmc: no pmic bus");
+		close(fd);
+		fd = open(dat, OREAD);
+		if(fd < 0)
+			fail("emmc: no pmic data");
+		close(fd);
+		for(j = 0; j < 5; j++){
+			fd = open(ctl, ORDWR);
+			snprint(cmd, sizeof cmd, "r 32 %d 1", 0xb1 + j);
+			if(write(fd, cmd, strlen(cmd)) != strlen(cmd))
+				fail("emmc: i2c write failed");
+			close(fd);
+			fd = open(dat, OREAD);
+			m = read(fd, h, sizeof h - 1);
+			close(fd);
+			if(m < 2)
+				fail("emmc: i2c read failed");
+			h[m] = 0;
+			print("pmic: 0x%x = 0x%s\n", 0xb1 + j, h);
+		}
+		exits(nil);
+	}
+	if(strcmp(argv[1], "grf") == 0){
+		/* Dump the main GRF so the pinmux can be diffed against the
+		 * bootloader's (md 0xfdc60000 in U-Boot). */
+		u8 *grf;
+		int off;
+
+		grf = mapnode("syscon@fdc60000", 0xfdc60000);
+		for(off = 0; off < 0x60; off += 16)
+			print("%06x: %08ux %08ux %08ux %08ux\n",
+			      0xfdc60000 + off,
+			      *(volatile u32 *)(grf + off),
+			      *(volatile u32 *)(grf + off + 4),
+			      *(volatile u32 *)(grf + off + 8),
+			      *(volatile u32 *)(grf + off + 12));
+		exits(nil);
+	}
+	if(strcmp(argv[1], "rca") == 0){
+		/* Sweep every relative card address before disturbing anything.
+		 * If the card is still selected from the bootloader this finds it. */
+		int found = 0;
+
+		mapdev();
+		dumpregs();
+		verbose = 0;
+		for(i = 1; i <= 255; i++){
+			r = command(13, i<<16, Rsp48|CmdCrc|CmdIdx, resp4);
+			if(r == 0){
+				print("emmc: RCA %d answers, status %08ux\n", i, resp4[0]);
+				found++;
+			}
+			wr8(Swreset, 2);	/* reset the command line after a hang */
+			sleep(1);
+			wr16(Nis, 0xffff);
+		}
+		verbose = 1;
+		print("emmc: rca sweep done, %d found\n", found);
+		exits(nil);
+	}
 	if(strcmp(argv[1], "matrix") == 0){
 		static struct { int io180; u8 pwr; char *name; } t[] = {
 			{ 1, 0x0f, "io1.8 vcc3.3" },

@@ -109,10 +109,39 @@ Result: the register-level port now matches the vendor driver, and the
 card still does not answer.  The remaining difference is not in the
 SDHCI register set.
 
+## State comparison with U-Boot (same power cycle)
+
+| Item | U-Boot | Harvey |
+| --- | --- | --- |
+| GRF pinmux `fdc60000` (first 0x34 bytes) | `...1111 1111 2111 1111 1111 0111` | identical |
+| `PRESENT_STATE` at handover | - | `0x3f700f0` |
+| `CLOCK_CONTROL` / `POWER` / `HOST_CONTROL2` | 7 / 0xb / 0x9b | same |
+| RSA sweep after U-Boot selected the card (`mmc read`) | - | **no RCA 1-255 answers** |
+
+That last row is the strongest evidence: immediately after U-Boot read
+the card, Harvey sends CMD13 for every possible RCA and gets no response.
+The controller transmits (CMD line active) but the card never replies, so
+the card is not receiving Harvey's commands.
+
+## PMIC lead (unconfirmed)
+
+RK809 regulator enables use a bit + write-mask layout:
+`ENABLE_MASK(id) = BIT(id) | BIT(4+id)`.
+
+`POWER_EN0` (`0xb1`) reads `0x0f`: DCDC1-DCDC4 enabled.  The eMMC's
+`vqmmc` is `DCDC_REG5` ("vcc_1v8"), whose enable is
+`RK817_POWER_EN_REG(3)` = **`0xb4`**, mask `BIT(1)|BIT(5)` (write `0x22`).
+
+Reading `0xb4` over i2c fails ("read failed") — the RK809 exposes some
+registers through a page register, so the state of `vcc_1v8` is still
+unconfirmed.  If it is off, the eMMC IO rail is unpowered and that alone
+explains the silence.
+
 ## Next steps
 
-1. Instrument `PRESENT` bits 24-31 around `CMD0` to confirm the CMD line
-   toggles at the pad.
+1. Read `0xb4` through the RK809 page mechanism (`rk808.c` regmap
+   config) and confirm `vcc_1v8`/DCDC5; enable it with a `0x22` write if
+   it is off.
 2. Toggle `vcc_3v3`/`vcc_1v8` through `i2cfs` (RK809 `POWER_EN` at
    `0xb1`) to power-cycle the card, which is the one thing Linux does in
    `mmc_rescan` that a warm handover from U-Boot never does.
