@@ -365,3 +365,59 @@ emmc: readback MATCH
 ```
 
 That is 200 MHz x 8-bit HS200, the card's full rated mode.
+
+## ADMA2
+
+PIO through the buffer data port is about 4 MB/s: each 4-byte access to
+the Device-mapped port costs about a microsecond.  Data now moves by
+ADMA2 out of the `#P/dma` region, which is physically contiguous.
+
+The register layout came from the working Linux driver, booted from the
+same U-Boot (Armbian 6.18.21, `break=premount`) and read live:
+
+| Register | Linux | Meaning |
+| --- | --- | --- |
+| `HC1` `0x28` | `0x34` | ADMA2 32-bit + high speed + 8-bit |
+| `0x00` | `0` idle, block count during a transfer | **not** the DMA address |
+| `0x58` | `0x02cc0208` (a descriptor address) | ADMA system address |
+| `HC2` `0x3e` | `0x8b` | SDR104 + 1.8 V |
+
+The controller is in SDHCI v4 mode even though `HC2` bit 12 reads back
+clear: `0x00` behaves as Argument 2 / the 32-bit block count, and the
+ADMA address lives at **`0x58`**.  Writing the descriptor address to
+`0x00` (the physical-spec-3.0 location) makes the DMA engine never start:
+the command completes, `DMA End` (NIS bit 3) may even be set, but
+`Transfer Complete` (NIS bit 1) never arrives and the data path stays
+active.  `dmesg` on the same board confirms `sdhci ... using ADMA`.
+
+Descriptor table entries are the standard 8-byte ADMA2 32-bit form:
+
+```
+u16 cmd   0x21 = Valid|Transfer, | 0x02 = End on the last entry
+u16 len   bytes, up to 32 KiB per entry in this driver
+u32 addr  physical address
+```
+
+Completion is `NIS` bit 1 (Transfer Complete); the transfers are short
+enough that the loop should busy-poll, because one `sleep(1)` costs 10 ms
+and dominates a 64 KiB transfer.
+
+The `#P/dma` physseg is mapped **cached**.  Driver buffers are touched by
+the CPU, so the mapping has to be normal write-back, and an uncached
+64 KiB `memmove` alone costs 3.5 ms.  The driver maintains it explicitly:
+
+- write: `memmove` into the buffer, `#P/dma/clean`, then DMA;
+- read: `#P/dma/cleaninval`, DMA, `#P/dma/inval`, then `memmove`;
+- the descriptor table is also cleaned before the transfer (a cached
+  descriptor is invisible to the DMA engine).
+
+Verified on the board (64 KiB, 128 blocks):
+
+```
+emmc: wrote lba 9000 count 128
+emmc: readback MATCH
+emmc: read 128 blocks in 822500 ns: 77811 KiB/s
+emmc: write 128 blocks in 563791 ns: 113517 KiB/s
+```
+
+About 78 MB/s read and 114 MB/s write, against 4 MB/s with PIO.

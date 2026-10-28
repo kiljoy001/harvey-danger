@@ -1,13 +1,15 @@
 /* emmc: SDHCI PIO driver for the RK3566 eMMC (rockchip,rk3568-dwcmshc).
  *
- * Runs as a user process against the #P grant for mmc@fe310000.  No DMA:
- * commands go through the SDHCI command/response registers and data moves
- * through the buffer data port.  Enough to identify the card and read or
- * write 512-byte blocks.
+ * Runs as a user process against the #P grant for mmc@fe310000.  Commands
+ * go through the SDHCI registers; data moves by ADMA2 out of the #P/dma
+ * region (physically contiguous, mapped cached, maintained explicitly).
+ * HS200: 200 MHz, 8-bit.
  *
  *   emmc probe           identify the card and print CID/CSD
- *   emmc read <lba>      read one block, print a hex dump
- *   emmc write <lba>     write a pattern and read it back
+ *   emmc read <lba> [n]  read n blocks, print a hex dump of the first
+ *   emmc write <lba> [n] write a pattern and read it back
+ *   emmc bench <lba> <n> time a multi-block read and write
+ *   emmc dmatest <mode> <lba> [n]
  */
 #include <u.h>
 #include <libc.h>
@@ -63,7 +65,7 @@ enum {
 
 static u8 *mmio;
 static int verbose;
-static int cmdwait = 500;
+static int cmdwait = 20000;
 
 static void dllbypass(void);
 
@@ -500,23 +502,22 @@ command(int idx, u32 arg, u32 flags, u32 *resp)
 	int i;
 	u16 st;
 
-	/* sdhci_send_command(): wait for CMD inhibit first, and always write
-	 * the transfer mode register, even for a command without data. */
-	for(i = 0; i < 100; i++){
-		if((rd32(Present) & 1) == 0)
+	/* sdhci_send_command(): wait for CMD inhibit (and DAT inhibit for a
+	 * data command) first, and always write the transfer mode register,
+	 * even for a command without data. */
+	for(i = 0; i < 1000; i++){
+		if((rd32(Present) & 1) == 0 &&
+		   ((flags & CmdData) == 0 || (rd32(Present) & 2) == 0))
 			break;
 		sleep(1);
 	}
 	wr16(Nis, 0xffff);
 	wr16(Eis, 0xffff);
 	wr32(Argument, arg);
-	if(flags & CmdData){
-		u16 mode;
-
-		mode = rd16(Xfer);
-		wr16(Xfer, mode & ~((1<<2)|(1<<3)));	/* clear auto CMD12/23 */
-	} else
-		wr16(Xfer, 0);		/* no data: transfer mode must be zero */
+	/* Data commands: the caller has written the transfer mode (direction,
+	 * block count, auto CMD12).  No-data commands need zero. */
+	if((flags & CmdData) == 0)
+		wr16(Xfer, 0);
 	/* #P maps registers as Normal-NC; order the argument/mode before the
 	 * command.  Without this the CPU may issue the command first. */
 	__asm__ volatile("dsb sy" ::: "memory");
@@ -532,7 +533,8 @@ command(int idx, u32 arg, u32 flags, u32 *resp)
 		}
 		if(st & IntCc)
 			break;
-		sleep(1);
+		if((i & 0x3ff) == 0 && i != 0)
+			sleep(1);
 	}
 	if(i == cmdwait){
 		if(verbose)
@@ -546,38 +548,43 @@ command(int idx, u32 arg, u32 flags, u32 *resp)
 		resp[2] = rd32(Response + 8);
 		resp[3] = rd32(Response + 12);
 	}
-	wr16(Nis, st);
+	/* Clear only command complete: a DMA transfer may already have set
+	 * transfer complete in the same status word. */
+	wr16(Nis, st & IntCc);
 	return 0;
 }
 
 static int
 dataio(u8 *buf, int n, int write)
 {
-	int i, got;
+	int i, got, chunk;
 	u16 st;
 
-	if(write){
-		for(i = 0; i < 20000; i++){
-			st = rd16(Nis);
-			if(st & IntErr){
-				print("emmc: wr err nis %ux eis %ux present %ux\n",
-				      st, rd16(Eis), rd32(Present));
+	for(got = 0; got < n; ){
+		chunk = n - got;
+		if(chunk > 512)
+			chunk = 512;
+		if(write){
+			for(i = 0; i < 20000; i++){
+				st = rd16(Nis);
+				if(st & IntErr){
+					print("emmc: wr err nis %ux eis %ux present %ux\n",
+					      st, rd16(Eis), rd32(Present));
+					return -1;
+				}
+				if(rd32(Present) & (1<<10))
+					break;
+				if((i & 0xff) == 0)
+					sleep(1);
+			}
+			if(i == 20000){
+				print("emmc: wr bwr timeout nis %ux eis %ux present %ux\n",
+				      rd16(Nis), rd16(Eis), rd32(Present));
 				return -1;
 			}
-			if(rd32(Present) & (1<<10))	/* buffer write enable */
-				break;
-			sleep(1);
-		}
-		if(i == 20000){
-			print("emmc: wr bwr timeout nis %ux eis %ux present %ux\n",
-			      rd16(Nis), rd16(Eis), rd32(Present));
-			return -1;
-		}
-		for(got = 0; got < n; got += 4)
-			wr32(Buffer, *(u32 *)(buf + got));
-		wr16(Nis, IntBwr);
-	}else{
-		for(got = 0; got < n; ){
+			for(i = 0; i < chunk; i += 4)
+				wr32(Buffer, *(u32 *)(buf + got + i));
+		}else{
 			for(i = 0; i < 20000; i++){
 				st = rd16(Nis);
 				if(st & IntErr){
@@ -585,25 +592,20 @@ dataio(u8 *buf, int n, int write)
 					      st, rd16(Eis), rd32(Present));
 					return -1;
 				}
-				if(rd32(Present) & (1<<11))	/* buffer read enable */
+				if(rd32(Present) & (1<<11))
 					break;
-				sleep(1);
+				if((i & 0xff) == 0)
+					sleep(1);
 			}
 			if(i == 20000){
 				print("emmc: data brr timeout nis %ux eis %ux present %ux\n",
 				      rd16(Nis), rd16(Eis), rd32(Present));
 				return -1;
 			}
-			{
-				int chunk = n - got;
-				if(chunk > 512)
-					chunk = 512;
-				for(i = 0; i < chunk; i += 4)
-					*(u32 *)(buf + got + i) = rd32(Buffer);
-				got += chunk;
-			}
-			wr16(Nis, IntBrr);
+			for(i = 0; i < chunk; i += 4)
+				*(u32 *)(buf + got + i) = rd32(Buffer);
 		}
+		got += chunk;
 	}
 	for(i = 0; i < 20000; i++){
 		st = rd16(Nis);
@@ -621,6 +623,207 @@ dataio(u8 *buf, int n, int write)
 	print("emmc: data tc timeout nis %ux eis %ux present %ux\n",
 	      rd16(Nis), rd16(Eis), rd32(Present));
 	return -1;
+}
+
+/*
+ * ADMA2.  The data buffer and the descriptor table live in the #P/dma
+ * region: physically contiguous, and mapped once with segattach.  PIO
+ * costs about a microsecond per 4-byte access to the buffer data port on
+ * this SoC; one ADMA2 descriptor moves the whole transfer in hardware.
+ */
+enum {
+	Dmadata		= 64*1024,
+	Dmadesc		= 4096,
+	Admamax		= 32768,	/* bytes per descriptor */
+	Admavalid	= 0x21,		/* Valid | Transfer */
+	Admaend		= 0x02,
+};
+
+static u8 *dmava;
+static u64 dmabase, dmasize;
+static u64 dmaalign = 4096;
+static u64 datapa, descpa;
+static u8 *datava, *descva;
+
+static u64
+readnum(char *path)
+{
+	char buf[64];
+	int fd, n;
+
+	if((fd = open(path, OREAD)) < 0)
+		fail("emmc: open %s: %r", path);
+	n = read(fd, buf, sizeof buf - 1);
+	close(fd);
+	if(n <= 0)
+		fail("emmc: read %s: %r", path);
+	buf[n] = 0;
+	return strtoull(buf, nil, 0);
+}
+
+/* #P/dma/alloc: "<size> <align>\n", then read back "<pa> <len>\n". */
+static u64
+dmaalloc(u64 size, u64 align)
+{
+	char buf[64];
+	int fd, n;
+
+	if((fd = open("#P/dma/alloc", ORDWR)) < 0)
+		fail("emmc: no #P/dma/alloc: %r");
+	snprint(buf, sizeof buf, "%llud %llud\n", size, align);
+	if(write(fd, buf, strlen(buf)) != strlen(buf))
+		fail("emmc: dma alloc: %r");
+	n = pread(fd, buf, sizeof buf - 1, 0);
+	close(fd);
+	if(n <= 0)
+		fail("emmc: dma alloc read: %r");
+	buf[n] = 0;
+	return strtoull(buf, nil, 0);
+}
+
+static void
+dmainit(void)
+{
+	if(datava != nil)
+		return;
+	dmabase = readnum("#P/dma/base");
+	dmasize = readnum("#P/dma/size");
+	if(dmabase == 0 || dmasize == 0)
+		fail("emmc: no dma region");
+	dmava = segattach(0, "dma", 0, dmasize);
+	if(dmava == (void *)-1)
+		fail("emmc: segattach dma: %r");
+	datapa = dmaalloc(Dmadata, dmaalign);
+	descpa = dmaalloc(Dmadesc, 4096);
+	datava = dmava + (datapa - dmabase);
+	descva = dmava + (descpa - dmabase);
+	memset(datava, 0, Dmadata);
+	memset(descva, 0, Dmadesc);
+	if(verbose)
+		print("emmc: dma %#llux data %#llux desc %#llux\n",
+		      dmabase, datapa, descpa);
+}
+
+static void
+dmacache(char *op, u64 pa, u64 len)
+{
+	char buf[64], path[32];
+	int fd;
+
+	snprint(path, sizeof path, "#P/dma/%s", op);
+	if((fd = open(path, OWRITE)) < 0)
+		fail("emmc: open %s: %r", path);
+	snprint(buf, sizeof buf, "0x%llx 0x%llx\n", pa, len);
+	if(write(fd, buf, strlen(buf)) != strlen(buf))
+		fail("emmc: %s: %r", path);
+	close(fd);
+}
+
+/* One Transfer descriptor per Admamax bytes, End on the last. */
+static void
+setadma(int nbytes)
+{
+	int off, len;
+	u16 ctrl;
+	u8 *d;
+
+	for(off = 0, d = descva; off < nbytes; off += len, d += 8){
+		len = nbytes - off;
+		if(len > Admamax)
+			len = Admamax;
+		((u16 *)d)[0] = Admavalid;
+		((u16 *)d)[1] = len;
+		*(u32 *)(d + 4) = datapa + off;
+	}
+	((u16 *)(d - 8))[0] |= Admaend;
+
+	/* The descriptor table is cached: write it back before the DMA. */
+	dmacache("clean", descpa, d - descva);
+
+	wr32(0x58, descpa);		/* SDHCI_ADMA_ADDRESS */
+	ctrl = rd8(Hostctl);
+	ctrl = (ctrl & ~0x18) | 0x10;		/* ADMA2, 32-bit */
+	wr8(Hostctl, ctrl);
+}
+
+static int
+admaiowait(void)
+{
+	int i;
+	u16 st;
+
+	/* A 64 KiB transfer takes well under a millisecond, so poll hard
+	 * before sleeping: one sleep(1) costs 10 ms and dominates. */
+	for(i = 0; i < 2000000; i++){
+		st = rd16(Nis);
+		if(st & IntErr){
+			print("emmc: dma error nis %ux eis %ux adma %ux present %ux\n",
+			      st, rd16(Eis), rd32(0x54), rd32(Present));
+			wr16(Nis, st);
+			wr16(Eis, 0xffff);
+			return -1;
+		}
+		if(st & IntTc){
+			wr16(Nis, st);
+			return 0;
+		}
+		if(i > 200000 && (i & 0xfff) == 0)
+			sleep(1);
+	}
+	print("emmc: dma timeout nis %ux eis %ux adma %ux present %ux\n",
+	      rd16(Nis), rd16(Eis), rd32(0x54), rd32(Present));
+	return -1;
+}
+
+static int
+readmulti(u32 lba, int count, u8 *buf)
+{
+	int n;
+
+	dmainit();
+	n = 512*count;
+	dmacache("cleaninval", datapa, n);
+	setadma(n);
+	wr16(Blksize, 512);
+	wr16(Blkcount, count);
+	wr16(Xfer, (1<<4) | (1<<1) | (1<<2) | (1<<5) | 1);
+					/* read|blkcnt|auto12|multi|dma */
+	if(command(18, lba, CmdData|Rsp48|CmdCrc|CmdIdx, nil) < 0)
+		return -1;
+	if(admaiowait() < 0)
+		return -1;
+	dmacache("inval", datapa, n);
+	memmove(buf, datava, n);
+	if(rd16(0x3c) != 0){
+		print("emmc: auto cmd12 err %ux\n", rd16(0x3c));
+		return -1;
+	}
+	return 0;
+}
+
+static int
+writemulti(u32 lba, int count, u8 *buf)
+{
+	int n;
+
+	dmainit();
+	n = 512*count;
+	memmove(datava, buf, n);
+	dmacache("clean", datapa, n);
+	setadma(n);
+	wr16(Blksize, 512);
+	wr16(Blkcount, count);
+	wr16(Xfer, (1<<1) | (1<<2) | (1<<5) | 1);
+					/* write|blkcnt|auto12|multi|dma */
+	if(command(25, lba, CmdData|Rsp48|CmdCrc|CmdIdx, nil) < 0)
+		return -1;
+	if(admaiowait() < 0)
+		return -1;
+	if(rd16(0x3c) != 0){
+		print("emmc: auto cmd12 err %ux\n", rd16(0x3c));
+		return -1;
+	}
+	return 0;
 }
 
 static int
@@ -1174,7 +1377,7 @@ hexdump(u8 *b, int n)
 void
 main(int argc, char **argv)
 {
-	static u8 buf[512], back[512];
+	static u8 buf[64*1024], back[64*1024];
 	u32 ocr, lba, i, resp4[4];
 	u8 *cru;
 	int r, off;
@@ -1277,39 +1480,157 @@ main(int argc, char **argv)
 		exits(nil);
 	}
 	if(strcmp(argv[1], "read") == 0){
+		int count;
+
 		if(argc < 3)
-			fail("usage: emmc read lba");
+			fail("usage: emmc read lba [count]");
 		lba = strtoul(argv[2], nil, 0);
+		count = argc > 3 ? atoi(argv[3]) : 1;
+		if(count < 1)
+			count = 1;
+		if(count > 128)
+			count = 128;
 		if(initcard(&ocr) < 0)
 			fail("emmc: card init failed");
-		if(readblock(lba, buf) < 0)
+		if((count == 1 ? readblock(lba, buf) :
+		    readmulti(lba, count, buf)) < 0)
 			fail("emmc: read %ud failed", lba);
-		print("emmc: lba %ud ok\n", lba);
+		print("emmc: lba %ud count %d ok\n", lba, count);
 		hexdump(buf, 128);
 		exits(nil);
 	}
 	if(strcmp(argv[1], "write") == 0){
+		int count, b, k;
+		u8 *p;
+
 		if(argc < 3)
-			fail("usage: emmc write lba");
+			fail("usage: emmc write lba [count]");
 		lba = strtoul(argv[2], nil, 0);
+		count = argc > 3 ? atoi(argv[3]) : 1;
+		if(count < 1)
+			count = 1;
+		if(count > 128)
+			count = 128;
 		if(initcard(&ocr) < 0)
 			fail("emmc: card init failed");
-		memset(buf, 0, sizeof buf);
-		strcpy((char *)buf, "HARVEY EMMC WRITE TEST");
-		buf[32] = lba >> 24; buf[33] = lba >> 16;
-		buf[34] = lba >> 8; buf[35] = lba;
-		for(i = 64; i < 512; i++)
-			buf[i] = i ^ 0x5a;
-		if(writeblock(lba, buf) < 0)
+		for(b = 0; b < count; b++){
+			p = buf + b*512;
+			memset(p, 0, 512);
+			strcpy((char *)p, "HARVEY EMMC WRITE TEST");
+			p[32] = b >> 24; p[33] = b >> 16;
+			p[34] = b >> 8; p[35] = b;
+			for(k = 64; k < 512; k++)
+				p[k] = (k ^ 0x5a) + b;
+		}
+		if((count == 1 ? writeblock(lba, buf) :
+		    writemulti(lba, count, buf)) < 0)
 			fail("emmc: write %ud failed", lba);
-		print("emmc: wrote lba %ud\n", lba);
-		if(readblock(lba, back) < 0)
+		print("emmc: wrote lba %ud count %d\n", lba, count);
+		if((count == 1 ? readblock(lba, back) :
+		    readmulti(lba, count, back)) < 0)
 			fail("emmc: readback failed");
-		r = memcmp(buf, back, 512);
+		r = memcmp(buf, back, 512*count);
 		print("emmc: readback %s\n", r == 0 ? "MATCH" : "MISMATCH");
 		if(r != 0)
 			hexdump(back, 64);
 		exits(r == 0 ? nil : "mismatch");
+	}
+	if(strcmp(argv[1], "dmatest") == 0){
+		int mode, i, n;
+		u16 st, xf;
+
+		if(argc < 4)
+			fail("usage: emmc dmatest mode lba");
+		mode = atoi(argv[2]);
+		lba = strtoul(argv[3], nil, 0);
+		if(initcard(&ocr) < 0)
+			fail("emmc: card init failed");
+		if(argc > 5)
+			dmaalign = strtoul(argv[5], nil, 0);
+		dmainit();
+		n = 512;
+		xf = 0;
+		switch(mode){
+		case 0:			/* single block read */
+			n = 512; xf = (1<<4) | 1;
+			break;
+		case 1:			/* single block write */
+			n = 512; xf = 1;
+			break;
+		case 2:			/* multi read, no auto CMD12 */
+		case 3:			/* multi read, auto CMD12 */
+			n = (argc > 4 ? atoi(argv[4]) : 8)*512;
+			if(n > Dmadata)
+				n = Dmadata;
+			xf = (1<<4) | (1<<1) | (1<<5) | 1;
+			if(mode == 3)
+				xf |= 1<<2;
+			break;
+		default:
+			fail("emmc: dmatest mode 0-3");
+		}
+		memset(datava, 0, n);
+		dmacache("cleaninval", datapa, n);
+		setadma(n);
+		wr16(Blksize, 512);
+		wr16(Blkcount, n/512);
+		wr16(Xfer, xf);
+		i = mode == 0 || mode >= 2 ? 17 : 24;
+		if(mode >= 2)
+			i = 18;
+		print("emmc: dmatest mode %d cmd %d xfer %ux\n", mode, i, xf);
+		print("emmc: regs dma00 %ux dma58 %ux dma5c %ux hc2 %ux hc1 %ux\n",
+		      rd32(0x00), rd32(0x58), rd32(0x5c), rd16(Hc2), rd8(Hostctl));
+		if(command(i, lba, CmdData|Rsp48|CmdCrc|CmdIdx, nil) < 0)
+			fail("emmc: dmatest command failed");
+		st = rd16(Nis);
+		print("emmc: dmatest after cmd nis %ux present %ux\n",
+		      st, rd32(Present));
+		for(i = 0; i < 100; i++){
+			st = rd16(Nis);
+			if(st & (IntTc|IntErr))
+				break;
+			sleep(10);
+		}
+		print("emmc: dmatest done nis %ux eis %ux adma %ux present %ux "
+		      "waits %d\n", st, rd16(Eis), rd32(0x54), rd32(Present), i);
+		dmacache("inval", datapa, n);
+		print("emmc: after dma00 %ux dma58 %ux dma5c %ux\n",
+		      rd32(0x00), rd32(0x58), rd32(0x5c));
+		print("emmc: data %02x %02x %02x %02x\n",
+		      datava[0], datava[1], datava[2], datava[3]);
+		exits(nil);
+	}
+	if(strcmp(argv[1], "bench") == 0){
+		int count;
+		vlong t0, t1, kbs;
+
+		if(argc < 4)
+			fail("usage: emmc bench lba count");
+		lba = strtoul(argv[2], nil, 0);
+		count = atoi(argv[3]);
+		if(count < 1)
+			count = 1;
+		if(count > 128)
+			count = 128;
+		if(initcard(&ocr) < 0)
+			fail("emmc: card init failed");
+		dmainit();
+		t0 = nsec();
+		if(readmulti(lba, count, buf) < 0)
+			fail("emmc: bench read failed");
+		t1 = nsec();
+		kbs = (vlong)count * 512 * 1000000000LL / (t1 - t0) / 1024;
+		print("emmc: read %d blocks in %lld ns: %lld KiB/s\n",
+		      count, t1 - t0, kbs);
+		t0 = nsec();
+		if(writemulti(lba, count, buf) < 0)
+			fail("emmc: bench write failed");
+		t1 = nsec();
+		kbs = (vlong)count * 512 * 1000000000LL / (t1 - t0) / 1024;
+		print("emmc: write %d blocks in %lld ns: %lld KiB/s\n",
+		      count, t1 - t0, kbs);
+		exits(nil);
 	}
 	if(strcmp(argv[1], "slow5") == 0){
 		/*
