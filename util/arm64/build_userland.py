@@ -31,6 +31,7 @@ ECHO_BASE = 0x2E00000
 CAT_BASE = 0x3200000
 LS_BASE = 0x3600000
 RTC_BASE = 0x3E00000
+EMMC_BASE = 0x5200000
 O9DISPLAY_BASE = 0x3A00000
 DISPLAYTEST_BASE = 0x4200000
 O9ASPERA_SCREEN_BASE = 0x4E00000
@@ -844,6 +845,8 @@ main(int argc, char **argv)
 	exits(nil);
 }
 ''', RTC_BASE, libc)
+    emmc, _ = build_elf(out, libc, "emmc",
+                        ROOT / "sys/src/cmd/emmc/emmc.c", EMMC_BASE, [])
     displaytest, _ = build_program(out, "displaytest", r'''#include <u.h>
 #include <libc.h>
 
@@ -1008,6 +1011,7 @@ main(int argc, char **argv)
     emit_array(lines, "arm64catelf", cat)
     emit_array(lines, "arm64lself", ls)
     emit_array(lines, "arm64rtcelf", rtc)
+    emit_array(lines, "arm64emmcelf", emmc)
     emit_array(lines, "arm64displaytestelf", displaytest)
     emit_array(lines, "arm64rcmain", rcmain.encode())
     args.output.write_text("\n".join(lines))
@@ -1030,6 +1034,7 @@ main(int argc, char **argv)
         "cat": cat,
         "ls": ls,
         "rtc": rtc,
+        "emmc": emmc,
         "displaytest": displaytest,
         "rcmain": rcmain.encode(),
     }

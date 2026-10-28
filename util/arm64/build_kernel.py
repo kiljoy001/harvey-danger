@@ -112,8 +112,17 @@ def build_library(name: str, flags: list[str]) -> Path:
     return archive
 
 
+def header_stamp(path: Path) -> int:
+    try:
+        return path.stat().st_mtime_ns
+    except OSError:
+        return 0
+
+
 def main() -> None:
     OUT.mkdir(parents=True, exist_ok=True)
+    generated = [OUT / "userprobe.h", OUT / "userland.h"]
+    generated_before = [header_stamp(p) for p in generated]
     if os.environ.get("ARM64_REUSE_USERLAND") != "1":
         subprocess.run([
             sys.executable, str(ROOT / "util/arm64/build_user_probe.py"),
@@ -126,6 +135,10 @@ def main() -> None:
         ], check=True)
     elif not (OUT / "userprobe.h").is_file() or not (OUT / "userland.h").is_file():
         raise SystemExit("ARM64_REUSE_USERLAND=1 needs existing generated headers")
+    # boot.c includes the generated headers; the object cache cannot see
+    # them, so drop the object when their content changed.
+    if [header_stamp(p) for p in generated] != generated_before:
+        (OUT / "sys_src_9_aarch64_boot.c.o").unlink(missing_ok=True)
     for mode, name in (("errstr.h", "errstr.h"), ("systab.c", "systab.c"),
                        ("sys.h", "sys.h")):
         subprocess.run([sys.executable, str(ROOT / "util/9vm/mksys.py"),
