@@ -274,3 +274,40 @@ Instrument the kernel before `#P` initialisation, or scope `SDMMC0_CLK`
 and `SDMMC0_CMD` during a Harvey boot.  The card answers U-Boot and the
 Armbian kernel in the same power cycle, and stops answering somewhere in
 Harvey's early boot despite the identical register state.
+
+## Root cause: the SDHCI command and transfer encoding
+
+The card was working the whole time; every command was being addressed to
+the wrong index.
+
+1. **Command register**: the command index is bits 8-15 and the flags are
+   bits 0-5 (`SDHCI_MAKE_CMD`).  We wrote `idx | flags`, so CMD1 went out
+   as CMD4, CMD2 as CMD2 with a 48-bit response, CMD13 as CMD5, and so
+   on.  Fix: `(idx << 8) | flags`, with `CmdData=1<<5`, `CmdIdx=1<<4`,
+   `CmdCrc=1<<3`, `Rsp136/Rsp48/Rsp48b = 1/2/3`.
+2. **Transfer mode**: the data direction is bit 4 (`SDHCI_TRNS_READ`),
+   not bit 3 (that is Auto CMD23).  `readblock` set `0x08|0x02`, which the
+   controller treated as a write, so the card waited for data while the
+   host waited for data.  Fix: read `1<<4`, write `0`, clear bits 2-3.
+3. **PIO waits**: poll Present State bit 10 (buffer write enable) and
+   bit 11 (buffer read enable), as Linux does, rather than the NIS
+   Bwr/Brr bits.
+
+Also restore the working init order (power, width, 1.8 V, clock), set
+`Timeout=0x0e` after reset, poll CMD1 until OCR bit 31 (ready), and use
+the 1.8 V OCR.
+
+Verified on the board:
+
+```
+emmc: cid 9010f0ba 363411fc 41334135 00d62903   (serial fc9010f0)
+emmc: csd ef964000 ffffffff 329f5903 00d0ffff
+emmc: wrote lba 1000
+emmc: cmd17 ok r1 00000900
+emmc: readback MATCH
+```
+
+Transfers still run at the 702 Hz identify clock (~6 s per 512-byte
+block).  Raising the clock needs the DLL/PHY sampling work: 25 MHz gives
+a Data End Bit Error and 5 MHz a Command End Bit Error with the bypassed
+DLL.
