@@ -169,12 +169,32 @@ bwrite32(void *u, Xword off, Xword v)
 	__sync_synchronize();
 	return 0;
 }
+/*
+ * The #P/dma grant is mapped cached, so the controller's view of memory
+ * must be maintained explicitly: clean after the CPU writes a ring or a
+ * TRB, invalidate before the CPU reads an event.
+ */
+static void
+dmamaint(char *op, u64 pa, u64 len)
+{
+	char path[32], buf[64];
+	int f;
+
+	snprint(path, sizeof path, "#P/dma/%s", op);
+	f=open(path,OWRITE);
+	if(f<0)
+		return;
+	snprint(buf, sizeof buf, "0x%llx 0x%llx\n", pa, len);
+	write(f, buf, strlen(buf));
+	close(f);
+}
 static int
 breadmem(void *u, Xaddr a, void *buf, Xword n)
 {
 	USED(u);
 	if(a<boarddmabase || a-boarddmabase>boarddmasz || n>boarddmasz-(a-boarddmabase))
 		return -1;
+	dmamaint("inval", a, n);
 	__sync_synchronize();
 	memmove(buf,boarddma+(a-boarddmabase),n);
 	return 0;
@@ -186,6 +206,7 @@ bwritemem(void *u, Xaddr a, const void *buf, Xword n)
 	if(a<boarddmabase || a-boarddmabase>boarddmasz || n>boarddmasz-(a-boarddmabase))
 		return -1;
 	memmove(boarddma+(a-boarddmabase),buf,n);
+	dmamaint("clean", a, n);
 	__sync_synchronize();
 	return 0;
 }
