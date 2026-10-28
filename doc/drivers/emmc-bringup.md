@@ -337,6 +337,31 @@ emmc: cmd17 ok r1 00000900
 emmc: readback MATCH
 ```
 
-That is 50 MHz x 8-bit, about 50 MB/s theoretical.  HS200/200 MHz would
-need CMD6 HS_TIMING=2 plus execute tuning (CMD21) and the DLL init path;
-50 MHz is already a usable block device.
+That is 50 MHz x 8-bit, about 50 MB/s theoretical.
+
+## HS200
+
+After the 50 MHz / 8-bit switch:
+
+1. CMD6 `0x03B90200` — HS_TIMING = 2.
+2. `CLKSEL_CON(28)` mux -> `gpll_200m` (1), SDHCI divider 0.
+3. DWCMSHC DLL init as in the 6.18 driver: reset, `0x800 = 0x00050201`,
+   wait for `0x840` lock, `ATCTRL (0x540) = 0x001f0000`,
+   `RXCLK = 0xaa007800` (DLYENA|ORI_GATE|NO_INVERTER|TAP_SEL|lock<<8),
+   `TXCLK = 0x29000010`, `STRBIN = 0x09000004`.
+4. `HC2 = SDR104 | 1.8 V` (0x0b).
+5. SDHCI execute tuning: set `EXEC_TUNING`, issue CMD21 with a 128-byte
+   tuning block until the hardware clears `EXEC_TUNING` and sets
+   `TUNED_CLK` (HC2 becomes 0x8b).
+
+Verified:
+
+```
+emmc: hs200 dll 13c rx aa007800 tx 29000010 hc2 b
+emmc: tuning ok hc2 8b
+emmc: wrote lba 5000
+emmc: cmd17 ok r1 00000900
+emmc: readback MATCH
+```
+
+That is 200 MHz x 8-bit HS200, the card's full rated mode.
