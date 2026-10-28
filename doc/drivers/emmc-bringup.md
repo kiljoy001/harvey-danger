@@ -202,3 +202,75 @@ things exist only in the newer driver or in the creator's board DTS:
    silent card exactly.
 4. Cross-check with `bcm64/sdhc.c` from 9front (a working SDHCI driver on
    ARM) rather than continuing to derive the sequence from SDHCI alone.
+
+## Live capture from the working 6.18 kernel
+
+Booting the Armbian kernel (6.18.21) under this same U-Boot and sampling
+the controller with a small static `/dev/mem` tool gives the reference
+identify state:
+
+| register | working value |
+|---|---|
+| `CLKSEL_CON(28)` (`0x170`) | `0x00005030` (cclk_emmc mux 5) |
+| `CLKSEL_CON(82)` (`0x248`) | `0x00001f09` (750 kHz parent) |
+| `CLKGATE_CON(9)` (`0x324`) | `0x0000001f` |
+| `CLKGATE_CON(35)` (`0x38c`) | `0x00002000` |
+| `SDHCI_CLOCK_CONTROL` | `0x00000b47` (divider 267) |
+| `SDHCI_HOST_CONTROL2` | `0x0008` (1.8 V signalling, UHS 0) |
+| `SDHCI_POWER_CONTROL` | `0x01` (power on, no voltage field) |
+| `EMMC_CON0/1` | `4` / `0` |
+| `PLL0` | `2044 1441 0 7` |
+| `GRF` mux/pull/drive, GPIO, PMU | identical to U-Boot |
+
+The card is identified with **1.8 V signalling and the 1.8 V OCR bit**;
+the SDHCI divider is 267 (702 Hz), not 1.  Note `dwcmshc_phy_init()` is
+only installed in the TH1520 ops table, not RK3568, so the PHY block
+(which reads zero) is not part of this path.
+
+## Reproducing the sequence on the working kernel
+
+A second static tool (`emul`) replays the Harvey sequence from
+userspace under the Armbian kernel with its driver still bound:
+
+```
+emul: state clock=00000b47 pwr=00000001 hc2=00000008 sel28=00005030
+cmd1_18=00000000 ocr18=00000900
+```
+
+So the register sequence itself is correct on this hardware.
+
+## Result in Harvey
+
+The same sequence (and even U-Boot's untouched state) gets no response:
+`CMD0` completes, but `CMD1`, `CMD2` and `CMD13` all end in
+`eint=0x0001` (command timeout) with no response.  This is true:
+
+- with the untouched U-Boot state (no reset, no clock change),
+- with the full 6.18 sequence (`slow8`),
+- after a real PMIC rail power-cycle (`POWER_EN3 0x0f -> 0x09 -> 0x0f`),
+- with `ARM64_NO_DISPLAY=1` and `ARM64_NO_USBPOWER=1`,
+- and from the init program **before any userland service starts**.
+
+Every software-visible block compared against U-Boot/Linux is identical:
+SDHCI, DLL, vendor area, CRU/PLLs, `EMMC_CON`, GRF (mux, pull, drive),
+GPIO, PMU, and the PMIC enable state.  The remaining difference is
+outside that state: the card clock/pad or the card's reset line.
+
+## Bugs fixed along the way
+
+- `i2cfs` never cleared `CON.START` when issuing `CON.STOP`; PMIC writes
+  failed and left the bus wedged.  With that fixed, `rtc poweroff` and
+  the RK809 rail writes work, and `POWER_EN3` reads back `0x0f`.
+- The driver enabled the interface clock before writing the power
+  register; that clears `CLOCK_CARD_EN`.  Power, width, 1.8 V signalling
+  and clock now follow `sdhci_set_ios()` order.
+- RK3568 GRF registers are hiword-masked; writes without the mask are
+  silently ignored.
+- `initcard()` now uses the captured 6.18 identify values.
+
+## Remaining next step
+
+Instrument the kernel before `#P` initialisation, or scope `SDMMC0_CLK`
+and `SDMMC0_CMD` during a Harvey boot.  The card answers U-Boot and the
+Armbian kernel in the same power cycle, and stops answering somewhere in
+Harvey's early boot despite the identical register state.

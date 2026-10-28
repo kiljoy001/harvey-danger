@@ -60,6 +60,7 @@ enum {
 
 static u8 *mmio;
 static int verbose;
+static int cmdwait = 500;
 
 static void dllbypass(void);
 
@@ -407,7 +408,13 @@ setclockbase(void)
 	 * card without a usable clock.
 	 */
 	wr16(Clock, 0);
-	wr16(Clock, (1<<8) | 1);	/* INT_EN, divider 1 */
+	/*
+	 * Reproduce the value the working 6.18 kernel writes: divider 267
+	 * (0x10b, encoded as 0x0b in the low field and bit 6 set), which with
+	 * cclk_emmc = 375 kHz gives 702 Hz.  Linux enables the card clock
+	 * first and only then writes the DLL bypass registers.
+	 */
+	wr16(Clock, 0x0b41);		/* INT_EN, divider 267 */
 	for(i = 0; i < 150; i++){
 		if(rd16(Clock) & 2)
 			break;
@@ -415,8 +422,8 @@ setclockbase(void)
 	}
 	if((rd16(Clock) & 2) == 0)
 		return -1;
+	wr16(Clock, 0x0b47);		/* INT_EN | CARD_EN, divider 267 */
 	dllbypass();
-	wr16(Clock, (1<<8) | 5);	/* INT_EN | CARD_EN, divider 1 */
 	if(verbose)
 		print("emmc: clock %ux\n", rd16(Clock));
 	return (rd16(Clock) & 4) ? 0 : -1;
@@ -500,14 +507,19 @@ command(int idx, u32 arg, u32 flags, u32 *resp)
 	wr16(Nis, 0xffff);
 	wr16(Eis, 0xffff);
 	wr32(Argument, arg);
-	{
+	if(flags & CmdData){
 		u16 mode;
 
 		mode = rd16(Xfer);
 		wr16(Xfer, mode & ~((1<<2)|(1<<3)));	/* clear auto CMD12/23 */
-	}
+	} else
+		wr16(Xfer, 0);		/* no data: transfer mode must be zero */
+	/* #P maps registers as Normal-NC; order the argument/mode before the
+	 * command.  Without this the CPU may issue the command first. */
+	__asm__ volatile("dsb sy" ::: "memory");
 	wr16(Cmdreg, idx | flags);
-	for(i = 0; i < 500; i++){
+	__asm__ volatile("dsb sy" ::: "memory");
+	for(i = 0; i < cmdwait; i++){
 		st = rd16(Nis);
 		if((st & IntErr) || (rd16(Eis) & 0xffff)){
 			if(verbose)
@@ -519,7 +531,7 @@ command(int idx, u32 arg, u32 flags, u32 *resp)
 			break;
 		sleep(1);
 	}
-	if(i == 500){
+	if(i == cmdwait){
 		if(verbose)
 			print("emmc: cmd %d timeout nis %ux eis %ux present %ux\n",
 			      idx, rd16(Nis), rd16(Eis), rd32(Present));
@@ -714,7 +726,7 @@ setwidth(int width)
  * Write 0x66 to assert both, in case the bootloader left them off.
  */
 static int
-rails_on(void)
+rails_set(int v)
 {
 	char ctl[64], dat[64], cmd[32], h[32];
 	int fd, m;
@@ -730,7 +742,7 @@ rails_on(void)
 	fd = open(ctl, ORDWR);
 	if(fd < 0)
 		return -1;
-	snprint(cmd, sizeof cmd, "w 32 180 102");	/* 0xb4 = 0x66 */
+	snprint(cmd, sizeof cmd, "w 32 180 %d", v);
 	m = write(fd, cmd, strlen(cmd));
 	close(fd);
 	sleep(50);
@@ -750,6 +762,12 @@ rails_on(void)
 }
 
 static int
+rails_on(void)
+{
+	return rails_set(0x66);
+}
+
+static int
 initcard(u32 *ocrp)
 {
 	u32 resp[4], ocr;
@@ -766,11 +784,18 @@ initcard(u32 *ocrp)
 	 */
 	resetall();
 	vendor_probe();
-	setvoltage180();
-	if(setclock(400000) < 0)
-		return -1;
-	setpower(0x0f);			/* 3.3 V, SDHCI_POWER_ON */
+	/*
+	 * sdhci_set_ios() order, matching the working 6.18 kernel: power,
+	 * bus width, 1.8 V signalling, then the interface clock.  Writing
+	 * the power register after the clock drops CLOCK_CARD_EN.
+	 */
+	wr8(Power, 0);
+	wr8(Power, 1);			/* sdhci_set_power_reg(): power only */
 	setwidth(1);
+	wr16(Hc2, 1<<3);		/* 1.8 V signalling (vqmmc = vcc_1v8) */
+	cru_emmc_375k();
+	if(setclockbase() < 0)
+		return -1;
 	sleep(20);
 
 	if(command(0, 0, 0, nil) < 0)
@@ -842,7 +867,8 @@ main(int argc, char **argv)
 {
 	static u8 buf[512], back[512];
 	u32 ocr, lba, i, resp4[4];
-	int r;
+	u8 *cru;
+	int r, off;
 
 	verbose = 1;
 	mapdev();
@@ -855,6 +881,90 @@ main(int argc, char **argv)
 			fail("emmc: read lba 0 failed");
 		print("emmc: lba0 signature %02x%02x\n", buf[510], buf[511]);
 		hexdump(buf, 64);
+		exits(nil);
+	}
+	if(strcmp(argv[1], "raw13") == 0){
+		/*
+		 * No reset, no clock setup, no power: use exactly the controller
+		 * state U-Boot left behind and ask the card for its status.
+		 */
+		cmdwait = 2000;
+		cru = mapnode("clock-controller@fdd20000", 0xfdd20000);
+		print("emmc: raw13 clock %ux hc2 %ux power %ux hostctl %ux misc %ux\n",
+		      rd16(Clock), rd16(Hc2), rd8(Power), rd8(Hostctl), rd32(MiscCon));
+		print("emmc: cru sel28 %ux gate9 %ux gate35 %ux sel82 %ux softrst %ux\n",
+		      *(volatile u32 *)(cru + 0x170), *(volatile u32 *)(cru + 0x324),
+		      *(volatile u32 *)(cru + 0x38c), *(volatile u32 *)(cru + 0x248),
+		      *(volatile u32 *)(cru + 0x41c));
+		print("emmc: emmccon %ux %ux\n",
+		      *(volatile u32 *)(cru + 0x598), *(volatile u32 *)(cru + 0x59c));
+		{
+			u8 *grf, *pmu;
+
+			grf = mapnode("syscon@fdc60000", 0xfdc60000);
+			pmu = mapnode("power-management@fdd90000", 0xfdd90000);
+			for(off = 0x80; off < 0xD0; off += 16)
+				print("emmc: grf%03x %08ux %08ux %08ux %08ux\n", off,
+				      *(volatile u32 *)(grf+off),
+				      *(volatile u32 *)(grf+off+4),
+				      *(volatile u32 *)(grf+off+8),
+				      *(volatile u32 *)(grf+off+12));
+			for(off = 0x200; off < 0x270; off += 16)
+				print("emmc: drv%03x %08ux %08ux %08ux %08ux\n", off,
+				      *(volatile u32 *)(grf+off),
+				      *(volatile u32 *)(grf+off+4),
+				      *(volatile u32 *)(grf+off+8),
+				      *(volatile u32 *)(grf+off+12));
+			print("emmc: pmu98 %08ux pmua0 %08ux pmu60 %08ux pmu68 %08ux\n",
+			      *(volatile u32 *)(pmu+0x98), *(volatile u32 *)(pmu+0xa0),
+			      *(volatile u32 *)(pmu+0x60), *(volatile u32 *)(pmu+0x68));
+			{
+				u8 *g1, *g2;
+
+				g1 = mapnode("gpio@fe740000", 0xfe740000);
+				g2 = mapnode("gpio@fe750000", 0xfe750000);
+				print("emmc: gpio1 dr %08ux ddr %08ux gpio2 dr %08ux ddr %08ux\n",
+				      *(volatile u32 *)g1, *(volatile u32 *)(g1+8),
+				      *(volatile u32 *)g2, *(volatile u32 *)(g2+8));
+			}
+		}
+		print("emmc: pll0 %ux %ux %ux %ux pll40 %ux %ux %ux %ux\n",
+		      *(volatile u32 *)(cru + 0x00), *(volatile u32 *)(cru + 0x04),
+		      *(volatile u32 *)(cru + 0x08), *(volatile u32 *)(cru + 0x0c),
+		      *(volatile u32 *)(cru + 0x40), *(volatile u32 *)(cru + 0x44),
+		      *(volatile u32 *)(cru + 0x48), *(volatile u32 *)(cru + 0x4c));
+		for(off = 0xE0; off < 0x100; off += 16)
+			print("emmc: %03x %08ux %08ux %08ux %08ux\n", off,
+			      rd32(off), rd32(off+4), rd32(off+8), rd32(off+12));
+		for(off = 0x300; off < 0x340; off += 16)
+			print("emmc: %03x %08ux %08ux %08ux %08ux\n", off,
+			      rd32(off), rd32(off+4), rd32(off+8), rd32(off+12));
+		for(off = 0x500; off < 0x560; off += 16)
+			print("emmc: %03x %08ux %08ux %08ux %08ux\n", off,
+			      rd32(off), rd32(off+4), rd32(off+8), rd32(off+12));
+		for(off = 0x800; off < 0x840; off += 16)
+			print("emmc: %03x %08ux %08ux %08ux %08ux\n", off,
+			      rd32(off), rd32(off+4), rd32(off+8), rd32(off+12));
+		for(i = 0; i < 4; i++){
+			r = command(13, i<<16, Rsp48|CmdCrc|CmdIdx, resp4);
+			print("emmc: raw13 before rca %d -> %d nis %ux eis %ux r0 %08ux\n",
+			      i, r, rd16(Nis), rd16(Eis), resp4[0]);
+		}
+		r = command(2, 0, Rsp136, resp4);
+		print("emmc: raw13 cmd2 -> %d nis %ux eis %ux cid %08ux %08ux\n",
+		      r, rd16(Nis), rd16(Eis), resp4[0], resp4[1]);
+		r = command(1, 0x40000080, Rsp48, resp4);
+		print("emmc: raw13 cmd1 -> %d nis %ux eis %ux ocr %08ux\n",
+		      r, rd16(Nis), rd16(Eis), resp4[0]);
+		rails_on();
+		sleep(500);
+		print("emmc: raw13 after rails clock %ux hc2 %ux power %ux\n",
+		      rd16(Clock), rd16(Hc2), rd8(Power));
+		for(i = 0; i < 4; i++){
+			r = command(13, i<<16, Rsp48|CmdCrc|CmdIdx, resp4);
+			print("emmc: raw13 after rca %d -> %d nis %ux eis %ux r0 %08ux\n",
+			      i, r, rd16(Nis), rd16(Eis), resp4[0]);
+		}
 		exits(nil);
 	}
 	if(strcmp(argv[1], "read") == 0){
@@ -891,6 +1001,155 @@ main(int argc, char **argv)
 		if(r != 0)
 			hexdump(back, 64);
 		exits(r == 0 ? nil : "mismatch");
+	}
+	if(strcmp(argv[1], "slow5") == 0){
+		/*
+		 * Faithful 6.18 identify sequence, matching the Armbian
+		 * (mainline 6.18.21) driver:
+		 *  - no PMIC writes: the rails are already on from U-Boot
+		 *  - MISC_CON (0x81c) stays 0, as in the working kernel
+		 *  - HC2 is cleared: U-Boot leaves it at 0x93 (SDR104, tuned)
+		 *  - cclk_emmc parent 5 = clk_osc0_div_375k = div_750k / 2
+		 *  - power is the regulator path value 0x01 (power on only)
+		 *  - a long wait, since a command with response must either
+		 *    complete or time out before the next one is issued
+		 */
+		cmdwait = 3000;
+		rails_on();
+		resetall();
+		wr32(MiscCon, rd32(MiscCon) & ~(1<<1));
+		vendor_probe();
+		/*
+		 * The Armbian 6.18 kernel identifies the card with HC2 = 0x08:
+		 * 1.8 V signalling already enabled (vqmmc is vcc_1v8), UHS mode
+		 * still 0.  With HC2 = 0 (3.3 V signalling) the card never
+		 * answers CMD1 even though the clock is running.
+		 */
+		cru_emmc_375k();
+		/*
+		 * sdhci_set_ios() order: power, bus width, then clock.  Writing the
+		 * power register after enabling the clock makes the controller drop
+		 * SDHCI_CLOCK_CARD_EN (bit 2), leaving the card with no clock at all.
+		 */
+		wr8(Power, 0);
+		wr8(Power, 1);
+		setwidth(1);
+		/* The power write clears the 1.8 V signalling bit, so set it after. */
+		wr16(Hc2, 1<<3);
+		phyinit();		/* dwcmshc_phy_init(), write-only PHY regs */
+		if(setclockbase() < 0)
+			fail("emmc: clock failed");
+		sleep(2000);
+		if(verbose)
+			print("emmc: hc2 %ux power %ux clock %ux misc %ux\n",
+			      rd16(Hc2), rd8(Power), rd16(Clock), rd32(MiscCon));
+		r = command(0, 0, 0, nil);
+		print("emmc: cmd0 %d nis %ux present %ux\n", r, rd16(Nis),
+		      rd32(Present));
+		for(i = 0; i < 3; i++){
+			r = command(1, (1u<<30) | (1u<<7), Rsp48, resp4);
+			print("emmc: cmd1 %d nis %ux eis %ux ocr %08ux present %ux\n",
+			      r, rd16(Nis), rd16(Eis), resp4[0], rd32(Present));
+			if(r == 0)
+				break;
+			sleep(100);
+		}
+		if(r < 0)
+			fail("emmc: no response");
+		print("emmc: READY ocr %08ux ccs %d\n", resp4[0], (resp4[0]>>30)&1);
+		exits(nil);
+	}
+	if(strcmp(argv[1], "slow8") == 0){
+		/* Full rail power-cycle, then the faithful 6.18 identify. */
+		cmdwait = 3000;
+		print("emmc: rails off\n");
+		rails_set(0x60);		/* disable DCDC5 + SWITCH1 (write masks) */
+		sleep(300);
+		print("emmc: rails on\n");
+		rails_set(0x66);
+		sleep(200);
+		{
+			u8 *grf;
+
+			grf = mapnode("syscon@fdc60000", 0xfdc60000);
+			print("emmc: grf20 before %ux\n",
+			      *(volatile u32 *)(grf + 0x20));
+			*(volatile u32 *)(grf + 0x20) = (0xffffu<<16) | 0x1111;
+			*(volatile u32 *)(grf + 0x24) = (0xffffu<<16) | 0x1111;
+			*(volatile u32 *)(grf + 0x28) = (0xffffu<<16) | 0x2001;
+			*(volatile u32 *)(grf + 0x2c) = (0xffffu<<16) | 0x0222;
+			__asm__ volatile("dsb sy" ::: "memory");
+			sleep(50);
+			print("emmc: grf20 after %ux\n",
+			      *(volatile u32 *)(grf + 0x20));
+		}
+		resetall();
+		wr32(MiscCon, rd32(MiscCon) & ~(1<<1));
+		vendor_probe();
+		cru_emmc_375k();
+		wr8(Power, 0);
+		wr8(Power, 1);
+		setwidth(1);
+		wr16(Hc2, 1<<3);
+		phyinit();
+		if(setclockbase() < 0)
+			fail("emmc: clock failed");
+		sleep(1000);
+		print("emmc: state clock %ux hc2 %ux power %ux\n",
+		      rd16(Clock), rd16(Hc2), rd8(Power));
+		r = command(0, 0, 0, nil);
+		print("emmc: cmd0 %d nis %ux present %ux\n", r, rd16(Nis),
+		      rd32(Present));
+		r = command(2, 0, Rsp136, resp4);
+		print("emmc: cmd2 %d nis %ux eis %ux cid %08ux %08ux %08ux %08ux\n",
+		      r, rd16(Nis), rd16(Eis), resp4[0], resp4[1], resp4[2],
+		      resp4[3]);
+		{
+			static u32 ocrs[] = {
+				0x40000080, 0x40ff8000, 0x40300000, 0x40ff8080,
+				0x00000080, 0xc0ff8080
+			};
+			int oi;
+			for(oi = 0; oi < sizeof ocrs/sizeof ocrs[0]; oi++){
+				r = command(1, ocrs[oi], Rsp48, resp4);
+				print("emmc: cmd1 %08ux -> %d nis %ux eis %ux ocr %08ux\n",
+				      ocrs[oi], r, rd16(Nis), rd16(Eis), resp4[0]);
+				if(r == 0)
+					break;
+			}
+		}
+		if(r < 0)
+			fail("emmc: no response");
+		print("emmc: READY ocr %08ux ccs %d\n", resp4[0], (resp4[0]>>30)&1);
+		exits(nil);
+	}
+	if(strcmp(argv[1], "slow6") == 0){
+		/*
+		 * Probe the CMD/response path before CMD0.  U-Boot left the card
+		 * in transfer state with an RCA, so CMD13 (SEND_STATUS) should
+		 * answer.  If it does not, the card never sees our commands; if
+		 * it does, then CMD0 is not taking effect and CMD1 is illegal.
+		 */
+		cmdwait = 3000;
+		resetall();
+		wr32(MiscCon, rd32(MiscCon) & ~(1<<1));
+		vendor_probe();
+		cru_emmc_375k();
+		wr8(Power, 0);
+		wr8(Power, 1);
+		setwidth(1);
+		wr16(Hc2, 1<<3);
+		if(setclockbase() < 0)
+			fail("emmc: clock failed");
+		sleep(100);
+		print("emmc: state clock %ux hc2 %ux power %ux\n",
+		      rd16(Clock), rd16(Hc2), rd8(Power));
+		for(i = 0; i < 16; i++){
+			r = command(13, i<<16, Rsp48|CmdCrc|CmdIdx, resp4);
+			print("emmc: cmd13 rca %d -> %d nis %ux eis %ux r0 %08ux\n",
+			      i, r, rd16(Nis), rd16(Eis), resp4[0]);
+		}
+		exits(nil);
 	}
 	if(strcmp(argv[1], "slow3") == 0){
 		/* The creator's board DTS gives the eMMC no vmmc/vqmmc and no

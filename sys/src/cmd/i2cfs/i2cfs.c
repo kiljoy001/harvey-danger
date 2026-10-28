@@ -292,7 +292,7 @@ i2cwrite(I2c *i, u8 addr, u8 *data, int len)
 	if(r[RK_I2C_IPD / 4] & RK_I2C_INT_NAK)
 		return -1;
 
-	r[RK_I2C_CON / 4] = con | RK_I2C_STOP;
+	r[RK_I2C_CON / 4] = (con | RK_I2C_STOP) & ~RK_I2C_START;
 	i2cwait(i, RK_I2C_INT_STOP);
 	r[RK_I2C_IPD / 4] = RK_I2C_INT_ALL;
 	return 0;
@@ -336,7 +336,7 @@ i2cread(I2c *i, u8 addr, u8 *reg, int reglen, u8 *buf, int len)
 		buf[k] = (val >> ((k % 4) * 8)) & 0xff;
 	}
 
-	r[RK_I2C_CON / 4] = con | RK_I2C_STOP;
+	r[RK_I2C_CON / 4] = (con | RK_I2C_STOP) & ~RK_I2C_START;
 	i2cwait(i, RK_I2C_INT_STOP);
 	r[RK_I2C_IPD / 4] = RK_I2C_INT_ALL;
 	return 0;
