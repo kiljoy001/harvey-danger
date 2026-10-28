@@ -584,11 +584,13 @@ arm64kernelstart(Fdtinfo *info)
 	 * table and a physical framebuffer, so this has to run after the
 	 * page allocator, not with the other device-tree probes.
 	 */
+#ifndef ARM64_NO_DISPLAY
 	rkiommuinit(info);
 	if(vop2init(info) < 0)
 		arm64uartputs("HARVEY-ARM64 DISPLAY FAIL\n");
 	else
 		arm64uartputs("HARVEY-ARM64 DISPLAY PASS\n");
+#endif
 	arm64clockready();
 	startworker(1);
 	startworker(2);
