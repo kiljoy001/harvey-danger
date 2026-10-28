@@ -806,6 +806,84 @@ rails_on(void)
 	return rails_set(0x66);
 }
 
+/*
+ * Transfer clock, following the vendor driver's model: cclk_emmc is set to
+ * the target rate by the CRU and the SDHCI divider stays 0, so the card
+ * sees cclk_emmc directly.  xin24m is 24 MHz, inside the eMMC legacy limit
+ * and far above the 702 Hz identify clock.
+ */
+static int
+setclock24m(void)
+{
+	u8 *cru;
+	int i;
+
+	cru = mapnode("clock-controller@fdd20000", 0xfdd20000);
+	*(volatile u32 *)(cru + 0x170) = (7u<<12)<<16 | (0u<<12);	/* xin24m */
+	*(volatile u32 *)(cru + 0x324) = (1u<<8)<<16 | 0;		/* gate on */
+	__asm__ volatile("dsb sy" ::: "memory");
+	sleep(10);
+	wr16(Clock, 0);
+	wr16(Clock, 1);			/* INT_EN, divider 0 */
+	for(i = 0; i < 150; i++){
+		if(rd16(Clock) & 2)
+			break;
+		sleep(1);
+	}
+	if((rd16(Clock) & 2) == 0)
+		return -1;
+	dllbypass();
+	wr16(Clock, 5);			/* INT_EN | CARD_EN, divider 0 */
+	if(verbose)
+		print("emmc: 24m sel %ux clock %ux\n",
+		      *(volatile u32 *)(cru + 0x170), rd16(Clock));
+	return (rd16(Clock) & 4) ? 0 : -1;
+}
+
+/*
+ * High-speed transfer: CMD6 sets HS_TIMING=1, then cclk_emmc switches to
+ * cpll_50m (50 MHz) with the SDHCI divider at 0.  Falls back to 24 MHz.
+ */
+static int
+setclock50m(void)
+{
+	u8 *cru;
+	u32 r[4];
+	int i;
+
+	if(command(6, 0x03B90100, Rsp48b|CmdCrc|CmdIdx, r) < 0){
+		if(verbose)
+			print("emmc: cmd6 hs failed nis %ux eis %ux\n",
+			      rd16(Nis), rd16(Eis));
+		return -1;
+	}
+	for(i = 0; i < 1000; i++){
+		if((rd32(Present) & (1<<2)) == 0)
+			break;
+		sleep(1);
+	}
+	cru = mapnode("clock-controller@fdd20000", 0xfdd20000);
+	*(volatile u32 *)(cru + 0x170) = (7u<<12)<<16 | (4u<<12);	/* cpll_50m */
+	*(volatile u32 *)(cru + 0x324) = (1u<<8)<<16 | 0;
+	__asm__ volatile("dsb sy" ::: "memory");
+	sleep(10);
+	wr16(Clock, 0);
+	wr16(Clock, 1);
+	for(i = 0; i < 150; i++){
+		if(rd16(Clock) & 2)
+			break;
+		sleep(1);
+	}
+	if((rd16(Clock) & 2) == 0)
+		return -1;
+	dllbypass();
+	wr16(Clock, 5);
+	if(verbose)
+		print("emmc: 50m sel %ux clock %ux\n",
+		      *(volatile u32 *)(cru + 0x170), rd16(Clock));
+	return (rd16(Clock) & 4) ? 0 : -1;
+}
+
 static int
 initcard(u32 *ocrp)
 {
@@ -888,10 +966,8 @@ initcard(u32 *ocrp)
 	 * Transfer clock: cclk_emmc back to 200 MHz, SDHCI divider 4, so
 	 * 25 MHz.  A 512-byte block at the 702 Hz identify clock takes ~6 s.
 	 */
-	/* keep the identify clock for now: the 25 MHz bypass path gives a
-	 * data end-bit error, so tune the DLL/PHY before raising it. */
-	if(verbose)
-		print("emmc: transfer clock %ux\n", rd16(Clock));
+	if(setclock50m() < 0 && setclock24m() < 0)
+		return -1;
 	return 0;
 }
 
