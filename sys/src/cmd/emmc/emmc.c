@@ -884,6 +884,28 @@ setclock50m(void)
 	return (rd16(Clock) & 4) ? 0 : -1;
 }
 
+/* CMD6: EXT_CSD BUS_WIDTH = 8-bit, then widen the host. */
+static int
+setbus8(void)
+{
+	u32 r[4];
+	int i;
+
+	if(command(6, 0x03B70200, Rsp48b|CmdCrc|CmdIdx, r) < 0){
+		if(verbose)
+			print("emmc: cmd6 bus8 failed nis %ux eis %ux\n",
+			      rd16(Nis), rd16(Eis));
+		return -1;
+	}
+	for(i = 0; i < 1000; i++){
+		if((rd32(Present) & (1<<2)) == 0)
+			break;
+		sleep(1);
+	}
+	setwidth(8);
+	return 0;
+}
+
 static int
 initcard(u32 *ocrp)
 {
@@ -966,7 +988,10 @@ initcard(u32 *ocrp)
 	 * Transfer clock: cclk_emmc back to 200 MHz, SDHCI divider 4, so
 	 * 25 MHz.  A 512-byte block at the 702 Hz identify clock takes ~6 s.
 	 */
-	if(setclock50m() < 0 && setclock24m() < 0)
+	if(setclock50m() == 0){
+		if(setbus8() < 0 && verbose)
+			print("emmc: staying 1-bit\n");
+	}else if(setclock24m() < 0)
 		return -1;
 	return 0;
 }
