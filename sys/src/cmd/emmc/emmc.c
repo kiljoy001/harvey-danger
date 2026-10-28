@@ -207,7 +207,63 @@ enum {
 	MiscCon		= 0x81C,
 	VendorArea1	= 0xE8,
 	HostCtrl3	= 0x08,
+	/* PHY register area (DWC_MSHC_PTR_PHY_R). */
+	PhyCnfg		= 0x300,	/* 32-bit */
+	PhyCmdpad	= 0x304,	/* 16-bit */
+	PhyDatapad	= 0x306,
+	PhyClkpad	= 0x308,
+	PhyStbpad	= 0x30A,
+	PhyRstnpad	= 0x30C,
+	PhySdclkdlCnfg	= 0x31D,	/* 8-bit */
+	PhySdclkdlDc	= 0x31E,
+	PhySmpldlCnfg	= 0x320,
+	PhyAtdlCnfg	= 0x321,
+	PhyDllCtrl	= 0x324,
+	PhyDllCnfg2	= 0x326,
+	PhyDlldlCnfg	= 0x328,
 };
+
+/*
+ * dwcmshc_phy_init() from the 6.18 driver, installed there as the
+ * voltage_switch callback so it runs during the initial 1.8 V switch.
+ * The important part is PHY_CNFG_RSTN_DEASSERT: without it the PHY stays
+ * in reset and the card never sees a clock or a command.
+ */
+static void
+phyinit(void)
+{
+	u32 val;
+	u8 b;
+	int rxsel;
+
+	/* vqmmc is vcc_1v8, so select the 1.8 V receiver. */
+	rxsel = 1;			/* PHY_PAD_RXSEL_1V8 */
+
+	val = 1;			/* PHY_CNFG_RSTN_DEASSERT */
+	val |= 0x0c << 16;		/* PHY_CNFG_PAD_SP */
+	val |= 0x0c << 20;		/* PHY_CNFG_PAD_SN */
+	wr32(PhyCnfg, val);
+
+	wr8(PhySdclkdlCnfg, 1<<4);	/* SDCLKDL_CNFG_UPDATE */
+	wr8(PhySdclkdlDc, 0x32);	/* PHY_SDCLKDL_DC_DEFAULT */
+	wr8(PhyDllCnfg2, 0x0a);		/* DLL_CNFG2_JUMPSTEP */
+	b = rd8(PhySdclkdlCnfg) & ~(1<<4);
+	wr8(PhySdclkdlCnfg, b);
+
+	val = rxsel | (1<<3) | (0x3<<5) | (0x3<<9);	/* pullup, slew P/N */
+	wr16(PhyCmdpad, val);
+	wr16(PhyDatapad, val);
+	wr16(PhyRstnpad, val);
+	wr16(PhyClkpad, (0x3<<5) | (0x3<<9));
+	wr16(PhyStbpad, rxsel | (2<<3) | (0x3<<5) | (0x3<<9));
+
+	if(rxsel == 1)
+		wr8(PhyDlldlCnfg, 0x3<<5);	/* SLV_INPSEL */
+	wr8(PhyDllCtrl, 1);
+	if(verbose)
+		print("emmc: phy cnfg %ux cmdpad %ux dll %ux\n",
+		      rd32(PhyCnfg), rd16(PhyCmdpad), rd8(PhyDllCtrl));
+}
 
 /*
  * Vendor bring-up for rk3568-dwcmshc, mirrored from the BSP driver:
@@ -259,14 +315,24 @@ cru_emmc_375k(void)
 	u8 *cru;
 
 	cru = mapnode("clock-controller@fdd20000", 0xfdd20000);
+	/*
+	 * Parent 5 is clk_osc0_div_375k = clk_osc0_div_750k / 2, and that
+	 * clock is a divider (CLKSEL_CON(82) bits 8-13) which only the clock
+	 * framework programs.  With a zero divider the parent has no clock,
+	 * so the card would never see a single edge.  Program it for
+	 * 24 MHz / 32 = 750 kHz and enable its gate.
+	 */
+	*(volatile u32 *)(cru + 0x248) = (0x3fu<<8)<<16 | (0x1fu<<8);
+	*(volatile u32 *)(cru + 0x38c) = (1u<<15)<<16 | 0;
 	*(volatile u32 *)(cru + 0x170) = (7u<<12)<<16 | (5u<<12);
 	*(volatile u32 *)(cru + 0x324) = (1u<<8)<<16 | 0;	/* gate on */
 	__asm__ volatile("dsb sy" ::: "memory");
 	sleep(20);
 	if(verbose)
-		print("emmc: cclk_emmc sel %ux gates %ux\n",
+		print("emmc: cclk_emmc sel %ux gates %ux osc750 %ux\n",
 		      *(volatile u32 *)(cru + 0x170),
-		      *(volatile u32 *)(cru + 0x324));
+		      *(volatile u32 *)(cru + 0x324),
+		      *(volatile u32 *)(cru + 0x248));
 }
 
 /*
@@ -566,8 +632,31 @@ vendor_probe(void)
 static void
 resetall(void)
 {
+	u8 *cru;
 	u32 extra;
 	int i;
+
+	/*
+	 * rk35xx_sdhci_reset(): the creator's dtsi gives the controller five
+	 * resets (SRST_A/H/B/C/T_EMMC = ids 117..121), which land in
+	 * CRU SOFTRST_CON(7) = 0x41c, bits 5-9.  Pulse them before touching
+	 * the controller; leaving them asserted holds the card interface in
+	 * reset even though the register block still answers.
+	 */
+	cru = mapnode("clock-controller@fdd20000", 0xfdd20000);
+	if(verbose)
+		print("emmc: emmc resets before %ux\n",
+		      *(volatile u32 *)(cru + 0x41c));
+	/* Only deassert: the bootloader has already initialised the controller,
+	 * and pulsing a controller reset here requires a full re-probe. */
+	if(*(volatile u32 *)(cru + 0x41c) & 0x3e0){
+		*(volatile u32 *)(cru + 0x41c) = (0x3e0u<<16) | 0;
+		__asm__ volatile("dsb sy" ::: "memory");
+		sleep(1);
+	}
+	if(verbose)
+		print("emmc: emmc resets after %ux\n",
+		      *(volatile u32 *)(cru + 0x41c));
 
 	extra = rd32(MiscCon);
 	wr8(Swreset, 4);
@@ -803,11 +892,47 @@ main(int argc, char **argv)
 			hexdump(back, 64);
 		exits(r == 0 ? nil : "mismatch");
 	}
+	if(strcmp(argv[1], "slow3") == 0){
+		/* The creator's board DTS gives the eMMC no vmmc/vqmmc and no
+		 * mmc-hs200-1_8v, so there is no 1.8 V switch: the card is
+		 * identified with 3.3 V signalling. */
+		rails_on();
+		resetall();
+		vendor_probe();
+		wr16(Hc2, rd16(Hc2) & ~(1<<3));		/* 3.3 V signalling */
+		if(verbose)
+			print("emmc: hc2 %ux\n", rd16(Hc2));
+		cru_emmc_200m();
+		if(clock200() < 0)
+			fail("emmc: 200 MHz DLL init failed");
+		cru_emmc_375k();
+		if(setclockbase() < 0)
+			fail("emmc: clock failed");
+		setpower(0x0f);
+		setwidth(1);
+		sleep(20);
+		r = command(0, 0, 0, nil);
+		print("emmc: cmd0 %d nis %ux present %ux\n", r, rd16(Nis),
+		      rd32(Present));
+		for(i = 0; i < 5; i++){
+			r = command(1, 0x40ff8000, Rsp48, resp4);
+			print("emmc: cmd1 %d nis %ux eis %ux ocr %08ux\n",
+			      r, rd16(Nis), rd16(Eis), resp4[0]);
+			if(r == 0)
+				break;
+			sleep(20);
+		}
+		if(r < 0)
+			fail("emmc: no response");
+		print("emmc: READY ocr %08ux ccs %d\n", resp4[0], (resp4[0]>>30)&1);
+		exits(nil);
+	}
 	if(strcmp(argv[1], "slow") == 0){
 		rails_on();
 		resetall();
 		vendor_probe();
 		setvoltage180();
+		phyinit();		/* voltage_switch -> dwcmshc_phy_init() */
 		/* sdhci_setup_host(): initialise the PHY at max clock. */
 		cru_emmc_200m();
 		if(clock200() < 0)
@@ -981,6 +1106,20 @@ main(int argc, char **argv)
 			h[m] = 0;
 			print("pmic: 0x%x = 0x%s\n", 0xb1 + j, h);
 		}
+		exits(nil);
+	}
+	if(strcmp(argv[1], "pmugrf") == 0){
+		u8 *g;
+		int off;
+
+		g = mapnode("syscon@fdc20000", 0xfdc20000);
+		for(off = 0x120; off < 0x160; off += 16)
+			print("%06x: %08ux %08ux %08ux %08ux\n",
+			      0xfdc20000 + off,
+			      *(volatile u32 *)(g + off),
+			      *(volatile u32 *)(g + off + 4),
+			      *(volatile u32 *)(g + off + 8),
+			      *(volatile u32 *)(g + off + 12));
 		exits(nil);
 	}
 	if(strcmp(argv[1], "grf") == 0){

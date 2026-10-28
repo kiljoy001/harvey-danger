@@ -163,6 +163,31 @@ explains the silence.
 So neither the display bring-up nor `usbpower`'s PMU/CRU programming is
 responsible.
 
+## Findings from the Armbian source
+
+`9rock/linux-rockchip` is `armbian/linux-rockchip` on branch `rk-6.1-rkr5.1`,
+but the booted image is **mainline 6.18.21** (`current-rockchip64`).  Three
+things exist only in the newer driver or in the creator's board DTS:
+
+1. **`dwcmshc_phy_init()`** (6.18 only), installed as the `voltage_switch`
+   op: deasserts `PHY_CNFG_RSTN` and configures the PHY pads, delay line and
+   DLL at `DWC_MSHC_PTR_PHY_R = 0x300`.  Implemented; on this controller
+   every register in that block reads back 0 (U-Boot too), so it is a no-op
+   here.
+2. **`SDHCI_QUIRK2_CLOCK_DIV_ZERO_BROKEN`** — identify mode gives div 0,
+   the quirk forces 1.  Implemented (`CLOCK_CONTROL = 0x107`).
+3. **The creator's board DTS gives the eMMC no `vmmc`/`vqmmc` and no
+   `mmc-hs200-1_8v`**, so there is no 1.8 V voltage switch: the card is
+   identified with 3.3 V signalling.  Our v1.1 DTB declares both, which is
+   why we had been switching to 1.8 V.  Tried both; no change.
+4. **Five controller resets** (`SRST_A/H/B/C/T_EMMC`, ids 117-121, all in
+   CRU `SOFTRST_CON(7)` = `0x41c` bits 5-9).  Our DTB has no `resets`
+   property at all.  They read back 0 (deasserted) in U-Boot and Harvey;
+   pulsing them makes even CMD0 stop completing, so they are left alone.
+5. The 375 kHz parent `clk_osc0_div_375k` is `clk_osc0_div_750k / 2`, and
+   the 750 kHz divider lives in `CLKSEL_CON(82)` bits 8-13.  Programmed to
+   /32 (`0x1f09`) on the assumption the framework would do it; no change.
+
 ## Next steps
 
 1. Read `0xb4` through the RK809 page mechanism (`rk808.c` regmap
