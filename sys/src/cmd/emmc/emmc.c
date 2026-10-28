@@ -231,6 +231,51 @@ vendorinit(void)
 	dllbypass();
 }
 
+/*
+ * dwcmshc_rk3568_set_clock(): Linux calls clk_set_rate(cclk_emmc, 375000)
+ * before sdhci_set_clock().  cclk_emmc's parent 5 is clk_osc0_div_375k
+ * (xin24m / 64), so identify mode selects that parent and the SDHCI
+ * divider is then 1 (field 0): cclk_emmc is the "core" clock, and
+ * dwcmshc_get_max_clock() returns its rate, not CAPS.
+ */
+static void
+cru_emmc_375k(void)
+{
+	u8 *cru;
+
+	cru = mapnode("clock-controller@fdd20000", 0xfdd20000);
+	*(volatile u32 *)(cru + 0x170) = (7u<<12)<<16 | (5u<<12);
+	*(volatile u32 *)(cru + 0x324) = (1u<<8)<<16 | 0;	/* gate on */
+	__asm__ volatile("dsb sy" ::: "memory");
+	sleep(20);
+	if(verbose)
+		print("emmc: cclk_emmc sel %ux gates %ux\n",
+		      *(volatile u32 *)(cru + 0x170),
+		      *(volatile u32 *)(cru + 0x324));
+}
+
+/* sdhci_set_clock() with the 375 kHz parent: no division. */
+static int
+setclockbase(void)
+{
+	int i;
+
+	wr16(Clock, 0);
+	wr16(Clock, 1);			/* INT_EN, divider 0 */
+	for(i = 0; i < 150; i++){
+		if(rd16(Clock) & 2)
+			break;
+		sleep(1);
+	}
+	if((rd16(Clock) & 2) == 0)
+		return -1;
+	dllbypass();
+	wr16(Clock, 5);			/* INT_EN | CARD_EN */
+	if(verbose)
+		print("emmc: clock %ux\n", rd16(Clock));
+	return (rd16(Clock) & 4) ? 0 : -1;
+}
+
 static int
 reset(void)
 {
@@ -622,6 +667,32 @@ main(int argc, char **argv)
 		if(r != 0)
 			hexdump(back, 64);
 		exits(r == 0 ? nil : "mismatch");
+	}
+	if(strcmp(argv[1], "slow") == 0){
+		resetall();
+		vendor_probe();
+		setvoltage180();
+		cru_emmc_375k();
+		if(setclockbase() < 0)
+			fail("emmc: clock failed");
+		setpower(0x0f);
+		setwidth(1);
+		sleep(20);
+		r = command(0, 0, 0, nil);
+		print("emmc: cmd0 %d nis %ux present %ux\n", r, rd16(Nis),
+		      rd32(Present));
+		for(i = 0; i < 5; i++){
+			r = command(1, (1u<<30) | (1u<<7), Rsp48, resp4);
+			print("emmc: cmd1 %d nis %ux eis %ux ocr %08ux\n",
+			      r, rd16(Nis), rd16(Eis), resp4[0]);
+			if(r == 0)
+				break;
+			sleep(20);
+		}
+		if(r < 0)
+			fail("emmc: no response");
+		print("emmc: READY ocr %08ux ccs %d\n", resp4[0], (resp4[0]>>30)&1);
+		exits(nil);
 	}
 	if(strcmp(argv[1], "rails") == 0){
 		char ctl[64], dat[64], cmd[32], h[64];
