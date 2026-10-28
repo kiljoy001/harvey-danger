@@ -154,6 +154,9 @@ def compile_source(source: Path, obj: Path, extra_includes=()) -> bool:
 
 
 def archive(name: str, sources: list[Path]) -> tuple[Path, bool]:
+    destination = OUT / f"{name}.a"
+    if os.environ.get("ARM64_REUSE_LIBS") == "1" and destination.exists():
+        return destination, False
     directory = OUT / name
     directory.mkdir(exist_ok=True)
     objects = []
@@ -162,7 +165,6 @@ def archive(name: str, sources: list[Path]) -> tuple[Path, bool]:
         obj = directory / f"{index:03d}-{source.stem}.o"
         changed |= compile_source(source, obj)
         objects.append(obj)
-    destination = OUT / f"{name}.a"
     if changed or not destination.exists():
         run([AR, "rcs", str(destination), *map(str, objects)])
         print(f"ARM64 {name}: {len(objects)} objects")

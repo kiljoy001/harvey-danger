@@ -235,6 +235,27 @@ def build_i2cfs(out: Path, libc: Path) -> tuple[bytes, int]:
 
 
 def build_usbpower(out: Path, libc: Path) -> tuple[bytes, int]:
+    if os.environ.get("ARM64_NO_USBPOWER") == "1":
+        # Isolation build: satisfy drvman without touching PMU/CRU, so the
+        # eMMC can be tested against the bootloader's untouched state.
+        stub = out / "usbpower_stub.c"
+        stub.write_text(r'''#include <u.h>
+#include <libc.h>
+
+void
+main(void)
+{
+	int fd;
+
+	fd = create("/mnt/usbpower.ready", OWRITE, 0644);
+	if(fd >= 0)
+		close(fd);
+	print("usbpower: disabled for isolation test\n");
+	for(;;)
+		sleep(1000);
+}
+''')
+        return build_fs(out, libc, "usbpower", stub, USBPOWER_BASE)
     return build_fs(out, libc, "usbpower",
                     ROOT / "sys/src/cmd/usbpower/usbpower.c", USBPOWER_BASE)
 
@@ -333,7 +354,9 @@ def userland_signature() -> str:
         if p.is_file() and p.suffix in (".c", ".h", ".json"):
             files.append(p)
     files.sort()
-    return buildcache.signature(["build_userland"], files)
+    variant = os.environ.get("ARM64_NO_USBPOWER", "0")
+    return buildcache.signature(["build_userland", "no-usbpower=" + variant],
+                                 files)
 
 
 def main() -> None:

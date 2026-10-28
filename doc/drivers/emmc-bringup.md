@@ -137,6 +137,16 @@ registers through a page register, so the state of `vcc_1v8` is still
 unconfirmed.  If it is off, the eMMC IO rail is unpowered and that alone
 explains the silence.
 
+## Boot isolation tests
+
+| Build | Result |
+| --- | --- |
+| `ARM64_NO_DISPLAY=1` (no `vop2init`) | unchanged: CMD0 completes, CMD1 silent |
+| `ARM64_NO_USBPOWER=1` (stub `usbpower`, no PMU/CRU writes) | unchanged |
+
+So neither the display bring-up nor `usbpower`'s PMU/CRU programming is
+responsible.
+
 ## Next steps
 
 1. Read `0xb4` through the RK809 page mechanism (`rk808.c` regmap
