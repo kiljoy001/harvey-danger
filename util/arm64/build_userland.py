@@ -29,6 +29,8 @@ I2CFS_BASE = 0x2600000
 RC_BASE = 0x2A00000
 ECHO_BASE = 0x2E00000
 CAT_BASE = 0x3200000
+LS_BASE = 0x3600000
+RTC_BASE = 0x3E00000
 O9DISPLAY_BASE = 0x3A00000
 DISPLAYTEST_BASE = 0x4200000
 O9ASPERA_SCREEN_BASE = 0x4E00000
@@ -612,6 +614,236 @@ main(int argc, char **argv)
 	exits(nil);
 }
 ''', CAT_BASE, libc)
+    ls, _ = build_program(out, "ls", r'''#include <u.h>
+#include <libc.h>
+
+static void
+show(char *dir)
+{
+	Dir *d;
+	int fd, i, n;
+	char path[512];
+
+	fd = open(dir, OREAD);
+	if(fd < 0){
+		fprint(2, "ls: %s: %r\n", dir);
+		return;
+	}
+	n = dirread(fd, &d);
+	if(n < 0){
+		fprint(1, "%s\n", dir);
+		close(fd);
+		return;
+	}
+	while(n > 0){
+		for(i = 0; i < n; i++){
+			if(strcmp(dir, "/") == 0)
+				snprint(path, sizeof path, "/%s", d[i].name);
+			else
+				snprint(path, sizeof path, "%s/%s", dir, d[i].name);
+			fprint(1, "%-24s %8lld %s%s%s\n", d[i].name,
+			       d[i].length,
+			       (d[i].mode & DMDIR) ? "d" : "-",
+			       (d[i].mode & 0400) ? "r" : "-",
+			       (d[i].mode & 0200) ? "w" : "-");
+		}
+		free(d);
+		n = dirread(fd, &d);
+	}
+	close(fd);
+}
+
+void
+main(int argc, char **argv)
+{
+	int i;
+
+	if(argc < 2){
+		show(".");
+		exits(nil);
+	}
+	for(i = 1; i < argc; i++)
+		show(argv[i]);
+	exits(nil);
+}
+''', LS_BASE, libc)
+    rtc, _ = build_program(out, "rtc", r'''#include <u.h>
+#include <libc.h>
+
+/* RK809 (RK808 family) real-time clock through the i2c file server.
+ *   rtc            print the date and set /dev/time from it
+ *   rtc poweroff   drive DEVCTRL.DEV_OFF
+ *   rtc id         print the first registers of the PMIC
+ */
+
+static int ctl = -1, dat = -1;
+
+static int
+hexval(int c)
+{
+	if(c >= '0' && c <= '9') return c - '0';
+	if(c >= 'a' && c <= 'f') return c - 'a' + 10;
+	if(c >= 'A' && c <= 'F') return c - 'A' + 10;
+	return -1;
+}
+
+static int
+rd(u8 addr, u8 reg, u8 *buf, int n)
+{
+	char cmd[32], h[128];
+	int i, m, a, b;
+
+	snprint(cmd, sizeof cmd, "r %d %d %d", addr, reg, n);
+	if(write(ctl, cmd, strlen(cmd)) != strlen(cmd))
+		return -1;
+	m = read(dat, h, sizeof h - 1);
+	if(m < 2*n)
+		return -1;
+	h[m] = 0;
+	for(i = 0; i < n; i++){
+		a = hexval(h[2*i]);
+		b = hexval(h[2*i+1]);
+		if(a < 0 || b < 0)
+			return -1;
+		buf[i] = (a<<4) | b;
+	}
+	return 0;
+}
+
+static int
+wr(u8 addr, u8 *b, int n)
+{
+	char cmd[64];
+	int i, k;
+
+	k = snprint(cmd, sizeof cmd, "w %d", addr);
+	for(i = 0; i < n; i++)
+		k += snprint(cmd+k, sizeof cmd-k, " %d", b[i]);
+	return write(ctl, cmd, strlen(cmd)) == strlen(cmd) ? 0 : -1;
+}
+
+static int
+bcd(u8 v)
+{
+	return (v>>4)*10 + (v & 15);
+}
+
+static int
+leap(int y)
+{
+	return y%4 == 0 && (y%100 != 0 || y%400 == 0);
+}
+
+static long
+days(int y, int m, int d)
+{
+	static int cum[12] = {0,31,59,90,120,151,181,212,243,273,304,334};
+	long n;
+
+	n = (y-1970)*365L + (y-1969)/4;
+	n += cum[m-1];
+	if(m > 2 && leap(y))
+		n++;
+	return n + d - 1;
+}
+
+static int
+findbus(void)
+{
+	char buf[1024], *p, *q;
+	int fd, n;
+
+	fd = open("/mnt/i2c/status", OREAD);
+	if(fd < 0)
+		return -1;
+	n = read(fd, buf, sizeof buf - 1);
+	close(fd);
+	if(n <= 0)
+		return -1;
+	buf[n] = 0;
+	for(p = buf; (p = strstr(p, "base 0x")) != nil; p++){
+		if(strtoul(p+7, nil, 16) != 0xfdd40000)
+			continue;
+		q = p;
+		while(q > buf && q[-1] != '\n')
+			q--;
+		if(strncmp(q, "i2c", 3) == 0)
+			return atoi(q+3);
+	}
+	return -1;
+}
+
+static void
+fail(char *s)
+{
+	fprint(2, "rtc: %s\n", s);
+	exits(s);
+}
+
+void
+main(int argc, char **argv)
+{
+	char ctlpath[64], datpath[64], b[32];
+	u8 t[7], v[2];
+	int bus, fd, y, mo, d, h, mi, sec, n;
+	long epoch;
+
+	if(access("/mnt/i2c", AEXIST) < 0)
+		create("/mnt/i2c", OREAD, DMDIR|0755);
+	fd = open("/srv/i2c", OREAD);
+	if(fd < 0)
+		fail("no i2c service");
+	if(mount(fd, -1, "/mnt/i2c", MREPL|MCREATE, "") < 0)
+		fail("cannot mount i2c");
+	close(fd);
+	bus = findbus();
+	if(bus < 0)
+		fail("PMIC bus not found");
+	snprint(ctlpath, sizeof ctlpath, "/mnt/i2c/i2c%d/ctl", bus);
+	snprint(datpath, sizeof datpath, "/mnt/i2c/i2c%d/data", bus);
+	ctl = open(ctlpath, ORDWR);
+	dat = open(datpath, OREAD);
+	if(ctl < 0 || dat < 0)
+		fail("PMIC bus not usable");
+
+	if(argc > 1 && strcmp(argv[1], "poweroff") == 0){
+		v[0] = 0x4b;
+		v[1] = 0x01;
+		if(wr(0x20, v, 2) < 0)
+			fail("poweroff failed");
+		fprint(2, "rtc: poweroff requested\n");
+		exits(nil);
+	}
+	if(argc > 1 && strcmp(argv[1], "id") == 0){
+		if(rd(0x20, 0, t, 2) < 0)
+			fail("read failed");
+		print("pmic id %02ux %02ux\n", t[0], t[1]);
+		exits(nil);
+	}
+
+	if(rd(0x20, 0, t, 7) < 0)
+		fail("RTC read failed");
+	sec = bcd(t[0] & 0x7f);
+	mi = bcd(t[1] & 0x7f);
+	h = bcd(t[2] & 0x3f);
+	d = bcd(t[3] & 0x3f);
+	mo = bcd(t[4] & 0x1f);
+	y = 2000 + bcd(t[5]);
+	if(mo < 1 || mo > 12 || d < 1 || d > 31)
+		fail("RTC not set");
+	epoch = days(y, mo, d)*86400L + h*3600 + mi*60 + sec;
+	print("%04d-%02d-%02d %02d:%02d:%02d\n", y, mo, d, h, mi, sec);
+
+	fd = open("/dev/time", OWRITE);
+	if(fd >= 0){
+		n = snprint(b, sizeof b, "%ld", epoch);
+		if(write(fd, b, n) != n)
+			fprint(2, "rtc: cannot set /dev/time\n");
+		close(fd);
+	}
+	exits(nil);
+}
+''', RTC_BASE, libc)
     displaytest, _ = build_program(out, "displaytest", r'''#include <u.h>
 #include <libc.h>
 
@@ -774,6 +1006,8 @@ main(int argc, char **argv)
     emit_array(lines, "arm64rcelf", rc)
     emit_array(lines, "arm64echoelf", echo)
     emit_array(lines, "arm64catelf", cat)
+    emit_array(lines, "arm64lself", ls)
+    emit_array(lines, "arm64rtcelf", rtc)
     emit_array(lines, "arm64displaytestelf", displaytest)
     emit_array(lines, "arm64rcmain", rcmain.encode())
     args.output.write_text("\n".join(lines))
@@ -794,6 +1028,8 @@ main(int argc, char **argv)
         "rc": rc,
         "echo": echo,
         "cat": cat,
+        "ls": ls,
+        "rtc": rtc,
         "displaytest": displaytest,
         "rcmain": rcmain.encode(),
     }

@@ -152,6 +152,7 @@ static const Fdtclass classtab[] = {
 	{ "rockchip,rk3399-dw-mshc", Fdtclassmmc },
 	{ "arasan,sdhci-8.9a", Fdtclassmmc },
 	{ "rockchip,rk3568-sdhci", Fdtclassmmc },
+	{ "rockchip,rk3568-dwcmshc", Fdtclassmmc },
 	{ "snps,dwc3", Fdtclassusb },
 	{ "rockchip,rk3568-dwc3", Fdtclassusb },
 	{ "generic-ehci", Fdtclassusb },

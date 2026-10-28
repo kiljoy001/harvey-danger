@@ -17,6 +17,7 @@ enum {
 	Qcompat,
 	Qclass,
 	Qconsole,
+	Qwait,
 	Qdma,
 	Qdmabase,
 	Qdmasize,
@@ -25,7 +26,6 @@ enum {
 	Qdmaclean,
 	Qdmainval,
 	Qdmacivac,
-	Qwait,
 };
 
 /* 6 type bits: the DMA control files are past the old 4-bit field. */
@@ -290,6 +290,8 @@ pnpgen(Chan *c, char *name, Dirtab *tab, int ntab, int s, Dir *dp)
 			q.path = QPATH(dev, Qwait);
 			devdir(c, q, "wait", 0, eve, 0444, dp);
 			break;
+		default:
+			return -1;
 		}
 		return 1;
 	case Qdma:
