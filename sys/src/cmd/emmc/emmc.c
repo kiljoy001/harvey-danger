@@ -906,6 +906,163 @@ setbus8(void)
 	return 0;
 }
 
+/*
+ * HS200: CMD6 sets HS_TIMING=2, cclk_emmc moves to gpll_200m with the
+ * SDHCI divider at 0, and the DWCMSHC DLL is initialised with the values
+ * captured from the working 6.18 kernel.
+ */
+static int
+seths200(void)
+{
+	u8 *cru;
+	u32 r[4], v;
+	int i;
+
+	if(command(6, 0x03B90200, Rsp48b|CmdCrc|CmdIdx, r) < 0){
+		if(verbose)
+			print("emmc: cmd6 hs200 failed nis %ux eis %ux\n",
+			      rd16(Nis), rd16(Eis));
+		return -1;
+	}
+	for(i = 0; i < 1000; i++){
+		if((rd32(Present) & (1<<2)) == 0)
+			break;
+		sleep(1);
+	}
+
+	cru = mapnode("clock-controller@fdd20000", 0xfdd20000);
+	*(volatile u32 *)(cru + 0x170) = (7u<<12)<<16 | (1u<<12);	/* gpll_200m */
+	*(volatile u32 *)(cru + 0x324) = (1u<<8)<<16 | 0;
+	__asm__ volatile("dsb sy" ::: "memory");
+	sleep(10);
+
+	wr16(Clock, 0);
+	wr16(Clock, 1);
+	for(i = 0; i < 150; i++){
+		if(rd16(Clock) & 2)
+			break;
+		sleep(1);
+	}
+	if((rd16(Clock) & 2) == 0)
+		return -1;
+	wr16(Clock, 5);
+
+	/* Reset DLL, set the RX source, start and wait for lock. */
+	wr32(DllCtrl, 1<<1);
+	sleep(1);
+	wr32(DllCtrl, 0);
+	wr32(DllRxclk, (1<<27) | (1<<29));	/* DLYENA | NO_INVERTER */
+	wr32(DllCtrl, (0x5<<16) | (0x2<<8) | 1);
+	for(i = 0; i < 500; i++){
+		v = rd32(DllStatus0);
+		if(v & (1<<8))
+			break;
+		if(v & (1<<9)){
+			if(verbose)
+				print("emmc: hs200 DLL timeout %ux\n", v);
+			return -1;
+		}
+		sleep(1);
+	}
+	if(i == 500)
+		return -1;
+	{
+		u32 lock;
+
+		lock = ((v & 0xff) * 2) & 0xff;
+		/* Vendor RK3568: ORI_GATE | DLYENA | NO_INVERTER |
+		 * TAP_VALUE_SEL | lock << 8. */
+		wr32(DllRxclk, (1<<31) | (1<<27) | (1<<29) | (1<<25) |
+		     (lock << 8));
+	}
+	wr32(0x540, (1<<16) | (3<<17) | (3<<19));	/* ATCTRL */
+	wr32(DllTxclk, (1<<27) | (1<<24) | (1<<29) | 0x10);
+	wr32(DllStrbin, (1<<27) | (1<<24) | 0x4);
+
+	/* HC2: UHS SDR104 (HS200) + 1.8 V signalling. */
+	wr16(Hc2, (rd16(Hc2) & ~7) | 3 | (1<<3));
+	if(verbose)
+		print("emmc: hs200 dll %ux rx %ux tx %ux hc2 %ux\n",
+		      rd32(DllStatus0), rd32(DllRxclk), rd32(DllTxclk), rd16(Hc2));
+	return 0;
+}
+
+/* One CMD21 tuning block; the host's tuning engine consumes the data. */
+static int
+tunecmd(void)
+{
+	int i;
+	u16 st;
+
+	for(i = 0; i < 20000; i++){
+		if((rd32(Present) & 1) == 0)
+			break;
+		sleep(1);
+	}
+	wr16(Nis, 0xffff);
+	wr16(Eis, 0xffff);
+	wr32(Argument, 0);
+	wr16(Blksize, 128);		/* HS200 8-bit tuning block */
+	wr16(Blkcount, 1);
+	wr16(Xfer, 1<<4);		/* read */
+	__asm__ volatile("dsb sy" ::: "memory");
+	wr16(Cmdreg, (21<<8) | CmdData | Rsp48 | CmdCrc | CmdIdx);
+	__asm__ volatile("dsb sy" ::: "memory");
+	for(i = 0; i < 20000; i++){
+		st = rd16(Nis);
+		if(st & (1<<5)){	/* Buffer Read Ready */
+			wr16(Nis, st);
+			return 0;
+		}
+		if(st & IntErr){
+			wr16(Nis, st);
+			wr16(Eis, 0xffff);
+			return -1;
+		}
+		sleep(1);
+	}
+	return -1;
+}
+
+/*
+ * SDHCI execute tuning: EXEC_TUNING stays set while the hardware walks the
+ * sampling point; it clears itself and sets TUNED_CLK when a window is
+ * found.
+ */
+static int
+dotuning(void)
+{
+	u16 ctrl;
+	int i;
+
+	ctrl = rd16(Hc2);
+	ctrl &= ~(1<<7);		/* TUNED_CLK */
+	ctrl |= (1<<6);			/* EXEC_TUNING */
+	wr16(Hc2, ctrl);
+	wr16(Nise, 1<<5);		/* Buffer Read Ready */
+	wr16(Eise, 0xffff);
+
+	for(i = 0; i < 40; i++){
+		tunecmd();
+		ctrl = rd16(Hc2);
+		if((ctrl & (1<<6)) == 0){
+			if(ctrl & (1<<7)){
+				if(verbose)
+					print("emmc: tuning ok hc2 %ux\n",
+					      rd16(Hc2));
+				wr16(Nise, 0xffff);
+				return 0;
+			}
+			break;
+		}
+	}
+	if(verbose)
+		print("emmc: tuning failed hc2 %ux\n", rd16(Hc2));
+	wr16(Hc2, rd16(Hc2) & ~(1<<6));
+	wr16(Nise, 0xffff);
+	return -1;
+}
+
 static int
 initcard(u32 *ocrp)
 {
@@ -991,6 +1148,10 @@ initcard(u32 *ocrp)
 	if(setclock50m() == 0){
 		if(setbus8() < 0 && verbose)
 			print("emmc: staying 1-bit\n");
+		if(seths200() == 0)
+			dotuning();
+		else if(verbose)
+			print("emmc: staying 50 MHz\n");
 	}else if(setclock24m() < 0)
 		return -1;
 	return 0;
