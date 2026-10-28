@@ -109,6 +109,22 @@ Result: the register-level port now matches the vendor driver, and the
 card still does not answer.  The remaining difference is not in the
 SDHCI register set.
 
+## Two non-obvious details from the vendor code
+
+1. `SDHCI_QUIRK2_CLOCK_DIV_ZERO_BROKEN` is set in
+   `sdhci_dwcmshc_rk35xx_pdata`.  With the core clock at 375 kHz,
+   `sdhci_calc_clk()` computes `div = 0`, and the quirk forces it to 1.
+   Writing 0 to the divider field leaves the card without a usable clock.
+2. `sdhci_setup_host()` calls `sdhci_set_clock(host, host->max_clk)` at
+   probe, i.e. **200 MHz through the vendor DLL branch** (DLL reset,
+   start, wait for lock, `ATCTRL`, RX/TX taps) before any card command.
+   Identify mode later bypasses the DLL, but the PHY has been through
+   that initialisation.  The driver now does both
+   (`cru_emmc_200m()` + `clock200()` + `dllstart()`, then 375 kHz).
+
+Both are now implemented and the DLL locks (`dll lock 0x78`,
+`rxclk 0x8a007800`), and the card still does not answer.
+
 ## State comparison with U-Boot (same power cycle)
 
 | Item | U-Boot | Harvey |

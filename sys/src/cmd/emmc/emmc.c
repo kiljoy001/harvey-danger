@@ -203,6 +203,7 @@ enum {
 	DllTxclk	= 0x808,
 	DllStrbin	= 0x80C,
 	DllCmdout	= 0x810,
+	DllStatus0	= 0x840,
 	MiscCon		= 0x81C,
 	VendorArea1	= 0xE8,
 	HostCtrl3	= 0x08,
@@ -239,6 +240,20 @@ vendorinit(void)
  * dwcmshc_get_max_clock() returns its rate, not CAPS.
  */
 static void
+cru_emmc_200m(void)
+{
+	u8 *cru;
+
+	cru = mapnode("clock-controller@fdd20000", 0xfdd20000);
+	*(volatile u32 *)(cru + 0x170) = (7u<<12)<<16 | (1u<<12);	/* gpll_200m */
+	*(volatile u32 *)(cru + 0x324) = (1u<<8)<<16 | 0;
+	__asm__ volatile("dsb sy" ::: "memory");
+	sleep(10);
+	if(verbose)
+		print("emmc: cclk_emmc 200m sel %ux\n", *(volatile u32 *)(cru + 0x170));
+}
+
+static void
 cru_emmc_375k(void)
 {
 	u8 *cru;
@@ -254,14 +269,79 @@ cru_emmc_375k(void)
 		      *(volatile u32 *)(cru + 0x324));
 }
 
+/*
+ * The vendor >52 MHz branch of dwcmshc_rk3568_set_clock(): reset the DLL,
+ * start it, wait for lock, then program ATCTRL and the RX/TX taps.  Linux
+ * runs this at probe time (sdhci_setup_host -> sdhci_set_clock(max_clk))
+ * before any card command, so the PHY is initialised even when identify
+ * mode later bypasses the DLL.
+ */
+static int
+dllstart(void)
+{
+	u32 v, extra, lock;
+	int i;
+
+	wr32(DllCtrl, 1<<1);
+	sleep(1);
+	wr32(DllCtrl, 0);
+	wr32(DllCtrl, (0x5<<16) | (0x2<<8) | 1);
+	for(i = 0; i < 500; i++){
+		v = rd32(DllStatus0);
+		if(v & (1<<8))
+			break;
+		if(v & (1<<9)){
+			print("emmc: DLL lock timeout %ux\n", v);
+			return -1;
+		}
+		sleep(1);
+	}
+	if(i == 500)
+		return -1;
+	lock = ((rd32(DllStatus0) & 0xff) * 2) & 0xff;
+	wr32(0x40, (1u<<16) | (3u<<17) | (3u<<19));	/* ATCTRL */
+	extra = (1u<<27) | (1u<<31) | (1u<<25) | (lock << 8);
+	wr32(DllRxclk, extra);
+	wr32(DllTxclk, 0x10);				/* hs200_tx_tap */
+	if(verbose)
+		print("emmc: dll lock %ux rxclk %ux\n", lock, extra);
+	return 0;
+}
+
+static int
+clock200(void)
+{
+	int i;
+
+	wr16(Clock, 0);
+	wr16(Clock, 1);			/* INT_EN, div 0 = 200 MHz */
+	for(i = 0; i < 150; i++){
+		if(rd16(Clock) & 2)
+			break;
+		sleep(1);
+	}
+	if((rd16(Clock) & 2) == 0)
+		return -1;
+	if(dllstart() < 0)
+		return -1;
+	wr16(Clock, 5);
+	return 0;
+}
+
 /* sdhci_set_clock() with the 375 kHz parent: no division. */
 static int
 setclockbase(void)
 {
 	int i;
 
+	/*
+	 * sdhci_calc_clk(): max_clk (375 kHz) <= clock, so div starts at 1,
+	 * then div >>= 1 makes it 0 -- and SDHCI_QUIRK2_CLOCK_DIV_ZERO_BROKEN
+	 * (set for rk35xx) forces it back to 1.  Writing 0 here leaves the
+	 * card without a usable clock.
+	 */
 	wr16(Clock, 0);
-	wr16(Clock, 1);			/* INT_EN, divider 0 */
+	wr16(Clock, (1<<8) | 1);	/* INT_EN, divider 1 */
 	for(i = 0; i < 150; i++){
 		if(rd16(Clock) & 2)
 			break;
@@ -270,7 +350,7 @@ setclockbase(void)
 	if((rd16(Clock) & 2) == 0)
 		return -1;
 	dllbypass();
-	wr16(Clock, 5);			/* INT_EN | CARD_EN */
+	wr16(Clock, (1<<8) | 5);	/* INT_EN | CARD_EN, divider 1 */
 	if(verbose)
 		print("emmc: clock %ux\n", rd16(Clock));
 	return (rd16(Clock) & 4) ? 0 : -1;
@@ -344,9 +424,22 @@ command(int idx, u32 arg, u32 flags, u32 *resp)
 	int i;
 	u16 st;
 
+	/* sdhci_send_command(): wait for CMD inhibit first, and always write
+	 * the transfer mode register, even for a command without data. */
+	for(i = 0; i < 100; i++){
+		if((rd32(Present) & 1) == 0)
+			break;
+		sleep(1);
+	}
 	wr16(Nis, 0xffff);
 	wr16(Eis, 0xffff);
 	wr32(Argument, arg);
+	{
+		u16 mode;
+
+		mode = rd16(Xfer);
+		wr16(Xfer, mode & ~((1<<2)|(1<<3)));	/* clear auto CMD12/23 */
+	}
 	wr16(Cmdreg, idx | flags);
 	for(i = 0; i < 500; i++){
 		st = rd16(Nis);
@@ -525,6 +618,48 @@ setwidth(int width)
 		print("emmc: hostctl %ux\n", rd8(Hostctl));
 }
 
+/*
+ * RK809 POWER_EN(3) = 0xb4 holds both eMMC rails:
+ *   SWITCH_REG1 (vcc_3v3, vmmc)  = BIT(2) with mask BIT(6)
+ *   DCDC_REG5   (vcc_1v8, vqmmc) = BIT(1) with mask BIT(5)
+ * Write 0x66 to assert both, in case the bootloader left them off.
+ */
+static int
+rails_on(void)
+{
+	char ctl[64], dat[64], cmd[32], h[32];
+	int fd, m;
+
+	if(access("/mnt/i2c", AEXIST) < 0)
+		create("/mnt/i2c", OREAD, DMDIR|0755);
+	fd = open("/srv/i2c", OREAD);
+	if(fd < 0 || mount(fd, -1, "/mnt/i2c", MREPL|MCREATE, "") < 0)
+		return -1;
+	close(fd);
+	snprint(ctl, sizeof ctl, "/mnt/i2c/i2c0/ctl");
+	snprint(dat, sizeof dat, "/mnt/i2c/i2c0/data");
+	fd = open(ctl, ORDWR);
+	if(fd < 0)
+		return -1;
+	snprint(cmd, sizeof cmd, "w 32 180 102");	/* 0xb4 = 0x66 */
+	m = write(fd, cmd, strlen(cmd));
+	close(fd);
+	sleep(50);
+	fd = open(ctl, ORDWR);
+	write(fd, "r 32 180 1", 10);
+	close(fd);
+	fd = open(dat, OREAD);
+	m = fd < 0 ? -1 : read(fd, h, sizeof h - 1);
+	if(fd >= 0)
+		close(fd);
+	if(m > 0){
+		h[m] = 0;
+		print("emmc: power_en3 = 0x%s\n", h);
+	}else
+		print("emmc: power_en3 unreadable\n");
+	return 0;
+}
+
 static int
 initcard(u32 *ocrp)
 {
@@ -669,9 +804,14 @@ main(int argc, char **argv)
 		exits(r == 0 ? nil : "mismatch");
 	}
 	if(strcmp(argv[1], "slow") == 0){
+		rails_on();
 		resetall();
 		vendor_probe();
 		setvoltage180();
+		/* sdhci_setup_host(): initialise the PHY at max clock. */
+		cru_emmc_200m();
+		if(clock200() < 0)
+			fail("emmc: 200 MHz DLL init failed");
 		cru_emmc_375k();
 		if(setclockbase() < 0)
 			fail("emmc: clock failed");
