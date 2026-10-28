@@ -311,3 +311,32 @@ Transfers still run at the 702 Hz identify clock (~6 s per 512-byte
 block).  Raising the clock needs the DLL/PHY sampling work: 25 MHz gives
 a Data End Bit Error and 5 MHz a Command End Bit Error with the bypassed
 DLL.
+
+## Working driver: 50 MHz, 8-bit
+
+After the command/transfer encoding fixes the vendor clock model is what
+gets the card to full speed: `cclk_emmc` is set to the target rate by the
+CRU and the SDHCI divider stays **0**, so the card sees `cclk_emmc`
+directly (the vendor driver does `sdhci_enable_clk(host, 0)` at the end
+of `set_clock`, which overwrites the computed divider with 0).
+
+Sequence after CMD16:
+
+1. CMD6 `0x03B90100` — HS_TIMING = 1.
+2. `CLKSEL_CON(28)` mux -> `cpll_50m` (4), divider 0, gate 9 bit 8.
+   `xin24m` (mux 0, 24 MHz) is the fallback.
+3. CMD6 `0x03B70200` — BUS_WIDTH = 8, then HC1 bit 5.
+
+Verified on the board:
+
+```
+emmc: 50m sel 4030 clock 7
+emmc: hostctl 24
+emmc: wrote lba 4000
+emmc: cmd17 ok r1 00000900
+emmc: readback MATCH
+```
+
+That is 50 MHz x 8-bit, about 50 MB/s theoretical.  HS200/200 MHz would
+need CMD6 HS_TIMING=2 plus execute tuning (CMD21) and the DLL init path;
+50 MHz is already a usable block device.
