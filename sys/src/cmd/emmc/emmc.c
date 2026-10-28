@@ -409,6 +409,77 @@ writeblock(u32 lba, u8 *buf)
 	return dataio(buf, 512, 1);
 }
 
+/* dwcmshc_rk35xx_init(): clear the command conflict check and DLL leftovers. */
+static void
+vendor_probe(void)
+{
+	u16 area;
+
+	area = rd16(VendorArea1) & 0xfff;
+	if(verbose)
+		print("emmc: area1 %ux\n", area);
+	if(area != 0)
+		wr32(area + HostCtrl3, 0);
+	wr32(DllTxclk, 0);
+	wr32(DllStrbin, 0);
+}
+
+/* sdhci_reset(SDHCI_RESET_ALL) followed by rk35xx_sdhci_reset(). */
+static void
+resetall(void)
+{
+	u32 extra;
+	int i;
+
+	extra = rd32(MiscCon);
+	wr8(Swreset, 4);
+	for(i = 0; i < 100; i++){
+		if((rd8(Swreset) & 4) == 0)
+			break;
+		sleep(1);
+	}
+	wr32(MiscCon, (1<<1) | extra);	/* MISC_INTCLK_EN | extra */
+	if(verbose)
+		print("emmc: reset all done misc %ux\n", rd32(MiscCon));
+}
+
+/* sdhci_voltage_switch(MMC_SIGNAL_VOLTAGE_180): vqmmc is vcc_1v8. */
+static void
+setvoltage180(void)
+{
+	wr16(Hc2, rd16(Hc2) | (1<<3));
+	sleep(5);
+	if(verbose)
+		print("emmc: hc2 %ux\n", rd16(Hc2));
+}
+
+/* sdhci_set_power_noreg(): VCC comes from vmmc (vcc_3v3). */
+static void
+setpower(u8 pwr)
+{
+	wr8(Power, 0);
+	wr8(Power, pwr | 1);		/* SDHCI_POWER_ON */
+	if(verbose)
+		print("emmc: power %ux\n", rd8(Power));
+}
+
+/* sdhci_set_bus_width() */
+static void
+setwidth(int width)
+{
+	u8 ctrl;
+
+	ctrl = rd8(Hostctl);
+	ctrl &= ~((1<<1) | (1<<5));	/* 4-bit and 8-bit select */
+	if(width == 8)
+		ctrl |= 1<<5;
+	else if(width == 4)
+		ctrl |= 1<<1;
+	wr8(Hostctl, ctrl);
+	if(verbose)
+		print("emmc: hostctl %ux\n", rd8(Hostctl));
+}
+
 static int
 initcard(u32 *ocrp)
 {
@@ -416,24 +487,22 @@ initcard(u32 *ocrp)
 	int i;
 
 	/*
-	 * Do not reset the controller and do not touch the CRU: the
-	 * bootloader already brought both up for this card.  A full software
-	 * reset here leaves the command path silent, and reprogramming the
-	 * card clock mux is not needed when U-Boot has done it.
+	 * Ported from the vendor kernel, in this order:
+	 *   dwcmshc_probe()        -> dwcmshc_rk35xx_init()
+	 *   mmc_power_off()        -> sdhci_reinit() -> reset ALL
+	 *   mmc_power_up()         -> mmc_set_initial_signal_voltage(1.8V)
+	 *   sdhci_set_ios()        -> set_clock, set_power, set_bus_width
+	 * The card's VCC is vcc_3v3 (POWER = 3.3V) while its IO is vcc_1v8
+	 * (HOST_CONTROL2 VDD_180), which is the one combination never tried.
 	 */
-	vendorinit();
-	wr8(Timeout, 0x0e);
-	/*
-	 * This eMMC is 1.8 V signalling: U-Boot reports "Card did not
-	 * respond to voltage select" at 3.3 V and only works after the
-	 * 1.8 V switch.  Select 1.8 V from the start (POWER bits 1-3 = 101).
-	 */
-	wr16(Hc2, rd16(Hc2) | (1<<3));
-	wr8(Power, 0x0b);		/* bus power on, 1.8V */
-	sleep(100);
+	resetall();
+	vendor_probe();
+	setvoltage180();
 	if(setclock(400000) < 0)
 		return -1;
-	sleep(50);
+	setpower(0x0f);			/* 3.3 V, SDHCI_POWER_ON */
+	setwidth(1);
+	sleep(20);
 
 	if(command(0, 0, 0, nil) < 0)
 		return -1;
@@ -553,6 +622,40 @@ main(int argc, char **argv)
 		if(r != 0)
 			hexdump(back, 64);
 		exits(r == 0 ? nil : "mismatch");
+	}
+	if(strcmp(argv[1], "matrix") == 0){
+		static struct { int io180; u8 pwr; char *name; } t[] = {
+			{ 1, 0x0f, "io1.8 vcc3.3" },
+			{ 0, 0x0f, "io3.3 vcc3.3" },
+			{ 1, 0x0b, "io1.8 vcc1.8" },
+			{ 0, 0x0b, "io3.3 vcc1.8" },
+		};
+		int k;
+
+		mapdev();
+		for(k = 0; k < nelem(t); k++){
+			resetall();
+			vendor_probe();
+			if(t[k].io180)
+				wr16(Hc2, rd16(Hc2) | (1<<3));
+			else
+				wr16(Hc2, rd16(Hc2) & ~(1<<3));
+			sleep(5);
+			setclock(400000);
+			setpower(t[k].pwr);
+			setwidth(1);
+			sleep(20);
+			r = command(0, 0, 0, nil);
+			print("emmc: %s cmd0 %d nis %ux present %ux\n",
+			      t[k].name, r, rd16(Nis), rd32(Present));
+			r = command(1, (1u<<30) | (1u<<7), Rsp48, resp4);
+			print("emmc: %s cmd1 %d nis %ux eis %ux ocr %08ux present %ux\n",
+			      t[k].name, r, rd16(Nis), rd16(Eis), resp4[0],
+			      rd32(Present));
+			if(r == 0 && (resp4[0] & (1u<<31)))
+				print("emmc: %s READY\n", t[k].name);
+		}
+		exits(nil);
 	}
 	if(strcmp(argv[1], "pmu") == 0){
 		u8 *pmu;

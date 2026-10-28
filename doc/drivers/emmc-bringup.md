@@ -81,6 +81,34 @@ the card is powered, the card is not receiving the command.  That leaves
 the pin path or the card's own state, neither of which the vendor source
 comparison can settle.
 
+## Faithful port of the vendor sequence
+
+The driver now follows the kernel call order rather than an approximation:
+
+| Kernel function | What the driver does |
+| --- | --- |
+| `dwcmshc_probe()` -> `dwcmshc_rk35xx_init()` | `area1 = readl(0xE8) & 0xfff` (0x500); `writel(0, area1+0x8)`; `writel(0, DLL_TXCLK)`; `writel(0, DLL_STRBIN)` |
+| `mmc_power_off()` -> `sdhci_reinit()` -> `sdhci_reset(ALL)` | `writeb(4, SWRST)`, poll up to 100 ms |
+| `rk35xx_sdhci_reset()` | `writel(MISC_INTCLK_EN | extra, MISC_CON)` with `extra` read *before* the reset |
+| `mmc_set_initial_signal_voltage()` -> `sdhci_voltage_switch(1.8V)` | `HOST_CONTROL2 |= VDD_180`, then 5 ms |
+| `sdhci_set_ios()` -> `sdhci_set_clock()` | divider 250, `INT_EN`, wait `INT_STABLE`, DLL bypass (<= 52 MHz), `CARD_EN` |
+| `sdhci_set_power_noreg()` | `POWER = 0`, then `pwr | SDHCI_POWER_ON` |
+| `sdhci_set_bus_width(1)` | clear 4-bit and 8-bit select in `HOST_CONTROL` |
+| `sdhci_send_command()` | `ARG`, then `CMD` with response type 2 / CRC / index check |
+
+`SDHCI_QUIRK_BROKEN_TIMEOUT_VAL` is honoured by not programming
+`TIMEOUT_CONTROL`.
+
+VCC comes from `vmmc` (`vcc_3v3`) and IO signalling from `vqmmc`
+(`vcc_1v8`), so the correct combination is `POWER = 3.3 V` with
+`HOST_CONTROL2.VDD_180 = 1`.  All four combinations were tried in one
+boot (`/boot/emmc matrix`): each gives `CMD0` complete, then `CMD1`
+never completes and leaves `PRESENT.CMD_INHIBIT` set.
+
+Result: the register-level port now matches the vendor driver, and the
+card still does not answer.  The remaining difference is not in the
+SDHCI register set.
+
 ## Next steps
 
 1. Instrument `PRESENT` bits 24-31 around `CMD0` to confirm the CMD line
