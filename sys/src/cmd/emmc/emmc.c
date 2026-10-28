@@ -48,14 +48,17 @@ enum {
 	IntErr	= 1<<15,
 };
 
-/* Command register flags. */
+/*
+ * Command register flags.  The command index lives in bits 8-15 and these
+ * flags in bits 0-5 (SDHCI Simplified Spec 3.0, SDHCI_MAKE_CMD).
+ */
 enum {
-	CmdData	= 1<<6,
-	CmdIdx	= 1<<7,
-	CmdCrc	= 1<<8,
-	Rsp136	= 1<<9,
-	Rsp48	= 2<<9,
-	Rsp48b	= 3<<9,
+	CmdData	= 1<<5,
+	CmdIdx	= 1<<4,
+	CmdCrc	= 1<<3,
+	Rsp136	= 1<<0,
+	Rsp48	= 2<<0,
+	Rsp48b	= 3<<0,
 };
 
 static u8 *mmio;
@@ -517,7 +520,7 @@ command(int idx, u32 arg, u32 flags, u32 *resp)
 	/* #P maps registers as Normal-NC; order the argument/mode before the
 	 * command.  Without this the CPU may issue the command first. */
 	__asm__ volatile("dsb sy" ::: "memory");
-	wr16(Cmdreg, idx | flags);
+	wr16(Cmdreg, (idx << 8) | flags);
 	__asm__ volatile("dsb sy" ::: "memory");
 	for(i = 0; i < cmdwait; i++){
 		st = rd16(Nis);
@@ -554,31 +557,43 @@ dataio(u8 *buf, int n, int write)
 	u16 st;
 
 	if(write){
-		for(i = 0; i < 2000; i++){
+		for(i = 0; i < 20000; i++){
 			st = rd16(Nis);
-			if(st & IntErr)
+			if(st & IntErr){
+				print("emmc: wr err nis %ux eis %ux present %ux\n",
+				      st, rd16(Eis), rd32(Present));
 				return -1;
-			if(st & IntBwr)
+			}
+			if(rd32(Present) & (1<<10))	/* buffer write enable */
 				break;
 			sleep(1);
 		}
-		if(i == 2000)
+		if(i == 20000){
+			print("emmc: wr bwr timeout nis %ux eis %ux present %ux\n",
+			      rd16(Nis), rd16(Eis), rd32(Present));
 			return -1;
+		}
 		for(got = 0; got < n; got += 4)
 			wr32(Buffer, *(u32 *)(buf + got));
 		wr16(Nis, IntBwr);
 	}else{
 		for(got = 0; got < n; ){
-			for(i = 0; i < 2000; i++){
+			for(i = 0; i < 20000; i++){
 				st = rd16(Nis);
-				if(st & IntErr)
+				if(st & IntErr){
+					print("emmc: data err nis %ux eis %ux present %ux\n",
+					      st, rd16(Eis), rd32(Present));
 					return -1;
-				if(st & IntBrr)
+				}
+				if(rd32(Present) & (1<<11))	/* buffer read enable */
 					break;
 				sleep(1);
 			}
-			if(i == 2000)
+			if(i == 20000){
+				print("emmc: data brr timeout nis %ux eis %ux present %ux\n",
+				      rd16(Nis), rd16(Eis), rd32(Present));
 				return -1;
+			}
 			{
 				int chunk = n - got;
 				if(chunk > 512)
@@ -590,16 +605,21 @@ dataio(u8 *buf, int n, int write)
 			wr16(Nis, IntBrr);
 		}
 	}
-	for(i = 0; i < 2000; i++){
+	for(i = 0; i < 20000; i++){
 		st = rd16(Nis);
-		if(st & IntErr)
+		if(st & IntErr){
+			print("emmc: data tc err nis %ux eis %ux present %ux\n",
+			      st, rd16(Eis), rd32(Present));
 			return -1;
+		}
 		if(st & IntTc){
 			wr16(Nis, st);
 			return 0;
 		}
 		sleep(1);
 	}
+	print("emmc: data tc timeout nis %ux eis %ux present %ux\n",
+	      rd16(Nis), rd16(Eis), rd32(Present));
 	return -1;
 }
 
@@ -608,9 +628,18 @@ readblock(u32 lba, u8 *buf)
 {
 	wr16(Blksize, 512);
 	wr16(Blkcount, 1);
-	wr16(Xfer, 0x08 | 0x02);	/* read, block count enable */
-	if(command(17, lba, CmdData|Rsp48|CmdCrc|CmdIdx, nil) < 0)
+	wr16(Xfer, 1<<4);		/* read, single block (SDHCI_TRNS_READ) */
+	u32 r[4];
+
+	print("emmc: readblk lba %ud blksize %ux blkcnt %ux xfer %ux\n",
+	      lba, rd16(Blksize), rd16(Blkcount), rd16(Xfer));
+	if(command(17, lba, CmdData|Rsp48|CmdCrc|CmdIdx, r) < 0){
+		print("emmc: cmd17 fail nis %ux eis %ux present %ux\n",
+		      rd16(Nis), rd16(Eis), rd32(Present));
 		return -1;
+	}
+	print("emmc: cmd17 ok r1 %08ux nis %ux present %ux\n", r[0],
+	      rd16(Nis), rd32(Present));
 	return dataio(buf, 512, 0);
 }
 
@@ -619,9 +648,18 @@ writeblock(u32 lba, u8 *buf)
 {
 	wr16(Blksize, 512);
 	wr16(Blkcount, 1);
-	wr16(Xfer, 0x02);		/* write, block count enable */
-	if(command(24, lba, CmdData|Rsp48|CmdCrc|CmdIdx, nil) < 0)
-		return -1;
+	wr16(Xfer, 0);			/* write, single block */
+	{
+		u32 r[4];
+
+		if(command(24, lba, CmdData|Rsp48|CmdCrc|CmdIdx, r) < 0){
+			print("emmc: cmd24 fail nis %ux eis %ux present %ux\n",
+			      rd16(Nis), rd16(Eis), rd32(Present));
+			return -1;
+		}
+		print("emmc: cmd24 ok r1 %08ux nis %ux present %ux\n", r[0],
+		      rd16(Nis), rd32(Present));
+	}
 	return dataio(buf, 512, 1);
 }
 
@@ -677,6 +715,7 @@ resetall(void)
 			break;
 		sleep(1);
 	}
+	wr8(Timeout, 0x0e);		/* sdhci_init(): max data timeout */
 	wr32(MiscCon, (1<<1) | extra);	/* MISC_INTCLK_EN | extra */
 	if(verbose)
 		print("emmc: reset all done misc %ux\n", rd32(MiscCon));
@@ -845,6 +884,14 @@ initcard(u32 *ocrp)
 		return -1;
 	if(command(16, 512, Rsp48|CmdCrc|CmdIdx, resp) < 0)
 		return -1;
+	/*
+	 * Transfer clock: cclk_emmc back to 200 MHz, SDHCI divider 4, so
+	 * 25 MHz.  A 512-byte block at the 702 Hz identify clock takes ~6 s.
+	 */
+	/* keep the identify clock for now: the 25 MHz bypass path gives a
+	 * data end-bit error, so tune the DLL/PHY before raising it. */
+	if(verbose)
+		print("emmc: transfer clock %ux\n", rd16(Clock));
 	return 0;
 }
 
