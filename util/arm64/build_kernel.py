@@ -172,7 +172,7 @@ def main() -> None:
                 "phys.c", "mmu.c", "user.c", "context.c", "arch.c",
                 "config.c", "qmalloc.c", "platform.c", "procarch.c", "syscall.c",
                 "boot.c", "devpnp.c", "vop2.c", "dw_hdmi.c", "devvop.c",
-                "devxhci.c", "rkiommu.c")]
+                "devxhci.c", "rkiommu.c", "etheraarch64.c")]
     core_devices = {
         "dev.c", "devcap.c", "devcons.c", "devdup.c", "devenv.c",
         "devmnt.c", "devpipe.c", "devproc.c", "devramfs.c",
@@ -180,6 +180,7 @@ def main() -> None:
     }
     sources.extend(source for source in manifest_sources("port")
                    if not source.name.startswith("dev") or source.name in core_devices)
+    sources.append(ROOT / "sys/src/9/port/devether.c")
     sources.append(ROOT / "sys/src/9/port/dev9ring.c")
     sources.append(ROOT / "sys/src/9/port/devvirtio9p.c")
     sources.append(OUT / "systab.c")
