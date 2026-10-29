@@ -440,8 +440,9 @@ bytes 250139901952
 
 | File | Mode | Meaning |
 | --- | --- | --- |
-| `ctl` | 0444 | negotiated mode, block count, capacity |
+| `ctl` | 0444 | negotiated mode, geometry and I/O counters |
 | `data` | 0666 | the raw device, byte addressable |
+| `flush` | 0222 | any write runs EXT_CSD FLUSH_CACHE (CMD6, R1b) |
 
 The controller has one command queue, so all transfers are serialised by
 a single `QLock`.  A request that is not block aligned becomes a
@@ -456,6 +457,20 @@ block 17000 and check that the bytes on both sides are preserved.
 emmcfs: hs200 200MHz 8bit, 488554496 blocks
 HARVEY-ARM64 EMMCFS PASS
 ```
+
+The server advertises `msize = 128 KiB`, the kernel's `MAXRPC`, so one
+9P message can carry 64 KiB of payload.  Measured on the board with
+`/boot/emmc 9pbench`:
+
+```
+emmc: 9p write 4 MiB in 147253458 ns: 27815 KiB/s
+emmc: 9p read   4 MiB in  89715792 ns: 45655 KiB/s
+emmc: 9p read  32 MiB in 604194791 ns: 54234 KiB/s     (read-only)
+```
+
+Sustained writes beyond a few MiB drop to a few MB/s: that is the card's
+own SLC cache running out and garbage collection taking over, not the
+transport (read-only runs stay above 50 MB/s).
 
 The server owns the controller while it runs, so the `/boot/emmc` CLI
 must not be used at the same time (it re-initialises the card).

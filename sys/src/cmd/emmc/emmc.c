@@ -575,7 +575,7 @@ dataio(u8 *buf, int n, int write)
 				}
 				if(rd32(Present) & (1<<10))
 					break;
-				if((i & 0xff) == 0)
+				if(i > 1024 && (i & 0x3ff) == 0)
 					sleep(1);
 			}
 			if(i == 20000){
@@ -595,7 +595,7 @@ dataio(u8 *buf, int n, int write)
 				}
 				if(rd32(Present) & (1<<11))
 					break;
-				if((i & 0xff) == 0)
+				if(i > 1024 && (i & 0x3ff) == 0)
 					sleep(1);
 			}
 			if(i == 20000){
@@ -640,9 +640,12 @@ enum {
 	Admaend		= 0x02,
 };
 
+enum { Dclean, Dinval, Dcivac, Ndmafile };
+
 static u8 *dmava;
 static u64 dmabase, dmasize;
 static u64 dmaalign = 4096;
+static int dmafile[Ndmafile];
 static u64 datapa, descpa;
 static u8 *datava, *descva;
 
@@ -706,18 +709,19 @@ dmainit(void)
 }
 
 static void
-dmacache(char *op, u64 pa, u64 len)
+dmacache(int op, u64 pa, u64 len)
 {
+	static char *name[Ndmafile] = { "clean", "inval", "cleaninval" };
 	char buf[64], path[32];
-	int fd;
 
-	snprint(path, sizeof path, "#P/dma/%s", op);
-	if((fd = open(path, OWRITE)) < 0)
-		fail("emmc: open %s: %r", path);
+	if(dmafile[op] == 0){
+		snprint(path, sizeof path, "#P/dma/%s", name[op]);
+		if((dmafile[op] = open(path, OWRITE)) < 0)
+			fail("emmc: open %s: %r", path);
+	}
 	snprint(buf, sizeof buf, "0x%llx 0x%llx\n", pa, len);
-	if(write(fd, buf, strlen(buf)) != strlen(buf))
-		fail("emmc: %s: %r", path);
-	close(fd);
+	if(pwrite(dmafile[op], buf, strlen(buf), 0) != strlen(buf))
+		fail("emmc: #P/dma/%s: %r", name[op]);
 }
 
 /* One Transfer descriptor per Admamax bytes, End on the last. */
@@ -739,7 +743,7 @@ setadma(int nbytes)
 	((u16 *)(d - 8))[0] |= Admaend;
 
 	/* The descriptor table is cached: write it back before the DMA. */
-	dmacache("clean", descpa, d - descva);
+	dmacache(Dclean, descpa, d - descva);
 
 	wr32(0x58, descpa);		/* SDHCI_ADMA_ADDRESS */
 	ctrl = rd8(Hostctl);
@@ -783,7 +787,7 @@ readmulti(u32 lba, int count, u8 *buf)
 
 	dmainit();
 	n = 512*count;
-	dmacache("cleaninval", datapa, n);
+	dmacache(Dcivac, datapa, n);
 	setadma(n);
 	wr16(Blksize, 512);
 	wr16(Blkcount, count);
@@ -793,7 +797,7 @@ readmulti(u32 lba, int count, u8 *buf)
 		return -1;
 	if(admaiowait() < 0)
 		return -1;
-	dmacache("inval", datapa, n);
+	dmacache(Dinval, datapa, n);
 	memmove(buf, datava, n);
 	if(rd16(0x3c) != 0){
 		print("emmc: auto cmd12 err %ux\n", rd16(0x3c));
@@ -810,7 +814,7 @@ writemulti(u32 lba, int count, u8 *buf)
 	dmainit();
 	n = 512*count;
 	memmove(datava, buf, n);
-	dmacache("clean", datapa, n);
+	dmacache(Dclean, datapa, n);
 	setadma(n);
 	wr16(Blksize, 512);
 	wr16(Blkcount, count);
@@ -1425,23 +1429,102 @@ emmccapacity(void)
 		* 512;
 }
 
+/*
+ * EXT_CSD[247] FLUSH_CACHE.  CMD6 with R1b: the card holds DAT0 busy
+ * while it writes the cache out.
+ */
+int
+emmcflush(void)
+{
+	int i;
+	u32 r[4];
+
+	if(command(6, 0x03F70100, Rsp48b|CmdCrc|CmdIdx, r) < 0)
+		return -1;
+	for(i = 0; i < 200000; i++){
+		if((rd32(Present) & 2) == 0)
+			return 0;
+		if((i & 0x3ff) == 0 && i != 0)
+			sleep(1);
+	}
+	return -1;
+}
+
 int
 emmcread(u32 lba, int n, void *buf)
 {
-	if(n == 1)
-		return readblock(lba, buf);
 	return readmulti(lba, n, buf);
 }
 
 int
 emmcwrite(u32 lba, int n, void *buf)
 {
-	if(n == 1)
-		return writeblock(lba, buf);
 	return writemulti(lba, n, buf);
 }
 
 #ifndef EMMCFS_LIB
+/*
+ * Measure the 9P path through a running emmcfs.  Does not touch the
+ * controller itself: emmcfs owns it.
+ */
+static void
+bench9p(int argc, char **argv)
+{
+	static u8 b[64*1024];
+	vlong base, total, t0, t1;
+	int fd, srv, mib, i, n;
+
+	mib = argc > 2 ? atoi(argv[2]) : 16;
+	if(mib < 1)
+		mib = 1;
+	if(mib > 256)
+		mib = 256;
+	base = (argc > 3 ? strtoll(argv[3], nil, 0) : 400000000LL) * 512;
+
+	if(access("/mnt/emmcbench", AEXIST) < 0 &&
+	   create("/mnt/emmcbench", OREAD, DMDIR|0755) < 0)
+		fail("emmc: create /mnt/emmcbench: %r");
+	srv = open("/srv/emmc", OREAD);
+	if(srv < 0)
+		fail("emmc: no /srv/emmc (is emmcfs running?): %r");
+	if(mount(srv, -1, "/mnt/emmcbench", MREPL|MCREATE, "") < 0)
+		fail("emmc: mount /srv/emmc: %r");
+	close(srv);
+	fd = open("/mnt/emmcbench/data", ORDWR);
+	if(fd < 0)
+		fail("emmc: open data: %r");
+
+	memset(b, 0xa5, sizeof b);
+	total = (vlong)mib * 1024 * 1024;
+	if(argc > 4 && strcmp(argv[4], "r") == 0)
+		goto readphase;
+	t0 = nsec();
+	for(i = 0; i < total; i += sizeof b){
+		n = sizeof b;
+		if(total - i < n)
+			n = total - i;
+		if(pwrite(fd, b, n, base + i) != n)
+			fail("emmc: 9p write at %lld failed", base + i);
+	}
+	t1 = nsec();
+	print("emmc: 9p write %d MiB in %lld ns: %lld KiB/s\n",
+	      mib, t1-t0, total*1000000000LL/(t1-t0)/1024);
+
+readphase:
+	t0 = nsec();
+	for(i = 0; i < total; i += sizeof b){
+		n = sizeof b;
+		if(total - i < n)
+			n = total - i;
+		if(pread(fd, b, n, base + i) != n)
+			fail("emmc: 9p read at %lld failed", base + i);
+	}
+	t1 = nsec();
+	print("emmc: 9p read %d MiB in %lld ns: %lld KiB/s\n",
+	      mib, t1-t0, total*1000000000LL/(t1-t0)/1024);
+	close(fd);
+}
+
 void
 main(int argc, char **argv)
 {
@@ -1450,6 +1533,10 @@ main(int argc, char **argv)
 	u8 *cru;
 	int r, off;
 
+	if(argc > 1 && strcmp(argv[1], "9pbench") == 0){
+		bench9p(argc, argv);
+		exits(nil);
+	}
 	verbose = 1;
 	mapdev();
 	dumpregs();
@@ -1638,7 +1725,7 @@ main(int argc, char **argv)
 			fail("emmc: dmatest mode 0-3");
 		}
 		memset(datava, 0, n);
-		dmacache("cleaninval", datapa, n);
+		dmacache(Dcivac, datapa, n);
 		setadma(n);
 		wr16(Blksize, 512);
 		wr16(Blkcount, n/512);
@@ -1662,7 +1749,7 @@ main(int argc, char **argv)
 		}
 		print("emmc: dmatest done nis %ux eis %ux adma %ux present %ux "
 		      "waits %d\n", st, rd16(Eis), rd32(0x54), rd32(Present), i);
-		dmacache("inval", datapa, n);
+		dmacache(Dinval, datapa, n);
 		print("emmc: after dma00 %ux dma58 %ux dma5c %ux\n",
 		      rd32(0x00), rd32(0x58), rd32(0x5c));
 		print("emmc: data %02x %02x %02x %02x\n",

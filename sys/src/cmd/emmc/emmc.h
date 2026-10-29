@@ -2,5 +2,6 @@
 int emmcinit(void);
 char *emmcmodename(void);
 u64 emmccapacity(void);
+int emmcflush(void);
 int emmcread(u32 lba, int n, void *buf);
 int emmcwrite(u32 lba, int n, void *buf);

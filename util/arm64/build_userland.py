@@ -582,6 +582,16 @@ emmctest(void)
 			goto fail;
 
 	close(fd);
+
+	/* durability: the flush file runs EXT_CSD FLUSH_CACHE */
+	fd = open("/mnt/emmc/flush", OWRITE);
+	if(fd < 0)
+		return -1;
+	if(write(fd, "f", 1) != 1){
+		close(fd);
+		return -1;
+	}
+	close(fd);
 	return 0;
 fail:
 	close(fd);

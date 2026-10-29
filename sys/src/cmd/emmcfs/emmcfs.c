@@ -25,6 +25,7 @@ enum {
 
 	Qctl,
 	Qdata,
+	Qflush,
 };
 
 static void fsread(Req *);
@@ -37,6 +38,7 @@ static Srv fs = {
 static QLock cardlk;
 static u64 capacity;
 static char ctl[256];
+static u64 nread, nwrite, nreadreq, nwritereq;
 
 static void
 fatal(char *fmt, ...)
@@ -72,27 +74,39 @@ cardio(u64 off, void *vbuf, long n, int write)
 	while(n > 0){
 		lba = off / Block;
 		boff = off % Block;
-		nblk = (boff + n + Block - 1) / Block;
-		if(nblk > Maxblocks)
-			nblk = Maxblocks;
-		if(boff == 0 && n >= nblk * Block){
+		if(boff != 0){
+			/* head: the first block is shared with earlier data */
+			if(emmcread(lba, 1, tmp) < 0)
+				return -1;
+			m = Block - boff;
+			if(m > n)
+				m = n;
+			if(write){
+				memmove(tmp + boff, b, m);
+				if(emmcwrite(lba, 1, tmp) < 0)
+					return -1;
+			}else
+				memmove(b, tmp + boff, m);
+		}else if(n >= Block){
 			/* whole blocks straight from the caller's buffer */
+			nblk = n / Block;
+			if(nblk > Maxblocks)
+				nblk = Maxblocks;
 			if(write ? emmcwrite(lba, nblk, b) < 0
 			         : emmcread(lba, nblk, b) < 0)
 				return -1;
 			m = nblk * Block;
 		}else{
-			if(emmcread(lba, nblk, tmp) < 0)
+			/* tail: less than one block left */
+			if(emmcread(lba, 1, tmp) < 0)
 				return -1;
-			m = nblk * Block - boff;
-			if(m > n)
-				m = n;
+			m = n;
 			if(write){
-				memmove(tmp + boff, b, m);
-				if(emmcwrite(lba, nblk, tmp) < 0)
+				memmove(tmp, b, m);
+				if(emmcwrite(lba, 1, tmp) < 0)
 					return -1;
 			}else
-				memmove(b, tmp + boff, m);
+				memmove(b, tmp, m);
 		}
 		b += m;
 		off += m;
@@ -107,9 +121,20 @@ fsread(Req *r)
 	u64 off;
 	long n;
 
-	if((uintptr)r->fid->file->aux != Qdata){
-		readstr(r, ctl);
+	if((uintptr)r->fid->file->aux == Qctl){
+		char buf[512];
+
+		snprint(buf, sizeof buf,
+			"%smsize %ud\n"
+			"read %llud bytes in %llud requests\n"
+			"write %llud bytes in %llud requests\n",
+			ctl, fs.msize, nread, nreadreq, nwrite, nwritereq);
+		readstr(r, buf);
 		respond(r, nil);
+		return;
+	}
+	if((uintptr)r->fid->file->aux != Qdata){
+		respond(r, "permission denied");
 		return;
 	}
 	off = r->ifcall.offset;
@@ -120,6 +145,8 @@ fsread(Req *r)
 		n = capacity - off;
 	if(n > 0){
 		qlock(&cardlk);
+		nreadreq++;
+		nread += n;
 		if(cardio(off, r->ofcall.data, n, 0) < 0){
 			qunlock(&cardlk);
 			respond(r, "emmc read failed");
@@ -137,6 +164,18 @@ fswrite(Req *r)
 	u64 off;
 	long n;
 
+	if((uintptr)r->fid->file->aux == Qflush){
+		qlock(&cardlk);
+		if(emmcflush() < 0){
+			qunlock(&cardlk);
+			respond(r, "emmc flush failed");
+			return;
+		}
+		qunlock(&cardlk);
+		r->ofcall.count = r->ifcall.count;
+		respond(r, nil);
+		return;
+	}
 	if((uintptr)r->fid->file->aux != Qdata){
 		respond(r, "write not permitted");
 		return;
@@ -151,6 +190,8 @@ fswrite(Req *r)
 		n = capacity - off;
 	if(n > 0){
 		qlock(&cardlk);
+		nwritereq++;
+		nwrite += n;
 		if(cardio(off, r->ifcall.data, n, 1) < 0){
 			qunlock(&cardlk);
 			respond(r, "emmc write failed");
@@ -185,6 +226,8 @@ main(int argc, char **argv)
 	print("emmcfs: %s, %llud blocks\n", emmcmodename(),
 	      capacity/Block);
 
+	/* Match the kernel's MAXRPC: one 128 KiB message per transfer. */
+	fs.msize = 128*1024 + IOHDRSZ;
 	fs.tree = alloctree(nil, nil, DMDIR|0777, fsdestroyfile);
 	if(fs.tree == nil)
 		fatal("emmcfs: alloctree: %r");
@@ -196,6 +239,9 @@ main(int argc, char **argv)
 	if(f == nil)
 		fatal("emmcfs: createfile data: %r");
 	f->length = capacity;
+	f = createfile(fs.tree->root, "flush", nil, 0222, (void*)Qflush);
+	if(f == nil)
+		fatal("emmcfs: createfile flush: %r");
 
 	postmountsrv(&fs, "emmc", nil, MREPL|MCREATE);
 	for(;;)
