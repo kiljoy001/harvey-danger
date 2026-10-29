@@ -30,6 +30,23 @@ open `data` twice.
   following the babyFileServer probe.  `#P/acpimem` must be writable
   (hostowner); this is the path used on 9front.
 
+The sources are native Plan 9 C and build with both Harvey's clang and
+9front's `6c`/`6l`.  On 9front:
+
+```
+cd /tmp; mkdir tpmbuild; cd tpmbuild
+T=/path/to/sys/src/cmd/tpm
+for(f in tpmfs tpm_crb tpm_tis tpm_mock tpm2_sapi) 6c -I$T $T/$f.c
+6l -o tpmfs tpmfs.6 tpm_crb.6 tpm_tis.6 tpm_mock.6 tpm2_sapi.6 \
+	-l9p -lthread -lauth -lsec -lndb -lbio
+tpmfs -s tpm -t crb &
+mount /srv/tpm /mnt/tpm
+echo startup >/mnt/tpm/ctl
+```
+
+`tpmfs` raises `mainstacksize`: libthread's default 8 KiB `threadmain`
+stack is not enough for the ACPI table read plus the SAPI frames.
+
 ```
 tpmfs -m /tmp/tpm -t mock &
 tpmtest -t mock /tmp/tpm
@@ -49,8 +66,14 @@ This is the transport and command skeleton, not a TSS:
 - PCR read decodes the first SHA-256 digest for one PCR.
 - Password sessions are used for CreatePrimary/Create/Load/Unseal; there
   are no HMAC/policy sessions or parameter encryption yet.
-- `seal`/`unseal` currently seal under a fresh owner-hierarchy SRK on
-  every write; persistent SRK handles and auth policies are future work.
+- `seal`/`unseal` seal under the deterministic owner-hierarchy SRK:
+  seal flushes its transient handle, and unseal re-derives the same key
+  from the same template.  Persistent SRK handles (`TPM2_EvictControl`)
+  and auth policies are future work.
+- Verified on babyFileServer's Intel TPM over `crb` (control area
+  `0xfed40040`, start method 7): `tpmtest -t crb` passes (Startup,
+  GetRandom), and PCR0/PCR7 plus a 19-byte seal/unseal round trip were
+  checked by hand.
 - `libtpm2.a` is built from `tpm2_sapi.c` (the minimal marshaling layer
   adapted from the lux9 kernel SAPI) for consumers outside tpmfs.
 - `tis` needs a kernel `#T` device; `crb` is the hardware path that
