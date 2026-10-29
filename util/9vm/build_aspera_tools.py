@@ -416,6 +416,114 @@ def build_core9_more3() -> None:
     print("Built third-tier core tools")
 
 
+# Fourth tier: awk, bzip2 and the plumber.  awk needs a host-built
+# maketab to turn y.tab.h into proctab.c, and Harvey libc declares
+# getfcr/setfcr without implementing them, so awk carries a small shim.
+AWK_DIR = NINEFRONT / "sys/src/cmd/awk"
+BZIP2_DIR = NINEFRONT / "sys/src/cmd/bzip2"
+PLUMB_DIR = NINEFRONT / "sys/src/cmd/plumb"
+BZIP2_LIB = ("blocksort", "bzassert", "bzcompress", "bzdecompress",
+             "bzfeof", "bzlib", "bzread", "bzversion", "bzwrite", "bzzlib",
+             "compress", "crctable", "decompress", "huffman", "randtable")
+
+
+def plan9_tool(name: str) -> str:
+    path = Path("/usr/local/plan9/bin") / name
+    if path.is_file():
+        return str(path)
+    found = shutil.which(name)
+    if found is None:
+        raise SystemExit(f"{name} not found (plan9port is required for awk)")
+    return found
+
+
+def build_awk() -> None:
+    work = BUILD / "aspera-awk-build"
+    work.mkdir(parents=True, exist_ok=True)
+    for path in AWK_DIR.iterdir():
+        if path.suffix in (".c", ".h", ".y"):
+            shutil.copy2(path, work / path.name)
+
+    subprocess.run([plan9_tool("yacc"), "-d", "-o", "awkgram.c",
+                    "awkgram.y"], cwd=work, check=True)
+    # The plan9port skeleton emits fprint/sprint prototypes that conflict
+    # with Harvey's const-qualified declarations.
+    generated = work / "awkgram.c"
+    text = generated.read_text()
+    for line in ("extern\tint\tfprint(int, char*, ...);\n",
+                 "extern\tint\tsprint(char*, char*, ...);\n"):
+        text = text.replace(line, "")
+    generated.write_text(text)
+
+    # maketab is a host generator; run it with plan9port's libc.
+    subprocess.run([plan9_tool("9c"), "-I.", "-o", "maketab.o",
+                    "maketab.c"], cwd=work, check=True)
+    subprocess.run([plan9_tool("9l"), "-o", "maketab", "maketab.o",
+                    "-lbio"], cwd=work, check=True)
+    with (work / "proctab.c").open("w") as out:
+        subprocess.run([str(work / "maketab")], cwd=work, stdout=out,
+                       check=True)
+
+    objects = []
+    for name in ("awkgram", "lex", "lib", "main", "parse", "popen",
+                 "proctab", "re", "run", "tran"):
+        obj = work / f"{name}.o"
+        compile_file(work / f"{name}.c", obj,
+                     ("-DIOUNIT=32768", f"-I{work}"))
+        objects.append(obj)
+    fcr = BUILD / "aspera-awk-fcr.o"
+    compile_file(ROOT / "sys/src/cmd/awk/fcr.c", fcr)
+    objects.append(fcr)
+    link("awk", objects, ("libbio.a", "libregexp.a"))
+    print("Built awk")
+
+
+def build_bzip2() -> None:
+    work = BUILD / "aspera-bzip2-build"
+    work.mkdir(parents=True, exist_ok=True)
+    objects = []
+    for name in BZIP2_LIB:
+        obj = work / f"{name}.o"
+        compile_file(BZIP2_DIR / "lib" / f"{name}.c", obj,
+                     ("-DPLAN9", "-DIOUNIT=32768",
+                      f"-I{BZIP2_DIR / 'lib'}"))
+        objects.append(obj)
+    lib = BUILD / "libbzip2.a"
+    subprocess.run(["llvm-ar", "rcs", str(lib), *map(str, objects)],
+                   check=True)
+    for name in ("bzip2", "bunzip2"):
+        obj = BUILD / f"aspera-{name}.o"
+        compile_file(BZIP2_DIR / f"{name}.c", obj,
+                     ("-DPLAN9", "-DIOUNIT=32768",
+                      f"-I{BZIP2_DIR / 'lib'}"))
+        link(name, [obj], ("libbzip2.a", "libbio.a"))
+    print("Built bzip2/bunzip2")
+
+
+def build_plumb() -> None:
+    work = BUILD / "aspera-plumb-build"
+    work.mkdir(parents=True, exist_ok=True)
+    obj = BUILD / "aspera-plumb.o"
+    compile_file(PLUMB_DIR / "plumb.c", obj, ("-DIOUNIT=32768",))
+    link("plumb", [obj], ("libplumb.a",))
+
+    for name in ("plumber", "fsys", "match", "rules"):
+        text = (PLUMB_DIR / f"{name}.c").read_text()
+        text = re.sub(r"getcallerpc\(&[A-Za-z_]+?\)", "getcallerpc()", text)
+        (work / f"{name}.c").write_text(text)
+    objects = []
+    for name in ("plumber", "fsys", "match", "rules"):
+        obj = work / f"{name}.o"
+        subprocess.run(["gcc", *GCCFLAGS, f"-I{PLUMB_DIR}",
+                        str(work / f"{name}.c"), "-o", str(obj)],
+                       check=True)
+        objects.append(obj)
+    link("plumber", objects,
+         ("lib9p.a", "libthread.a", "libauth.a", "libsec.a", "libndb.a",
+          "libregexp.a", "libbio.a", "libplumb.a"))
+    print("Built plumb/plumber")
+
+
 def main() -> None:
     BUILD.mkdir(parents=True, exist_ok=True)
     build_rc()
@@ -424,6 +532,9 @@ def main() -> None:
     build_core9()
     build_core9_more2()
     build_core9_more3()
+    build_awk()
+    build_bzip2()
+    build_plumb()
     print("Built native Aspera rc, ls, cat, test, echo, and sleep")
 
 
