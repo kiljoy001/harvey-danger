@@ -421,3 +421,41 @@ emmc: write 128 blocks in 563791 ns: 113517 KiB/s
 ```
 
 About 78 MB/s read and 114 MB/s write, against 4 MB/s with PIO.
+
+## 9P: emmcfs
+
+`sys/src/cmd/emmcfs/emmcfs.c` serves the card over 9P.  The driver core
+is `../emmc/emmc.c`, built a second time with `-DEMMCFS_LIB` so the CLI
+and the server share one implementation.  The server posts `/srv/emmc`
+and is started by init:
+
+```
+$ cat /mnt/emmc/ctl
+emmc rk3566
+mode hs200 200MHz 8bit
+blocks 488554496
+blocksize 512
+bytes 250139901952
+```
+
+| File | Mode | Meaning |
+| --- | --- | --- |
+| `ctl` | 0444 | negotiated mode, block count, capacity |
+| `data` | 0666 | the raw device, byte addressable |
+
+The controller has one command queue, so all transfers are serialised by
+a single `QLock`.  A request that is not block aligned becomes a
+read-modify-write through a 64 KiB bounce buffer; aligned requests go
+straight from the client's buffer.
+
+Init runs a self-test before the shell: mount, read `/ctl`, write and
+read back eight blocks at LBA 18000, then overwrite 300 bytes inside
+block 17000 and check that the bytes on both sides are preserved.
+
+```
+emmcfs: hs200 200MHz 8bit, 488554496 blocks
+HARVEY-ARM64 EMMCFS PASS
+```
+
+The server owns the controller while it runs, so the `/boot/emmc` CLI
+must not be used at the same time (it re-initialises the card).

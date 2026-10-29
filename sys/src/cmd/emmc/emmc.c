@@ -65,6 +65,7 @@ enum {
 
 static u8 *mmio;
 static int verbose;
+static int speed;		/* 0 = 24 MHz, 1 = 50 MHz, 2 = HS200 */
 static int cmdwait = 20000;
 
 static void dllbypass(void);
@@ -834,15 +835,18 @@ readblock(u32 lba, u8 *buf)
 	wr16(Xfer, 1<<4);		/* read, single block (SDHCI_TRNS_READ) */
 	u32 r[4];
 
-	print("emmc: readblk lba %ud blksize %ux blkcnt %ux xfer %ux\n",
-	      lba, rd16(Blksize), rd16(Blkcount), rd16(Xfer));
+	if(verbose)
+		print("emmc: readblk lba %ud blksize %ux blkcnt %ux xfer %ux\n",
+		      lba, rd16(Blksize), rd16(Blkcount), rd16(Xfer));
 	if(command(17, lba, CmdData|Rsp48|CmdCrc|CmdIdx, r) < 0){
-		print("emmc: cmd17 fail nis %ux eis %ux present %ux\n",
-		      rd16(Nis), rd16(Eis), rd32(Present));
+		if(verbose)
+			print("emmc: cmd17 fail nis %ux eis %ux present %ux\n",
+			      rd16(Nis), rd16(Eis), rd32(Present));
 		return -1;
 	}
-	print("emmc: cmd17 ok r1 %08ux nis %ux present %ux\n", r[0],
-	      rd16(Nis), rd32(Present));
+	if(verbose)
+		print("emmc: cmd17 ok r1 %08ux nis %ux present %ux\n", r[0],
+		      rd16(Nis), rd32(Present));
 	return dataio(buf, 512, 0);
 }
 
@@ -856,12 +860,14 @@ writeblock(u32 lba, u8 *buf)
 		u32 r[4];
 
 		if(command(24, lba, CmdData|Rsp48|CmdCrc|CmdIdx, r) < 0){
-			print("emmc: cmd24 fail nis %ux eis %ux present %ux\n",
-			      rd16(Nis), rd16(Eis), rd32(Present));
+			if(verbose)
+				print("emmc: cmd24 fail nis %ux eis %ux present %ux\n",
+				      rd16(Nis), rd16(Eis), rd32(Present));
 			return -1;
 		}
-		print("emmc: cmd24 ok r1 %08ux nis %ux present %ux\n", r[0],
-		      rd16(Nis), rd32(Present));
+		if(verbose)
+			print("emmc: cmd24 ok r1 %08ux nis %ux present %ux\n",
+			      r[0], rd16(Nis), rd32(Present));
 	}
 	return dataio(buf, 512, 1);
 }
@@ -1322,7 +1328,6 @@ initcard(u32 *ocrp)
 			break;
 		sleep(10);
 	}
-	verbose = 1;
 	if(!(ocr & (1u<<31)))
 		return -1;
 	if(ocrp != nil)
@@ -1349,11 +1354,13 @@ initcard(u32 *ocrp)
 	 * 25 MHz.  A 512-byte block at the 702 Hz identify clock takes ~6 s.
 	 */
 	if(setclock50m() == 0){
+		speed = 1;
 		if(setbus8() < 0 && verbose)
 			print("emmc: staying 1-bit\n");
-		if(seths200() == 0)
-			dotuning();
-		else if(verbose)
+		if(seths200() == 0){
+			if(dotuning() == 0)
+				speed = 2;
+		}else if(verbose)
 			print("emmc: staying 50 MHz\n");
 	}else if(setclock24m() < 0)
 		return -1;
@@ -1374,6 +1381,67 @@ hexdump(u8 *b, int n)
 	}
 }
 
+/*
+ * Library entry points for emmcfs.  The CLI below is not built when
+ * EMMCFS_LIB is defined.
+ */
+int
+emmcinit(void)
+{
+	u32 ocr;
+
+	verbose = 0;
+	if(mapdev() < 0)
+		return -1;
+	if(initcard(&ocr) < 0)
+		return -1;
+	return 0;
+}
+
+char *
+emmcmodename(void)
+{
+	if(speed >= 2)
+		return "hs200 200MHz 8bit";
+	if(speed == 1)
+		return "highspeed 50MHz 8bit";
+	return "default 24MHz 1bit";
+}
+
+/* EXT_CSD (CMD8) SEC_COUNT in 512-byte units. */
+u64
+emmccapacity(void)
+{
+	u8 e[512];
+
+	wr16(Blksize, 512);
+	wr16(Blkcount, 1);
+	wr16(Xfer, 1<<4);
+	if(command(8, 0, CmdData|Rsp48b|CmdCrc|CmdIdx, nil) < 0)
+		return 0;
+	if(dataio(e, 512, 0) < 0)
+		return 0;
+	return ((u64)e[215]<<24 | (u64)e[214]<<16 | (u64)e[213]<<8 | e[212])
+		* 512;
+}
+
+int
+emmcread(u32 lba, int n, void *buf)
+{
+	if(n == 1)
+		return readblock(lba, buf);
+	return readmulti(lba, n, buf);
+}
+
+int
+emmcwrite(u32 lba, int n, void *buf)
+{
+	if(n == 1)
+		return writeblock(lba, buf);
+	return writemulti(lba, n, buf);
+}
+
+#ifndef EMMCFS_LIB
 void
 main(int argc, char **argv)
 {
@@ -2191,3 +2259,4 @@ main(int argc, char **argv)
 	}
 	fail("usage: emmc probe|read lba|write lba");
 }
+#endif

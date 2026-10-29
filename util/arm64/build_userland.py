@@ -32,6 +32,7 @@ CAT_BASE = 0x3200000
 LS_BASE = 0x3600000
 RTC_BASE = 0x3E00000
 EMMC_BASE = 0x5200000
+EMMCFS_BASE = 0x4600000
 O9DISPLAY_BASE = 0x3A00000
 DISPLAYTEST_BASE = 0x4200000
 O9ASPERA_SCREEN_BASE = 0x4E00000
@@ -232,6 +233,58 @@ def build_drvman(out: Path, libc: Path) -> tuple[bytes, int]:
 def build_i2cfs(out: Path, libc: Path) -> tuple[bytes, int]:
     return build_fs(out, libc, "i2cfs",
                     ROOT / "sys/src/cmd/i2cfs/i2cfs.c", I2CFS_BASE)
+
+
+def build_emmcfs(out: Path, libc: Path) -> tuple[bytes, int]:
+    """The eMMC driver core plus its 9P server, linked with lib9p."""
+    o9 = ROOT / "build/arm64-o9"
+    flags = [
+        CC, "--target=aarch64-none-elf", "-ffreestanding", "-fno-builtin",
+        "-fno-stack-protector", "-fno-vectorize", "-fno-slp-vectorize",
+        "-mstrict-align", "-fsigned-char", "-fcommon", "-O2",
+        "-I", str(ROOT / "aarch64/include"),
+        "-I", str(ROOT / "sys/include"),
+    ]
+    objects = []
+    for name, source, defines in (
+            ("emmcfs-driver", ROOT / "sys/src/cmd/emmc/emmc.c",
+             ["-DEMMCFS_LIB"]),
+            ("emmcfs", ROOT / "sys/src/cmd/emmcfs/emmcfs.c", [])):
+        obj = out / f"{name}.o"
+        subprocess.run([*flags, *defines, "-c", str(source), "-o", str(obj)],
+                       check=True)
+        objects.append(obj)
+    script = out / "emmcfs.ld"
+    elf = out / "emmcfs"
+    script.write_text(f'''ENTRY(_main)
+PHDRS {{
+  text PT_LOAD FLAGS(5);
+  data PT_LOAD FLAGS(6);
+}}
+SECTIONS {{
+  . = 0x{EMMCFS_BASE:x};
+  .text : {{ *(.text .text.*) *(.rodata .rodata.*) }} :text
+  . = ALIGN(0x{BIG_PAGE:x});
+  .data : {{ *(.data .data.*) *(.sdata .sdata.*) *(.got .got.*) }} :data
+  .bss : {{ *(.bss .bss.*) *(.sbss .sbss.*) COMMON }} :data
+  PROVIDE(end = .);
+  /DISCARD/ : {{ *(.comment) *(.note*) }}
+}}
+''')
+    subprocess.run([
+        LD, "-static", "-z", "max-page-size=4096", "-T", str(script),
+        "--allow-multiple-definition", "--defsym=threadmain=main",
+        "-e", "_main", "-u", "_main", *map(str, objects),
+        "--start-group",
+        str(o9 / "lib9p.a"), str(o9 / "libthread.a"), str(o9 / "libauth.a"),
+        str(o9 / "libauthsrv.a"), str(o9 / "libsec.a"), str(o9 / "libndb.a"),
+        str(o9 / "libbio.a"), str(libc),
+        "--end-group", "-o", str(elf),
+    ], check=True)
+    image, entry = validate_elf(elf, EMMCFS_BASE)
+    if symbol_value(elf, "_main") != entry:
+        raise RuntimeError("emmcfs entry does not name _main")
+    return image, entry
 
 
 def build_usbpower(out: Path, libc: Path) -> tuple[bytes, int]:
@@ -464,6 +517,77 @@ hubtest(void)
 	return 0;
 }
 
+static int
+emmctest(void)
+{
+	char ctl[256], w[4096], r[4096];
+	int fd, m, i;
+
+	fd = open("/srv/emmc", OREAD);
+	if(fd < 0)
+		return -1;
+	create("/mnt/emmc", OREAD, DMDIR|0755);
+	if(mount(fd, -1, "/mnt/emmc", MREPL|MCREATE, "") < 0){
+		close(fd);
+		return -1;
+	}
+	close(fd);
+
+	fd = open("/mnt/emmc/ctl", OREAD);
+	if(fd < 0)
+		return -1;
+	m = read(fd, ctl, sizeof ctl - 1);
+	close(fd);
+	if(m <= 0)
+		return -1;
+	ctl[m] = 0;
+	if(strstr(ctl, "blocksize 512") == nil)
+		return -1;
+
+	fd = open("/mnt/emmc/data", ORDWR);
+	if(fd < 0)
+		return -1;
+
+	/* eight blocks, aligned: the multi-block DMA path */
+	for(i = 0; i < sizeof w; i++)
+		w[i] = (i * 13 + 7) & 0xff;
+	if(pwrite(fd, w, sizeof w, 18000LL*512) != sizeof w)
+		goto fail;
+	memset(r, 0, sizeof r);
+	if(pread(fd, r, sizeof r, 18000LL*512) != sizeof r)
+		goto fail;
+	if(memcmp(w, r, sizeof w) != 0)
+		goto fail;
+
+	/* a 300-byte overwrite inside one block must preserve the rest */
+	for(i = 0; i < 512; i++)
+		w[i] = i & 0xff;
+	if(pwrite(fd, w, 512, 17000LL*512) != 512)
+		goto fail;
+	for(i = 0; i < 300; i++)
+		w[i] = (i * 3 + 1) & 0xff;
+	if(pwrite(fd, w, 300, 17000LL*512 + 100) != 300)
+		goto fail;
+	memset(r, 0, sizeof r);
+	if(pread(fd, r, 512, 17000LL*512) != 512)
+		goto fail;
+	for(i = 0; i < 100; i++)
+		if(r[i] != (i & 0xff))
+			goto fail;
+	for(i = 0; i < 300; i++)
+		if(r[100+i] != ((i * 3 + 1) & 0xff))
+			goto fail;
+	for(i = 400; i < 512; i++)
+		if(r[i] != (i & 0xff))
+			goto fail;
+
+	close(fd);
+	return 0;
+fail:
+	close(fd);
+	return -1;
+}
+
 void
 main(int argc, char **argv)
 {
@@ -542,6 +666,21 @@ main(int argc, char **argv)
 			say("HARVEY-ARM64 HUBFS FAIL\n");
 	}
 	{
+		char *emmcfsargv[] = { "/boot/emmcfs", "emmcfs", nil };
+		pid = rfork(RFPROC|RFNOWAIT|RFFDG|RFNAMEG|RFENVG|RFREND|RFNOTEG);
+		if(pid == 0){
+			exec(emmcfsargv[0], emmcfsargv);
+			say("HARVEY-ARM64 EMMCFS EXEC FAIL\n");
+			_exits("exec");
+		}
+		if(pid < 0 || waitfor("/srv/emmc", 200) < 0)
+			say("HARVEY-ARM64 EMMCFS FAIL\n");
+		else if(emmctest() == 0)
+			say("HARVEY-ARM64 EMMCFS PASS\n");
+		else
+			say("HARVEY-ARM64 EMMCFS FAIL\n");
+	}
+	{
 		char *dispargv[] = { "/boot/o9display", nil };
 		pid = rfork(RFPROC|RFNOWAIT|RFFDG|RFENVG|RFREND|RFNOTEG);
 		if(pid == 0){
@@ -590,6 +729,7 @@ main(int argc, char **argv)
     hubfs, _ = build_hubfs(out, libc)
     drvman, _ = build_drvman(out, libc)
     i2cfs, _ = build_i2cfs(out, libc)
+    emmcfs, _ = build_emmcfs(out, libc)
     usbpower, _ = build_usbpower(out, libc)
     rc, rc_entry = build_rc(out, libc)
     echo, _ = build_program(out, "echo", r'''#include <u.h>
@@ -1028,6 +1168,7 @@ main(int argc, char **argv)
     emit_array(lines, "arm64hubfself", hubfs)
     emit_array(lines, "arm64drvmanelf", drvman)
     emit_array(lines, "arm64i2cfself", i2cfs)
+    emit_array(lines, "arm64emmcfsimage", emmcfs)
     emit_array(lines, "arm64usbpowerelf", usbpower)
     emit_array(lines, "arm64rcelf", rc)
     emit_array(lines, "arm64echoelf", echo)
@@ -1051,6 +1192,7 @@ main(int argc, char **argv)
         "hubfs": hubfs,
         "drvman": drvman,
         "i2cfs": i2cfs,
+        "emmcfs": emmcfs,
         "usbpower": usbpower,
         "rc": rc,
         "echo": echo,
