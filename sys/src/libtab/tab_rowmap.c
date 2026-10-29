@@ -1,0 +1,472 @@
+/*
+ * libtab — row-hash map and search.
+ *
+ * Every loaded row gets a content hash, computed in schema-column
+ * order over a TSV canonical form:
+ *
+ *	cell0 \t cell1 \t … \t celln
+ *
+ * A semantic nil cell contributes a single null byte (\0) where its value
+ * would go.  Missing cells are nil; loaded or API-created tuple cells can
+ * also be marked nil in Ndbtuple.ptr so the literal text "nil" remains data.
+ * Two rows hash the same iff they have the same
+ * (schema-ordered) cells.
+ *
+ * The map is the only index libtab keeps.  Search is a scan over the
+ * row list filtered by (col, value).  Inserts that hit an existing
+ * hash are dropped — duplicates by definition.
+ */
+
+#include "tab_internal.h"
+
+enum {
+	HashMinBuckets	= 16,
+	RowsInitCap	= 16,
+};
+
+int
+tab_cell_is_nil(const char *val)
+{
+	return val == nil;
+}
+
+static int
+chain_is_nil(Tab *t, Ndbtuple *chain)
+{
+	int i;
+
+	if(t == nil || chain == nil || t->schema.ncols <= 0)
+		return 0;
+	for(i = 0; i < t->schema.ncols; i++)
+		if(!tab_tuple_is_nil(tab_row_tuple(chain, t->schema.cols[i].name)))
+			return 0;
+	return 1;
+}
+
+int
+tab_row_is_nil(Tab *t, TabRow *r)
+{
+	return t != nil && r != nil && (r == t->nilrow || chain_is_nil(t, r->chain));
+}
+
+/* FNV-1a 32-bit over a byte range. */
+uint32_t
+tab_hash_bytes(const uint8_t *p, int n)
+{
+	uint32_t h = 0x811c9dc5u;
+	int i;
+
+	for(i = 0; i < n; i++){
+		h ^= p[i];
+		h *= 0x01000193u;
+	}
+	return h;
+}
+
+static uint32_t
+nextpow2(uint32_t n)
+{
+	uint32_t v = HashMinBuckets;
+	while(v < n)
+		v <<= 1;
+	return v;
+}
+
+/* Build the canonical TSV bytes for `chain` in schema-column order.
+ * Returns a malloc'd buffer of length *lenout, or nil on OOM. */
+static uint8_t *
+canonical_bytes(Tab *t, Ndbtuple *chain, int *lenout)
+{
+	int i, total, off, vlen;
+	Ndbtuple *tp;
+	uint8_t *buf;
+
+	total = 0;
+	for(i = 0; i < t->schema.ncols; i++){
+		tp = tab_row_tuple(chain, t->schema.cols[i].name);
+		total += tab_tuple_is_nil(tp) ? 1 : (int)strlen(tp->val);
+		if(i + 1 < t->schema.ncols)
+			total++;	/* tab separator */
+	}
+	if(total < 1)
+		total = 1;
+	buf = malloc(total);
+	if(buf == nil){
+		tab_seterror("tab_open: out of memory for canonical form");
+		return nil;
+	}
+	off = 0;
+	for(i = 0; i < t->schema.ncols; i++){
+		tp = tab_row_tuple(chain, t->schema.cols[i].name);
+		if(!tab_tuple_is_nil(tp)){
+			vlen = strlen(tp->val);
+			memcpy(buf + off, tp->val, vlen);
+			off += vlen;
+		}else{
+			buf[off++] = 0;	/* null cell */
+		}
+		if(i + 1 < t->schema.ncols)
+			buf[off++] = '\t';
+	}
+	*lenout = off;
+	return buf;
+}
+
+/* Allocate the bucket array, sized for the expected row count. */
+static int
+ensure_buckets(Tab *t, int target_rows)
+{
+	uint32_t nb, old, i;
+	TabRow **nbuf, *e, *next;
+
+	if(t->buckets == nil){
+		nb = nextpow2(target_rows > 0 ? (uint32_t)target_rows * 2
+		                              : HashMinBuckets);
+		t->buckets = mallocz(nb * sizeof *t->buckets, 1);
+		if(t->buckets == nil){
+			tab_seterror("tab_open: out of memory for row-hash "
+			             "buckets");
+			return -1;
+		}
+		t->mask = nb - 1;
+		return 0;
+	}
+
+	/*
+	 * Grow when the table passes one entry per bucket.
+	 *
+	 * This used to return early whenever buckets existed, so a table built
+	 * by tab_create -- which starts empty, so target_rows is 0 -- kept the
+	 * initial 16 buckets no matter how many rows arrived. At 160k rows
+	 * that is ~10k entries per bucket, and every "walk the bucket chain"
+	 * in this file becomes a full scan with a canonical_bytes() malloc per
+	 * step. Measured on sigil's store_commit:
+	 *
+	 *      5,000 records    0.07 s
+	 *     40,000 records    4.52 s
+	 *    160,000 records  126.71 s     <- 5.6x for 2x the rows
+	 *
+	 * with 85% of samples inside tab_rowmap_rehash_row, whose own loops
+	 * are O(chain). The chains were the problem, not the loops.
+	 */
+	if((uint32_t)t->nentries <= t->mask)
+		return 0;
+
+	old = t->mask + 1;
+	nb = old * 2;
+	nbuf = mallocz(nb * sizeof *nbuf, 1);
+	if(nbuf == nil){
+		tab_seterror("tab_rowmap: out of memory growing buckets");
+		return -1;
+	}
+	for(i = 0; i < old; i++){
+		for(e = t->buckets[i]; e != nil; e = next){
+			next = e->next;
+			e->next = nbuf[e->hash & (nb - 1)];
+			nbuf[e->hash & (nb - 1)] = e;
+		}
+	}
+	free(t->buckets);
+	t->buckets = nbuf;
+	t->mask = nb - 1;
+	return 0;
+}
+
+/* Does an entry with this hash + canonical bytes already exist? */
+static int
+already_present(Tab *t, uint32_t h, const uint8_t *cbuf, int clen,
+                TabRow **found)
+{
+	TabRow *e;
+	int elen;
+	uint8_t *ebuf;
+	int eq;
+
+	if(found != nil)
+		*found = nil;
+
+	for(e = t->buckets[h & t->mask]; e != nil; e = e->next){
+		if(e->hash != h)
+			continue;
+		ebuf = canonical_bytes(t, e->chain, &elen);
+		if(ebuf == nil)
+			return -1;
+		eq = (elen == clen && memcmp(ebuf, cbuf, clen) == 0);
+		free(ebuf);
+		if(eq){
+			/* Hand the row back: tab_add_row would otherwise
+			 * rediscover it with a linear walk of t->rows[]. */
+			if(found != nil)
+				*found = e;
+			return 1;
+		}
+	}
+	return 0;
+}
+
+/* Append a TabRow to t->rows[] (the source-order list). */
+static int
+push_row(Tab *t, TabRow *e)
+{
+	int newcap;
+	TabRow **nr;
+
+	if(t->nrows >= t->nrows_cap){
+		newcap = t->nrows_cap == 0 ? RowsInitCap : t->nrows_cap * 2;
+		nr = realloc(t->rows, newcap * sizeof *nr);
+		if(nr == nil){
+			tab_seterror("tab_open: out of memory growing rows");
+			return -1;
+		}
+		t->rows = nr;
+		t->nrows_cap = newcap;
+	}
+	t->rows[t->nrows++] = e;
+	return 0;
+}
+
+/* Try to insert a parsed row.  Returns 1 if inserted, 0 if dropped as
+ * a duplicate, -1 on error. */
+int
+tab_rowmap_insert_found(Tab *t, Ndbtuple *chain, TabRow **found)
+{
+	uint8_t *cbuf;
+	int clen, dup;
+	uint32_t h;
+	TabRow *e;
+
+	if(ensure_buckets(t, 0) < 0)
+		return -1;
+
+	cbuf = canonical_bytes(t, chain, &clen);
+	if(cbuf == nil)
+		return -1;
+	h = tab_hash_bytes(cbuf, clen);
+
+	dup = already_present(t, h, cbuf, clen, found);
+	free(cbuf);
+	if(dup < 0)
+		return -1;
+	if(dup == 1)
+		return 0;	/* duplicate — caller frees chain */
+
+	e = malloc(sizeof *e);
+	if(e == nil){
+		tab_seterror("tab_open: out of memory for entry");
+		return -1;
+	}
+	e->hash = h;
+	e->chain = chain;
+	e->next = t->buckets[h & t->mask];
+	t->buckets[h & t->mask] = e;
+	t->nentries++;
+	if(tab_row_is_nil(t, e))
+		t->nilrow = e;
+
+	if(push_row(t, e) < 0){
+		if(t->nilrow == e)
+			t->nilrow = nil;
+		t->buckets[h & t->mask] = e->next;
+		free(e);
+		t->nentries--;
+		return -1;
+	}
+	return 1;
+}
+
+/* Re-hash an existing row after one of its cells changed.
+ *
+ * Returns 0 on success (entry moved from its old bucket to the new
+ * one matching the row's new content hash).  Returns 1 on collision:
+ * a different row already has the new canonical content, so the
+ * mutation would create a duplicate and the caller must revert their
+ * change.  Returns -1 on error (OOM, chain not in the map).
+ *
+ * The single point where in-memory row mutation re-establishes the
+ * row-hash invariant.  Every tab_set_* call routes through here. */
+/*
+ * Rehash a row whose cells just changed.
+ *
+ * Callers holding the TabRow should use this. The chain-taking wrapper below
+ * has to find the owning row by walking t->rows[], which made every tab_set()
+ * O(nrows). Growing the bucket array fixed the bucket chains; this fixes the
+ * row lookup, and both are needed. Measured on sigil's store_commit with the
+ * bucket growth already in place:
+ *
+ *     40,000 records    4.29 s -> 0.148 s
+ *     80,000 records   19.50 s -> 0.278 s
+ *    160,000 records   82.96 s -> 0.549 s
+ */
+int
+tab_rowmap_rehash_row(Tab *t, TabRow *self)
+{
+	int clen, elen, eq;
+	uint8_t *cbuf, *ebuf;
+	uint32_t h_new;
+	Ndbtuple *chain;
+	TabRow *e, **prev;
+
+	if(self == nil){
+		tab_seterror("tab_rowmap_rehash: nil row");
+		return -1;
+	}
+	chain = self->chain;
+
+	cbuf = canonical_bytes(t, chain, &clen);
+	if(cbuf == nil)
+		return -1;
+	h_new = tab_hash_bytes(cbuf, clen);
+
+	if(h_new == self->hash){
+		/* Possible no-op (or 32-bit hash collision against the row's
+		 * own old hash).  Either way nothing to move. */
+		free(cbuf);
+		return 0;
+	}
+
+	for(e = t->buckets[h_new & t->mask]; e != nil; e = e->next){
+		if(e == self) continue;
+		if(e->hash != h_new) continue;
+		ebuf = canonical_bytes(t, e->chain, &elen);
+		if(ebuf == nil){
+			free(cbuf);
+			return -1;
+		}
+		eq = (elen == clen && memcmp(ebuf, cbuf, clen) == 0);
+		free(ebuf);
+		if(eq){
+			free(cbuf);
+			tab_seterror("tab_rowmap_rehash: mutation would "
+				"create a duplicate of an existing row");
+			return 1;
+		}
+	}
+	free(cbuf);
+
+	prev = &t->buckets[self->hash & t->mask];
+	while(*prev != nil && *prev != self)
+		prev = &(*prev)->next;
+	if(*prev == self)
+		*prev = self->next;
+
+	self->hash = h_new;
+	self->next = t->buckets[h_new & t->mask];
+	t->buckets[h_new & t->mask] = self;
+	return 0;
+}
+
+int
+tab_rowmap_delete(Tab *t, TabRow *r)
+{
+	TabRow **prev;
+	int i, found;
+
+	if(t == nil || r == nil || r == t->nilrow){
+		tab_seterror("tab_rowmap_delete: invalid row");
+		return -1;
+	}
+	found = 0;
+	for(i = 0; i < t->nrows; i++){
+		if(t->rows[i] == r){
+			found = 1;
+			break;
+		}
+	}
+	if(!found){
+		tab_seterror("tab_rowmap_delete: row not in list");
+		return -1;
+	}
+	prev = &t->buckets[r->hash & t->mask];
+	while(*prev != nil && *prev != r)
+		prev = &(*prev)->next;
+	if(*prev != r){
+		tab_seterror("tab_rowmap_delete: row not in bucket");
+		return -1;
+	}
+	*prev = r->next;
+
+	for(; i + 1 < t->nrows; i++)
+		t->rows[i] = t->rows[i+1];
+	t->nrows--;
+	t->nentries--;
+	ndbfree(r->chain);
+	free(r);
+	return 0;
+}
+
+void
+tab_index_freeall(Tab *t)
+{
+	int i;
+
+	if(t == nil)
+		return;
+	for(i = 0; i < t->nrows; i++){
+		ndbfree(t->rows[i]->chain);
+		free(t->rows[i]);
+	}
+	free(t->rows);
+	free(t->buckets);
+	t->rows = nil;
+	t->buckets = nil;
+	t->nrows = 0;
+	t->nrows_cap = 0;
+	t->nentries = 0;
+	t->mask = 0;
+	t->nilrow = nil;
+}
+
+/* Public: scan-with-filter. */
+TabIter *
+tab_search(Tab *t, const char *col, const char *value)
+{
+	TabIter *it;
+
+	tab_clearerror();
+	if(t == nil || col == nil){
+		tab_seterror("tab_search: nil argument");
+		return nil;
+	}
+	it = mallocz(sizeof *it, 1);
+	if(it == nil){
+		tab_seterror("tab_search: out of memory");
+		return nil;
+	}
+	it->t = t;
+	it->idx = 0;
+	it->col = strdup((char *)col);
+	it->value_is_nil = value == nil;
+	it->value = value != nil ? strdup((char *)value) : nil;
+	if(it->col == nil || (value != nil && it->value == nil)){
+		tab_seterror("tab_search: out of memory");
+		free(it->col);
+		free(it->value);
+		free(it);
+		return nil;
+	}
+	return it;
+}
+
+/*
+ * Compatibility form for callers that hold only the chain. Still O(nrows);
+ * prefer tab_rowmap_rehash_row() wherever the row is already in hand.
+ */
+int
+tab_rowmap_rehash(Tab *t, Ndbtuple *chain)
+{
+	int i;
+
+	for(i = 0; i < t->nrows; i++)
+		if(t->rows[i]->chain == chain)
+			return tab_rowmap_rehash_row(t, t->rows[i]);
+
+	tab_seterror("tab_rowmap_rehash: chain not in map");
+	return -1;
+}
+
+/* Original signature, for callers that do not need the matched row. */
+int
+tab_rowmap_insert(Tab *t, Ndbtuple *chain)
+{
+	return tab_rowmap_insert_found(t, chain, nil);
+}
