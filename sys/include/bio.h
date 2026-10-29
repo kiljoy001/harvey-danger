@@ -39,6 +39,9 @@ struct	Biobuf
 	u8 *	bbuf;		/* pointer to beginning of buffer */
 	u8 *	ebuf;		/* pointer to end of buffer */
 	u8 *	gbuf;		/* pointer to good data in buf */
+	void	(*errorf)(char*);	/* called on error if not nil */
+	int	(*iof)(Biobufhdr*, void*, long);	/* called to do i/o */
+	void	*aux;		/* user data */
 	u8	b[Bungetsize+Bsize];
 };
 
@@ -57,6 +60,9 @@ int	Bgetd(Biobufhdr*, double*);
 i32	Bgetrune(Biobufhdr*);
 int	Binit(Biobuf*, int, int);
 int	Binits(Biobufhdr*, int, int, u8*, int);
+void	Berror(Biobufhdr*, char*, ...);
+void	Blethal(Biobufhdr*, void (*)(char*));
+void	Biofn(Biobufhdr*, int (*)(Biobufhdr*, void*, long));
 int	Blinelen(Biobufhdr*);
 i64	Boffset(Biobufhdr*);
 Biobuf*	Bopen(char*, int);

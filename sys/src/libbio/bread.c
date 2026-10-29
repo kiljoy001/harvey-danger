@@ -29,11 +29,13 @@ Bread(Biobufhdr *bp, void *ap, i32 count)
 		if(n == 0) {
 			if(bp->state != Bractive)
 				break;
-			i = read(bp->fid, bp->bbuf, bp->bsize);
+			i = bp->iof(bp, bp->bbuf, bp->bsize);
 			if(i <= 0) {
 				bp->state = Bracteof;
-				if(i < 0)
+				if(i < 0){
 					bp->state = Binactive;
+					Berror(bp, "read error: %r");
+				}
 				break;
 			}
 			bp->gbuf = bp->bbuf;

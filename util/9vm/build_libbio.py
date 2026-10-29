@@ -37,6 +37,7 @@ SOURCES = [
     "bgetc.c",
     "bgetd.c",
     "binit.c",
+    "blethal.c",
     "boffset.c",
     "bprint.c",
     "bputrune.c",
