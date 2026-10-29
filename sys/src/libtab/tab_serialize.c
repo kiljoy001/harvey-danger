@@ -27,7 +27,7 @@
  * plus the trailing blank line.
  */
 
-#include "tab_internal.h"
+#include <tab_internal.h>
 
 /* Grow a buffer in-place; appends `n` bytes from `p` to `*buf` (which
  * has current length `*len` and capacity `*cap`).  Reallocates as

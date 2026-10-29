@@ -36,6 +36,9 @@ usage(void)
 		"       tab FILE hash COL=VALUE FIELD\n"
 		"       tab FILE sign COL=VALUE FIELD KEYFILE\n"
 		"       tab FILE verify COL=VALUE FIELD PUBFILE\n"
+		"       tab FILE encrypt COL=VALUE FIELD KEYFILE\n"
+		"       tab FILE decrypt COL=VALUE FIELD KEYFILE\n"
+		"       tab keygen KEYFILE\n"
 		"       tab keygen SECRETKEY PUBLICKEY\n");
 	exits("usage");
 }
@@ -381,10 +384,9 @@ cmd_verify(char *path, int argc, char **argv)
 	return 0;
 }
 
-static int
-cmd_keygen(char *skpath, char *pkpath)
+static void
+randbytes(uchar *buf, int n)
 {
-	uchar seed[32], sk[64], pk[32];
 	int fd, got, r;
 
 	fd = open("/dev/random", OREAD);
@@ -393,30 +395,109 @@ cmd_keygen(char *skpath, char *pkpath)
 	if(fd < 0)
 		fail("tab: open random: %r");
 	got = 0;
-	while(got < sizeof seed){
-		r = read(fd, seed + got, sizeof seed - got);
+	while(got < n){
+		r = read(fd, buf + got, n - got);
 		if(r <= 0)
 			fail("tab: read random: %r");
 		got += r;
 	}
 	close(fd);
+}
+
+static void
+writekey(char *path, uchar *key, int n, int perm)
+{
+	int fd;
+
+	fd = create(path, OWRITE, perm);
+	if(fd < 0)
+		fail("tab: create %s: %r", path);
+	if(write(fd, key, n) != n)
+		fail("tab: write %s: %r", path);
+	close(fd);
+}
+
+static int
+cmd_keygen_raw(char *path)
+{
+	uchar key[32];
+
+	randbytes(key, sizeof key);
+	writekey(path, key, sizeof key, 0600);
+	crypto_wipe(key, sizeof key);
+	return 0;
+}
+
+static int
+cmd_keygen_pair(char *skpath, char *pkpath)
+{
+	uchar seed[32], sk[64], pk[32];
+
+	randbytes(seed, sizeof seed);
 	crypto_eddsa_key_pair(sk, pk, seed);
 	crypto_wipe(seed, sizeof seed);
-
-	fd = create(skpath, OWRITE, 0600);
-	if(fd < 0)
-		fail("tab: create %s: %r", skpath);
-	if(write(fd, sk, sizeof sk) != sizeof sk)
-		fail("tab: write %s: %r", skpath);
-	close(fd);
-
-	fd = create(pkpath, OWRITE, 0644);
-	if(fd < 0)
-		fail("tab: create %s: %r", pkpath);
-	if(write(fd, pk, sizeof pk) != sizeof pk)
-		fail("tab: write %s: %r", pkpath);
-	close(fd);
+	writekey(skpath, sk, sizeof sk, 0600);
+	writekey(pkpath, pk, sizeof pk, 0644);
 	crypto_wipe(sk, sizeof sk);
+	return 0;
+}
+
+static int
+cmd_encrypt(char *path, int argc, char **argv)
+{
+	Tab *t;
+	TabRow *r;
+	uchar *key, *plain;
+	char *buf, *col, *value, *field, *keyfile;
+	int n, i;
+
+	i = 0;
+	selector(argc, argv, &i, &col, &value);
+	if(i != argc - 2)
+		usage();
+	field = argv[i];
+	keyfile = argv[i+1];
+	key = readkey(keyfile, 32);
+	buf = readstdin(&n);
+	plain = (uchar*)buf;
+	t = open_tab(path);
+	r = row_for(t, col, value);
+	if(tab_set_encrypted(t, r, field, plain, n, key) < 0)
+		fail("tab: encrypt %s: %s", field, tab_lasterror());
+	commit(t);
+	tab_close(t);
+	crypto_wipe(key, 32);
+	free(key);
+	free(buf);
+	return 0;
+}
+
+static int
+cmd_decrypt(char *path, int argc, char **argv)
+{
+	Tab *t;
+	TabRow *r;
+	uchar *key, *plain;
+	char *col, *value, *field, *keyfile;
+	int n, i;
+
+	i = 0;
+	selector(argc, argv, &i, &col, &value);
+	if(i != argc - 2)
+		usage();
+	field = argv[i];
+	keyfile = argv[i+1];
+	key = readkey(keyfile, 32);
+	t = open_tab(path);
+	r = row_for(t, col, value);
+	plain = tab_decrypt(r, field, key, &n);
+	if(plain == nil)
+		fail("tab: decrypt %s: %s", field, tab_lasterror());
+	if(write(1, plain, n) < 0)
+		fail("tab: write: %r");
+	tab_close(t);
+	free(plain);
+	free(key);
 	return 0;
 }
 
@@ -426,9 +507,11 @@ main(int argc, char **argv)
 	if(argc < 3)
 		usage();
 	if(strcmp(argv[1], "keygen") == 0){
-		if(argc != 4)
-			usage();
-		exits(cmd_keygen(argv[2], argv[3]) == 0 ? nil : "fail");
+		if(argc == 3)
+			exits(cmd_keygen_raw(argv[2]) == 0 ? nil : "fail");
+		if(argc == 4)
+			exits(cmd_keygen_pair(argv[2], argv[3]) == 0 ? nil : "fail");
+		usage();
 	}
 	if(strcmp(argv[2], "init") == 0){
 		if(argc < 5)
@@ -450,5 +533,9 @@ main(int argc, char **argv)
 		exits(cmd_sign(argv[1], argc - 3, argv + 3) == 0 ? nil : "fail");
 	if(strcmp(argv[2], "verify") == 0)
 		exits(cmd_verify(argv[1], argc - 3, argv + 3) == 0 ? nil : "fail");
+	if(strcmp(argv[2], "encrypt") == 0)
+		exits(cmd_encrypt(argv[1], argc - 3, argv + 3) == 0 ? nil : "fail");
+	if(strcmp(argv[2], "decrypt") == 0)
+		exits(cmd_decrypt(argv[1], argc - 3, argv + 3) == 0 ? nil : "fail");
 	usage();
 }

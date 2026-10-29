@@ -7,7 +7,7 @@
  * bytes ndb cannot represent safely, keeping the rest of the value readable.
  */
 
-#include "tab_internal.h"
+#include <tab_internal.h>
 
 static const char LegacyPrefix[] = "__libtab_text64_v1:";
 static const char LegacyMagic[] = "libtab-text-v1:";

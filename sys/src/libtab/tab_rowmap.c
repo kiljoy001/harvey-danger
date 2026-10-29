@@ -17,7 +17,7 @@
  * hash are dropped — duplicates by definition.
  */
 
-#include "tab_internal.h"
+#include <tab_internal.h>
 
 enum {
 	HashMinBuckets	= 16,

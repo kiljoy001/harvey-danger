@@ -3,7 +3,7 @@
  * returns its current contents.
  */
 
-#include "tab_internal.h"
+#include <tab_internal.h>
 #ifdef __GNUC__
 #include <stdarg.h>
 #endif

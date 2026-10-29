@@ -38,7 +38,7 @@
  * recommendation for interactive auth.
  */
 
-#include "tab_internal.h"
+#include <tab_internal.h>
 #include <monocypher.h>
 
 /* In tab_rowmap.c. */

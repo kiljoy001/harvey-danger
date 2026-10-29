@@ -33,7 +33,7 @@
  * auto-commits if dirty.
  */
 
-#include "tab_internal.h"
+#include <tab_internal.h>
 
 int tab_rowmap_insert(Tab *t, Ndbtuple *chain);
 int tab_rowmap_rehash(Tab *t, Ndbtuple *chain);
@@ -45,7 +45,8 @@ schema_type_ok(const char *type)
 {
 	if(type == nil)
 		return 1;
-	return strcmp(type, "HASHED") == 0 || strcmp(type, "SIGNED") == 0;
+	return strcmp(type, "HASHED") == 0 || strcmp(type, "SIGNED") == 0
+	    || strcmp(type, "ENCRYPTED") == 0;
 }
 
 static Ndbtuple*
@@ -284,6 +285,8 @@ tab_add_row(Tab *t, const char *head_attr, const char *head_val)
 			head_attr, schema_col->type);
 		return nil;
 	}
+	if(tab_check_cell_size(head_attr, head_val, "tab_add_row") < 0)
+		return nil;
 	chain = ndbnew((char *)head_attr, (char *)head_val);
 	if(chain == nil){
 		tab_seterror("tab_add_row: ndbnew failed");
@@ -345,6 +348,8 @@ tab_set(Tab *t, TabRow *r, const char *col, const char *value)
 		tab_seterror("tab_set: empty row name");
 		return -1;
 	}
+	if(!store_nil && tab_check_cell_size(col, store, "tab_set") < 0)
+		return -1;
 
 	/* Find existing cell; if absent, append a fresh tuple. */
 	tup = nil;

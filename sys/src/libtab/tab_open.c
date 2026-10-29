@@ -12,7 +12,7 @@
  * and keep rows in memory for iteration, mutation, and commit.
  */
 
-#include "tab_internal.h"
+#include <tab_internal.h>
 
 /* Defined in tab_rowmap.c. */
 int tab_rowmap_insert(Tab *t, Ndbtuple *chain);
@@ -33,7 +33,8 @@ schema_type_ok(const char *type)
 {
 	if(type == nil)
 		return 1;
-	return strcmp(type, "HASHED") == 0 || strcmp(type, "SIGNED") == 0;
+	return strcmp(type, "HASHED") == 0 || strcmp(type, "SIGNED") == 0
+	    || strcmp(type, "ENCRYPTED") == 0;
 }
 
 /* Walk an entry's tuple chain looking for the next `col=` tuple.
@@ -363,11 +364,60 @@ tab_open_dial(const char *path, const char *dial, const char *remote_path)
 	}
 	if(tab_ensure_nil_row(t) < 0)
 		goto fail;
+	/* Remember what we read, so tab_commit can tell whether anyone
+	 * else has written since. */
+	if(t->dial == nil)
+		tab_fileid_record(t);
 	return t;
 
 fail:
 	tab_close(t);
 	return nil;
+}
+
+/*
+ * Discard local changes and reread the file.
+ *
+ * The way out of a refused commit: another writer got there first, and the
+ * caller decides to take their version rather than theirs being lost.  This
+ * throws away every uncommitted mutation on `t` -- there is no merge, and
+ * offering one would mean guessing at the caller's intent.
+ *
+ * Implemented by opening a fresh handle and swapping its contents into `t`,
+ * so existing TabRow pointers into the old table are invalidated (they were
+ * already pointing at rows that may no longer exist).  Callers must re-find
+ * their rows afterwards, which the refusal already forces them to do.
+ */
+int
+tab_reload(Tab *t)
+{
+	Tab *fresh, tmp;
+
+	tab_clearerror();
+	if(t == nil){
+		tab_seterror("tab_reload: nil Tab");
+		return -1;
+	}
+	if(t->path == nil){
+		tab_seterror("tab_reload: table has no path");
+		return -1;
+	}
+
+	fresh = tab_open_dial(t->path, t->dial, t->remote_path);
+	if(fresh == nil)
+		return -1;	/* tab_open set errstr */
+
+	/* Swap wholesale, then free the old contents through tab_close on
+	 * the shell.  Everything that identifies the table -- path, dial,
+	 * remote_path -- is reallocated by tab_open_dial, so the swap is
+	 * complete and neither side shares a pointer with the other. */
+	tmp = *t;
+	*t = *fresh;
+	*fresh = tmp;
+	tab_close(fresh);
+
+	t->dirty = 0;
+	return 0;
 }
 
 /* In tab_persist.c. */
@@ -383,7 +433,12 @@ tab_close(Tab *t)
 	/* Close-time auto-commit if dirty.  Errors here are reported via
 	 * tab_lasterror() but cannot fail the close — the caller has
 	 * already moved on.  A consumer that needs to know the flush
-	 * succeeded calls tab_commit() explicitly first. */
+	 * succeeded calls tab_commit() explicitly first.
+	 *
+	 * This includes the stale-file refusal: closing a handle that
+	 * another writer has overtaken drops the local changes rather
+	 * than overwriting them, which is the right trade but is silent.
+	 * A caller who cares calls tab_commit() and handles the -1. */
 	if(t->dirty)
 		tab_commit(t);
 	tab_index_freeall(t);

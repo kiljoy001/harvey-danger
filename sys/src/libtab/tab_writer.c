@@ -9,7 +9,7 @@
  * tab_commit's truncate-and-write semantics there.
  */
 
-#include "tab_internal.h"
+#include <tab_internal.h>
 #include <monocypher.h>
 
 #ifdef USE_POSIX
@@ -43,7 +43,8 @@ schema_type_ok(const char *type)
 {
 	if(type == nil)
 		return 1;
-	return strcmp(type, "HASHED") == 0 || strcmp(type, "SIGNED") == 0;
+	return strcmp(type, "HASHED") == 0 || strcmp(type, "SIGNED") == 0
+	    || strcmp(type, "ENCRYPTED") == 0;
 }
 
 static TabCol *
@@ -442,6 +443,8 @@ tab_writer_add_row(TabWriter *w, const char *head_attr, const char *head_val)
 			head_attr, schema_col->type);
 		return -1;
 	}
+	if(tab_check_cell_size(head_attr, head_val, "tab_writer_add_row") < 0)
+		return -1;
 	chain = ndbnew((char *)head_attr, (char *)head_val);
 	if(chain == nil){
 		tab_seterror("tab_writer_add_row: ndbnew failed");
@@ -485,6 +488,8 @@ tab_writer_set(TabWriter *w, const char *col, const char *value)
 		tab_seterror("tab_writer_set: empty row name");
 		return -1;
 	}
+	if(!store_nil && tab_check_cell_size(col, store, "tab_writer_set") < 0)
+		return -1;
 
 	tup = nil;
 	last = nil;

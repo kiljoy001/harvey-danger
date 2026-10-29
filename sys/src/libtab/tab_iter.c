@@ -17,7 +17,7 @@
  * invalidate it; only tab_close does.  Iterators are pure cursors.
  */
 
-#include "tab_internal.h"
+#include <tab_internal.h>
 
 TabIter *
 tab_iter(Tab *t)

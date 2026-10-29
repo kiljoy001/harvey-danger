@@ -6,7 +6,7 @@
  * rules, so the emission logic lives here behind a tiny write callback.
  */
 
-#include "tab_internal.h"
+#include <tab_internal.h>
 
 static int
 emit_str(TabEmitFn emit, void *arg, const char *s)

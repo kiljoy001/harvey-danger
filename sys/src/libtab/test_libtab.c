@@ -844,6 +844,1237 @@ test_dedup_after_growth(void)
 	remove(path);
 }
 
+/*
+ * ENCRYPTED column type.
+ *
+ * Wire format is a single self-describing blob, unlike SIGNED's two
+ * segments: there is no half worth inspecting on its own.
+ *
+ *	encrypted:<b64( ver | nonce[24] | mac[16] | ciphertext )>
+ *
+ * Crypto is monocypher's XChaCha20-Poly1305 (crypto_aead_lock /
+ * crypto_aead_unlock).  Not AES-256-GCM: monocypher ships no AES, and
+ * vendoring a second crypto library to satisfy a README line is the
+ * wrong trade.  XChaCha20-Poly1305 is reachable from every binding
+ * this repository feeds -- Go's x/crypto, and Bouncy Castle on .NET.
+ *
+ * Row identity hashes the *ciphertext*, because it must.  The rowmap
+ * is rebuilt by tab_open from on-disk text, which never holds the key;
+ * hashing plaintext would make row identity unreproducible on load.
+ * test_encrypted_reencrypt_makes_new_row nails that consequence down
+ * so nobody later "fixes" it into a dedup bug.
+ */
+
+static void
+fill_key(uint8_t key[32], uint8_t seed)
+{
+	int i;
+
+	for(i = 0; i < 32; i++)
+		key[i] = (uint8_t)(seed + i);
+}
+
+static Tab*
+fresh_enc(char *path)
+{
+	TabColSpec cols[2];
+
+	memset(cols, 0, sizeof cols);
+	cols[0].name = "k";
+	cols[1].name = "secret";
+	cols[1].type = "ENCRYPTED";
+
+	remove(path);
+	return tab_create(path, "test", cols, 2);
+}
+
+/* Encrypt, then decrypt with the same key, in memory. */
+static void
+test_encrypted_roundtrip(void)
+{
+	Tab *t;
+	TabRow *r;
+	uint8_t key[32];
+	unsigned char *out;
+	char *path = "/tmp/lt_enc_roundtrip.tab";
+	int outlen;
+
+	fill_key(key, 7);
+	t = fresh_enc(path);
+	if(t == nil){
+		ok(0, "encrypted: create table");
+		return;
+	}
+	r = tab_add_row(t, "k", "a");
+	ok(r != nil, "encrypted: add row");
+	if(r == nil){
+		tab_close(t);
+		remove(path);
+		return;
+	}
+
+	ok(tab_set_encrypted(t, r, "secret",
+		(unsigned char*)"hello", 5, key) == 0,
+		"encrypted: set");
+
+	/* The cell on disk is tagged and carries no plaintext. */
+	ok(tab_cell_has_tag(tab_get(r, "secret"), "ENCRYPTED") == 1,
+		"encrypted: cell carries encrypted: tag");
+	ok(strstr(tab_get(r, "secret"), "hello") == nil,
+		"encrypted: plaintext absent from cell text");
+
+	out = tab_decrypt(r, "secret", key, &outlen);
+	ok(out != nil, "encrypted: decrypt succeeds");
+	if(out != nil){
+		ok(outlen == 5, "encrypted: plaintext length");
+		ok(memcmp(out, "hello", 5) == 0, "encrypted: plaintext bytes");
+		free(out);
+	}
+	tab_close(t);
+	remove(path);
+}
+
+/* Survives commit and reopen: the ciphertext is the durable form. */
+static void
+test_encrypted_survives_reopen(void)
+{
+	Tab *t;
+	TabRow *r;
+	uint8_t key[32];
+	unsigned char *out;
+	char *path = "/tmp/lt_enc_reopen.tab";
+	int outlen;
+
+	fill_key(key, 19);
+	t = fresh_enc(path);
+	if(t == nil){
+		ok(0, "encrypted reopen: create table");
+		return;
+	}
+	r = tab_add_row(t, "k", "a");
+	if(r == nil || tab_set_encrypted(t, r, "secret",
+			(unsigned char*)"across the disk", 15, key) != 0){
+		ok(0, "encrypted reopen: set");
+		tab_close(t);
+		remove(path);
+		return;
+	}
+	ok(tab_commit(t) == 0, "encrypted reopen: commit");
+	tab_close(t);
+
+	t = tab_open(path);
+	ok(t != nil, "encrypted reopen: reopen");
+	if(t == nil){
+		remove(path);
+		return;
+	}
+	r = find(t, "k", "a");
+	ok(r != nil, "encrypted reopen: row found");
+	if(r != nil){
+		out = tab_decrypt(r, "secret", key, &outlen);
+		ok(out != nil, "encrypted reopen: decrypt after reopen");
+		if(out != nil){
+			ok(outlen == 15 && memcmp(out, "across the disk", 15) == 0,
+				"encrypted reopen: plaintext intact");
+			free(out);
+		}
+	}
+	tab_close(t);
+	remove(path);
+}
+
+/* Wrong key must fail the Poly1305 tag, not return garbage. */
+static void
+test_encrypted_wrong_key_fails(void)
+{
+	Tab *t;
+	TabRow *r;
+	uint8_t key[32], wrong[32];
+	unsigned char *out;
+	char *path = "/tmp/lt_enc_wrongkey.tab";
+	int outlen;
+
+	fill_key(key, 1);
+	fill_key(wrong, 2);
+	t = fresh_enc(path);
+	if(t == nil){
+		ok(0, "encrypted wrong key: create table");
+		return;
+	}
+	r = tab_add_row(t, "k", "a");
+	if(r == nil || tab_set_encrypted(t, r, "secret",
+			(unsigned char*)"top secret", 10, key) != 0){
+		ok(0, "encrypted wrong key: set");
+		tab_close(t);
+		remove(path);
+		return;
+	}
+	out = tab_decrypt(r, "secret", wrong, &outlen);
+	ok(out == nil, "encrypted: wrong key is rejected");
+	free(out);
+	tab_close(t);
+	remove(path);
+}
+
+/*
+ * A flipped ciphertext byte must fail authentication.
+ *
+ * The corruption goes through the file rather than tab_set, which
+ * correctly refuses to write a typed column at all.  That also makes
+ * this the realistic case: an ENCRYPTED cell is tampered with on disk,
+ * by someone who never went through libtab.
+ */
+static void
+test_encrypted_tamper_detected(void)
+{
+	Tab *t;
+	TabRow *r;
+	uint8_t key[32];
+	unsigned char *out;
+	char *path = "/tmp/lt_enc_tamper.tab";
+	char *text, *p, *end;
+	int outlen, fd, n;
+	char buf[8192];
+
+	fill_key(key, 31);
+	t = fresh_enc(path);
+	if(t == nil){
+		ok(0, "encrypted tamper: create table");
+		return;
+	}
+	r = tab_add_row(t, "k", "a");
+	if(r == nil || tab_set_encrypted(t, r, "secret",
+			(unsigned char*)"integrity", 9, key) != 0
+	   || tab_commit(t) != 0){
+		ok(0, "encrypted tamper: build table");
+		tab_close(t);
+		remove(path);
+		return;
+	}
+	tab_close(t);
+
+	/* Read the committed file back and flip one base64 character
+	 * inside the encrypted cell, past the nonce and mac. */
+	fd = open(path, OREAD);
+	if(fd < 0){
+		ok(0, "encrypted tamper: reopen file");
+		remove(path);
+		return;
+	}
+	n = read(fd, buf, sizeof buf - 1);
+	close(fd);
+	if(n <= 0){
+		ok(0, "encrypted tamper: read file");
+		remove(path);
+		return;
+	}
+	buf[n] = 0;
+
+	text = strstr(buf, "encrypted:");
+	if(text == nil){
+		ok(0, "encrypted tamper: locate cell");
+		remove(path);
+		return;
+	}
+	p = text + strlen("encrypted:");
+	end = p;
+	while(*end != 0 && *end != '\n' && *end != ' ' && *end != '\t')
+		end++;
+	while(end > p && end[-1] == '=')
+		end--;
+	if(end - p < 4){
+		ok(0, "encrypted tamper: payload too short to corrupt");
+		remove(path);
+		return;
+	}
+	/*
+	 * Corrupt a character in the middle of the payload, not the last
+	 * one.  With '=' padding the final base64 character carries only
+	 * the high bits of the last byte and the rest are discarded, so
+	 * flipping it can decode to identical ciphertext and authenticate
+	 * correctly -- a property of base64, not a failure of the mac.
+	 * The midpoint is past the 41-byte header, so this always lands
+	 * in ciphertext for a plaintext of this size.
+	 */
+	p += (end - p) / 2;
+	*p = (*p == 'A') ? 'B' : 'A';
+
+	if(write_text_file(path, buf) < 0){
+		ok(0, "encrypted tamper: rewrite file");
+		remove(path);
+		return;
+	}
+
+	t = tab_open(path);
+	ok(t != nil, "encrypted tamper: reopen tampered table");
+	if(t == nil){
+		remove(path);
+		return;
+	}
+	r = find(t, "k", "a");
+	ok(r != nil, "encrypted tamper: row still found");
+	if(r != nil){
+		out = tab_decrypt(r, "secret", key, &outlen);
+		ok(out == nil, "encrypted: tampered ciphertext is rejected");
+		free(out);
+	}
+	tab_close(t);
+	remove(path);
+}
+
+/* Empty plaintext is legal: mac and nonce still present, decrypt gives 0 bytes. */
+static void
+test_encrypted_empty_plaintext(void)
+{
+	Tab *t;
+	TabRow *r;
+	uint8_t key[32];
+	unsigned char *out;
+	char *path = "/tmp/lt_enc_empty.tab";
+	int outlen;
+
+	fill_key(key, 5);
+	t = fresh_enc(path);
+	if(t == nil){
+		ok(0, "encrypted empty: create table");
+		return;
+	}
+	r = tab_add_row(t, "k", "a");
+	if(r == nil){
+		ok(0, "encrypted empty: add row");
+		tab_close(t);
+		remove(path);
+		return;
+	}
+	ok(tab_set_encrypted(t, r, "secret",
+		(unsigned char*)"", 0, key) == 0,
+		"encrypted empty: set");
+	out = tab_decrypt(r, "secret", key, &outlen);
+	ok(out != nil, "encrypted empty: decrypt succeeds");
+	ok(out != nil && outlen == 0, "encrypted empty: zero-length plaintext");
+	free(out);
+	tab_close(t);
+	remove(path);
+}
+
+/* Nonces are per-cell and random, so the same plaintext under the same
+ * key yields different ciphertext. */
+static void
+test_encrypted_nonce_is_fresh(void)
+{
+	Tab *t;
+	TabRow *r1, *r2;
+	uint8_t key[32];
+	char *first;
+	char *path = "/tmp/lt_enc_nonce.tab";
+
+	fill_key(key, 11);
+	t = fresh_enc(path);
+	if(t == nil){
+		ok(0, "encrypted nonce: create table");
+		return;
+	}
+	r1 = tab_add_row(t, "k", "a");
+	r2 = tab_add_row(t, "k", "b");
+	if(r1 == nil || r2 == nil){
+		ok(0, "encrypted nonce: add rows");
+		tab_close(t);
+		remove(path);
+		return;
+	}
+	ok(tab_set_encrypted(t, r1, "secret",
+		(unsigned char*)"same", 4, key) == 0, "encrypted nonce: set 1");
+	first = strdup((char*)tab_get(r1, "secret"));
+	ok(tab_set_encrypted(t, r2, "secret",
+		(unsigned char*)"same", 4, key) == 0, "encrypted nonce: set 2");
+
+	ok(first != nil && strcmp(first, tab_get(r2, "secret")) != 0,
+		"encrypted: identical plaintext gives different ciphertext");
+	free(first);
+	tab_close(t);
+	remove(path);
+}
+
+/*
+ * Row identity hashes ciphertext, so re-encrypting the same plaintext
+ * onto a fresh row makes a *second* row rather than deduping onto the
+ * first.  This is a consequence of the data model, not a defect: the
+ * rowmap is rebuilt from on-disk text by tab_open, which has no key.
+ * Asserted here so the behaviour is deliberate and stays that way.
+ */
+static void
+test_encrypted_reencrypt_makes_new_row(void)
+{
+	Tab *t;
+	TabRow *r1, *r2;
+	TabIter *it;
+	uint8_t key[32];
+	char *path = "/tmp/lt_enc_dedup.tab";
+	int n;
+
+	fill_key(key, 23);
+	t = fresh_enc(path);
+	if(t == nil){
+		ok(0, "encrypted dedup: create table");
+		return;
+	}
+	r1 = tab_add_row(t, "k", "dup");
+	if(r1 == nil || tab_set_encrypted(t, r1, "secret",
+			(unsigned char*)"payload", 7, key) != 0){
+		ok(0, "encrypted dedup: first row");
+		tab_close(t);
+		remove(path);
+		return;
+	}
+	r2 = tab_add_row(t, "k", "dup");
+	ok(r2 != nil, "encrypted dedup: second row admitted");
+	if(r2 != nil)
+		ok(tab_set_encrypted(t, r2, "secret",
+			(unsigned char*)"payload", 7, key) == 0,
+			"encrypted dedup: second encrypt does not collide");
+
+	n = 0;
+	it = tab_iter(t);
+	while(tab_iter_next(it) != nil)
+		n++;
+	tab_iter_close(it);
+	ok(n == 2, "encrypted: same plaintext twice yields two distinct rows");
+
+	tab_close(t);
+	remove(path);
+}
+
+/* The type is only meaningful on an ENCRYPTED column. */
+static void
+test_encrypted_rejects_wrong_column_type(void)
+{
+	Tab *t;
+	TabRow *r;
+	uint8_t key[32];
+	char *path = "/tmp/lt_enc_coltype.tab";
+
+	fill_key(key, 3);
+	t = fresh_enc(path);
+	if(t == nil){
+		ok(0, "encrypted coltype: create table");
+		return;
+	}
+	r = tab_add_row(t, "k", "a");
+	if(r == nil){
+		ok(0, "encrypted coltype: add row");
+		tab_close(t);
+		remove(path);
+		return;
+	}
+	/* "k" is a plain column. */
+	ok(tab_set_encrypted(t, r, "k",
+		(unsigned char*)"x", 1, key) == -1,
+		"encrypted: plain column rejected");
+	ok(tab_set_encrypted(t, r, "nosuch",
+		(unsigned char*)"x", 1, key) == -1,
+		"encrypted: unknown column rejected");
+	tab_close(t);
+	remove(path);
+}
+
+/*
+ * An untagged cell in an ENCRYPTED column never reaches tab_decrypt:
+ * tab_open validates every typed cell's tag at load time and refuses
+ * the whole table.  Asserted at that layer, because that is the layer
+ * that enforces it.
+ */
+static void
+test_encrypted_untagged_cell_rejected_at_open(void)
+{
+	Tab *t;
+	char *path = "/tmp/lt_enc_untagged.tab";
+	char *text =
+		"schema=test\n"
+		"\tcol=k\n"
+		"\tcol=secret type=ENCRYPTED\n"
+		"\n"
+		"k=plain\n"
+		"\tsecret=just_text\n"
+		"\n";
+
+	if(write_text_file(path, text) < 0){
+		ok(0, "encrypted untagged: write file");
+		return;
+	}
+	t = tab_open(path);
+	ok(t == nil, "encrypted: untagged cell in ENCRYPTED column is rejected at open");
+	if(t != nil)
+		tab_close(t);
+	remove(path);
+}
+
+/*
+ * Truncated blobs that pass the tag check reach tab_decrypt, which must
+ * reject them rather than read past the end of the buffer.
+ *
+ * Three cases, because they trip different guards.  "QQ==" decodes to a
+ * single 0x41 byte and dies on the version check.  The other two carry a
+ * valid 0x01 version and can only be caught by the header-length test:
+ * one is 9 bytes, one is 40 -- exactly one short of the 41-byte header,
+ * which is where an off-by-one would let a read run off the end.
+ */
+static void
+test_encrypted_rejects_truncated_blob(void)
+{
+	Tab *t;
+	TabRow *r;
+	uint8_t key[32];
+	unsigned char *out;
+	char *path = "/tmp/lt_enc_trunc.tab";
+	int outlen;
+	int i;
+	static char *rows[] = {
+		"badver",	/* 0x41 -- fails the version check */
+		"short",	/* valid version, 9 bytes total */
+		"offbyone",	/* valid version, 40 bytes: header minus one */
+	};
+	char *text =
+		"schema=test\n"
+		"\tcol=k\n"
+		"\tcol=secret type=ENCRYPTED\n"
+		"\n"
+		"k=badver\n"
+		"\tsecret=encrypted:QQ==\n"
+		"\n"
+		"k=short\n"
+		"\tsecret=encrypted:AQABAgMEBQYH\n"
+		"\n"
+		"k=offbyone\n"
+		"\tsecret=encrypted:AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==\n"
+		"\n";
+
+	fill_key(key, 13);
+	if(write_text_file(path, text) < 0){
+		ok(0, "encrypted truncated: write file");
+		return;
+	}
+	t = tab_open(path);
+	ok(t != nil, "encrypted truncated: table opens");
+	if(t == nil){
+		remove(path);
+		return;
+	}
+	for(i = 0; i < nelem(rows); i++){
+		r = find(t, "k", rows[i]);
+		ok(r != nil, "encrypted truncated: row found");
+		if(r == nil)
+			continue;
+		out = tab_decrypt(r, "secret", key, &outlen);
+		ok(out == nil, "encrypted: truncated blob is rejected");
+		free(out);
+	}
+	tab_close(t);
+	remove(path);
+}
+
+/* An ENCRYPTED column must survive the schema round-trip, and the
+ * streaming writer must accept the type too. */
+static void
+test_encrypted_schema_accepted(void)
+{
+	Tab *t;
+	char *path = "/tmp/lt_enc_schema.tab";
+
+	t = fresh_enc(path);
+	ok(t != nil, "encrypted schema: ENCRYPTED column accepted by tab_create");
+	if(t == nil)
+		return;
+	ok(tab_commit(t) == 0, "encrypted schema: commit");
+	tab_close(t);
+
+	t = tab_open(path);
+	ok(t != nil, "encrypted schema: ENCRYPTED column accepted by tab_open");
+	if(t != nil){
+		okstr(tab_coltype(t, 1), "ENCRYPTED",
+			"encrypted schema: type survives round-trip");
+		tab_close(t);
+	}
+	remove(path);
+}
+
+/*
+ * Oversized cells are refused at write time.
+ *
+ * ndb entries are parsed a line at a time by Brdline into an 8 KiB Bio
+ * buffer (ndbparse.c: `if(line[len-1] != '\n') break;`).  A longer line
+ * comes back partial, and ndb treats that as a clean end of entry -- so
+ * a too-long cell is written to disk correctly, then silently vanishes
+ * on reload.  The row survives; the cell is simply gone, with no error
+ * from commit, from open, or from tab_lasterror.
+ *
+ * Refusing at write turns that into a caller-visible failure.  The
+ * alternative, splitting a value across continuation lines, would be an
+ * on-disk format change and would put multi-cell reassembly in front of
+ * every reader; the cap is the cheaper contract.
+ *
+ * The limit is on the *encoded* line, not the caller's string: entity
+ * escaping expands '&' to "&amp;", so a value of ampersands is five
+ * times longer on disk than in memory.
+ */
+
+/* Build a value of `n` repetitions of `c`, NUL-terminated. */
+static char *
+bigval(int n, char c)
+{
+	char *s;
+
+	s = malloc(n + 1);
+	if(s == nil)
+		return nil;
+	memset(s, c, n);
+	s[n] = 0;
+	return s;
+}
+
+static Tab*
+fresh_lim(char *path)
+{
+	TabColSpec cols[2];
+
+	memset(cols, 0, sizeof cols);
+	cols[0].name = "k";
+	cols[1].name = "v";
+
+	remove(path);
+	return tab_create(path, "test", cols, 2);
+}
+
+/* A plain cell just under the cap round-trips; just over is refused. */
+static void
+test_oversized_plain_cell_refused(void)
+{
+	Tab *t;
+	TabRow *r;
+	char *path = "/tmp/lt_lim_plain.tab";
+	char *ok_val, *big_val;
+
+	t = fresh_lim(path);
+	if(t == nil){
+		ok(0, "cell limit: create table");
+		return;
+	}
+	r = tab_add_row(t, "k", "a");
+	if(r == nil){
+		ok(0, "cell limit: add row");
+		tab_close(t);
+		remove(path);
+		return;
+	}
+
+	ok_val = bigval(TabMaxCell - 64, 'x');
+	big_val = bigval(TabMaxCell + 1, 'x');
+	if(ok_val == nil || big_val == nil){
+		ok(0, "cell limit: allocate values");
+		free(ok_val);
+		free(big_val);
+		tab_close(t);
+		remove(path);
+		return;
+	}
+
+	ok(tab_set(t, r, "v", ok_val) == 0,
+		"cell limit: a value just under the cap is accepted");
+	ok(tab_set(t, r, "v", big_val) == -1,
+		"cell limit: a value over the cap is refused");
+
+	/* The refusal must not have disturbed the accepted value. */
+	okstr(tab_get(r, "v"), ok_val,
+		"cell limit: refused write leaves the old value intact");
+
+	free(ok_val);
+	free(big_val);
+	tab_close(t);
+	remove(path);
+}
+
+/*
+ * The cap applies to the encoded form.  A value of ampersands is short
+ * in memory and five times longer on disk, so a check against strlen()
+ * would let it through and lose the cell on reload.
+ */
+static void
+test_cell_limit_counts_encoded_length(void)
+{
+	Tab *t;
+	TabRow *r;
+	char *path = "/tmp/lt_lim_encoded.tab";
+	char *amps;
+
+	t = fresh_lim(path);
+	if(t == nil){
+		ok(0, "cell limit encoded: create table");
+		return;
+	}
+	r = tab_add_row(t, "k", "a");
+	if(r == nil){
+		ok(0, "cell limit encoded: add row");
+		tab_close(t);
+		remove(path);
+		return;
+	}
+
+	/* Well under the cap as a C string; "&amp;" each on disk. */
+	amps = bigval(TabMaxCell / 2, '&');
+	if(amps == nil){
+		ok(0, "cell limit encoded: allocate value");
+		tab_close(t);
+		remove(path);
+		return;
+	}
+	ok(tab_set(t, r, "v", amps) == -1,
+		"cell limit: escaping expansion counts toward the cap");
+	free(amps);
+	tab_close(t);
+	remove(path);
+}
+
+/*
+ * The real point of the cap: anything accepted must survive a reload.
+ * This is the assertion that would have failed before the guard existed
+ * -- the row came back without its cell and nothing reported an error.
+ */
+static void
+test_accepted_cell_survives_reload(void)
+{
+	Tab *t;
+	TabRow *r;
+	char *path = "/tmp/lt_lim_reload.tab";
+	char *val;
+
+	t = fresh_lim(path);
+	if(t == nil){
+		ok(0, "cell limit reload: create table");
+		return;
+	}
+	r = tab_add_row(t, "k", "a");
+	val = bigval(TabMaxCell - 64, 'x');
+	if(r == nil || val == nil){
+		ok(0, "cell limit reload: setup");
+		free(val);
+		tab_close(t);
+		remove(path);
+		return;
+	}
+	if(tab_set(t, r, "v", val) != 0 || tab_commit(t) != 0){
+		ok(0, "cell limit reload: write largest accepted value");
+		free(val);
+		tab_close(t);
+		remove(path);
+		return;
+	}
+	tab_close(t);
+
+	t = tab_open(path);
+	ok(t != nil, "cell limit reload: reopen");
+	if(t != nil){
+		r = find(t, "k", "a");
+		ok(r != nil, "cell limit reload: row found");
+		if(r != nil)
+			okstr(tab_get(r, "v"), val,
+				"cell limit: the largest accepted cell reloads intact");
+		tab_close(t);
+	}
+	free(val);
+	remove(path);
+}
+
+/* Every typed setter enforces the same cap. */
+static void
+test_cell_limit_applies_to_typed_setters(void)
+{
+	Tab *t;
+	TabRow *r;
+	uint8_t key[32], sk[64];
+	char *path = "/tmp/lt_lim_typed.tab";
+	unsigned char *big;
+	TabColSpec cols[4];
+	int i, n;
+
+	for(i = 0; i < 32; i++)
+		key[i] = (uint8_t)i;
+	memset(sk, 7, sizeof sk);
+
+	memset(cols, 0, sizeof cols);
+	cols[0].name = "k";
+	cols[1].name = "e";
+	cols[1].type = "ENCRYPTED";
+	cols[2].name = "s";
+	cols[2].type = "SIGNED";
+	cols[3].name = "h";
+	cols[3].type = "HASHED";
+
+	remove(path);
+	t = tab_create(path, "test", cols, 4);
+	if(t == nil){
+		ok(0, "cell limit typed: create table");
+		return;
+	}
+	r = tab_add_row(t, "k", "a");
+	if(r == nil){
+		ok(0, "cell limit typed: add row");
+		tab_close(t);
+		remove(path);
+		return;
+	}
+
+	n = TabMaxCell;			/* base64 alone pushes this over */
+	big = (unsigned char *)bigval(n, 'x');
+	if(big == nil){
+		ok(0, "cell limit typed: allocate value");
+		tab_close(t);
+		remove(path);
+		return;
+	}
+
+	ok(tab_set_encrypted(t, r, "e", big, n, key) == -1,
+		"cell limit: tab_set_encrypted refuses an oversized body");
+	ok(tab_set_signed(t, r, "s", big, n, sk) == -1,
+		"cell limit: tab_set_signed refuses an oversized body");
+
+	/* HASHED is exempt by construction: the digest is fixed-size
+	 * however long the preimage is. */
+	ok(tab_set_hashed(t, r, "h", big, n) == 0,
+		"cell limit: HASHED is unaffected, its digest is fixed-size");
+
+	free(big);
+	tab_close(t);
+	remove(path);
+}
+
+/* The streaming writer shares the cap; it writes the same lines. */
+static void
+test_cell_limit_applies_to_writer(void)
+{
+	TabWriter *w;
+	char *path = "/tmp/lt_lim_writer.tab";
+	char *big;
+	TabColSpec cols[2];
+
+	memset(cols, 0, sizeof cols);
+	cols[0].name = "k";
+	cols[1].name = "v";
+
+	remove(path);
+	w = tab_writer_create(path, "test", cols, 2);
+	if(w == nil){
+		ok(0, "cell limit writer: create");
+		return;
+	}
+	big = bigval(TabMaxCell + 1, 'x');
+	if(big == nil){
+		ok(0, "cell limit writer: allocate value");
+		tab_writer_close(w);
+		remove(path);
+		return;
+	}
+	ok(tab_writer_add_row(w, "k", "a") == 0,
+		"cell limit writer: add row");
+	ok(tab_writer_set(w, "v", big) == -1,
+		"cell limit: tab_writer_set refuses an oversized value");
+	ok(tab_writer_add_row(w, "k", big) == -1,
+		"cell limit: tab_writer_add_row refuses an oversized head value");
+
+	free(big);
+	tab_writer_close(w);
+	remove(path);
+}
+
+/*
+ * Concurrent-writer detection.
+ *
+ * tab_commit is atomic -- posix_write_atomic renames a temp file over the
+ * target, so no reader ever sees a torn file.  The read-modify-write cycle
+ * around it is not:
+ *
+ *	A: tab_open ------ tab_set ------ tab_commit
+ *	B:      tab_open ------ tab_set ------ tab_commit
+ *
+ * B renames over A's file and A's changes are gone entirely.  A lock held
+ * during commit would not help; both processes read before either wrote.
+ * Holding one from open to commit would mean holding it across arbitrary
+ * caller code -- including a human in an editor, which is the common case
+ * for a format whose whole point is that you can edit it by hand.
+ *
+ * So this is a compare-and-swap on the file rather than a lock: record the
+ * file's identity at open, re-check it at commit, and refuse if it moved.
+ * That also covers the writer a lock cannot see -- someone running `vi`.
+ *
+ * The identity is qid.path + qid.vers + mtime + length together.  On native
+ * Plan 9 qid.vers is a real version counter; under plan9port on Linux it
+ * falls back to mtime+ctime (_p9dir.c), which is second-granularity, so
+ * length carries the weight for same-second edits and qid.path catches the
+ * inode change a rename always causes.
+ */
+
+/* Overwrite `path` with `text`, simulating another writer. */
+static int
+foreign_write(char *path, char *text)
+{
+	int fd;
+
+	fd = create(path, OWRITE, 0644);
+	if(fd < 0)
+		return -1;
+	if(write(fd, text, strlen(text)) != strlen(text)){
+		close(fd);
+		return -1;
+	}
+	close(fd);
+	return 0;
+}
+
+static char *conc_table_text =
+	"schema=test\n"
+	"\tcol=k\n"
+	"\tcol=v\n"
+	"\n"
+	"k=a\n"
+	"\tv=original\n"
+	"\n";
+
+/* The base case: nobody else wrote, so commit succeeds. */
+static void
+test_commit_succeeds_when_file_untouched(void)
+{
+	Tab *t;
+	TabRow *r;
+	char *path = "/tmp/lt_conc_clean.tab";
+
+	if(write_text_file(path, conc_table_text) < 0){
+		ok(0, "concurrency: write initial table");
+		return;
+	}
+	t = tab_open(path);
+	ok(t != nil, "concurrency: open");
+	if(t == nil){
+		remove(path);
+		return;
+	}
+	r = find(t, "k", "a");
+	if(r == nil || tab_set(t, r, "v", "mine") != 0){
+		ok(0, "concurrency: set");
+		tab_close(t);
+		remove(path);
+		return;
+	}
+	ok(tab_commit(t) == 0, "concurrency: commit succeeds on an untouched file");
+	tab_close(t);
+	remove(path);
+}
+
+/* Two commits from the same handle must both work: the first updates the
+ * recorded identity, so the second is not fooled by its own write. */
+static void
+test_repeated_commits_from_same_handle(void)
+{
+	Tab *t;
+	TabRow *r;
+	char *path = "/tmp/lt_conc_repeat.tab";
+
+	if(write_text_file(path, conc_table_text) < 0){
+		ok(0, "concurrency repeat: write initial table");
+		return;
+	}
+	t = tab_open(path);
+	if(t == nil){
+		ok(0, "concurrency repeat: open");
+		remove(path);
+		return;
+	}
+	r = find(t, "k", "a");
+	if(r == nil){
+		ok(0, "concurrency repeat: row");
+		tab_close(t);
+		remove(path);
+		return;
+	}
+	tab_set(t, r, "v", "first");
+	ok(tab_commit(t) == 0, "concurrency: first commit");
+	tab_set(t, r, "v", "second");
+	ok(tab_commit(t) == 0,
+		"concurrency: a handle is not confused by its own commit");
+	tab_close(t);
+	remove(path);
+}
+
+/*
+ * The lost update.  Another writer replaces the file between our open and
+ * our commit; the commit must refuse rather than silently discard their
+ * work.  Before this check existed, the commit succeeded and the other
+ * writer's row vanished with no error anywhere.
+ */
+static void
+test_commit_refuses_after_foreign_write(void)
+{
+	Tab *t;
+	TabRow *r;
+	char *path = "/tmp/lt_conc_lost.tab";
+	char *theirs =
+		"schema=test\n"
+		"\tcol=k\n"
+		"\tcol=v\n"
+		"\n"
+		"k=a\n"
+		"\tv=theirs\n"
+		"\n"
+		"k=b\n"
+		"\tv=added-by-them\n"
+		"\n";
+
+	if(write_text_file(path, conc_table_text) < 0){
+		ok(0, "concurrency lost: write initial table");
+		return;
+	}
+	t = tab_open(path);
+	if(t == nil){
+		ok(0, "concurrency lost: open");
+		remove(path);
+		return;
+	}
+	r = find(t, "k", "a");
+	if(r == nil || tab_set(t, r, "v", "mine") != 0){
+		ok(0, "concurrency lost: set");
+		tab_close(t);
+		remove(path);
+		return;
+	}
+
+	/* Another writer lands between our open and our commit. */
+	if(foreign_write(path, theirs) < 0){
+		ok(0, "concurrency lost: foreign write");
+		tab_close(t);
+		remove(path);
+		return;
+	}
+
+	ok(tab_commit(t) == -1,
+		"concurrency: commit refuses after another writer");
+
+	/* And their file is still on disk, untouched. */
+	tab_close(t);
+	t = tab_open(path);
+	ok(t != nil, "concurrency lost: reopen after refusal");
+	if(t != nil){
+		r = find(t, "k", "b");
+		ok(r != nil, "concurrency: the other writer's row survived");
+		r = find(t, "k", "a");
+		if(r != nil)
+			okstr(tab_get(r, "v"), "theirs",
+				"concurrency: the other writer's value survived");
+		tab_close(t);
+	}
+	remove(path);
+}
+
+/*
+ * Same-second detection.  Under plan9port qid.vers degrades to mtime+ctime
+ * at one-second granularity, so a foreign write immediately after open can
+ * carry an identical timestamp.  A length change has to catch it, which is
+ * why the identity is not mtime alone.
+ */
+static void
+test_detects_same_second_foreign_write(void)
+{
+	Tab *t;
+	TabRow *r;
+	char *path = "/tmp/lt_conc_fast.tab";
+	char *shorter =
+		"schema=test\n"
+		"\tcol=k\n"
+		"\tcol=v\n"
+		"\n"
+		"k=a\n"
+		"\tv=s\n"
+		"\n";
+
+	if(write_text_file(path, conc_table_text) < 0){
+		ok(0, "concurrency fast: write initial table");
+		return;
+	}
+	t = tab_open(path);
+	if(t == nil){
+		ok(0, "concurrency fast: open");
+		remove(path);
+		return;
+	}
+	r = find(t, "k", "a");
+	if(r == nil || tab_set(t, r, "v", "mine") != 0){
+		ok(0, "concurrency fast: set");
+		tab_close(t);
+		remove(path);
+		return;
+	}
+	/* No sleep: this races the clock deliberately. */
+	if(foreign_write(path, shorter) < 0){
+		ok(0, "concurrency fast: foreign write");
+		tab_close(t);
+		remove(path);
+		return;
+	}
+	ok(tab_commit(t) == -1,
+		"concurrency: a same-second foreign write is still detected");
+	tab_close(t);
+	remove(path);
+}
+
+/*
+ * tab_reload discards local changes and rereads the file, so a caller that
+ * hits the refusal has a way forward that is not "close and reopen".  After
+ * a reload the commit is allowed again, because the handle is now based on
+ * what is actually on disk.
+ */
+static void
+test_reload_recovers_from_refusal(void)
+{
+	Tab *t;
+	TabRow *r;
+	char *path = "/tmp/lt_conc_reload.tab";
+	char *theirs =
+		"schema=test\n"
+		"\tcol=k\n"
+		"\tcol=v\n"
+		"\n"
+		"k=a\n"
+		"\tv=theirs\n"
+		"\n";
+
+	if(write_text_file(path, conc_table_text) < 0){
+		ok(0, "concurrency reload: write initial table");
+		return;
+	}
+	t = tab_open(path);
+	if(t == nil){
+		ok(0, "concurrency reload: open");
+		remove(path);
+		return;
+	}
+	r = find(t, "k", "a");
+	tab_set(t, r, "v", "mine");
+	foreign_write(path, theirs);
+	ok(tab_commit(t) == -1, "concurrency reload: commit refused");
+
+	ok(tab_reload(t) == 0, "concurrency: reload succeeds");
+
+	/* The reload really did take their content. */
+	r = find(t, "k", "a");
+	ok(r != nil, "concurrency reload: row present after reload");
+	if(r != nil)
+		okstr(tab_get(r, "v"), "theirs",
+			"concurrency: reload picks up the other writer's value");
+
+	/* And a commit is allowed again now that we are current. */
+	r = find(t, "k", "a");
+	if(r != nil && tab_set(t, r, "v", "mine-again") == 0)
+		ok(tab_commit(t) == 0,
+			"concurrency: commit allowed again after reload");
+	else
+		ok(0, "concurrency reload: set after reload");
+
+	tab_close(t);
+	remove(path);
+}
+
+/* A table created rather than opened has no file to be stale against, and
+ * its first commit must not be refused. */
+static void
+test_created_table_commits(void)
+{
+	Tab *t;
+	TabRow *r;
+	char *path = "/tmp/lt_conc_created.tab";
+
+	t = fresh(path, 2);
+	if(t == nil){
+		ok(0, "concurrency created: create");
+		return;
+	}
+	r = tab_add_row(t, "k", "a");
+	if(r == nil){
+		ok(0, "concurrency created: add row");
+		tab_close(t);
+		remove(path);
+		return;
+	}
+	ok(tab_commit(t) == 0,
+		"concurrency: a freshly created table commits");
+	ok(tab_commit(t) == 0,
+		"concurrency: and commits again");
+	tab_close(t);
+	remove(path);
+}
+
+/*
+ * tab_create over a path that already exists is a deliberate overwrite --
+ * the caller asked for a new table at that path -- so it must not be
+ * refused as a stale write.
+ */
+static void
+test_create_over_existing_file_commits(void)
+{
+	Tab *t;
+	TabRow *r;
+	char *path = "/tmp/lt_conc_over.tab";
+
+	if(write_text_file(path, conc_table_text) < 0){
+		ok(0, "concurrency over: write initial table");
+		return;
+	}
+	t = fresh(path, 2);
+	if(t == nil){
+		ok(0, "concurrency over: create");
+		remove(path);
+		return;
+	}
+	r = tab_add_row(t, "k", "z");
+	if(r == nil){
+		ok(0, "concurrency over: add row");
+		tab_close(t);
+		remove(path);
+		return;
+	}
+	ok(tab_commit(t) == 0,
+		"concurrency: tab_create over an existing file still commits");
+	tab_close(t);
+	remove(path);
+}
+
+/* A file deleted out from under us is a change too. */
+static void
+test_commit_refuses_after_file_removed(void)
+{
+	Tab *t;
+	TabRow *r;
+	char *path = "/tmp/lt_conc_gone.tab";
+
+	if(write_text_file(path, conc_table_text) < 0){
+		ok(0, "concurrency gone: write initial table");
+		return;
+	}
+	t = tab_open(path);
+	if(t == nil){
+		ok(0, "concurrency gone: open");
+		remove(path);
+		return;
+	}
+	r = find(t, "k", "a");
+	if(r == nil || tab_set(t, r, "v", "mine") != 0){
+		ok(0, "concurrency gone: set");
+		tab_close(t);
+		remove(path);
+		return;
+	}
+	remove(path);
+	ok(tab_commit(t) == -1,
+		"concurrency: commit refuses when the file has been removed");
+	tab_close(t);
+	remove(path);
+}
+
 void
 main(void)
 {
@@ -862,6 +2093,31 @@ main(void)
 	test_set_scaling();
 	test_dedup_after_growth();
 	test_rejects_bad_schema();
+
+	test_encrypted_schema_accepted();
+	test_encrypted_roundtrip();
+	test_encrypted_survives_reopen();
+	test_encrypted_wrong_key_fails();
+	test_encrypted_tamper_detected();
+	test_encrypted_empty_plaintext();
+	test_encrypted_nonce_is_fresh();
+	test_encrypted_reencrypt_makes_new_row();
+	test_encrypted_rejects_wrong_column_type();
+	test_oversized_plain_cell_refused();
+	test_cell_limit_counts_encoded_length();
+	test_accepted_cell_survives_reload();
+	test_cell_limit_applies_to_typed_setters();
+	test_cell_limit_applies_to_writer();
+	test_commit_succeeds_when_file_untouched();
+	test_repeated_commits_from_same_handle();
+	test_commit_refuses_after_foreign_write();
+	test_detects_same_second_foreign_write();
+	test_reload_recovers_from_refusal();
+	test_created_table_commits();
+	test_create_over_existing_file_commits();
+	test_commit_refuses_after_file_removed();
+	test_encrypted_untagged_cell_rejected_at_open();
+	test_encrypted_rejects_truncated_blob();
 
 	if(failures == 0)
 		print("PASS: %d checks\n", checks);

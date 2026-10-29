@@ -18,11 +18,9 @@
 #include <bio.h>
 #include <ndb.h>
 #include <libtab.h>
-
-#ifndef _STDINT_H
-typedef u32int uint32_t;
-typedef u8int uint8_t;
-#endif
+/* Supplies uint8_t/uint32_t/uint64_t/size_t for every libtab unit
+ * (Harvey has no <stdint.h>). */
+#include <monocypher.h>
 
 /* A schema attribute: every `key=value` pair that appeared on the
  * same source line as a `col=` tuple, except `col` and `type` which
@@ -70,6 +68,19 @@ struct Tab {
 	Ndb *db;	/* the underlying ndb handle */
 	TabSchema schema;
 	int dirty;	/* set by any successful mutation; cleared by tab_commit */
+
+	/* Identity of the file this handle was built from, for the
+	 * compare-and-swap in tab_commit.  `seen` is 0 for a table that
+	 * was created rather than opened: there is nothing on disk yet
+	 * to be stale against, and the first commit is an overwrite the
+	 * caller explicitly asked for.  See tab_fileid_* in tab_persist.c. */
+	int seen;
+	uvlong id_qpath;
+	ulong id_qvers;
+	ulong id_mtime;
+	vlong id_length;
+	uchar id_blake[32];	/* content hash; catches same-second rewrites */
+	int id_hashok;
 
 	/* The one and only index: row-hash bucket array.  Power-of-two
 	 * size so we can mask instead of mod.  Collisions chain by
@@ -140,6 +151,18 @@ int tab_text_decode_tuple(Ndbtuple *t);
 int tab_text_needs_encoding(const char *val);
 int tab_text_needs_quote(const char *val);
 char *tab_text_wire_encode(const char *val);
+
+/* Reject a cell whose emitted line would exceed TabMaxCell.  Measures
+ * the encoded form, so escaping expansion counts.  `col` may be nil for
+ * a bare value check.  Returns 0 if the value fits, -1 with errstr set
+ * if it does not.  `who` names the caller for the error message. */
+int tab_check_cell_size(const char *col, const char *val, const char *who);
+
+/* Record / compare the on-disk identity of t->path.  tab_fileid_record
+ * is called after a successful open or commit; tab_fileid_check refuses
+ * when the file has changed underneath us since then. */
+void tab_fileid_record(Tab *t);
+int tab_fileid_check(Tab *t);
 
 typedef int (*TabEmitFn)(void *arg, const char *p, int n);
 int tab_emit_schema(TabSchema *schema, TabEmitFn emit, void *arg);

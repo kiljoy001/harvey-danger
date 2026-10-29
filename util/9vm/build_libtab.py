@@ -34,7 +34,7 @@ LDFLAGS = ["-e_main", "-static", "-z", "noseparate-code",
 
 SOURCES = [
     "tab_codec.c", "tab_create.c", "tab_emit.c", "tab_error.c",
-    "tab_hashed.c", "tab_iter.c", "tab_open.c", "tab_persist.c",
+    "tab_encrypted.c", "tab_hashed.c", "tab_iter.c", "tab_open.c", "tab_persist.c",
     "tab_row.c", "tab_rowmap.c", "tab_serialize.c", "tab_signed.c",
     "tab_text.c", "tab_writer.c", "getrandom_compat.c",
 ]

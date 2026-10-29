@@ -16,7 +16,7 @@
  * HASHED and SIGNED operations.
  */
 
-#include "tab_internal.h"
+#include <tab_internal.h>
 
 static const char b64e[64] =
 	"ABCDEFGHIJKLMNOPQRSTUVWXYZ"

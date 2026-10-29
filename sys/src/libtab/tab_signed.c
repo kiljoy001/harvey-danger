@@ -7,7 +7,7 @@
  *
  * Two base64 segments separated by an inner colon, inside the
  * `signed:` tag.  Body is the signed bytes; sig is the 64-byte
- * Monocypher EdDSA-BLAKE2b signature. Encoding both halves separately preserves the
+ * Ed25519 signature.  Encoding both halves separately preserves the
  * "spot-checkable with `base64 -d` at each segment" property from
  * the design doc.
  *
@@ -17,14 +17,14 @@
  * `signer=<name>` purely as a label for consumers to read via
  * tab_col_attr() — libtab never interprets it.
  *
- * Crypto: Monocypher EdDSA-BLAKE2b (crypto_eddsa_sign / crypto_eddsa_check).
+ * Crypto: monocypher Ed25519 (crypto_eddsa_sign / crypto_eddsa_check).
  * Secret key is monocypher's 64-byte combined seed+pubkey form;
  * public key is the 32-byte point.
  *
  * Mutations are in-memory until tab_commit() or close-time auto-commit.
  */
 
-#include "tab_internal.h"
+#include <tab_internal.h>
 #include <monocypher.h>
 
 /* In tab_rowmap.c. */
@@ -275,6 +275,10 @@ tab_set_signed(Tab *t, TabRow *r, const char *col,
 	memset(sig, 0, sizeof sig);
 	if(cell == nil)
 		return -1;
+	if(tab_check_cell_size(col, cell, "tab_set_signed") < 0){
+		free(cell);
+		return -1;
+	}
 	rc = mutate_cell(t, r->chain, col, cell);
 	free(cell);
 	return rc;

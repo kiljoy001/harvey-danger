@@ -40,8 +40,9 @@ main(void)
 {
 	Tab *t;
 	TabRow *r;
-	TabColSpec cols[4];
+	TabColSpec cols[5];
 	uchar seed[32], sk[64], pk[32], badpk[32];
+	uchar key[32], badkey[32];
 	uchar *body;
 	int n;
 
@@ -56,8 +57,10 @@ main(void)
 	cols[2].algo = "argon2id";
 	cols[3].name = "sig";
 	cols[3].type = "SIGNED";
+	cols[4].name = "secret";
+	cols[4].type = "ENCRYPTED";
 
-	t = tab_create("/tmp/lt_crypto.tab", "accounts", cols, 4);
+	t = tab_create("/tmp/lt_crypto.tab", "accounts", cols, 5);
 	ok(t != nil, "tab_create");
 	if(t == nil)
 		exits("create");
@@ -92,6 +95,17 @@ main(void)
 	body = tab_verify_signed(r, "sig", badpk, &n);
 	ok(body == nil, "signed reject wrong key");
 
+	memset(key, 0x5a, sizeof key);
+	memset(badkey, 0x99, sizeof badkey);
+	ok(tab_set_encrypted(t, r, "secret", (uchar*)"s3cret", 6, key) == 0,
+		"tab_set_encrypted");
+	body = tab_decrypt(r, "secret", key, &n);
+	ok(body != nil && n == 6 && memcmp(body, "s3cret", 6) == 0,
+		"encrypted decrypt");
+	free(body);
+	body = tab_decrypt(r, "secret", badkey, &n);
+	ok(body == nil, "encrypted reject wrong key");
+
 	ok(tab_commit(t) == 0, "tab_commit");
 	tab_close(t);
 
@@ -110,6 +124,10 @@ main(void)
 		body = tab_verify_signed(r, "sig", pk, &n);
 		ok(body != nil && n == 8 && memcmp(body, "uid=1000", 8) == 0,
 			"signed verify after reopen");
+		free(body);
+		body = tab_decrypt(r, "secret", key, &n);
+		ok(body != nil && n == 6 && memcmp(body, "s3cret", 6) == 0,
+			"encrypted decrypt after reopen");
 		free(body);
 	}
 	tab_close(t);

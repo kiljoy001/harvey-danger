@@ -44,6 +44,38 @@ struct TabColSpec {
     const char *signer;
 };
 
+/* Largest cell value libtab will write, measured on the *encoded* line
+ * as it appears on disk rather than on the caller's string.
+ *
+ * ndb entries are parsed a line at a time into an 8 KiB Bio buffer, and
+ * a longer line comes back truncated as a clean end-of-entry -- so an
+ * oversized cell writes to disk correctly and then silently disappears
+ * on reload, with no error anywhere.  The setters refuse instead.
+ *
+ * Hitting this means the value wants to be a file, not a cell: keep the
+ * blob on disk and put its path, or its HASHED digest, in the table.
+ * A row you can read with `cat` does not carry kilobytes in a field.
+ *
+ * The bound is on the whole emitted line (leading tab, `attr=`, the
+ * encoded value, any quotes, newline), so the value a caller can store
+ * is this minus the column name and framing.  Entity escaping counts:
+ * a value of '&' is five times longer on disk than in memory. */
+#define TabMaxCell 7168
+
+/* Discard every uncommitted change and reread the file.
+ *
+ * The way out of a refused commit.  tab_commit compares the file against
+ * what it looked like when this handle opened it, and refuses when another
+ * writer -- another process, or a human with an editor -- has written since;
+ * refusing is the only way not to silently discard their work.  tab_reload
+ * takes their version so the caller can reapply their own changes on top.
+ *
+ * Every TabRow pointer obtained from `t` is invalid afterwards: the rows
+ * they referred to may not exist in the file any more.  Re-find them.
+ *
+ * Returns 0 on success, -1 with tab_lasterror() set on failure. */
+int tab_reload(Tab *t);
+
 /* Create a fresh, empty Tab whose canonical path is `path` and whose
  * schema is built directly from the column specs.  The file at `path`
  * does not have to exist; tab_commit() will create it.  Use
@@ -216,14 +248,14 @@ int tab_set_hashed_argon2id(Tab *t, TabRow *r, const char *col,
 int tab_verify_hash(TabRow *r, const char *col,
                     const unsigned char *preimage, int n);
 
-/* SIGNED column type — tamper-evident body + Monocypher EdDSA-BLAKE2b signature.
+/* SIGNED column type — tamper-evident body + Ed25519 signature.
  *
  *   tab_set_signed     — sign `body` with `signer_sk` (monocypher's
  *                         64-byte combined seed+pubkey form) and
  *                         store the cell as
  *                         `signed:<b64-body>:<b64-sig>`.
  *   tab_verify_signed  — decode the cell, check the signature against
- *                         `signer_pk` (32-byte EdDSA public point), return
+ *                         `signer_pk` (32-byte Ed25519 point), return
  *                         the body bytes on success (caller frees).
  *
  * Keys are raw bytes.  Libtab does not open key files, resolve
@@ -237,5 +269,38 @@ int tab_set_signed(Tab *t, TabRow *r, const char *col,
 unsigned char *tab_verify_signed(TabRow *r, const char *col,
                                  const unsigned char signer_pk[32],
                                  int *outlen);
+
+/* ENCRYPTED column type — confidential cells, XChaCha20-Poly1305.
+ *
+ *   tab_set_encrypted — encrypt `plain` under `key` (32 raw bytes) and
+ *                        store the cell as
+ *                        `encrypted:<b64(ver|nonce|mac|ciphertext)>`.
+ *                        A fresh 24-byte random nonce is drawn per
+ *                        call, so the same plaintext never produces
+ *                        the same cell twice.
+ *   tab_decrypt       — decode the cell, authenticate it, and return
+ *                        the plaintext (caller frees).  Returns nil on
+ *                        a wrong key or a tampered cell; the two are
+ *                        deliberately indistinguishable.
+ *
+ * Not AES-256-GCM: the bundled Monocypher has no AES, and a second
+ * crypto dependency would defeat the point of bundling one.  Every
+ * binding this repository feeds can reach XChaCha20-Poly1305.
+ *
+ * Row identity hashes the *ciphertext*, since tab_open rebuilds the
+ * row map from on-disk text without a key.  So encrypting the same
+ * plaintext twice makes two distinct rows.  Callers that need one
+ * logical row per secret should key the row on a plain or HASHED
+ * column and treat the encrypted cell as payload.
+ *
+ * Keys are raw bytes.  Libtab does not open key files, resolve
+ * symbolic principals, or derive keys from passwords.  Consumers that
+ * want a symbolic lookup read `key=<name>` off the schema column via
+ * tab_col_attr() and do the resolution themselves. */
+int tab_set_encrypted(Tab *t, TabRow *r, const char *col,
+                      const unsigned char *plain, int n,
+                      const unsigned char key[32]);
+unsigned char *tab_decrypt(TabRow *r, const char *col,
+                           const unsigned char key[32], int *outlen);
 
 #endif /* _LIBTAB_H_ */
