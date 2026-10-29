@@ -72,10 +72,10 @@ enum {
 	RxRing		= 32,
 	BufSize		= 2048,
 
-	TxDescOff	= 0x000,
-	RxDescOff	= 0x100,
-	TxBufOff	= 0x200,
-	RxBufOff	= 0x1000,
+	TxDescOff	= 0x000,	/* 8 * 16 = 0x80 */
+	RxDescOff	= 0x100,	/* 32 * 16 = 0x200, ends at 0x300 */
+	TxBufOff	= 0x1000,	/* 2048, ends at 0x1800 */
+	RxBufOff	= 0x2000,	/* 32 * 2048, ends at 0x12000 */
 	DmaSize		= 0x20000,
 
 	/* MAC_CONFIG bits */
@@ -222,20 +222,25 @@ dmaalloc(u64 size, u64 align)
 	return strtoull(buf, nil, 0);
 }
 
+/*
+ * Open the maintenance file on every call.  The driver is used from
+ * two processes (the 9P server forks), and a cached descriptor opened
+ * before the fork is not valid in the child.
+ */
 static void
 dmacache(int op, u64 pa, u64 len)
 {
 	static char *name[3] = { "clean", "inval", "cleaninval" };
 	char buf[64], path[32];
+	int fd;
 
-	if(dmafd[op] == 0){
-		snprint(path, sizeof path, "#P/dma/%s", name[op]);
-		if((dmafd[op] = open(path, OWRITE)) < 0)
-			sysfatal("gmac: open %s: %r", path);
-	}
+	snprint(path, sizeof path, "#P/dma/%s", name[op]);
+	if((fd = open(path, OWRITE)) < 0)
+		sysfatal("gmac: open %s: %r", path);
 	snprint(buf, sizeof buf, "0x%llx 0x%llx\n", pa, len);
-	if(pwrite(dmafd[op], buf, strlen(buf), 0) != strlen(buf))
+	if(write(fd, buf, strlen(buf)) != strlen(buf))
 		sysfatal("gmac: #P/dma/%s: %r", name[op]);
+	close(fd);
 }
 
 static int
@@ -570,7 +575,16 @@ dmacfg(void)
 	}
 	if(i == 100000)
 		sysfatal("gmac: dma reset timeout");
-	wr32(DmaSysBusMode, DmaSysMB);
+	/*
+	 * DMA_SYS_BUS_MODE carries the AXI configuration, not just the
+	 * burst mode: the board's snps,axi-config asks for 8 read and 4
+	 * write outstanding requests and 4/8/16 byte bursts.  Leaving the
+	 * limits at zero stalls the DMA under load (RX stops after the
+	 * first ring).
+	 */
+	wr32(DmaSysBusMode, DmaSysMB |
+	     (8u << 16) | (4u << 24) |		/* RD/WR outstanding limits */
+	     (1<<1) | (1<<2) | (1<<3));		/* BLEN 4, 8, 16 */
 	wr32(DmaCh0IntrEna, 0);			/* polled */
 	wr32(MtlTxQ0OpMode, (1<<1) | (1<<3));	/* TSF | TXQEN */
 	wr32(MtlRxQ0OpMode, 1<<5);		/* RSF */
@@ -789,6 +803,33 @@ int
 gmaclink(void)
 {
 	return speed;
+}
+
+u32
+gmacreg(int off)
+{
+	return rd32(off);
+}
+
+int
+gmacrxidx(void)
+{
+	return rxidx;
+}
+
+u32
+gmacrxdesc(int i)
+{
+	u32 *d = (u32 *)(rxdesc + (i % RxRing)*DescSize);
+
+	dmacache(1, rxcpa + (i % RxRing)*DescSize, DescSize);
+	return d[3];
+}
+
+u64
+gmacrxcpa(void)
+{
+	return rxcpa;
 }
 
 #ifndef GMACFS_LIB

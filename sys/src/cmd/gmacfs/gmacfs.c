@@ -40,6 +40,7 @@ static u8 ring[Nring][Maxframe];
 static int ringlen[Nring], ringhead, ringtail;
 static u32 ipaddr = 0xc0a802f8;		/* 192.168.2.248 */
 static u64 nrx, ntx, narp, nicmp;
+static u64 loops, empties;
 
 static void
 destroyed(File *f)
@@ -123,6 +124,29 @@ framesend(u8 *f, int n)
 	qunlock(&cardlk);
 }
 
+/* Announce ipaddr/mac so switches and hosts replace stale bindings. */
+static void
+garp(void)
+{
+	u8 f[64];
+	uchar *m = gmacaddr();
+
+	memset(f, 0, sizeof f);
+	memset(f, 0xff, 6);
+	memmove(f+6, m, 6);
+	f[12] = 0x08; f[13] = 0x06;
+	f[14] = 0; f[15] = 1;
+	f[16] = 0x08; f[17] = 0;
+	f[18] = 6; f[19] = 4;
+	f[20] = 0; f[21] = 1;			/* request, sender = target */
+	memmove(f+22, m, 6);
+	put32(f+28, ipaddr);
+	memset(f+32, 0, 6);
+	put32(f+38, ipaddr);
+	framesend(f, 42);
+	narp++;
+}
+
 static void
 arphandler(u8 *f, int n)
 {
@@ -195,16 +219,24 @@ fsread(Req *r)
 	if((uintptr)r->fid->file->aux == Qctl){
 		uchar *m = gmacaddr();
 
+		qlock(&cardlk);		/* gmacrxdesc does cache maintenance */
 		snprint(buf, sizeof buf,
 			"gmac rk3566\n"
 			"link %d mbps\n"
 			"mac %02x:%02x:%02x:%02x:%02x:%02x\n"
 			"ip %d.%d.%d.%d\n"
-			"rx %llud tx %llud arp %llud icmp %llud\n",
+			"rx %llud tx %llud arp %llud icmp %llud\n"
+			"dma %08ux %08ux rxcur %08ux txcur %08ux\n"
+			"ring %llux idx %d desc %08ux loops %llud empty %llud\n",
 			gmaclink(),
 			m[0], m[1], m[2], m[3], m[4], m[5],
 			ipaddr>>24, (ipaddr>>16)&0xff, (ipaddr>>8)&0xff,
-			ipaddr&0xff, nrx, ntx, narp, nicmp);
+			ipaddr&0xff, nrx, ntx, narp, nicmp,
+			gmacreg(0x1004), gmacreg(0x1160),
+			gmacreg(0x114c), gmacreg(0x1144),
+			gmacrxcpa(), gmacrxidx(),
+			gmacrxdesc(gmacrxidx()), loops, empties);
+		qunlock(&cardlk);
 		readstr(r, buf);
 		respond(r, nil);
 		return;
@@ -253,12 +285,17 @@ serve(void)
 
 	for(;;){
 		/* drain everything the ring holds before sleeping */
+		loops++;
+		if((loops % 3000) == 1)
+			garp();
 		for(;;){
 			qlock(&cardlk);
 			n = gmacrx(buf, sizeof buf);
 			qunlock(&cardlk);
-			if(n <= 0)
+			if(n <= 0){
+				empties++;
 				break;
+			}
 			nrx++;
 			if(n >= 42 && buf[12] == 0x08 && buf[13] == 0x06)
 				arphandler(buf, n);
@@ -296,10 +333,17 @@ main(int argc, char **argv)
 	if(f == nil)
 		sysfatal("gmacfs: createfile data: %r");
 
+	garp();
 	print("gmacfs: %d mbps, mac %02x:%02x:%02x:%02x:%02x:%02x\n",
 	      gmaclink(), gmacaddr()[0], gmacaddr()[1], gmacaddr()[2],
 	      gmacaddr()[3], gmacaddr()[4], gmacaddr()[5]);
 
+	/*
+	 * The server forks (lib9p needs a process for its blocking
+	 * read).  Every card access, including the cache maintenance in
+	 * /ctl, holds cardlk so the two processes never write the same
+	 * #P/dma channel at once.
+	 */
 	postmountsrv(&fs, "gmac", nil, MREPL|MCREATE);
 	serve();
 }
