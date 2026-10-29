@@ -55,30 +55,30 @@ struct Tpm {
 };
 
 extern Tpm *tpm_sapi_ctx;
-int	tpm2_seal_to_srk(const u8int*, u16int, const u8int*, u16int, u8int*, u16int*);
-int	tpm2_unseal_from_blob(const u8int*, u16int, const u8int*, u16int, u8int*, u16int*);
+int	tpm2_seal_to_srk(const uchar*, ushort, const uchar*, ushort, uchar*, ushort*);
+int	tpm2_unseal_from_blob(const uchar*, ushort, const uchar*, ushort, uchar*, ushort*);
 
-static inline u16
+static ushort
 tpmget16(uchar *p)
 {
-	return (u16)(p[0]<<8 | p[1]);
+	return (ushort)(p[0]<<8 | p[1]);
 }
 
-static inline u32
+static uint
 tpmget32(uchar *p)
 {
-	return (u32)p[0]<<24 | (u32)p[1]<<16 | (u32)p[2]<<8 | p[3];
+	return (uint)p[0]<<24 | (uint)p[1]<<16 | (uint)p[2]<<8 | p[3];
 }
 
-static inline void
-tpmput16(uchar *p, u16 v)
+static void
+tpmput16(uchar *p, ushort v)
 {
 	p[0] = v>>8;
 	p[1] = v;
 }
 
-static inline void
-tpmput32(uchar *p, u32 v)
+static void
+tpmput32(uchar *p, uint v)
 {
 	p[0] = v>>24;
 	p[1] = v>>16;

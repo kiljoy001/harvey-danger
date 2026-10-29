@@ -20,6 +20,13 @@
 #include <9p.h>
 #include "tpm.h"
 
+/*
+ * libthread gives threadmain an 8 KiB stack by default.  The CRB
+ * transport reads the ACPI tables and the SAPI marshaling keeps a few
+ * KiB of command/response frames, so give the main thread room.
+ */
+int mainstacksize = 128*1024;
+
 static Srv fs;
 static Tpm tpm;
 
@@ -43,7 +50,7 @@ transmit(Tpm *t, uchar *cmd, int n)
 		werrstr("tpm: bad command length %d", n);
 		return -1;
 	}
-	if(tpmget32(cmd+2) != (u32)n){
+	if(tpmget32(cmd+2) != (uint)n){
 		werrstr("tpm: command size mismatch");
 		return -1;
 	}
@@ -102,7 +109,7 @@ int
 tpm_startup(Tpm *t)
 {
 	uchar cmd[12];
-	u32 rc;
+	uint rc;
 
 	tpmput16(cmd, TpmStNoSessions);
 	tpmput32(cmd+2, sizeof cmd);
@@ -127,7 +134,7 @@ int
 tpm_selftest(Tpm *t)
 {
 	uchar cmd[11];
-	u32 rc;
+	uint rc;
 
 	tpmput16(cmd, TpmStNoSessions);
 	tpmput32(cmd+2, sizeof cmd);
@@ -150,7 +157,7 @@ int
 tpm_getrandom(Tpm *t, uchar *out, int n)
 {
 	uchar cmd[12];
-	u32 rc;
+	uint rc;
 	int got;
 
 	if(n <= 0)
@@ -393,14 +400,14 @@ fswrite(Req *r)
 	n = r->ifcall.count;
 
 	if(strcmp(name, "seal") == 0){
-		u16int blen;
+		ushort blen;
 
 		if(n <= 0 || n > (int)sizeof tpm.plain){
 			respond(r, "tpm: seal data too large");
 			return;
 		}
 		blen = sizeof tpm.blob;
-		if(tpm2_seal_to_srk((u8int*)r->ifcall.data, n, nil, 0,
+		if(tpm2_seal_to_srk((uchar*)r->ifcall.data, n, nil, 0,
 		    tpm.blob, &blen) < 0){
 			respond(r, "tpm: seal failed");
 			return;
@@ -413,14 +420,14 @@ fswrite(Req *r)
 		return;
 	}
 	if(strcmp(name, "unseal") == 0){
-		u16int plen;
+		ushort plen;
 
 		if(n <= 0 || n > (int)sizeof tpm.blob){
 			respond(r, "tpm: unseal blob too large");
 			return;
 		}
 		plen = sizeof tpm.plain;
-		if(tpm2_unseal_from_blob((u8int*)r->ifcall.data, n, nil, 0,
+		if(tpm2_unseal_from_blob((uchar*)r->ifcall.data, n, nil, 0,
 		    tpm.plain, &plen) < 0){
 			respond(r, "tpm: unseal failed");
 			return;

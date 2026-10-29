@@ -41,7 +41,7 @@ main(int argc, char **argv)
 {
 	char *mtpt, *backend, path[256], buf[256];
 	uchar cmd[32], resp[512];
-	u32 rc;
+	uint rc;
 	int fd, r, i, n, want;
 
 	mtpt = "/tmp/tpm";

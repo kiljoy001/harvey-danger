@@ -17,25 +17,53 @@
 #include "tpm.h"
 #include "tpm2_const.h"
 
-typedef u8int uint8_t;
-typedef u16int uint16_t;
-typedef u32int uint32_t;
-typedef u64int uint64_t;
-typedef ulong size_t;
-typedef ulong usize;
+typedef uchar uint8_t;
+typedef ushort uint16_t;
+typedef uint uint32_t;
+typedef uvlong uint64_t;
+typedef usize size_t;
 
 typedef struct TPMContext TPMContext;
 struct TPMContext { int unused; };
 Tpm *tpm_sapi_ctx;
 
+/*
+ * Retry-able responses: the TPM is rate limiting or has not finished
+ * an internal job.  A real TPM answers TPM_RC_RETRY (0x922) after a
+ * CreatePrimary because the NV/context manager is still draining.
+ */
+enum {
+	TpmRcYielded	= 0x908,
+	TpmRcTesting	= 0x90A,
+	TpmRcNvRate	= 0x920,
+	TpmRcRetry	= 0x922,
+	TpmRcNvUnavail	= 0x923,
+};
+
 int
-tpm_transmit(TPMContext *ctx, u8int *cmd, usize n, u8int *resp, usize *rnp)
+tpm_transmit(TPMContext *ctx, uchar *cmd, usize n, uchar *resp, usize *rnp)
 {
+	int i, rc;
+
 	USED(ctx);
 	if(tpm_sapi_ctx == nil || rnp == nil)
 		return -1;
-	if(tpm_send(tpm_sapi_ctx, cmd, n) < 0)
-		return -1;
+	for(i = 0; ; i++){
+		if(tpm_send(tpm_sapi_ctx, cmd, n) < 0)
+			return -1;
+		if(tpm_sapi_ctx->nresp < TpmHdrLen)
+			return -1;
+		rc = (int)tpmget32(tpm_sapi_ctx->resp + 6);
+		if(rc != TpmRcYielded && rc != TpmRcTesting &&
+		   rc != TpmRcNvRate && rc != TpmRcRetry &&
+		   rc != TpmRcNvUnavail)
+			break;
+		if(i >= 20){
+			werrstr("tpm: busy (rc %#lux)", (ulong)rc);
+			return -1;
+		}
+		sleep(20);
+	}
 	if((usize)tpm_sapi_ctx->nresp > *rnp)
 		return -1;
 	memmove(resp, tpm_sapi_ctx->resp, tpm_sapi_ctx->nresp);
@@ -44,17 +72,17 @@ tpm_transmit(TPMContext *ctx, u8int *cmd, usize n, u8int *resp, usize *rnp)
 }
 
 /* Stub for buffer dumping */
-void tpm_dump_buffer(char *label, u8int *buf, int len) {
+void tpm_dump_buffer(char *label, uchar *buf, int len) {
   print("%s: dump %d bytes\n", label, len);
 }
 
-static void marshal_u16(u8int **buf, u16int val) {
+static void marshal_u16(uchar **buf, ushort val) {
   (*buf)[0] = (val >> 8) & 0xFF;
   (*buf)[1] = val & 0xFF;
   *buf += 2;
 }
 
-static void marshal_u32(u8int **buf, u32int val) {
+static void marshal_u32(uchar **buf, uint val) {
   (*buf)[0] = (val >> 24) & 0xFF;
   (*buf)[1] = (val >> 16) & 0xFF;
   (*buf)[2] = (val >> 8) & 0xFF;
@@ -62,21 +90,21 @@ static void marshal_u32(u8int **buf, u32int val) {
   *buf += 4;
 }
 
-static u16int unmarshal_u16(u8int **buf) {
-  u16int val = ((*buf)[0] << 8) | (*buf)[1];
+static ushort unmarshal_u16(uchar **buf) {
+  ushort val = ((*buf)[0] << 8) | (*buf)[1];
   *buf += 2;
   return val;
 }
 
-static u32int unmarshal_u32(u8int **buf) {
-  u32int val =
+static uint unmarshal_u32(uchar **buf) {
+  uint val =
       ((*buf)[0] << 24) | ((*buf)[1] << 16) | ((*buf)[2] << 8) | (*buf)[3];
   *buf += 4;
   return val;
 }
 
 /* Marshal TPM2B buffer (size + data) */
-static void marshal_tpm2b(u8int **buf, const u8int *data, u16int len) {
+static void marshal_tpm2b(uchar **buf, const uchar *data, ushort len) {
   marshal_u16(buf, len);
   if (len > 0) {
     memmove(*buf, data, len);
@@ -85,8 +113,8 @@ static void marshal_tpm2b(u8int **buf, const u8int *data, u16int len) {
 }
 
 /* Unmarshal TPM2B buffer */
-static u16int unmarshal_tpm2b(u8int **buf, u8int *data, u16int max_len) {
-  u16int len = unmarshal_u16(buf);
+static ushort unmarshal_tpm2b(uchar **buf, uchar *data, ushort max_len) {
+  ushort len = unmarshal_u16(buf);
   if (len > max_len)
     return 0;
   if (len > 0) {
@@ -103,7 +131,7 @@ static u16int unmarshal_tpm2b(u8int **buf, u8int *data, u16int max_len) {
  * The authSize is the size of all authorization structures that follow,
  * NOT including the authSize field itself (4 bytes).
  */
-static void marshal_password_session(u8int **buf) {
+static void marshal_password_session(uchar **buf) {
   /* Authorization Size (excludes itself, includes session data):
    * sessionHandle (4) + nonce size (2) + attributes (1) + hmac size (2) = 9
    * bytes */
@@ -124,12 +152,12 @@ static void marshal_password_session(u8int **buf) {
  */
 int tpm2_startup(TPMContext *ctx) {
   USED(ctx);
-  u8int cmd[12];
-  u8int resp[10];
+  uchar cmd[12];
+  uchar resp[10];
   usize resp_len = sizeof(resp);
-  u8int *p = cmd;
-  u8int *rp;
-  u32int rc;
+  uchar *p = cmd;
+  uchar *rp;
+  uint rc;
 
   /* Command Header */
   marshal_u16(&p, TPM2_ST_NO_SESSIONS); /* tag */
@@ -171,14 +199,14 @@ int tpm2_startup(TPMContext *ctx) {
  *
  * Returns handle to primary key (parent for sealed objects)
  */
-int tpm2_create_primary(TPMContext *ctx, u32int *handle_out) {
+int tpm2_create_primary(TPMContext *ctx, uint *handle_out) {
   USED(ctx);
-  u8int cmd[512];
-  u8int resp[512]; /* CreatePrimary response includes full public key */
+  uchar cmd[512];
+  uchar resp[512]; /* CreatePrimary response includes full public key */
   usize resp_len = sizeof(resp);
-  u8int *p = cmd;
-  u8int *rp;
-  u32int rc;
+  uchar *p = cmd;
+  uchar *rp;
+  uint rc;
 
   /* Command Header */
   marshal_u16(&p, TPM2_ST_SESSIONS);       /* tag */
@@ -197,7 +225,7 @@ int tpm2_create_primary(TPMContext *ctx, u32int *handle_out) {
   marshal_u16(&p, 0); /* data size = 0 (no sensitive data) */
 
   /* inPublic - ECC P256 storage key template */
-  u8int *public_start = p;
+  uchar *public_start = p;
   marshal_u16(&p, 0); /* size - fill later */
 
   /* TPMT_PUBLIC for ECC */
@@ -226,7 +254,7 @@ int tpm2_create_primary(TPMContext *ctx, u32int *handle_out) {
   marshal_u16(&p, 0); /* Y size - generated by TPM */
 
   /* Fill in public size */
-  u16int public_size = p - public_start - 2;
+  ushort public_size = p - public_start - 2;
   public_start[0] = (public_size >> 8) & 0xFF;
   public_start[1] = public_size & 0xFF;
 
@@ -237,11 +265,11 @@ int tpm2_create_primary(TPMContext *ctx, u32int *handle_out) {
   marshal_u32(&p, 0);
 
   /* Fill in command size */
-  u32int cmd_size = (u32int)(p - cmd);
-  cmd[2] = (u8int)((cmd_size >> 24) & 0xFF);
-  cmd[3] = (u8int)((cmd_size >> 16) & 0xFF);
-  cmd[4] = (u8int)((cmd_size >> 8) & 0xFF);
-  cmd[5] = (u8int)(cmd_size & 0xFF);
+  uint cmd_size = (uint)(p - cmd);
+  cmd[2] = (uchar)((cmd_size >> 24) & 0xFF);
+  cmd[3] = (uchar)((cmd_size >> 16) & 0xFF);
+  cmd[4] = (uchar)((cmd_size >> 8) & 0xFF);
+  cmd[5] = (uchar)(cmd_size & 0xFF);
 
   /* Send command */
   if (tpm_transmit(nil, (uint8_t *)cmd, (size_t)cmd_size, (uint8_t *)resp,
@@ -264,7 +292,7 @@ int tpm2_create_primary(TPMContext *ctx, u32int *handle_out) {
   /* Extract handle */
   *handle_out = unmarshal_u32(&rp);
 
-  print("tpm2_create_primary: Created SRK with handle 0x%08X\n", *handle_out);
+  print("tpm2_create_primary: Created SRK with handle 0x%08lux\n", (ulong)*handle_out);
   return 0;
 }
 
@@ -273,15 +301,15 @@ int tpm2_create_primary(TPMContext *ctx, u32int *handle_out) {
  *
  * Seals data under parent key. Data can only be unsealed if PCRs match.
  */
-int tpm2_create(u32int parent_handle, u8int *data, u16int data_len,
-                u8int *private_out, u16int *private_len, u8int *public_out,
-                u16int *public_len) {
-  u8int cmd[512];
-  u8int resp[512];
+int tpm2_create(uint parent_handle, uchar *data, ushort data_len,
+                uchar *private_out, ushort *private_len, uchar *public_out,
+                ushort *public_len) {
+  uchar cmd[512];
+  uchar resp[512];
   usize resp_len = sizeof(resp);
-  u8int *p = cmd;
-  u8int *rp;
-  u32int rc;
+  uchar *p = cmd;
+  uchar *rp;
+  uint rc;
 
   if (data_len > 128) {
     print("tpm2_create: data too large (%d bytes, max 128)\n", data_len);
@@ -300,17 +328,17 @@ int tpm2_create(u32int parent_handle, u8int *data, u16int data_len,
   marshal_password_session(&p);
 
   /* inSensitive - contains the data to seal */
-  u8int *sens_start = p;
+  uchar *sens_start = p;
   marshal_u16(&p, 0);                /* size - fill later */
   marshal_u16(&p, 0);                /* userAuth size (no password) */
   marshal_tpm2b(&p, data, data_len); /* sensitive data */
 
-  u16int sens_size = p - sens_start - 2;
+  ushort sens_size = p - sens_start - 2;
   sens_start[0] = (sens_size >> 8) & 0xFF;
   sens_start[1] = sens_size & 0xFF;
 
   /* inPublic - keyedhash object (sealed data) */
-  u8int *public_start = p;
+  uchar *public_start = p;
   marshal_u16(&p, 0); /* size - fill later */
 
   marshal_u16(&p, TPM2_ALG_KEYEDHASH); /* type */
@@ -325,7 +353,7 @@ int tpm2_create(u32int parent_handle, u8int *data, u16int data_len,
   marshal_u16(&p, TPM_ALG_NULL); /* scheme */
   marshal_u16(&p, 0);            /* unique size */
 
-  u16int public_size = p - public_start - 2;
+  ushort public_size = p - public_start - 2;
   public_start[0] = (public_size >> 8) & 0xFF;
   public_start[1] = public_size & 0xFF;
 
@@ -336,11 +364,11 @@ int tpm2_create(u32int parent_handle, u8int *data, u16int data_len,
   marshal_u32(&p, 0);
 
   /* Fill command size */
-  u32int cmd_size = (u32int)(p - cmd);
-  cmd[2] = (u8int)((cmd_size >> 24) & 0xFF);
-  cmd[3] = (u8int)((cmd_size >> 16) & 0xFF);
-  cmd[4] = (u8int)((cmd_size >> 8) & 0xFF);
-  cmd[5] = (u8int)(cmd_size & 0xFF);
+  uint cmd_size = (uint)(p - cmd);
+  cmd[2] = (uchar)((cmd_size >> 24) & 0xFF);
+  cmd[3] = (uchar)((cmd_size >> 16) & 0xFF);
+  cmd[4] = (uchar)((cmd_size >> 8) & 0xFF);
+  cmd[5] = (uchar)(cmd_size & 0xFF);
 
   /* Send command */
   if (tpm_transmit(nil, (uint8_t *)cmd, (size_t)cmd_size, (uint8_t *)resp,
@@ -362,7 +390,7 @@ int tpm2_create(u32int parent_handle, u8int *data, u16int data_len,
   print("tpm2_create: Raw response (first 32 bytes):");
   tpm_dump_buffer("  ", resp, 32);
 
-  u16int rtag = (resp[0] << 8) | resp[1];
+  ushort rtag = (resp[0] << 8) | resp[1];
   if (rtag == TPM2_ST_SESSIONS) {
     /* Skip parameter size */
     unmarshal_u32(&rp);
@@ -381,15 +409,15 @@ int tpm2_create(u32int parent_handle, u8int *data, u16int data_len,
  *
  * Returns handle to loaded object
  */
-int tpm2_load(u32int parent_handle, const u8int *private_blob,
-              u16int private_len, const u8int *public_blob, u16int public_len,
-              u32int *handle_out) {
-  u8int cmd[512];
-  u8int resp[256];
+int tpm2_load(uint parent_handle, const uchar *private_blob,
+              ushort private_len, const uchar *public_blob, ushort public_len,
+              uint *handle_out) {
+  uchar cmd[512];
+  uchar resp[256];
   usize resp_len = sizeof(resp);
-  u8int *p = cmd;
-  u8int *rp;
-  u32int rc;
+  uchar *p = cmd;
+  uchar *rp;
+  uint rc;
 
   /* Command Header */
   marshal_u16(&p, TPM2_ST_SESSIONS);
@@ -409,11 +437,11 @@ int tpm2_load(u32int parent_handle, const u8int *private_blob,
   marshal_tpm2b(&p, public_blob, public_len);
 
   /* Fill command size */
-  u32int cmd_size = (u32int)(p - cmd);
-  cmd[2] = (u8int)((cmd_size >> 24) & 0xFF);
-  cmd[3] = (u8int)((cmd_size >> 16) & 0xFF);
-  cmd[4] = (u8int)((cmd_size >> 8) & 0xFF);
-  cmd[5] = (u8int)(cmd_size & 0xFF);
+  uint cmd_size = (uint)(p - cmd);
+  cmd[2] = (uchar)((cmd_size >> 24) & 0xFF);
+  cmd[3] = (uchar)((cmd_size >> 16) & 0xFF);
+  cmd[4] = (uchar)((cmd_size >> 8) & 0xFF);
+  cmd[5] = (uchar)(cmd_size & 0xFF);
 
   /* Send command */
   if (tpm_transmit(nil, (uint8_t *)cmd, (size_t)cmd_size, (uint8_t *)resp,
@@ -424,7 +452,7 @@ int tpm2_load(u32int parent_handle, const u8int *private_blob,
 
   /* Parse response */
   rp = resp;
-  u16int rtag = unmarshal_u16(&rp); /* tag */
+  ushort rtag = unmarshal_u16(&rp); /* tag */
   unmarshal_u32(&rp);               /* size */
   rc = unmarshal_u32(&rp);
 
@@ -442,24 +470,24 @@ int tpm2_load(u32int parent_handle, const u8int *private_blob,
     unmarshal_u32(&rp);
   }
 
-  print("tpm2_load: Loaded object with handle 0x%08X\n", *handle_out);
+  print("tpm2_load: Loaded object with handle 0x%08lux\n", (ulong)*handle_out);
   return 0;
 }
 
 /*
  * TPM2_Unseal - Unseal data from loaded object
  */
-int tpm2_unseal(u32int item_handle, const u8int *auth, u16int auth_len,
-                u8int *data_out, u16int *data_len) {
+int tpm2_unseal(uint item_handle, const uchar *auth, ushort auth_len,
+                uchar *data_out, ushort *data_len) {
   USED(auth);
   USED(auth_len);
 
-  u8int cmd[128];
-  u8int resp[256];
+  uchar cmd[128];
+  uchar resp[256];
   usize resp_len = sizeof(resp);
-  u8int *p = cmd;
-  u8int *rp;
-  u32int rc;
+  uchar *p = cmd;
+  uchar *rp;
+  uint rc;
 
   /* Command Header */
   marshal_u16(&p, TPM2_ST_SESSIONS);
@@ -473,11 +501,11 @@ int tpm2_unseal(u32int item_handle, const u8int *auth, u16int auth_len,
   marshal_password_session(&p);
 
   /* Fill command size */
-  u32int cmd_size = (u32int)(p - cmd);
-  cmd[2] = (u8int)((cmd_size >> 24) & 0xFF);
-  cmd[3] = (u8int)((cmd_size >> 16) & 0xFF);
-  cmd[4] = (u8int)((cmd_size >> 8) & 0xFF);
-  cmd[5] = (u8int)(cmd_size & 0xFF);
+  uint cmd_size = (uint)(p - cmd);
+  cmd[2] = (uchar)((cmd_size >> 24) & 0xFF);
+  cmd[3] = (uchar)((cmd_size >> 16) & 0xFF);
+  cmd[4] = (uchar)((cmd_size >> 8) & 0xFF);
+  cmd[5] = (uchar)(cmd_size & 0xFF);
 
   /* Send command */
   if (tpm_transmit(nil, (uint8_t *)cmd, (size_t)cmd_size, (uint8_t *)resp,
@@ -488,7 +516,7 @@ int tpm2_unseal(u32int item_handle, const u8int *auth, u16int auth_len,
 
   /* Parse response */
   rp = resp;
-  u16int rtag = unmarshal_u16(&rp); /* tag */
+  ushort rtag = unmarshal_u16(&rp); /* tag */
   unmarshal_u32(&rp);               /* size */
   rc = unmarshal_u32(&rp);
 
@@ -511,15 +539,15 @@ int tpm2_unseal(u32int item_handle, const u8int *auth, u16int auth_len,
 /*
  * TPM2_NV_DefineSpace - Define NVRAM index
  */
-int tpm2_nv_define_space(TPMContext *ctx, u32int nv_index, u16int size,
-                         u32int attributes) {
+int tpm2_nv_define_space(TPMContext *ctx, uint nv_index, ushort size,
+                         uint attributes) {
   USED(ctx);
-  u8int cmd[256];
-  u8int resp[64];
+  uchar cmd[256];
+  uchar resp[64];
   usize resp_len = sizeof(resp);
-  u8int *p = cmd;
-  u8int *rp;
-  u32int rc;
+  uchar *p = cmd;
+  uchar *rp;
+  uint rc;
 
   /* Command Header */
   marshal_u16(&p, TPM2_ST_SESSIONS);
@@ -537,7 +565,7 @@ int tpm2_nv_define_space(TPMContext *ctx, u32int nv_index, u16int size,
 
   /* TPMS_NV_PUBLIC */
   marshal_u16(&p, 0); /* size of TPMS_NV_PUBLIC - fill later */
-  u8int *public_start = p;
+  uchar *public_start = p;
 
   marshal_u32(&p, nv_index);        /* nvIndex */
   marshal_u16(&p, TPM2_ALG_SHA256); /* nameAlg */
@@ -546,16 +574,16 @@ int tpm2_nv_define_space(TPMContext *ctx, u32int nv_index, u16int size,
   marshal_u16(&p, size);            /* dataSize */
 
   /* Fill TPMS_NV_PUBLIC size */
-  u16int public_size = p - public_start;
+  ushort public_size = p - public_start;
   public_start[-2] = (public_size >> 8) & 0xFF;
   public_start[-1] = public_size & 0xFF;
 
   /* Fill command size */
-  u32int cmd_size = (u32int)(p - cmd);
-  cmd[2] = (u8int)((cmd_size >> 24) & 0xFF);
-  cmd[3] = (u8int)((cmd_size >> 16) & 0xFF);
-  cmd[4] = (u8int)((cmd_size >> 8) & 0xFF);
-  cmd[5] = (u8int)(cmd_size & 0xFF);
+  uint cmd_size = (uint)(p - cmd);
+  cmd[2] = (uchar)((cmd_size >> 24) & 0xFF);
+  cmd[3] = (uchar)((cmd_size >> 16) & 0xFF);
+  cmd[4] = (uchar)((cmd_size >> 8) & 0xFF);
+  cmd[5] = (uchar)(cmd_size & 0xFF);
 
   if (tpm_transmit(nil, (uint8_t *)cmd, (size_t)cmd_size, (uint8_t *)resp,
                    (size_t *)&resp_len) < 0) {
@@ -579,14 +607,14 @@ int tpm2_nv_define_space(TPMContext *ctx, u32int nv_index, u16int size,
 /*
  * TPM2_NV_UndefineSpace - Delete NVRAM index
  */
-int tpm2_nv_undefine_space(TPMContext *ctx, u32int nv_index) {
+int tpm2_nv_undefine_space(TPMContext *ctx, uint nv_index) {
   USED(ctx);
-  u8int cmd[128];
-  u8int resp[64];
+  uchar cmd[128];
+  uchar resp[64];
   usize resp_len = sizeof(resp);
-  u8int *p = cmd;
-  u8int *rp;
-  u32int rc;
+  uchar *p = cmd;
+  uchar *rp;
+  uint rc;
 
   /* Command Header */
   marshal_u16(&p, TPM2_ST_SESSIONS);
@@ -603,11 +631,11 @@ int tpm2_nv_undefine_space(TPMContext *ctx, u32int nv_index) {
   marshal_password_session(&p);
 
   /* Fill command size */
-  u32int cmd_size = (u32int)(p - cmd);
-  cmd[2] = (u8int)((cmd_size >> 24) & 0xFF);
-  cmd[3] = (u8int)((cmd_size >> 16) & 0xFF);
-  cmd[4] = (u8int)((cmd_size >> 8) & 0xFF);
-  cmd[5] = (u8int)(cmd_size & 0xFF);
+  uint cmd_size = (uint)(p - cmd);
+  cmd[2] = (uchar)((cmd_size >> 24) & 0xFF);
+  cmd[3] = (uchar)((cmd_size >> 16) & 0xFF);
+  cmd[4] = (uchar)((cmd_size >> 8) & 0xFF);
+  cmd[5] = (uchar)(cmd_size & 0xFF);
 
   if (tpm_transmit(nil, (uint8_t *)cmd, (size_t)cmd_size, (uint8_t *)resp,
                    (size_t *)&resp_len) < 0) {
@@ -631,15 +659,15 @@ int tpm2_nv_undefine_space(TPMContext *ctx, u32int nv_index) {
 /*
  * TPM2_NV_Write - Write data to NVRAM
  */
-int tpm2_nv_write(TPMContext *ctx, u32int nv_index, u8int *data, u16int len,
-                  u16int offset) {
+int tpm2_nv_write(TPMContext *ctx, uint nv_index, uchar *data, ushort len,
+                  ushort offset) {
   USED(ctx);
-  u8int cmd[1024]; /* Max NV write is small usually, but buffer needs space */
-  u8int resp[64];
+  uchar cmd[1024]; /* Max NV write is small usually, but buffer needs space */
+  uchar resp[64];
   usize resp_len = sizeof(resp);
-  u8int *p = cmd;
-  u8int *rp;
-  u32int rc;
+  uchar *p = cmd;
+  uchar *rp;
+  uint rc;
 
   if (len > 1024)
     return -1;
@@ -665,11 +693,11 @@ int tpm2_nv_write(TPMContext *ctx, u32int nv_index, u8int *data, u16int len,
   marshal_u16(&p, offset);
 
   /* Fill command size */
-  u32int cmd_size = (u32int)(p - cmd);
-  cmd[2] = (u8int)((cmd_size >> 24) & 0xFF);
-  cmd[3] = (u8int)((cmd_size >> 16) & 0xFF);
-  cmd[4] = (u8int)((cmd_size >> 8) & 0xFF);
-  cmd[5] = (u8int)(cmd_size & 0xFF);
+  uint cmd_size = (uint)(p - cmd);
+  cmd[2] = (uchar)((cmd_size >> 24) & 0xFF);
+  cmd[3] = (uchar)((cmd_size >> 16) & 0xFF);
+  cmd[4] = (uchar)((cmd_size >> 8) & 0xFF);
+  cmd[5] = (uchar)(cmd_size & 0xFF);
 
   if (tpm_transmit(nil, (uint8_t *)cmd, (size_t)cmd_size, (uint8_t *)resp,
                    (size_t *)&resp_len) < 0) {
@@ -693,15 +721,15 @@ int tpm2_nv_write(TPMContext *ctx, u32int nv_index, u8int *data, u16int len,
 /*
  * TPM2_HMAC - Compute HMAC using key in TPM
  */
-int tpm20_hmac(TPMContext *ctx, u32int key_handle, u8int *data, usize data_len,
-               u8int *hmac_out, usize *hmac_out_len) {
+int tpm20_hmac(TPMContext *ctx, uint key_handle, uchar *data, usize data_len,
+               uchar *hmac_out, usize *hmac_out_len) {
   USED(ctx);
-  u8int cmd[1024];
-  u8int resp[1024];
+  uchar cmd[1024];
+  uchar resp[1024];
   usize resp_len = sizeof(resp);
-  u8int *p = cmd;
-  u8int *rp;
-  u32int rc;
+  uchar *p = cmd;
+  uchar *rp;
+  uint rc;
 
   if (data_len > 1024)
     return -1;
@@ -718,17 +746,17 @@ int tpm20_hmac(TPMContext *ctx, u32int key_handle, u8int *data, usize data_len,
   marshal_password_session(&p);
 
   /* Buffer */
-  marshal_tpm2b(&p, data, (u16int)data_len);
+  marshal_tpm2b(&p, data, (ushort)data_len);
 
   /* Hash Algorithm */
   marshal_u16(&p, TPM2_ALG_SHA256);
 
   /* Fill command size */
-  u32int cmd_size = (u32int)(p - cmd);
-  cmd[2] = (u8int)((cmd_size >> 24) & 0xFF);
-  cmd[3] = (u8int)((cmd_size >> 16) & 0xFF);
-  cmd[4] = (u8int)((cmd_size >> 8) & 0xFF);
-  cmd[5] = (u8int)(cmd_size & 0xFF);
+  uint cmd_size = (uint)(p - cmd);
+  cmd[2] = (uchar)((cmd_size >> 24) & 0xFF);
+  cmd[3] = (uchar)((cmd_size >> 16) & 0xFF);
+  cmd[4] = (uchar)((cmd_size >> 8) & 0xFF);
+  cmd[5] = (uchar)(cmd_size & 0xFF);
 
   if (tpm_transmit(nil, (uint8_t *)cmd, (size_t)cmd_size, (uint8_t *)resp,
                    (size_t *)&resp_len) < 0) {
@@ -737,7 +765,7 @@ int tpm20_hmac(TPMContext *ctx, u32int key_handle, u8int *data, usize data_len,
   }
 
   rp = resp;
-  u16int rtag = unmarshal_u16(&rp);
+  ushort rtag = unmarshal_u16(&rp);
   unmarshal_u32(&rp);
   rc = unmarshal_u32(&rp);
 
@@ -751,7 +779,7 @@ int tpm20_hmac(TPMContext *ctx, u32int key_handle, u8int *data, usize data_len,
   }
 
   /* Extract digest */
-  u16int out_len = unmarshal_tpm2b(&rp, hmac_out, 64);
+  ushort out_len = unmarshal_tpm2b(&rp, hmac_out, 64);
   *hmac_out_len = (usize)out_len;
 
   return 0;
@@ -765,13 +793,13 @@ int tpm20_hmac(TPMContext *ctx, u32int key_handle, u8int *data, usize data_len,
  *
  * Based on Linux kernel's tpm2_flush_context()
  */
-int tpm2_flush_context(u32int handle) {
-  u8int cmd[64];
-  u8int resp[64];
+int tpm2_flush_context(uint handle) {
+  uchar cmd[64];
+  uchar resp[64];
   usize resp_len = sizeof(resp);
-  u8int *p = cmd;
-  u8int *rp;
-  u32int rc;
+  uchar *p = cmd;
+  uchar *rp;
+  uint rc;
 
   /* Command Header */
   marshal_u16(&p, TPM2_ST_NO_SESSIONS);
@@ -782,16 +810,16 @@ int tpm2_flush_context(u32int handle) {
   marshal_u32(&p, handle);
 
   /* Fill command size */
-  u32int cmd_size = (u32int)(p - cmd);
-  cmd[2] = (u8int)((cmd_size >> 24) & 0xFF);
-  cmd[3] = (u8int)((cmd_size >> 16) & 0xFF);
-  cmd[4] = (u8int)((cmd_size >> 8) & 0xFF);
-  cmd[5] = (u8int)(cmd_size & 0xFF);
+  uint cmd_size = (uint)(p - cmd);
+  cmd[2] = (uchar)((cmd_size >> 24) & 0xFF);
+  cmd[3] = (uchar)((cmd_size >> 16) & 0xFF);
+  cmd[4] = (uchar)((cmd_size >> 8) & 0xFF);
+  cmd[5] = (uchar)(cmd_size & 0xFF);
 
   /* Send command */
   if (tpm_transmit(nil, (uint8_t *)cmd, (size_t)cmd_size, (uint8_t *)resp,
                    (size_t *)&resp_len) < 0) {
-    print("tpm2_flush_context: transmit failed for handle 0x%08X\n", handle);
+    print("tpm2_flush_context: transmit failed for handle 0x%08lux\n", (ulong)handle);
     return -1;
   }
 
@@ -802,12 +830,12 @@ int tpm2_flush_context(u32int handle) {
   rc = unmarshal_u32(&rp);
 
   if (rc != TPM2_RC_SUCCESS) {
-    print("tpm2_flush_context: TPM error 0x%08X for handle 0x%08X\n", rc,
-          handle);
+    print("tpm2_flush_context: TPM error 0x%08X for handle 0x%08lux\n", rc,
+          (ulong)handle);
     return -1;
   }
 
-  print("tpm2_flush_context: Flushed handle 0x%08X\n", handle);
+  print("tpm2_flush_context: Flushed handle 0x%08lux\n", (ulong)handle);
   return 0;
 }
 
@@ -822,14 +850,14 @@ int tpm2_flush_context(u32int handle) {
  *
  * Based on Linux kernel's tpm2_shutdown()
  */
-int tpm2_shutdown(TPMContext *ctx, u16int shutdown_type) {
+int tpm2_shutdown(TPMContext *ctx, ushort shutdown_type) {
   USED(ctx);
-  u8int cmd[64];
-  u8int resp[64];
+  uchar cmd[64];
+  uchar resp[64];
   usize resp_len = sizeof(resp);
-  u8int *p = cmd;
-  u8int *rp;
-  u32int rc;
+  uchar *p = cmd;
+  uchar *rp;
+  uint rc;
 
   /* Command Header */
   marshal_u16(&p, TPM2_ST_NO_SESSIONS);
@@ -840,11 +868,11 @@ int tpm2_shutdown(TPMContext *ctx, u16int shutdown_type) {
   marshal_u16(&p, shutdown_type);
 
   /* Fill command size */
-  u32int cmd_size = (u32int)(p - cmd);
-  cmd[2] = (u8int)((cmd_size >> 24) & 0xFF);
-  cmd[3] = (u8int)((cmd_size >> 16) & 0xFF);
-  cmd[4] = (u8int)((cmd_size >> 8) & 0xFF);
-  cmd[5] = (u8int)(cmd_size & 0xFF);
+  uint cmd_size = (uint)(p - cmd);
+  cmd[2] = (uchar)((cmd_size >> 24) & 0xFF);
+  cmd[3] = (uchar)((cmd_size >> 16) & 0xFF);
+  cmd[4] = (uchar)((cmd_size >> 8) & 0xFF);
+  cmd[5] = (uchar)(cmd_size & 0xFF);
 
   /* Send command */
   if (tpm_transmit(nil, (uint8_t *)cmd, (size_t)cmd_size, (uint8_t *)resp,
@@ -877,15 +905,15 @@ int tpm2_shutdown(TPMContext *ctx, u16int shutdown_type) {
  *
  * Based on Linux kernel's tpm2_get_tpm_pt()
  */
-int tpm2_get_capability(TPMContext *ctx, u32int capability, u32int property,
-                        u32int *value_out) {
+int tpm2_get_capability(TPMContext *ctx, uint capability, uint property,
+                        uint *value_out) {
   USED(ctx);
-  u8int cmd[128];
-  u8int resp[256];
+  uchar cmd[128];
+  uchar resp[256];
   usize resp_len = sizeof(resp);
-  u8int *p = cmd;
-  u8int *rp;
-  u32int rc;
+  uchar *p = cmd;
+  uchar *rp;
+  uint rc;
 
   /* Command Header */
   marshal_u16(&p, TPM2_ST_NO_SESSIONS);
@@ -902,11 +930,11 @@ int tpm2_get_capability(TPMContext *ctx, u32int capability, u32int property,
   marshal_u32(&p, 1);
 
   /* Fill command size */
-  u32int cmd_size = (u32int)(p - cmd);
-  cmd[2] = (u8int)((cmd_size >> 24) & 0xFF);
-  cmd[3] = (u8int)((cmd_size >> 16) & 0xFF);
-  cmd[4] = (u8int)((cmd_size >> 8) & 0xFF);
-  cmd[5] = (u8int)(cmd_size & 0xFF);
+  uint cmd_size = (uint)(p - cmd);
+  cmd[2] = (uchar)((cmd_size >> 24) & 0xFF);
+  cmd[3] = (uchar)((cmd_size >> 16) & 0xFF);
+  cmd[4] = (uchar)((cmd_size >> 8) & 0xFF);
+  cmd[5] = (uchar)(cmd_size & 0xFF);
 
   /* Send command */
   if (tpm_transmit(nil, (uint8_t *)cmd, (size_t)cmd_size, (uint8_t *)resp,
@@ -932,20 +960,20 @@ int tpm2_get_capability(TPMContext *ctx, u32int capability, u32int property,
    *
    * For TPM_CAP_TPM_PROPERTIES:
    *   TPML_TAGGED_TPM_PROPERTY:
-   *     count (u32)
+   *     count (uint)
    *     properties[count]:
-   *       property (u32)
-   *       value (u32)
+   *       property (uint)
+   *       value (uint)
    */
 
-  u8int more_data = *rp++; /* moreData flag */
+  uchar more_data = *rp++; /* moreData flag */
   USED(more_data);
 
-  /* Skip capability type (u32) - it's what we requested */
+  /* Skip capability type (uint) - it's what we requested */
   unmarshal_u32(&rp);
 
   /* Property count */
-  u32int prop_count = unmarshal_u32(&rp);
+  uint prop_count = unmarshal_u32(&rp);
 
   if (prop_count == 0) {
     print("tpm2_get_capability: No properties returned\n");
@@ -953,7 +981,7 @@ int tpm2_get_capability(TPMContext *ctx, u32int capability, u32int property,
   }
 
   /* Extract first property */
-  u32int returned_property = unmarshal_u32(&rp);
+  uint returned_property = unmarshal_u32(&rp);
   USED(returned_property);
   *value_out = unmarshal_u32(&rp);
 
@@ -971,14 +999,14 @@ int tpm2_get_capability(TPMContext *ctx, u32int capability, u32int property,
  *
  * Based on Linux kernel's tpm2_do_selftest()
  */
-int tpm2_self_test(TPMContext *ctx, u8int full_test) {
+int tpm2_self_test(TPMContext *ctx, uchar full_test) {
   USED(ctx);
-  u8int cmd[64];
-  u8int resp[64];
+  uchar cmd[64];
+  uchar resp[64];
   usize resp_len = sizeof(resp);
-  u8int *p = cmd;
-  u8int *rp;
-  u32int rc;
+  uchar *p = cmd;
+  uchar *rp;
+  uint rc;
 
   /* Command Header */
   marshal_u16(&p, TPM2_ST_NO_SESSIONS);
@@ -989,11 +1017,11 @@ int tpm2_self_test(TPMContext *ctx, u8int full_test) {
   *p++ = full_test;
 
   /* Fill command size */
-  u32int cmd_size = (u32int)(p - cmd);
-  cmd[2] = (u8int)((cmd_size >> 24) & 0xFF);
-  cmd[3] = (u8int)((cmd_size >> 16) & 0xFF);
-  cmd[4] = (u8int)((cmd_size >> 8) & 0xFF);
-  cmd[5] = (u8int)(cmd_size & 0xFF);
+  uint cmd_size = (uint)(p - cmd);
+  cmd[2] = (uchar)((cmd_size >> 24) & 0xFF);
+  cmd[3] = (uchar)((cmd_size >> 16) & 0xFF);
+  cmd[4] = (uchar)((cmd_size >> 8) & 0xFF);
+  cmd[5] = (uchar)(cmd_size & 0xFF);
 
   /* Send command */
   if (tpm_transmit(nil, (uint8_t *)cmd, (size_t)cmd_size, (uint8_t *)resp,
@@ -1036,15 +1064,15 @@ int tpm2_self_test(TPMContext *ctx, u8int full_test) {
  * Companion to TPM2_NV_Write. Reads data from a defined NV index.
  * Based on TPM 2.0 Spec Part 3 Commands, section 31.5
  */
-int tpm2_nv_read(TPMContext *ctx, u32int nv_index, u16int size, u16int offset,
-                 u8int *data_out, u16int *data_len) {
+int tpm2_nv_read(TPMContext *ctx, uint nv_index, ushort size, ushort offset,
+                 uchar *data_out, ushort *data_len) {
   USED(ctx);
-  u8int cmd[256];
-  u8int resp[1024];
+  uchar cmd[256];
+  uchar resp[1024];
   usize resp_len = sizeof(resp);
-  u8int *p = cmd;
-  u8int *rp;
-  u32int rc;
+  uchar *p = cmd;
+  uchar *rp;
+  uint rc;
 
   /* Command Header */
   marshal_u16(&p, TPM2_ST_SESSIONS);
@@ -1067,11 +1095,11 @@ int tpm2_nv_read(TPMContext *ctx, u32int nv_index, u16int size, u16int offset,
   marshal_u16(&p, offset);
 
   /* Fill command size */
-  u32int cmd_size = (u32int)(p - cmd);
-  cmd[2] = (u8int)((cmd_size >> 24) & 0xFF);
-  cmd[3] = (u8int)((cmd_size >> 16) & 0xFF);
-  cmd[4] = (u8int)((cmd_size >> 8) & 0xFF);
-  cmd[5] = (u8int)(cmd_size & 0xFF);
+  uint cmd_size = (uint)(p - cmd);
+  cmd[2] = (uchar)((cmd_size >> 24) & 0xFF);
+  cmd[3] = (uchar)((cmd_size >> 16) & 0xFF);
+  cmd[4] = (uchar)((cmd_size >> 8) & 0xFF);
+  cmd[5] = (uchar)(cmd_size & 0xFF);
 
   if (tpm_transmit(nil, (uint8_t *)cmd, (size_t)cmd_size, (uint8_t *)resp,
                    (size_t *)&resp_len) < 0) {
@@ -1080,7 +1108,7 @@ int tpm2_nv_read(TPMContext *ctx, u32int nv_index, u16int size, u16int offset,
   }
 
   rp = resp;
-  u16int rtag = unmarshal_u16(&rp);
+  ushort rtag = unmarshal_u16(&rp);
   unmarshal_u32(&rp);
   rc = unmarshal_u32(&rp);
 
@@ -1094,7 +1122,7 @@ int tpm2_nv_read(TPMContext *ctx, u32int nv_index, u16int size, u16int offset,
   }
 
   /* Extract data */
-  u16int dlen = unmarshal_tpm2b(&rp, data_out, 1024);
+  ushort dlen = unmarshal_tpm2b(&rp, data_out, 1024);
   *data_len = dlen;
 
   print("tpm2_nv_read: Read %d bytes from NV index 0x%08X\n", *data_len,
@@ -1109,15 +1137,15 @@ int tpm2_nv_read(TPMContext *ctx, u32int nv_index, u16int size, u16int offset,
  * and later restored with TPM2_ContextLoad. Useful for managing limited TPM
  * resources. Based on Linux kernel's tpm2_save_context()
  */
-int tpm2_context_save(TPMContext *ctx, u32int handle, u8int *context_blob,
-                      u16int *context_len) {
+int tpm2_context_save(TPMContext *ctx, uint handle, uchar *context_blob,
+                      ushort *context_len) {
   USED(ctx);
-  u8int cmd[64];
-  u8int resp[2048]; /* Context blobs can be large */
+  uchar cmd[64];
+  uchar resp[2048]; /* Context blobs can be large */
   usize resp_len = sizeof(resp);
-  u8int *p = cmd;
-  u8int *rp;
-  u32int rc;
+  uchar *p = cmd;
+  uchar *rp;
+  uint rc;
 
   /* Command Header */
   marshal_u16(&p, TPM2_ST_NO_SESSIONS);
@@ -1128,11 +1156,11 @@ int tpm2_context_save(TPMContext *ctx, u32int handle, u8int *context_blob,
   marshal_u32(&p, handle);
 
   /* Fill command size */
-  u32int cmd_size = (u32int)(p - cmd);
-  cmd[2] = (u8int)((cmd_size >> 24) & 0xFF);
-  cmd[3] = (u8int)((cmd_size >> 16) & 0xFF);
-  cmd[4] = (u8int)((cmd_size >> 8) & 0xFF);
-  cmd[5] = (u8int)(cmd_size & 0xFF);
+  uint cmd_size = (uint)(p - cmd);
+  cmd[2] = (uchar)((cmd_size >> 24) & 0xFF);
+  cmd[3] = (uchar)((cmd_size >> 16) & 0xFF);
+  cmd[4] = (uchar)((cmd_size >> 8) & 0xFF);
+  cmd[5] = (uchar)(cmd_size & 0xFF);
 
   if (tpm_transmit(nil, (uint8_t *)cmd, (size_t)cmd_size, (uint8_t *)resp,
                    (size_t *)&resp_len) < 0) {
@@ -1152,14 +1180,14 @@ int tpm2_context_save(TPMContext *ctx, u32int handle, u8int *context_blob,
 
   /* Extract context blob (TPMS_CONTEXT structure)
    * Note: Context is NOT a TPM2B, it's a raw TPMS_CONTEXT structure */
-  u16int blob_size = (resp[10] << 8) | resp[11]; /* First field is sequence */
+  ushort blob_size = (resp[10] << 8) | resp[11]; /* First field is sequence */
   if (blob_size > 2048) {
     print("tpm2_context_save: Context blob too large (%d bytes)\n", blob_size);
     return -1;
   }
 
   /* For simplicity, copy entire response payload as context */
-  *context_len = (u16int)(resp_len - 10); /* Skip header */
+  *context_len = (ushort)(resp_len - 10); /* Skip header */
   memmove(context_blob, resp + 10, *context_len);
 
   print("tpm2_context_save: Saved context for handle 0x%08X (%d bytes)\n",
@@ -1173,15 +1201,15 @@ int tpm2_context_save(TPMContext *ctx, u32int handle, u8int *context_blob,
  * Restores a context blob saved with TPM2_ContextSave, returning a new handle.
  * Based on Linux kernel's tpm2_load_context()
  */
-int tpm2_context_load(TPMContext *ctx, u8int *context_blob, u16int context_len,
-                      u32int *handle_out) {
+int tpm2_context_load(TPMContext *ctx, uchar *context_blob, ushort context_len,
+                      uint *handle_out) {
   USED(ctx);
-  u8int cmd[2048];
-  u8int resp[64];
+  uchar cmd[2048];
+  uchar resp[64];
   usize resp_len = sizeof(resp);
-  u8int *p = cmd;
-  u8int *rp;
-  u32int rc;
+  uchar *p = cmd;
+  uchar *rp;
+  uint rc;
 
   /* Command Header */
   marshal_u16(&p, TPM2_ST_NO_SESSIONS);
@@ -1193,11 +1221,11 @@ int tpm2_context_load(TPMContext *ctx, u8int *context_blob, u16int context_len,
   p += context_len;
 
   /* Fill command size */
-  u32int cmd_size = (u32int)(p - cmd);
-  cmd[2] = (u8int)((cmd_size >> 24) & 0xFF);
-  cmd[3] = (u8int)((cmd_size >> 16) & 0xFF);
-  cmd[4] = (u8int)((cmd_size >> 8) & 0xFF);
-  cmd[5] = (u8int)(cmd_size & 0xFF);
+  uint cmd_size = (uint)(p - cmd);
+  cmd[2] = (uchar)((cmd_size >> 24) & 0xFF);
+  cmd[3] = (uchar)((cmd_size >> 16) & 0xFF);
+  cmd[4] = (uchar)((cmd_size >> 8) & 0xFF);
+  cmd[5] = (uchar)(cmd_size & 0xFF);
 
   if (tpm_transmit(nil, (uint8_t *)cmd, (size_t)cmd_size, (uint8_t *)resp,
                    (size_t *)&resp_len) < 0) {
@@ -1228,15 +1256,15 @@ int tpm2_context_load(TPMContext *ctx, u8int *context_blob, u16int context_len,
  * Returns the public area, name, and qualified name of an object.
  * Useful for verifying object properties and getting the TPM name.
  */
-int tpm2_read_public(TPMContext *ctx, u32int handle, u8int *public_out,
-                     u16int *public_len) {
+int tpm2_read_public(TPMContext *ctx, uint handle, uchar *public_out,
+                     ushort *public_len) {
   USED(ctx);
-  u8int cmd[64];
-  u8int resp[1024];
+  uchar cmd[64];
+  uchar resp[1024];
   usize resp_len = sizeof(resp);
-  u8int *p = cmd;
-  u8int *rp;
-  u32int rc;
+  uchar *p = cmd;
+  uchar *rp;
+  uint rc;
 
   /* Command Header */
   marshal_u16(&p, TPM2_ST_NO_SESSIONS);
@@ -1247,11 +1275,11 @@ int tpm2_read_public(TPMContext *ctx, u32int handle, u8int *public_out,
   marshal_u32(&p, handle);
 
   /* Fill command size */
-  u32int cmd_size = (u32int)(p - cmd);
-  cmd[2] = (u8int)((cmd_size >> 24) & 0xFF);
-  cmd[3] = (u8int)((cmd_size >> 16) & 0xFF);
-  cmd[4] = (u8int)((cmd_size >> 8) & 0xFF);
-  cmd[5] = (u8int)(cmd_size & 0xFF);
+  uint cmd_size = (uint)(p - cmd);
+  cmd[2] = (uchar)((cmd_size >> 24) & 0xFF);
+  cmd[3] = (uchar)((cmd_size >> 16) & 0xFF);
+  cmd[4] = (uchar)((cmd_size >> 8) & 0xFF);
+  cmd[5] = (uchar)(cmd_size & 0xFF);
 
   if (tpm_transmit(nil, (uint8_t *)cmd, (size_t)cmd_size, (uint8_t *)resp,
                    (size_t *)&resp_len) < 0) {
@@ -1270,7 +1298,7 @@ int tpm2_read_public(TPMContext *ctx, u32int handle, u8int *public_out,
   }
 
   /* Extract public area (outPublic) */
-  u16int plen = unmarshal_tpm2b(&rp, public_out, 1024);
+  ushort plen = unmarshal_tpm2b(&rp, public_out, 1024);
   *public_len = plen;
 
   /* Note: Response also contains name and qualifiedName, but we skip them for
@@ -1287,13 +1315,13 @@ int tpm2_read_public(TPMContext *ctx, u32int handle, u8int *public_out,
  * Returns a single blob containing both private and public portions.
  * Based on Linux kernel trusted_tpm2.c high-level API.
  */
-int tpm2_seal_to_srk(const u8int *data, u16int data_len, const u8int *auth,
-                     u16int auth_len, u8int *blob_out, u16int *blob_len) {
-  u8int priv[256];
-  u8int pub[256];
-  u16int priv_len = sizeof(priv);
-  u16int pub_len = sizeof(pub);
-  u32int srk_handle;
+int tpm2_seal_to_srk(const uchar *data, ushort data_len, const uchar *auth,
+                     ushort auth_len, uchar *blob_out, ushort *blob_len) {
+  uchar priv[256];
+  uchar pub[256];
+  ushort priv_len = sizeof(priv);
+  ushort pub_len = sizeof(pub);
+  uint srk_handle;
   int rc;
 
   USED(auth);
@@ -1307,7 +1335,7 @@ int tpm2_seal_to_srk(const u8int *data, u16int data_len, const u8int *auth,
   }
 
   /* Seal the data under the SRK */
-  rc = tpm2_create(srk_handle, (u8int *)data, data_len, priv, &priv_len, pub,
+  rc = tpm2_create(srk_handle, (uchar *)data, data_len, priv, &priv_len, pub,
                    &pub_len);
   if (rc < 0) {
     print("tpm2_seal_to_srk: failed to seal data\n");
@@ -1315,14 +1343,19 @@ int tpm2_seal_to_srk(const u8int *data, u16int data_len, const u8int *auth,
     return rc;
   }
 
-  /* Pack into blob: priv_len(2) + priv + pub_len(2) + pub + srk_handle(4) */
-  u16int total = (u16int)(2 + priv_len + 2 + pub_len + 4);
-  if (total > *blob_len) {
-    tpm2_flush_context(srk_handle);
-    return -1;
-  }
+  /*
+   * The SRK is a deterministic primary key, so unseal re-derives it
+   * with the same template instead of keeping a transient handle alive.
+   * The trailing handle is kept so old blobs still parse.
+   */
+  tpm2_flush_context(srk_handle);
 
-  u8int *p = blob_out;
+  /* Pack into blob: priv_len(2) + priv + pub_len(2) + pub + srk_handle(4) */
+  ushort total = (ushort)(2 + priv_len + 2 + pub_len + 4);
+  if (total > *blob_len)
+    return -1;
+
+  uchar *p = blob_out;
   marshal_u16(&p, priv_len);
   memmove(p, priv, priv_len);
   p += priv_len;
@@ -1340,10 +1373,10 @@ int tpm2_seal_to_srk(const u8int *data, u16int data_len, const u8int *auth,
 /*
  * High-level API: Unseal data from combined blob
  */
-int tpm2_unseal_from_blob(const u8int *blob, u16int blob_len, const u8int *auth,
-                          u16int auth_len, u8int *data_out, u16int *data_len) {
-  u32int obj_handle;
-  u32int srk_handle;
+int tpm2_unseal_from_blob(const uchar *blob, ushort blob_len, const uchar *auth,
+                          ushort auth_len, uchar *data_out, ushort *data_len) {
+  uint obj_handle;
+  uint srk_handle;
   int rc;
 
   USED(auth);
@@ -1353,16 +1386,16 @@ int tpm2_unseal_from_blob(const u8int *blob, u16int blob_len, const u8int *auth,
     return -1;
 
   /* Unpack blob */
-  u8int *p = (u8int *)blob;
-  u16int priv_len = unmarshal_u16(&p);
-  u8int *priv = p;
+  uchar *p = (uchar *)blob;
+  ushort priv_len = unmarshal_u16(&p);
+  uchar *priv = p;
   p += priv_len;
 
   if (p + 2 > blob + blob_len)
     return -1;
 
-  u16int pub_len = unmarshal_u16(&p);
-  u8int *pub = p;
+  ushort pub_len = unmarshal_u16(&p);
+  uchar *pub = p;
   p += pub_len;
 
   if (p + 4 > blob + blob_len)
@@ -1370,18 +1403,31 @@ int tpm2_unseal_from_blob(const u8int *blob, u16int blob_len, const u8int *auth,
 
   srk_handle = unmarshal_u32(&p);
 
+  /*
+   * A blob sealed by an earlier process cannot use that process's
+   * transient handle.  Re-create the deterministic SRK from the same
+   * template and load under the new handle.
+   */
+  rc = tpm2_create_primary(0, &srk_handle);
+  if (rc < 0) {
+    print("tpm2_unseal_from_blob: failed to create primary key\n");
+    return rc;
+  }
+
   /* Load into TPM */
   rc = tpm2_load(srk_handle, priv, priv_len, pub, pub_len, &obj_handle);
   if (rc < 0) {
     print("tpm2_unseal_from_blob: failed to load object\n");
+    tpm2_flush_context(srk_handle);
     return rc;
   }
 
   /* Unseal */
   rc = tpm2_unseal(obj_handle, auth, auth_len, data_out, data_len);
 
-  /* Always flush the loaded object */
+  /* Always flush the loaded object and the re-derived SRK */
   tpm2_flush_context(obj_handle);
+  tpm2_flush_context(srk_handle);
 
   if (rc < 0) {
     print("tpm2_unseal_from_blob: failed to unseal\n");

@@ -87,7 +87,7 @@ static uchar*
 readall(char *path, int *np)
 {
 	int fd, n, nr;
-	uchar *buf, tmp[8192];
+	uchar *buf, tmp[1024];
 
 	fd = open(path, OREAD);
 	if(fd < 0)

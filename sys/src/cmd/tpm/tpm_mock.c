@@ -31,7 +31,7 @@ static int
 mocksend(TpmTransport *tr, uchar *cmd, int n, uchar *resp, int *rnp)
 {
 	Mock *m = tr->aux;
-	u32 cc;
+	uint cc;
 	int i, want, nresp, rn;
 
 	rn = *rnp;
