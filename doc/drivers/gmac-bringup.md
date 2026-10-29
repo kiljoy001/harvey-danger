@@ -3,8 +3,9 @@
 Controller: `ethernet@fe010000`, `rockchip,rk3568-gmac` /
 `snps,dwmac-4.20a`.  PHY: Motorcomm **YT8531** (`4f51:e91b`) behind
 MDIO, RGMII, reset on GPIO3_C2 (bank 3, pin 18, active low).
-Driver: `sys/src/cmd/gmac/gmac.c` (`/boot/gmac`), user space over the
-`#P` grant for the MAC, GRF and CRU.
+Drivers: `sys/src/9/aarch64/ethergmac.c` (kernel `Ether`, the product
+path) and `sys/src/cmd/gmac/gmac.c` (`/boot/gmac`, the user-space
+`#P` driver used for bring-up and raw-frame experiments).
 
 ## Register path (working)
 
@@ -146,7 +147,8 @@ on this unit and testing 1 Gbps there.
 
 ## Working 10 Mbps service
 
-`gmacfs` is started by init and serves `/srv/gmac`:
+`gmacfs` served `/srv/gmac` during bring-up (it is built but no longer
+started by init, see the last section):
 
 ```
 $ cat /mnt/gmac/ctl
@@ -184,3 +186,51 @@ Also, `#P/dma` maintenance files cannot be cached across the lib9p
 fork: a descriptor opened before `postmountsrv` is not valid in the
 server child, so they are opened per call and all card access takes one
 lock shared by both processes.
+
+## Kernel Ether and `/net`
+
+The card is also a kernel `Ether` (`sys/src/9/aarch64/ethergmac.c`):
+it registers with `addethercard("gmac", gmacreset)` and appears as
+`#l/ether0`.  It reuses the working init (RGMII, MDIO, 10 Mbps, ADMA
+rings) but maps the MAC/GRF/CRU with `KADDR()` and takes the top
+128 KiB of the reserved `#P/dma` window for descriptors and buffers.
+This kernel does not deliver device interrupts to kernel handlers, so a
+kernel process polls the RX ring and calls `etheriq()`; the TX path is
+`etherwrite()` → `oq` → `ether->transmit()`.
+
+The IP stack (`sys/src/9/ip`) is compiled in with the `ipprotoinit[]`
+table from `config.c`, so `#I` provides `tcp`, `udp`, `rudp`, `ipifc`,
+`icmp`, `icmpv6`, `gre`, `ipmux`, `il`, `arp`, `iproute` and friends.
+Init unions the two devices at `/net` (`#I0` replacing, `#l` after) and
+configures the interface the standard way:
+
+```
+open /net/ipifc/clone            # fd stays on the new interface's ctl
+write "bind ether /net/ether0"   # medium and ether device
+write "add 192.168.2.248 255.255.255.0"
+```
+
+After that `cat /net/ipifc/0/status`, `/net/iproute`, `/net/arp` and
+`/net/ether0/{addr,stats,mtu}` all work, and a normal `ping` client can
+use `/net/icmp`.  Init sends one echo from the board to 192.168.2.1 in a
+child process; the `NET-PING PASS` line means route lookup, ARP and
+transmit all worked, and a ping from the LAN proves receive and reply.
+
+Two bugs surfaced while wiring this up:
+
+- `sendarp()` throttled with `NOW - a->ctime < 1000`, but a fresh
+  `Arpent` has `ctime == 0`.  If the first packet was sent during the
+  first second of uptime the request was dropped and, because v4
+  entries are not on the retransmit queue, it was lost for good.  The
+  throttle now only applies when `ctime != 0`.  Symptom: the board's
+  ARP entry for the router stayed `WAIT` while the router had already
+  learned the board's MAC (it saw the gratuitous ARP instead).
+- v4 masks are stored v4-mapped with the 96-bit prefix set, so the
+  `%M` formatter in `sys/src/libip/eipfmt.c` described a /24 as
+  `/120`.  `maskstr()` in `ip/ipaux.c` now prints dotted quads for v4
+  and is used by the ipifc status line and the route table.
+
+`gmacfs` is no longer started by init: the kernel owns the card, and IP
+lives in `/net`.  The service is still built and can be run by hand if
+raw frame access with its own ARP/ICMP is wanted.
+

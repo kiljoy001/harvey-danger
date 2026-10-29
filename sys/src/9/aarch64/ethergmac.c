@@ -456,6 +456,7 @@ gmacreset(Ether *ether)
 	memmove(ether->ea, mac, Eaddrlen);
 	memmove(ether->Netif.addr, mac, Eaddrlen);
 	ether->Netif.mbps = 10;
+	ether->Netif.link = 1;
 	ether->transmit = transmit;
 	ether->interrupt = nil;
 	ether->ctl = gmacctl;
