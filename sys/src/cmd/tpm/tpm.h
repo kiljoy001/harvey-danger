@@ -48,7 +48,15 @@ struct Tpm {
 	uchar		resp[TpmMax];
 	int		nresp;
 	char		status[128];
+	uchar		blob[2048];
+	int		nblob;
+	uchar		plain[256];
+	int		nplain;
 };
+
+extern Tpm *tpm_sapi_ctx;
+int	tpm2_seal_to_srk(const u8int*, u16int, const u8int*, u16int, u8int*, u16int*);
+int	tpm2_unseal_from_blob(const u8int*, u16int, const u8int*, u16int, u8int*, u16int*);
 
 static inline u16
 tpmget16(uchar *p)
@@ -80,6 +88,7 @@ tpmput32(uchar *p, u32 v)
 
 TpmTransport*	tpm_mock_transport(void);
 TpmTransport*	tpm_tis_transport(char *path);
+TpmTransport*	tpm_crb_transport(void);
 
 int	tpm_open(Tpm*, char *backend, char *path);
 void	tpm_close(Tpm*);
@@ -88,5 +97,6 @@ int	tpm_startup(Tpm*);
 int	tpm_selftest(Tpm*);
 int	tpm_getrandom(Tpm*, uchar*, int);
 int	tpm_pcrread(Tpm*, int);
+int	tpm_pcrget(Tpm*, int, uchar*, int);
 
 #endif

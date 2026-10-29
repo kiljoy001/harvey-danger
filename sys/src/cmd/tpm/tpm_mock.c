@@ -49,6 +49,27 @@ mocksend(TpmTransport *tr, uchar *cmd, int n, uchar *resp, int *rnp)
 	case TpmCcSelfTest:
 		break;
 
+	case TpmCcPcrRead:
+		if(n < TpmHdrLen + 10)
+			return -1;
+		nresp = TpmHdrLen + 4 + 4 + 2 + 1 + 3 + 4 + 2 + 32;
+		if(nresp > rn)
+			return -1;
+		{
+			uchar *p = resp + TpmHdrLen;
+			tpmput32(p, 0); p += 4;		/* pcrUpdateCounter */
+			tpmput32(p, 1); p += 4;		/* selection count */
+			tpmput16(p, 0x000B); p += 2;	/* SHA256 */
+			*p++ = 3;
+			*p++ = cmd[17];
+			*p++ = cmd[18];
+			*p++ = cmd[19];
+			tpmput32(p, 1); p += 4;		/* digest count */
+			tpmput16(p, 32); p += 2;
+			memset(p, 0x42, 32);
+		}
+		break;
+
 	case TpmCcGetRandom:
 		if(n < TpmHdrLen + 2)
 			return -1;

@@ -40,10 +40,12 @@ def link_one(out: str, objects, libs) -> None:
 def main() -> None:
     os.makedirs(BUILD_DIR, exist_ok=True)
     objs = [compile_one(name) for name in
-            ("tpmfs.c", "tpm_mock.c", "tpm_tis.c")]
+            ("tpmfs.c", "tpm_mock.c", "tpm_tis.c", "tpm_crb.c", "tpm2_sapi.c")]
     link_one("aspera-tpmfs", objs,
              ("lib9p.a", "libthread.a", "libauth.a", "libsec.a",
               "libndb.a", "libbio.a", "libc.a"))
+    subprocess.run(["llvm-ar", "rcs", os.path.join(REPO_ROOT, "build", "libtpm2.a"),
+                    os.path.join(BUILD_DIR, "tpm2_sapi.o")], check=True)
 
     obj = compile_one("tpmtest.c")
     link_one("aspera-tpmtest", [obj], ("libc.a",))
