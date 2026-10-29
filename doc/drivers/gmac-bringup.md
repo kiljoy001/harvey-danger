@@ -73,3 +73,42 @@ speeds: the /50 path works, /5 sends but corrupts, /1 loses the clock.
 Next steps are to sweep the MAC TX/RX delay values at 100 Mbps with the
 host counting frames, check the PHY's RGMII delay registers, and
 confirm which clock actually reaches `CLK_MAC1_2TOP`.
+
+
+## Is 1 Gbps real on this board? (v1.1)
+
+Our unit is a **v1.1**: toggling GPIO3_C2 (the v1.1 PHY reset) actually
+resets the PHY, while v2.1 moved that line to GPIO4_C4.  Measured on
+this unit, with a fresh boot:
+
+| Link | U-Boot ping | our driver |
+| --- | --- | --- |
+| 10 Mbps | works | works (frames counted at the switch) |
+| 100 Mbps | **fails** | fails |
+| 1000 Mbps | **fails** | fails |
+
+U-Boot autonegotiates 1000 Mbps full duplex on its own and still cannot
+ping; forcing 100 Mbps links but cannot ping either.  Only 10 Mbps
+passes traffic.  So the working TFTP recipe is not a workaround for a
+Harvey bug - it is the only speed this board does.
+
+This matches what the community reports about the v1.1:
+
+- v1.1 uses a **3.3 V PHY**, v2.1 a 1.8 V PHY; the kernel device trees
+  do not distinguish them.
+- The DietPi maintainer: "These Ethernet issues were one of the reasons
+  for the v2.1", and notes the U-Boot/Linux inconsistency about whether
+  the reset delays live in the PHY or the MAC, plus a hardware defect
+  that can appear over time.
+- A reported workaround is forcing 100 Mbps.
+
+There is also a concrete software mismatch: the YT8531 drive-strength
+register `0xa010` is `0xdbcf` for 1.8 V IO and `0xdacf` for 3.3 V IO
+(the vendor driver says so in a comment).  U-Boot and the Linux driver
+both write `0xdbcf`, i.e. the 1.8 V value, on a v1.1 board.  Setting
+`0xdacf` did not fix our unit at 10 or 1000 Mbps, but it is the correct
+value for this revision and worth keeping.
+
+The driver is therefore left at: probe/MDIO/PHY identity, DMA rings and
+a verified 10 Mbps TX/RX path.  1 Gbps on v1.1 should be treated as
+unproven at best, and a hardware limitation at worst.

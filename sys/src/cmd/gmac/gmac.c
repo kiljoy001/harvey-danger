@@ -321,6 +321,7 @@ static int noreset;
 static int txdelay = -1, rxdelay = -1;
 static int clksrc = -1;
 static int noinit;
+static int phy3v3 = 1;		/* v1.1: 3.3 V PHY IO */
 
 static void
 setrgmii(void)
@@ -401,30 +402,38 @@ phyextread(int phy, u32 reg)
  * PHY supplies the delays and the MAC's own delay lines must be off.
  */
 static void
-phyinit8531(int phy)
+phyinit8531(int phy, int phydelay)
 {
 	u32 r;
 	int v;
 
-	phyextwrite(phy, 0xa012, 0xd0);
-	phyextwrite(phy, 0xa010, 0xdbcf);
-	phyextwrite(phy, 0xa040, 0xffff);
-	phyextwrite(phy, 0xa041, 0xff);
-	phyextwrite(phy, 0xa039, 0xbf00);
-	for(r = 0xa03a; r <= 0xa03f; r++)
-		phyextwrite(phy, r, 0x4040);
+	/* what U-Boot leaves behind, and what the reset clears */
+	phyextwrite(phy, 0xa012, 0xd0);		/* PHY_CLK_OUT 125M */
+	/*
+	 * RGMII drive strength.  The vendor driver says 0xdbcf is the
+	 * 1.8 V setting and a 3.3 V IO needs 0xdacf (PHY_CLK_OUT=2).
+	 * The v1.1 board has the 3.3 V PHY, v2.1 the 1.8 V one.
+	 */
+	phyextwrite(phy, 0xa010, phy3v3 ? 0xdacf : 0xdbcf);
+	if(phydelay){
+		phyextwrite(phy, 0xa040, 0xffff);
+		phyextwrite(phy, 0xa041, 0xff);
+		phyextwrite(phy, 0xa039, 0xbf00);
+		for(r = 0xa03a; r <= 0xa03f; r++)
+			phyextwrite(phy, r, 0x4040);
+	}
 	v = phyextread(phy, 0x57);
 	if(v >= 0)
 		phyextwrite(phy, 0x57, (v & ~(0xf<<8)) | (7<<8));
-	print("gmac: phy 0xa012 %04x 0xa03a %04x 0x57 %04x\n",
-	      phyextread(phy, 0xa012), phyextread(phy, 0xa03a),
-	      phyextread(phy, 0x57));
+	print("gmac: phy 0xa010 %04x 0xa012 %04x 0xa03a %04x 0x57 %04x\n",
+	      phyextread(phy, 0xa010), phyextread(phy, 0xa012),
+	      phyextread(phy, 0xa03a), phyextread(phy, 0x57));
 }
 
 static int
-scanphy(int aneg)
+findphy(void)
 {
-	int p, id1, id2, bmsr, bmcr, spec, found, i;
+	int p, id1, id2, found;
 
 	found = -1;
 	for(p = 0; p < 8; p++){
@@ -438,8 +447,55 @@ scanphy(int aneg)
 		if(found < 0)
 			found = p;
 	}
+	return found;
+}
+
+static void
+phydump(int phy, char *tag)
+{
+	print("gmac: %s 0xa000 %04x 0xa001 %04x 0xa003 %04x 0xa010 %04x 0xa011 %04x 0xa012 %04x 0x9030 %04x 0x57 %04x\n",
+	      tag, phyextread(phy, 0xa000), phyextread(phy, 0xa001),
+	      phyextread(phy, 0xa003), phyextread(phy, 0xa010),
+	      phyextread(phy, 0xa011), phyextread(phy, 0xa012),
+	      phyextread(phy, 0x9030), phyextread(phy, 0x57));
+}
+
+/* Diff the PHY's extended register file across a reset. */
+static void
+phydiff(int phy)
+{
+	static u16 before[512], after[512];
+	u32 base, r;
+	int i;
+
+	for(i = 0; i < 256; i++){
+		before[i] = phyextread(phy, 0xa000 + i);
+		before[256+i] = phyextread(phy, 0x9000 + i);
+	}
+	phyreset();
+	for(i = 0; i < 256; i++){
+		after[i] = phyextread(phy, 0xa000 + i);
+		after[256+i] = phyextread(phy, 0x9000 + i);
+	}
+	for(i = 0; i < 512; i++){
+		if(before[i] == after[i])
+			continue;
+		base = i < 256 ? 0xa000 : 0x9000;
+		r = base + (i & 0xff);
+		print("gmac: diff %04x %04x -> %04x\n", r, before[i], after[i]);
+	}
+}
+
+static int
+scanphy(int aneg, int initfirst)
+{
+	int bmsr, bmcr, spec, found, i;
+
+	found = findphy();
 	if(found < 0)
 		return -1;
+	if(initfirst)
+		phyinit8531(found, macdelay == 0);	/* MAC delays off -> PHY */
 	bmcr = mdio(found, MiiBmcr, 0, 0);
 	if(aneg)
 		mdio(found, MiiBmcr, bmcr | (1<<9), 1);	/* restart autoneg */
@@ -697,7 +753,8 @@ main(int argc, char **argv)
 	}
 	if(argc > 1 && strcmp(argv[1], "arp") == 0 && argc > 6)
 		forcespeed = atoi(argv[6]);
-	if(argc > 1 && strcmp(argv[1], "tx") == 0 && argc > 4)
+	if(argc > 1 && (strcmp(argv[1], "tx") == 0 ||
+	                strcmp(argv[1], "txni") == 0) && argc > 4)
 		forcespeed = atoi(argv[4]);
 	if(argc > 1 && strcmp(argv[1], "tx") == 0 && argc > 5)
 		txdelay = strtoul(argv[5], nil, 0);
@@ -707,6 +764,11 @@ main(int argc, char **argv)
 		clksrc = atoi(argv[7]);
 	if(argc > 1 && strcmp(argv[1], "txnr") == 0 && argc > 7)
 		clksrc = atoi(argv[7]);
+	if(argc > 1 && strcmp(argv[1], "txni") == 0){
+		noinit = 1;
+		if(argc > 3)
+			macdelay = atoi(argv[3]);
+	}
 	if(argc > 1 && strcmp(argv[1], "txnr") == 0){
 		noreset = 1;
 		if(argc > 3)
@@ -723,14 +785,12 @@ main(int argc, char **argv)
 	setrgmii();
 	if(!noreset)
 		phyreset();
-	phy = scanphy(!noreset);
+	phy = scanphy(!noreset, !noinit);
 	if(phy < 0){
 		print("gmac: no phy found\n");
 		exits(nil);
 	}
 	macphy = phy;
-	if(!noinit)
-		phyinit8531(phy);
 	if(argc > 1 && strcmp(argv[1], "adv") == 0){
 		int mb = argc > 2 ? atoi(argv[2]) : 1000;
 		int cnt = argc > 3 ? atoi(argv[3]) : 6;
@@ -748,6 +808,7 @@ main(int argc, char **argv)
 		}
 		speed = (st>>14) == 1 ? 100 : (st>>14) == 2 ? 1000 : 10;
 		print("gmac: renegotiated %d Mbps (status %04x)\n", speed, st);
+		sleep(15000);		/* let the switch forward again */
 		setspeed(speed);
 		dmainit();
 		dmacfg();
@@ -785,10 +846,15 @@ main(int argc, char **argv)
 		exits(nil);
 
 	setspeed(speed);
+	/* the switch blocks the port for a few seconds after a re-link */
+	if(argc > 1 && (strncmp(argv[1], "tx", 2) == 0 ||
+	                strcmp(argv[1], "arp") == 0))
+		sleep(15000);
 	dmainit();
 	dmacfg();
 
 	if(argc > 1 && (strcmp(argv[1], "tx") == 0 ||
+	                strcmp(argv[1], "txni") == 0 ||
 	                strcmp(argv[1], "txnr") == 0)){
 		nf = argc > 2 ? atoi(argv[2]) : 4;
 		for(i = 0; i < nf; i++){
@@ -808,6 +874,28 @@ main(int argc, char **argv)
 				print("gmac: frame %d sent (%d bytes)\n", i, n);
 			sleep(100);
 		}
+		exits(nil);
+	}
+	if(argc > 1 && strcmp(argv[1], "phydiff") == 0){
+		int p = findphy();
+
+		if(p < 0){
+			print("gmac: no phy\n");
+			exits(nil);
+		}
+		phydiff(p);
+		exits(nil);
+	}
+	if(argc > 1 && strcmp(argv[1], "phydump") == 0){
+		int p = findphy();
+
+		if(p < 0){
+			print("gmac: no phy\n");
+			exits(nil);
+		}
+		phydump(p, "before reset");
+		phyreset();
+		phydump(p, "after reset");
 		exits(nil);
 	}
 	if(argc > 1 && strcmp(argv[1], "loop") == 0){
