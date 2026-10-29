@@ -143,3 +143,44 @@ this driver alike.
 The one experiment left that would settle it is booting the official
 Orange Pi vendor image (or a full mainline distro, not the initramfs)
 on this unit and testing 1 Gbps there.
+
+## Working 10 Mbps service
+
+`gmacfs` is started by init and serves `/srv/gmac`:
+
+```
+$ cat /mnt/gmac/ctl
+gmac rk3566
+link 10 mbps
+mac 02:48:41:52:56:45
+ip 192.168.2.248
+rx 166 tx 79 arp 9 icmp 70
+dma 0000000e 00000445 rxcur ef811160 txcur ef811070
+ring ef811100 idx 6 desc c1000000 loops 11941 empty 11941
+```
+
+and answers ping from the host (50/50, 0% loss).  `/data` carries raw
+frames; ARP and ICMP echo are handled in the service, with a gratuitous
+ARP at startup so hosts drop the bootloader's stale MAC binding.
+
+Three lessons came from the vendor/Armbian driver:
+
+- `DMA_SYS_BUS_MODE` is the AXI configuration register, not just a
+  burst-mode bit.  The board's `snps,axi-config` asks for 8 read / 4
+  write outstanding requests and 4/8/16-byte bursts; leaving the limits
+  at zero stalls the DMA under load.
+- The ring-length register holds the **last index**, not the entry
+  count (`stmmac_set_rx_ring_len(dma_rx_size - 1)`).
+- DMA rings are power-of-two sized (stmmac uses 256).
+
+The bug that actually broke reception was ours: the transmit buffer sat
+at DMA offset `0x200`, inside the 32-entry RX descriptor ring
+(`0x100-0x2ff`), so every reply overwrote RX descriptors 16-31.  The
+symptom was `RU` (receive buffer unavailable) in `DMA_CH0_STATUS` and a
+ring that stopped after a few frames.  The rings and buffers now live
+in disjoint ranges.
+
+Also, `#P/dma` maintenance files cannot be cached across the lib9p
+fork: a descriptor opened before `postmountsrv` is not valid in the
+server child, so they are opened per call and all card access takes one
+lock shared by both processes.
