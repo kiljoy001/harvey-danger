@@ -1,0 +1,13 @@
+[
+	{
+		"Name": "libmonocypher",
+		"Include": [
+			"../lib.json"
+		],
+		"Install": "/$ARCH/lib/",
+		"Library": "libmonocypher.a",
+		"SourceFiles": [
+			"monocypher.c"
+		]
+	}
+]
