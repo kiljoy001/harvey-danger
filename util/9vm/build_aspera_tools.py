@@ -3,6 +3,7 @@
 
 import json
 from pathlib import Path
+import re
 import shutil
 import subprocess
 
@@ -274,6 +275,147 @@ def build_core9_more2() -> None:
     print("Built second-tier 9front tools (grep, sed, diff, ...)")
 
 
+# Third tier: the core system tools — editors, the build toolchain,
+# compression, and namespace services.  A handful need small source
+# shims for Harvey's older libc/lib9p (getcallerpc takes no argument,
+# lib9p's File has a Ref field, and lib9p has no Srv.start hook).
+CORE9_MORE3_PLAIN = ("iostats", "swap")
+CORE9_MORE3_BIO = ("yacc", "patch")
+CORE9_MORE3_RE = ("ed",)
+
+GCCFLAGS = [
+    "-c", "-O2", "-mno-red-zone", "-ffreestanding", "-fno-builtin",
+    "-fno-stack-protector", "-mcmodel=small", "-fcommon",
+    "-Wno-unknown-pragmas", "-Wno-parentheses", "-Wno-implicit-int",
+    "-Wno-implicit-function-declaration", "-fplan9-extensions",
+    "-fno-pie", "-mstackrealign",
+    f"-I{ROOT / 'amd64/include'}", f"-I{ROOT / 'sys/include'}",
+]
+
+
+def patched(source: Path, output: Path, pairs) -> None:
+    text = source.read_text()
+    for pattern, repl in pairs:
+        text = re.sub(pattern, repl, text)
+    output.write_text(text)
+
+
+def build_gzip() -> None:
+    gzip_dir = NINEFRONT / "sys/src/cmd/gzip"
+    for name in ("gzip", "gunzip", "zip", "unzip"):
+        work = BUILD / f"{name}.patched.c"
+        patched(gzip_dir / f"{name}.c", work,
+                ((r"static\s+ulong\s+\*crctab;", "static u32 *crctab;"),))
+        obj = BUILD / f"aspera-{name}.o"
+        compile_file(work, obj, ("-DIOUNIT=32768", f"-I{gzip_dir}"))
+        link(name, [obj], ("libflate.a", "libbio.a"))
+    print("Built gzip/gunzip/zip/unzip")
+
+
+def build_thread_services() -> None:
+    cmd = NINEFRONT / "sys/src/cmd"
+    libs = ("lib9p.a", "libthread.a", "libauth.a", "libsec.a",
+            "libbio.a", "libndb.a")
+    for name in ("srvfs", "ramfs", "mntgen"):
+        work = cmd / f"{name}.c"
+        if name != "srvfs":
+            out = BUILD / f"{name}.patched.c"
+            pairs = [(r"\nmain\(int argc", "\nthreadmain(int argc")]
+            if name == "ramfs":
+                pairs += [("f->ref", "f->Ref.ref"),
+                          (r"\n\t\.start=\t\tfsstart,", "")]
+                text = cmd.joinpath("ramfs.c").read_text()
+                for old, new in pairs:
+                    text = re.sub(old, new, text)
+                out.write_text(text)
+            else:
+                patched(cmd / f"{name}.c", out, pairs)
+            work = out
+        obj = BUILD / f"aspera-{name}.o"
+        compile_file(work, obj, ("-DIOUNIT=32768",))
+        link(name, [obj], libs)
+    print("Built srvfs/ramfs/mntgen")
+
+
+def build_mk() -> None:
+    mk_dir = NINEFRONT / "sys/src/cmd/mk"
+    names = ("arc", "archive", "bufblock", "env", "file", "graph", "job",
+             "lex", "main", "match", "mk", "parse", "rc", "recipe", "rule",
+             "run", "shprint", "symtab", "var", "varsub", "word", "plan9")
+    objects = []
+    for name in names:
+        work = BUILD / f"mk-{name}.patched.c"
+        text = (mk_dir / f"{name}.c").read_text()
+        text = re.sub(r"getcallerpc\(&[A-Za-z_]+?\)", "getcallerpc()", text)
+        text = text.replace("time((long *)0)", "time(nil)")
+        text = text.replace("time(&t);", "{ i32 tt; time(&tt); t = tt; }")
+        work.write_text(text)
+        obj = BUILD / f"aspera-mk-{name}.o"
+        compile_file(work, obj, ("-DIOUNIT=32768", f"-I{mk_dir}"))
+        objects.append(obj)
+    link("mk", objects, ("libbio.a", "libregexp.a"))
+    print("Built mk")
+
+
+def build_sam() -> None:
+    sam_dir = NINEFRONT / "sys/src/cmd/sam"
+    work = BUILD / "aspera-sam-build"
+    work.mkdir(parents=True, exist_ok=True)
+    for path in sam_dir.iterdir():
+        if path.suffix in (".c", ".h"):
+            shutil.copy2(path, work / path.name)
+    for path in work.glob("*.c"):
+        text = path.read_text()
+        text = re.sub(r"getcallerpc\(&[A-Za-z_]+?\)", "getcallerpc()", text)
+        text = text.replace('Rune\tsamname[] = L"~~sam~~";',
+                            "Rune\tsamname[] = {'~','~','s','a','m','~','~',0};")
+        text = text.replace('L"{[(<«"', '(Rune*)L"{[(<«"')
+        text = text.replace('L"}])>»"', '(Rune*)L"}])>»"')
+        text = text.replace('L"\\n"', '(Rune*)L"\\n"')
+        text = text.replace('L"\'\\"`"', '(Rune*)L"\'\\"`"')
+        path.write_text(text)
+    objects = []
+    for name in ("sam", "address", "buff", "cmd", "disk", "error", "file",
+                 "io", "list", "mesg", "moveto", "multi", "plan9", "rasp",
+                 "regexp", "shell", "string", "sys", "util", "xec"):
+        obj = work / f"{name}.o"
+        subprocess.run(["gcc", *GCCFLAGS, f"-I{work}",
+                        str(work / f"{name}.c"), "-o", str(obj)], check=True)
+        objects.append(obj)
+    link("sam", objects, ("libplumb.a", "libbio.a", "libregexp.a"))
+    print("Built sam")
+
+
+def build_core9_more3() -> None:
+    cmd = NINEFRONT / "sys/src/cmd"
+    if not cmd.is_dir():
+        return
+
+    def one(name: str, libs=()) -> None:
+        src = cmd / f"{name}.c"
+        work = src
+        if name in ("patch", "yacc", "ed"):
+            work = BUILD / f"{name}.patched.c"
+            text = src.read_text()
+            text = re.sub(r"getcallerpc\(&[A-Za-z_]+?\)", "getcallerpc()", text)
+            work.write_text(text)
+        obj = BUILD / f"aspera-{name}.o"
+        compile_file(work, obj, ("-DIOUNIT=32768",))
+        link(name, [obj], libs)
+
+    for name in CORE9_MORE3_PLAIN:
+        one(name)
+    for name in CORE9_MORE3_BIO:
+        one(name, ("libbio.a",))
+    for name in CORE9_MORE3_RE:
+        one(name, ("libbio.a", "libregexp.a"))
+    build_gzip()
+    build_thread_services()
+    build_mk()
+    build_sam()
+    print("Built third-tier core tools")
+
+
 def main() -> None:
     BUILD.mkdir(parents=True, exist_ok=True)
     build_rc()
@@ -281,6 +423,7 @@ def main() -> None:
         build_simple(name)
     build_core9()
     build_core9_more2()
+    build_core9_more3()
     print("Built native Aspera rc, ls, cat, test, echo, and sleep")
 
 
