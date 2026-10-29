@@ -112,3 +112,34 @@ value for this revision and worth keeping.
 The driver is therefore left at: probe/MDIO/PHY identity, DMA rings and
 a verified 10 Mbps TX/RX path.  1 Gbps on v1.1 should be treated as
 unproven at best, and a hardware limitation at worst.
+
+
+## What Linux does for v1.1
+
+Mainline carries two device trees, and the difference is exactly the
+hardware change:
+
+| | v1.1 | v2.1 |
+| --- | --- | --- |
+| PHY IO domain (`vccio5`) | `vcc_3v3` (3.3 V) | `vccio_phy1` (1.8 V) |
+| PHY reset | `gpio3 RK_PC2` | `gpio4 RK_PC4` |
+| MDIO address | 1 | 1 |
+
+The shared `rk3566-orangepi-3b.dtsi` sets `phy-mode = "rgmii-id"` and
+no `tx_delay`/`rx_delay`, but `dwmac-rk` then defaults those to
+`0x30`/`0x10` anyway, so Linux ends up with **both** the MAC delays and
+the PHY delays enabled.  We reproduced that exact combination
+(mode 3) and it still does not put frames on the wire on this unit at
+1 Gbps, while the same code at 10 Mbps does.
+
+So software support for v1.1 exists and is not the missing piece here:
+the DietPi maintainer fixed a device-tree bug, and the remaining
+reports are described as a hardware failure that "appears after a
+while" on v1.1, with only workarounds (force 100 Mbps, `ethtool -s
+eth0 advertise 0x0f`, reflash the SPI bootloader).  Our unit behaves
+like that: it links at 1 Gbps but passes no traffic, in U-Boot and in
+this driver alike.
+
+The one experiment left that would settle it is booting the official
+Orange Pi vendor image (or a full mainline distro, not the initramfs)
+on this unit and testing 1 Gbps there.

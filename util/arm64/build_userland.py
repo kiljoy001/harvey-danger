@@ -34,6 +34,7 @@ RTC_BASE = 0x3E00000
 EMMC_BASE = 0x5200000
 EMMCFS_BASE = 0x4600000
 GMAC_BASE = 0x4A00000
+GMACFS_BASE = 0x7A00000
 O9DISPLAY_BASE = 0x3A00000
 DISPLAYTEST_BASE = 0x4200000
 O9ASPERA_SCREEN_BASE = 0x4E00000
@@ -288,6 +289,58 @@ SECTIONS {{
     return image, entry
 
 
+def build_gmacfs(out: Path, libc: Path) -> tuple[bytes, int]:
+    """The GMAC driver core plus its 9P service, linked with lib9p."""
+    o9 = ROOT / "build/arm64-o9"
+    flags = [
+        CC, "--target=aarch64-none-elf", "-ffreestanding", "-fno-builtin",
+        "-fno-stack-protector", "-fno-vectorize", "-fno-slp-vectorize",
+        "-mstrict-align", "-fsigned-char", "-fcommon", "-O2",
+        "-I", str(ROOT / "aarch64/include"),
+        "-I", str(ROOT / "sys/include"),
+    ]
+    objects = []
+    for name, source, defines in (
+            ("gmacfs-driver", ROOT / "sys/src/cmd/gmac/gmac.c",
+             ["-DGMACFS_LIB"]),
+            ("gmacfs", ROOT / "sys/src/cmd/gmacfs/gmacfs.c", [])):
+        obj = out / f"{name}.o"
+        subprocess.run([*flags, *defines, "-c", str(source), "-o", str(obj)],
+                       check=True)
+        objects.append(obj)
+    script = out / "gmacfs.ld"
+    elf = out / "gmacfs"
+    script.write_text(f'''ENTRY(_main)
+PHDRS {{
+  text PT_LOAD FLAGS(5);
+  data PT_LOAD FLAGS(6);
+}}
+SECTIONS {{
+  . = 0x{GMACFS_BASE:x};
+  .text : {{ *(.text .text.*) *(.rodata .rodata.*) }} :text
+  . = ALIGN(0x{BIG_PAGE:x});
+  .data : {{ *(.data .data.*) *(.sdata .sdata.*) *(.got .got.*) }} :data
+  .bss : {{ *(.bss .bss.*) *(.sbss .sbss.*) COMMON }} :data
+  PROVIDE(end = .);
+  /DISCARD/ : {{ *(.comment) *(.note*) }}
+}}
+''')
+    subprocess.run([
+        LD, "-static", "-z", "max-page-size=4096", "-T", str(script),
+        "--allow-multiple-definition", "--defsym=threadmain=main",
+        "-e", "_main", "-u", "_main", *map(str, objects),
+        "--start-group",
+        str(o9 / "lib9p.a"), str(o9 / "libthread.a"), str(o9 / "libauth.a"),
+        str(o9 / "libauthsrv.a"), str(o9 / "libsec.a"), str(o9 / "libndb.a"),
+        str(o9 / "libbio.a"), str(libc),
+        "--end-group", "-o", str(elf),
+    ], check=True)
+    image, entry = validate_elf(elf, GMACFS_BASE)
+    if symbol_value(elf, "_main") != entry:
+        raise RuntimeError("gmacfs entry does not name _main")
+    return image, entry
+
+
 def build_usbpower(out: Path, libc: Path) -> tuple[bytes, int]:
     if os.environ.get("ARM64_NO_USBPOWER") == "1":
         # Isolation build: satisfy drvman without touching PMU/CRU, so the
@@ -418,9 +471,10 @@ def main() -> None:
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--archive", type=Path)
     args = parser.parse_args()
-    subprocess.run([sys.executable,
-                    str(ROOT / "util/arm64/build_o9_services.py")],
-                   check=True, stdout=subprocess.DEVNULL)
+    if os.environ.get("ARM64_SKIP_O9") != "1":
+        subprocess.run([sys.executable,
+                        str(ROOT / "util/arm64/build_o9_services.py")],
+                       check=True, stdout=subprocess.DEVNULL)
     out = args.output.parent / "userland"
     stamp = args.output.parent / "userland.sig"
     sig = userland_signature()
@@ -599,6 +653,32 @@ fail:
 	return -1;
 }
 
+static int
+gmactest(void)
+{
+	char ctl[256];
+	int fd, m;
+
+	fd = open("/srv/gmac", OREAD);
+	if(fd < 0)
+		return -1;
+	create("/mnt/gmac", OREAD, DMDIR|0755);
+	if(mount(fd, -1, "/mnt/gmac", MREPL|MCREATE, "") < 0){
+		close(fd);
+		return -1;
+	}
+	close(fd);
+	fd = open("/mnt/gmac/ctl", OREAD);
+	if(fd < 0)
+		return -1;
+	m = read(fd, ctl, sizeof ctl - 1);
+	close(fd);
+	if(m <= 0)
+		return -1;
+	ctl[m] = 0;
+	return strstr(ctl, "gmac rk3566") != nil ? 0 : -1;
+}
+
 void
 main(int argc, char **argv)
 {
@@ -692,6 +772,21 @@ main(int argc, char **argv)
 			say("HARVEY-ARM64 EMMCFS FAIL\n");
 	}
 	{
+		char *gmacfsargv[] = { "/boot/gmacfs", "gmacfs", nil };
+		pid = rfork(RFPROC|RFNOWAIT|RFFDG|RFNAMEG|RFENVG|RFREND|RFNOTEG);
+		if(pid == 0){
+			exec(gmacfsargv[0], gmacfsargv);
+			say("HARVEY-ARM64 GMACFS EXEC FAIL\n");
+			_exits("exec");
+		}
+		if(pid < 0 || waitfor("/srv/gmac", 150) < 0)
+			say("HARVEY-ARM64 GMACFS FAIL\n");
+		else if(gmactest() == 0)
+			say("HARVEY-ARM64 GMACFS PASS\n");
+		else
+			say("HARVEY-ARM64 GMACFS FAIL\n");
+	}
+	{
 		char *dispargv[] = { "/boot/o9display", nil };
 		pid = rfork(RFPROC|RFNOWAIT|RFFDG|RFENVG|RFREND|RFNOTEG);
 		if(pid == 0){
@@ -741,6 +836,7 @@ main(int argc, char **argv)
     drvman, _ = build_drvman(out, libc)
     i2cfs, _ = build_i2cfs(out, libc)
     emmcfs, _ = build_emmcfs(out, libc)
+    gmacfs, _ = build_gmacfs(out, libc)
     usbpower, _ = build_usbpower(out, libc)
     rc, rc_entry = build_rc(out, libc)
     echo, _ = build_program(out, "echo", r'''#include <u.h>
@@ -1182,6 +1278,7 @@ main(int argc, char **argv)
     emit_array(lines, "arm64drvmanelf", drvman)
     emit_array(lines, "arm64i2cfself", i2cfs)
     emit_array(lines, "arm64emmcfsimage", emmcfs)
+    emit_array(lines, "arm64gmacfsimage", gmacfs)
     emit_array(lines, "arm64usbpowerelf", usbpower)
     emit_array(lines, "arm64rcelf", rc)
     emit_array(lines, "arm64echoelf", echo)
@@ -1207,6 +1304,7 @@ main(int argc, char **argv)
         "drvman": drvman,
         "i2cfs": i2cfs,
         "emmcfs": emmcfs,
+        "gmacfs": gmacfs,
         "usbpower": usbpower,
         "rc": rc,
         "echo": echo,

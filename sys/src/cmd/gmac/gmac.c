@@ -17,6 +17,8 @@
 enum {
 	/* dwmac4 MAC registers */
 	GmacConfig	= 0x000,
+	GmacAddr0High	= 0x300,
+	GmacAddr0Low	= 0x304,
 	GmacFilt	= 0x008,
 	GmacIntEn	= 0x0b4,
 	GmacFeature0	= 0x11c,
@@ -67,14 +69,14 @@ enum {
 	/* descriptor rings */
 	DescSize	= 16,
 	TxRing		= 8,
-	RxRing		= 8,
+	RxRing		= 32,
 	BufSize		= 2048,
 
 	TxDescOff	= 0x000,
 	RxDescOff	= 0x100,
 	TxBufOff	= 0x200,
 	RxBufOff	= 0x1000,
-	DmaSize		= 0x8000,
+	DmaSize		= 0x20000,
 
 	/* MAC_CONFIG bits */
 	CfgRe		= 1<<0,
@@ -337,8 +339,8 @@ setrgmii(void)
 			v |= (1<<0) | (1<<1);
 	}
 	gwr(Gmac1Con1, v);
-	if(macdelay == 2){
-		/* tx_delay 0x30, rx_delay 0x10 from the vendor DTS */
+	if(macdelay == 2 || macdelay == 3){
+		/* tx_delay 0x30, rx_delay 0x10 (vendor DTS / Linux default) */
 		gwr(Gmac1Con0, 0x30 | (0x7fu<<16) | (0x10u<<8) | (0x7fu<<24));
 	}
 	if(txdelay >= 0 || rxdelay >= 0){
@@ -495,7 +497,8 @@ scanphy(int aneg, int initfirst)
 	if(found < 0)
 		return -1;
 	if(initfirst)
-		phyinit8531(found, macdelay == 0);	/* MAC delays off -> PHY */
+		/* mode 3 is what Linux ends up with: MAC and PHY delays both on */
+		phyinit8531(found, macdelay == 0 || macdelay == 3);
 	bmcr = mdio(found, MiiBmcr, 0, 0);
 	if(aneg)
 		mdio(found, MiiBmcr, bmcr | (1<<9), 1);	/* restart autoneg */
@@ -584,8 +587,9 @@ dmacfg(void)
 	wr32(DmaCh0TxBase, txcpa);
 	wr32(DmaCh0RxBaseHi, 0);
 	wr32(DmaCh0RxBase, rxcpa);
-	wr32(DmaCh0TxRingLen, TxRing);
-	wr32(DmaCh0RxRingLen, RxRing);
+	/* the ring-length register holds the last index, not the count */
+	wr32(DmaCh0TxRingLen, TxRing - 1);
+	wr32(DmaCh0RxRingLen, RxRing - 1);
 	wr32(DmaCh0TxTail, txcpa);
 	wr32(DmaCh0RxTail, rxcpa + RxRing*DescSize);
 
@@ -714,6 +718,80 @@ arpreq(u8 *f, uchar *src, u32 sip, u32 tip)
 	return 42;
 }
 
+/*
+ * Library entry points for gmacfs.  The CLI below is not built when
+ * GMACFS_LIB is defined.
+ */
+static uchar gmacmac[6] = { 0x02, 0x48, 0x41, 0x52, 0x56, 0x45 };
+
+/*
+ * Bring the MAC up for service.  The PHY is deliberately not reset: on
+ * a v1.1 board any reset loses the state that makes the PHY pass
+ * traffic, and the bootloader has already initialised it.  The link is
+ * forced to 10 Mbps, the only speed this board works at.
+ */
+int
+gmacinit(void)
+{
+	int phy, st, i;
+
+	mmio = mapnode("ethernet@fe010000", 0xfe010000);
+	grf = mapnode("syscon@fdc60000", 0xfdc60000);
+	cru = mapnode("clock-controller@fdd20000", 0xfdd20000);
+	setrgmii();
+	phy = findphy();
+	if(phy < 0)
+		return -1;
+	macphy = phy;
+	st = mdio(phy, 0x11, 0, 0);
+	if(st < 0 || !(st & (1<<10)) || ((st>>14) & 3) != 0){
+		/* advertise 10 Mbps full duplex and renegotiate */
+		mdio(phy, 0x9, 0, 1);
+		mdio(phy, 0x4, 0x0061, 1);
+		mdio(phy, MiiBmcr, 0x1200, 1);
+		for(i = 0; i < 50; i++){
+			st = mdio(phy, 0x11, 0, 0);
+			if(st > 0 && (st & (1<<10)))
+				break;
+			sleep(100);
+		}
+		sleep(5000);	/* the switch blocks the port after a re-link */
+	}
+	speed = 10;
+	setspeed(speed);
+	dmainit();
+	dmacfg();
+	wr32(GmacAddr0High, (gmacmac[5]<<8) | gmacmac[4]);
+	wr32(GmacAddr0Low, (gmacmac[3]<<24) | (gmacmac[2]<<16) |
+	     (gmacmac[1]<<8) | gmacmac[0]);
+	return 0;
+}
+
+int
+gmactx(void *frame, int len)
+{
+	return txframe(frame, len);
+}
+
+int
+gmacrx(void *buf, int max)
+{
+	return rxpoll(buf, max);
+}
+
+uchar *
+gmacaddr(void)
+{
+	return gmacmac;
+}
+
+int
+gmaclink(void)
+{
+	return speed;
+}
+
+#ifndef GMACFS_LIB
 void
 main(int argc, char **argv)
 {
@@ -978,3 +1056,4 @@ main(int argc, char **argv)
 	}
 	exits(nil);
 }
+#endif
