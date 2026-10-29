@@ -10,7 +10,7 @@
 extern Dev rootdevtab, consdevtab, envdevtab, pipedevtab, procdevtab;
 extern Dev mntdevtab, srvdevtab, dupdevtab, capdevtab, segmentdevtab;
 extern Dev ramdevtab, ringdevtab, virtio9pdevtab, pnpdevtab;
-extern Dev etherdevtab;
+extern Dev etherdevtab, ipdevtab;
 extern Dev vopdevtab, xhcidevtab;
 
 Dev *devtab[] = {
@@ -18,12 +18,33 @@ Dev *devtab[] = {
 	&procdevtab, &mntdevtab, &srvdevtab, &dupdevtab,
 	&capdevtab, &segmentdevtab, &ramdevtab, &ringdevtab,
 	&virtio9pdevtab, &pnpdevtab, &vopdevtab, &xhcidevtab,
-	&etherdevtab,
+	&etherdevtab, &ipdevtab,
 	nil,
 };
 
-/* The shared port objects still refer to these registration tables. */
-void (*ipprotoinit[])(Fs *) = { nil };
+/* Protocol initialisation order for the kernel IP stack. */
+extern void tcpinit(Fs*);
+extern void udpinit(Fs*);
+extern void rudpinit(Fs*);
+extern void ipifcinit(Fs*);
+extern void icmpinit(Fs*);
+extern void icmp6init(Fs*);
+extern void greinit(Fs*);
+extern void ipmuxinit(Fs*);
+extern void ilinit(Fs*);
+
+void (*ipprotoinit[])(Fs *) = {
+	tcpinit,
+	udpinit,
+	rudpinit,
+	ipifcinit,
+	icmpinit,
+	icmp6init,
+	greinit,
+	ipmuxinit,
+	ilinit,
+	nil,
+};
 SDifc *sdifc[] = { nil };
 PhysUart *physuart[] = { nil };
 

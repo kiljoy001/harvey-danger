@@ -635,6 +635,7 @@ extern int isv4(u8 *);
 extern void v4tov6(u8 *v6, u8 *v4);
 extern int v6tov4(u8 *v4, u8 *v6);
 extern int eipfmt(Fmt *);
+extern char *maskstr(char *, int, u8 *, u8 *);
 
 #define ipmove(x, y) memmove(x, y, IPaddrlen)
 #define ipcmp(x, y) ((x)[IPaddrlen - 1] != (y)[IPaddrlen - 1] || memcmp(x, y, IPaddrlen))

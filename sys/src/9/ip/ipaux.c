@@ -365,3 +365,18 @@ iphtlook(Ipht *ht, u8 *sa, u16 sp, u8 *da, u16 dp)
 	unlock(&ht->l);
 	return nil;
 }
+
+/*
+ * Format a mask for display.  v4 masks are stored v4-mapped with the
+ * 96-bit prefix set (see parseipmask/convroute); printing those with %M
+ * would describe them as long v6 prefixes.
+ */
+char*
+maskstr(char *buf, int n, u8 *local, u8 *mask)
+{
+	if(isv4(local))
+		snprint(buf, n, "%d.%d.%d.%d", mask[12], mask[13], mask[14], mask[15]);
+	else
+		snprint(buf, n, "%M", mask);
+	return buf;
+}

@@ -623,7 +623,7 @@ routetype(int type, char *p)
 		*p = 'p';
 }
 
-static char *rformat = "%-15I %-4M %-15I %4.4s %4.4s %3s\n";
+static char *rformat = "%-15I %-15s %-15I %4.4s %4.4s %3s\n";
 
 void
 convroute(Route *r, u8 *addr, u8 *mask, u8 *gate, char *t, int *nifc)
@@ -660,7 +660,7 @@ static void
 sprintroute(Route *r, Routewalk *rw)
 {
 	int nifc, n;
-	char t[5], *iname, ifbuf[5];
+	char t[5], *iname, ifbuf[5], mbuf[64];
 	u8 addr[IPaddrlen], mask[IPaddrlen], gate[IPaddrlen];
 	char *p;
 
@@ -670,7 +670,9 @@ sprintroute(Route *r, Routewalk *rw)
 		iname = ifbuf;
 		snprint(ifbuf, sizeof ifbuf, "%d", nifc);
 	}
-	p = seprint(rw->p, rw->e, rformat, addr, mask, gate, t, r->RouteTree.tag, iname);
+	p = seprint(rw->p, rw->e, rformat, addr,
+		    maskstr(mbuf, sizeof mbuf, addr, mask), gate, t,
+		    r->RouteTree.tag, iname);
 	if(rw->o < 0){
 		n = p - rw->p;
 		if(n > -rw->o){
@@ -800,7 +802,7 @@ static void
 printroute(Route *r)
 {
 	int nifc;
-	char t[5], *iname, ifbuf[5];
+	char t[5], *iname, ifbuf[5], mbuf[64];
 	u8 addr[IPaddrlen], mask[IPaddrlen], gate[IPaddrlen];
 
 	convroute(r, addr, mask, gate, t, &nifc);
@@ -809,7 +811,8 @@ printroute(Route *r)
 		iname = ifbuf;
 		snprint(ifbuf, sizeof ifbuf, "%d", nifc);
 	}
-	print(rformat, addr, mask, gate, t, r->RouteTree.tag, iname);
+	print(rformat, addr, maskstr(mbuf, sizeof mbuf, addr, mask), gate, t,
+	      r->RouteTree.tag, iname);
 }
 
 i32

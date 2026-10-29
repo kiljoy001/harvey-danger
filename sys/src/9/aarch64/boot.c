@@ -73,8 +73,9 @@ extern void arm64clockready(void);
 extern void arm64virtio9pconfigure(Fdtinfo *);
 extern void arm64pnpinit(Fdtinfo *);
 extern u64 arm64dmabase, arm64dmasize;
-extern Dev etherdevtab;
+extern Dev etherdevtab, ipdevtab;
 extern void ethergmacinit(void);
+extern void ethermediumlink(void);
 extern Dev rootdevtab;
 extern Dev virtio9pdevtab;
 extern Dev ringdevtab;
@@ -270,7 +271,9 @@ initprocess(void *arg)
 	devtabinit();
 	consoleuartinit(bootinfo);
 	ethergmacinit();
+	ethermediumlink();
 	etherdevtab.reset();
+	ipdevtab.reset();
 	kproc("alarm", alarmkproc, nil);
 	arm64uartputs("HARVEY-ARM64 FILE-EXEC START\n");
 	arm64runprocessargs(ARM64EXECSTUBENTRY, USTKTOP-512,

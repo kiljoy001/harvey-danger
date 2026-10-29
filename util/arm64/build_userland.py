@@ -653,32 +653,6 @@ fail:
 	return -1;
 }
 
-static int
-gmactest(void)
-{
-	char ctl[256];
-	int fd, m;
-
-	fd = open("/srv/gmac", OREAD);
-	if(fd < 0)
-		return -1;
-	create("/mnt/gmac", OREAD, DMDIR|0755);
-	if(mount(fd, -1, "/mnt/gmac", MREPL|MCREATE, "") < 0){
-		close(fd);
-		return -1;
-	}
-	close(fd);
-	fd = open("/mnt/gmac/ctl", OREAD);
-	if(fd < 0)
-		return -1;
-	m = read(fd, ctl, sizeof ctl - 1);
-	close(fd);
-	if(m <= 0)
-		return -1;
-	ctl[m] = 0;
-	return strstr(ctl, "gmac rk3566") != nil ? 0 : -1;
-}
-
 void
 main(int argc, char **argv)
 {
@@ -772,21 +746,6 @@ main(int argc, char **argv)
 			say("HARVEY-ARM64 EMMCFS FAIL\n");
 	}
 	{
-		char *gmacfsargv[] = { "/boot/gmacfs", "gmacfs", nil };
-		pid = rfork(RFPROC|RFNOWAIT|RFFDG|RFNAMEG|RFENVG|RFREND|RFNOTEG);
-		if(pid == 0){
-			exec(gmacfsargv[0], gmacfsargv);
-			say("HARVEY-ARM64 GMACFS EXEC FAIL\n");
-			_exits("exec");
-		}
-		if(pid < 0 || waitfor("/srv/gmac", 150) < 0)
-			say("HARVEY-ARM64 GMACFS FAIL\n");
-		else if(gmactest() == 0)
-			say("HARVEY-ARM64 GMACFS PASS\n");
-		else
-			say("HARVEY-ARM64 GMACFS FAIL\n");
-	}
-	{
 		char *dispargv[] = { "/boot/o9display", nil };
 		pid = rfork(RFPROC|RFNOWAIT|RFFDG|RFENVG|RFREND|RFNOTEG);
 		if(pid == 0){
@@ -798,6 +757,123 @@ main(int argc, char **argv)
 			say("HARVEY-ARM64 DISPLAY-SERVICE FAIL\n");
 		else
 			say("HARVEY-ARM64 DISPLAY-SERVICE LAUNCHED\n");
+	}
+	{
+		char ctl[256];
+		int fd, m;
+
+		char msg[96];
+
+		create("/net", OREAD, DMDIR|0755);
+		/*
+		 * Attach the ip device once before binding: the first
+		 * bind on a cold device fails inside namec on this kernel.
+		 */
+		if((fd = open("#I", OREAD)) < 0){
+			snprint(msg, sizeof msg, "HARVEY-ARM64 NET-IP FAIL %r\n");
+			say(msg);
+		}else
+			close(fd);
+		if(bind("#I0", "/net", MREPL|MCREATE) < 0){
+			snprint(msg, sizeof msg, "HARVEY-ARM64 NET-IP FAIL %r\n");
+			say(msg);
+		}else if(bind("#l", "/net", MAFTER|MCREATE) < 0){
+			snprint(msg, sizeof msg, "HARVEY-ARM64 NET-ETH FAIL %r\n");
+			say(msg);
+		}else if((fd = open("/net/ether0/addr", OREAD)) < 0)
+			say("HARVEY-ARM64 NET-BIND FAIL\n");
+		else{
+			m = read(fd, ctl, sizeof ctl - 1);
+			close(fd);
+			if(m > 0){
+				ctl[m] = 0;
+				say("HARVEY-ARM64 NET-BIND PASS\n");
+			}else
+				say("HARVEY-ARM64 NET-BIND FAIL\n");
+		}
+	}
+	{
+		char buf[256];
+		int fd, m, ok;
+
+		ok = 1;
+		if((fd = open("/net/ipifc/clone", ORDWR)) < 0){
+			snprint(buf, sizeof buf, "HARVEY-ARM64 NET-IFC FAIL open %r\n");
+			say(buf);
+			ok = 0;
+		}else{
+			if(read(fd, buf, sizeof buf - 1) < 0){
+				snprint(buf, sizeof buf, "HARVEY-ARM64 NET-IFC FAIL clone %r\n");
+				say(buf);
+				ok = 0;
+			}
+			if(ok && write(fd, "bind ether /net/ether0", 22) < 0){
+				snprint(buf, sizeof buf, "HARVEY-ARM64 NET-IFC FAIL bind %r\n");
+				say(buf);
+				ok = 0;
+			}
+			if(ok && write(fd, "add 192.168.2.248 255.255.255.0", 31) < 0){
+				snprint(buf, sizeof buf, "HARVEY-ARM64 NET-IFC FAIL add %r\n");
+				say(buf);
+				ok = 0;
+			}
+			close(fd);
+		}
+		if(ok){
+			if((fd = open("/net/ipifc/0/status", OREAD)) < 0)
+				say("HARVEY-ARM64 NET-IFC FAIL status\n");
+			else{
+				m = read(fd, buf, sizeof buf - 1);
+				close(fd);
+				if(m > 0){
+					buf[m] = 0;
+					say("HARVEY-ARM64 NET-IFC PASS\n");
+				}else
+					say("HARVEY-ARM64 NET-IFC FAIL status\n");
+			}
+		}
+	}
+	/* Board-initiated ICMP echo: proves route lookup, ARP and TX.  The
+	 * probe runs in a child so a lost reply cannot stop init. */
+	pid = rfork(RFPROC|RFFDG|RFNOTEG);
+	if(pid == 0){
+		char path[64], num[32], msg[128];
+		int cfd, dfd, n;
+		uchar pkt[28];
+
+		memset(pkt, 0, sizeof pkt);
+		pkt[20] = 8;			/* EchoRequest after the IP header */
+		pkt[24] = 0x48;
+		pkt[25] = 0x41;			/* identifier */
+		pkt[27] = 1;			/* sequence */
+
+		if((cfd = open("/net/icmp/clone", ORDWR)) < 0)
+			say("HARVEY-ARM64 NET-PING FAIL clone\n");
+		else{
+			n = read(cfd, num, sizeof num - 1);
+			if(n <= 0 || write(cfd, "connect 192.168.2.1!1", 21) < 0){
+				snprint(msg, sizeof msg, "HARVEY-ARM64 NET-PING FAIL connect %r\n");
+				say(msg);
+			}
+			else{
+				num[n] = 0;
+				snprint(path, sizeof path, "/net/icmp/%s/data", num);
+				if((dfd = open(path, ORDWR)) < 0){
+					snprint(msg, sizeof msg, "HARVEY-ARM64 NET-PING FAIL open %r\n");
+					say(msg);
+				}else{
+					if(write(dfd, pkt, sizeof pkt) != sizeof pkt)
+						say("HARVEY-ARM64 NET-PING FAIL write\n");
+					else if(read(dfd, msg, sizeof msg) <= 0)
+						say("HARVEY-ARM64 NET-PING FAIL read\n");
+					else
+						say("HARVEY-ARM64 NET-PING PASS\n");
+					close(dfd);
+				}
+			}
+			close(cfd);
+		}
+		_exits("ping");
 	}
 	{
 		char *rcargv[] = { "/boot/rc", "-i", "-m", "/boot/rcmain", nil };

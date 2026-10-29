@@ -229,7 +229,7 @@ char sfixedformat[] = "device %s maxtu %d sendra %d recvra %d mflag %d oflag"
 		      " %d maxraint %d minraint %d linkmtu %d reachtime %d rxmitra %d ttl %d routerlt"
 		      " %d pktin %lu pktout %lu errin %lu errout %lu\n";
 
-char slineformat[] = "	%-40I %-10M %-40I %-12lu %-12lu\n";
+char slineformat[] = "	%-40I %-10s %-40I %-12lu %-12lu\n";
 
 static int
 ipifcstate(Conv *c, char *state, int n)
@@ -247,9 +247,13 @@ ipifcstate(Conv *c, char *state, int n)
 		    ifc->in, ifc->out, ifc->inerr, ifc->outerr);
 
 	rlock(&ifc->rwl);
-	for(lifc = ifc->lifc; lifc && n > m; lifc = lifc->next)
+	for(lifc = ifc->lifc; lifc && n > m; lifc = lifc->next){
+		char mbuf[64];
+
 		m += snprint(state + m, n - m, slineformat, lifc->local,
-			     lifc->mask, lifc->remote, lifc->validlt, lifc->preflt);
+			     maskstr(mbuf, sizeof mbuf, lifc->local, lifc->mask),
+			     lifc->remote, lifc->validlt, lifc->preflt);
+	}
 	if(ifc->lifc == nil)
 		m += snprint(state + m, n - m, "\n");
 	runlock(&ifc->rwl);

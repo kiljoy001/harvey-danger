@@ -478,8 +478,12 @@ sendarp(Ipifc *ifc, Arpent *a)
 	Etherarp *e;
 	Etherrock *er = ifc->arg;
 
-	/* don't do anything if it's been less than a second since the last */
-	if(NOW - a->ctime < 1000){
+	/*
+	 * Don't do anything if it's been less than a second since the last
+	 * request.  ctime is zero on a fresh entry: sending must happen or
+	 * the packet is lost, since v4 entries are not on a retransmit queue.
+	 */
+	if(a->ctime != 0 && NOW - a->ctime < 1000){
 		arprelease(er->f->arp, a);
 		return;
 	}

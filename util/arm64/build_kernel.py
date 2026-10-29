@@ -178,6 +178,7 @@ def main() -> None:
         "devmnt.c", "devpipe.c", "devproc.c", "devramfs.c",
         "devroot.c", "devsegment.c", "devsrv.c", "devtab.c",
     }
+    sources.extend(manifest_sources("ip"))
     sources.extend(source for source in manifest_sources("port")
                    if not source.name.startswith("dev") or source.name in core_devices)
     sources.append(ROOT / "sys/src/9/port/devether.c")
