@@ -309,7 +309,7 @@ gmacproc(void *arg)
 	USED(arg);
 	for(;;){
 		gmacpoll();
-		tsleep(&r, return0, nil, 10);
+		tsleep(&r, return0, nil, 1);
 	}
 }
 

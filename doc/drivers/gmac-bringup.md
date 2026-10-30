@@ -148,22 +148,22 @@ on this unit and testing 1 Gbps there.
 ## Working 10 Mbps service
 
 `gmacfs` served `/srv/gmac` during bring-up (it is built but no longer
-started by init, see the last section):
+started by init, see the last section).  Its ARP and ICMP code is gone:
+it is now a raw-frame client.
 
 ```
 $ cat /mnt/gmac/ctl
 gmac rk3566
 link 10 mbps
 mac 02:48:41:52:56:45
-ip 192.168.2.248
-rx 166 tx 79 arp 9 icmp 70
+rx 166 tx 79
 dma 0000000e 00000445 rxcur ef811160 txcur ef811070
 ring ef811100 idx 6 desc c1000000 loops 11941 empty 11941
 ```
 
-and answers ping from the host (50/50, 0% loss).  `/data` carries raw
-frames; ARP and ICMP echo are handled in the service, with a gratuitous
-ARP at startup so hosts drop the bootloader's stale MAC binding.
+`/data` carries whole Ethernet frames: read returns the next received
+frame, write transmits one.  At 10 Mbps the service answered ping from
+the host with 50/50 replies while it still had the ARP/ICMP handlers.
 
 Three lessons came from the vendor/Armbian driver:
 
@@ -211,10 +211,29 @@ write "add 192.168.2.248 255.255.255.0"
 ```
 
 After that `cat /net/ipifc/0/status`, `/net/iproute`, `/net/arp` and
-`/net/ether0/{addr,stats,mtu}` all work, and a normal `ping` client can
-use `/net/icmp`.  Init sends one echo from the board to 192.168.2.1 in a
-child process; the `NET-PING PASS` line means route lookup, ARP and
-transmit all worked, and a ping from the LAN proves receive and reply.
+`/net/ether0/{addr,stats,mtu}` all work.  Init sends one echo from the
+board to 192.168.2.1 in a child process; the `NET-PING PASS` line means
+route lookup, ARP and transmit all worked, and a ping from the LAN
+proves receive and reply.
+
+`/boot/ping` is the client for day-to-day use:
+
+```
+% ping -n 4 192.168.2.1
+PING 192.168.2.1: 56 data bytes
+88 bytes from 192.168.2.1: seq 1 time 1.426 ms
+...
+4 packets transmitted, 4 received, 0% packet loss
+```
+
+It connects a `/net/icmp` conversation and writes 20-byte IP header +
+8-byte ICMP header + 56 bytes of data, letting the kernel fill in the
+addresses and checksum.  There is no `alarm()` to interrupt a blocked
+read on this kernel (notes are not delivered to user handlers, and
+`notejmp` is still a stub), so after each send it polls the `EchoReply`
+counter in `/net/icmp/stats` — tightly for the first few milliseconds,
+then with `sleep()` — and only reads the reply once the counter moves.
+That gives a working `-t timeout` without depending on signals.
 
 Two bugs surfaced while wiring this up:
 
@@ -231,6 +250,7 @@ Two bugs surfaced while wiring this up:
   and is used by the ipifc status line and the route table.
 
 `gmacfs` is no longer started by init: the kernel owns the card, and IP
-lives in `/net`.  The service is still built and can be run by hand if
-raw frame access with its own ARP/ICMP is wanted.
+lives in `/net`.  It is still built for raw-frame work, but refuses to
+start when `/net/ether0` exists (the kernel driver is running) unless
+given `-f`.
 

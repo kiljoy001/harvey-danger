@@ -31,6 +31,7 @@ ECHO_BASE = 0x2E00000
 CAT_BASE = 0x3200000
 LS_BASE = 0x3600000
 RTC_BASE = 0x3E00000
+PING_BASE = 0x8200000
 EMMC_BASE = 0x5200000
 EMMCFS_BASE = 0x4600000
 GMAC_BASE = 0x4A00000
@@ -1014,6 +1015,164 @@ main(int argc, char **argv)
 	exits(nil);
 }
 ''', LS_BASE, libc)
+    ping, _ = build_program(out, "ping", r'''#include <u.h>
+#include <libc.h>
+
+/*
+ * ping: ICMP echo through /net/icmp.
+ *
+ * The kernel does not deliver notes to user handlers here, so there is
+ * no alarm() to interrupt a blocked read.  Instead each echo is sent
+ * and the EchoReply counter in /net/icmp/stats is polled for a while;
+ * only when it moves is the reply read, which then cannot block.
+ */
+
+enum {
+	Iphsz	= 20,
+	Icmphsz	= 8,
+	Payload	= 56,
+	Pktsz	= Iphsz + Icmphsz + Payload,
+};
+
+static int statfd = -1;
+
+/* Input EchoReply count from /net/icmp/stats, or -1 if unavailable. */
+static int
+replies(void)
+{
+	char buf[4096], *p;
+	int n;
+
+	if(statfd < 0){
+		if((statfd = open("/net/icmp/stats", OREAD)) < 0)
+			return -1;
+	}
+	if(seek(statfd, 0, 0) < 0)
+		return -1;
+	n = read(statfd, buf, sizeof buf - 1);
+	if(n <= 0)
+		return -1;
+	buf[n] = 0;
+	if((p = strstr(buf, "EchoReply:")) == nil)
+		return -1;
+	return strtoul(p + 10, nil, 10);
+}
+
+static void
+usage(void)
+{
+	fprint(2, "usage: ping [-n count] [-i interval] [-t timeout] host\n");
+	exits("usage");
+}
+
+void
+main(int argc, char **argv)
+{
+	char host[256], num[32], path[64], pkt[Pktsz], buf[2048], *a;
+	int cfd, dfd, i, j, n, seq, sent, recv, count, interval, timeout;
+	int before, now;
+	uvlong t0, rtt;
+
+	count = 3;
+	interval = 1000;
+	timeout = 2000;
+	host[0] = 0;
+	for(i = 1; i < argc; i++){
+		a = argv[i];
+		if(a[0] == '-' && a[1] != 0){
+			if(i + 1 >= argc)
+				usage();
+			switch(a[1]){
+			case 'n': count = atoi(argv[++i]); break;
+			case 'i': interval = atoi(argv[++i]); break;
+			case 't': timeout = atoi(argv[++i]); break;
+			default: usage();
+			}
+			continue;
+		}
+		if(host[0] != 0)
+			usage();
+		snprint(host, sizeof host, "%s", a);
+	}
+	if(host[0] == 0 || count <= 0 || interval < 0 || timeout <= 0)
+		usage();
+
+	if((cfd = open("/net/icmp/clone", ORDWR)) < 0)
+		sysfatal("ping: clone: %r");
+	n = read(cfd, num, sizeof num - 1);
+	if(n <= 0)
+		sysfatal("ping: clone: %r");
+	num[n] = 0;
+	snprint(buf, sizeof buf, "connect %s!1", host);
+	if(write(cfd, buf, strlen(buf)) < 0)
+		sysfatal("ping: connect %s: %r", host);
+	snprint(path, sizeof path, "/net/icmp/%s/data", num);
+	if((dfd = open(path, ORDWR)) < 0)
+		sysfatal("ping: %s: %r", path);
+
+	print("PING %s: %d data bytes\n", host, Payload);
+	sent = recv = 0;
+	for(seq = 1; seq <= count; seq++){
+		memset(pkt, 0, sizeof pkt);
+		pkt[Iphsz] = 8;			/* EchoRequest */
+		pkt[Iphsz + 6] = (seq >> 8) & 0xff;
+		pkt[Iphsz + 7] = seq & 0xff;
+		for(j = 0; j < Payload; j++)
+			pkt[Iphsz + Icmphsz + j] = j;
+
+		before = replies();
+		t0 = nsec();
+		if(write(dfd, pkt, sizeof pkt) != sizeof pkt){
+			print("ping: write: %r\n");
+			break;
+		}
+		sent++;
+
+		if(before < 0){
+			/* stats unavailable: ride the reply queue directly */
+			n = read(dfd, buf, sizeof buf);
+			now = n > 0;
+		}else{
+			uvlong w0;
+
+			/*
+			 * sleep() rounds up to the clock tick (10 ms here),
+			 * which would show up as the round-trip time.  Poll
+			 * tightly for the first few milliseconds, then let
+			 * the scheduler take over.
+			 */
+			now = 0;
+			w0 = nsec();
+			for(;;){
+				if(replies() > before){
+					now = 1;
+					break;
+				}
+				if(nsec() - w0 >= (uvlong)timeout * 1000000)
+					break;
+				if(nsec() - w0 > 5000000)
+					sleep(1);
+			}
+			if(now)
+				n = read(dfd, buf, sizeof buf);
+		}
+
+		if(now && n > 0){
+			rtt = nsec() - t0;
+			recv++;
+			print("%d bytes from %s: seq %d time %llud.%03llud ms\n",
+			      n, host, seq, rtt / 1000000, (rtt / 1000) % 1000);
+		}else
+			print("ping: seq %d timeout\n", seq);
+
+		if(seq < count && interval > 0)
+			sleep(interval);
+	}
+	print("%d packets transmitted, %d received, %d%% packet loss\n",
+	      sent, recv, sent ? (sent - recv) * 100 / sent : 0);
+	exits(nil);
+}
+''', PING_BASE, libc)
     rtc, _ = build_program(out, "rtc", r'''#include <u.h>
 #include <libc.h>
 
@@ -1360,6 +1519,7 @@ main(int argc, char **argv)
     emit_array(lines, "arm64echoelf", echo)
     emit_array(lines, "arm64catelf", cat)
     emit_array(lines, "arm64lself", ls)
+    emit_array(lines, "arm64pingelf", ping)
     emit_array(lines, "arm64rtcelf", rtc)
     emit_array(lines, "arm64emmcelf", emmc)
     emit_array(lines, "arm64gmacelf", gmac)
@@ -1386,6 +1546,7 @@ main(int argc, char **argv)
         "echo": echo,
         "cat": cat,
         "ls": ls,
+        "ping": ping,
         "rtc": rtc,
         "emmc": emmc,
         "gmac": gmac,
