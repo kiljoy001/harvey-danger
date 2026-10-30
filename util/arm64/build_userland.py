@@ -32,6 +32,7 @@ CAT_BASE = 0x3200000
 LS_BASE = 0x3600000
 RTC_BASE = 0x3E00000
 PING_BASE = 0x8200000
+SDPROBE_BASE = 0x8600000
 EMMC_BASE = 0x5200000
 EMMCFS_BASE = 0x4600000
 GMAC_BASE = 0x4A00000
@@ -1354,6 +1355,8 @@ main(int argc, char **argv)
                         ROOT / "sys/src/cmd/emmc/emmc.c", EMMC_BASE, [])
     gmac, _ = build_elf(out, libc, "gmac",
                         ROOT / "sys/src/cmd/gmac/gmac.c", GMAC_BASE, [])
+    sdprobe, _ = build_elf(out, libc, "sdprobe",
+                           ROOT / "sys/src/cmd/sdio/sdprobe.c", SDPROBE_BASE, [])
     displaytest, _ = build_program(out, "displaytest", r'''#include <u.h>
 #include <libc.h>
 
@@ -1523,6 +1526,7 @@ main(int argc, char **argv)
     emit_array(lines, "arm64rtcelf", rtc)
     emit_array(lines, "arm64emmcelf", emmc)
     emit_array(lines, "arm64gmacelf", gmac)
+    emit_array(lines, "arm64sdprobeelf", sdprobe)
     emit_array(lines, "arm64displaytestelf", displaytest)
     emit_array(lines, "arm64rcmain", rcmain.encode())
     args.output.write_text("\n".join(lines))
@@ -1550,6 +1554,7 @@ main(int argc, char **argv)
         "rtc": rtc,
         "emmc": emmc,
         "gmac": gmac,
+        "sdprobe": sdprobe,
         "displaytest": displaytest,
         "rcmain": rcmain.encode(),
     }

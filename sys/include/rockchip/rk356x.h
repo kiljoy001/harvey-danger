@@ -80,10 +80,13 @@ enum {
 };
 
 /* Byte offset (from the owning GRF/PMUGRF base) of the iomux register
- * holding the mux field for the given bank and pin. */
+ * holding the mux field for the given bank and pin.  RK356x packs one
+ * bank into 0x20 bytes: group A..D L/H registers every 8 bytes.  The
+ * pull registers follow at 0x80 and the drive registers at 0x200, which
+ * is why banks 1..4 span 0x00-0x7f. */
 #define RK_IOMUX_REG(bank, pin) \
-	((((pin) / 8) * 0x10) + ((((pin) % 8) / 4) * 0x4) + \
-	 ((bank) == 0 ? 0 : ((bank) - 1) * 0x100))
+	((((pin) / 8) * 0x8) + ((((pin) % 8) / 4) * 0x4) + \
+	 ((bank) == 0 ? 0 : ((bank) - 1) * 0x20))
 
 /* Bit position of a pin's 4-bit mux field inside its iomux register. */
 #define RK_IOMUX_SHIFT(pin)	(((pin) % 4) * 4)
