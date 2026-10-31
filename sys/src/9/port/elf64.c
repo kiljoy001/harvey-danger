@@ -428,12 +428,9 @@ elf64ldseg(Chan *c, usize *entryp, Ldseg **rp, char *mach, u32 minpgsz)
 						error(Ebadexec);
 					}
 
-					/* this is so ridiculous. We can align the section, but we can't tell
-					 * gnu ld how to set the value of the alignment. What a pile of crap.
-					 * Just ignore it for now. */
 					if(align < minpgsz){
-						print("elf64ldseg: WARNING ONLY: align 0x%x < minpgsz 0x%x\n", align, minpgsz);
-						//error(Ebadexec);
+						print("elf64ldseg: align 0x%x < minpgsz 0x%x\n", align, minpgsz);
+						error(Ebadexec);
 					}
 
 					if((offset & (align - 1)) != (vaddr & (align - 1))){

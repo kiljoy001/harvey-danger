@@ -6,28 +6,10 @@ HARVEY="${HARVEY:-$(cd "$(dirname "$0")/.." && pwd)}"
 ARCH="${ARCH:-amd64}"
 UCC_REPO="${UCC_REPO:-$HARVEY/../ucc}"
 
-if [ -x "$UCC_REPO/ucc" ]; then
-    export HARVEY ARCH
-    exec "$UCC_REPO/ucc" "$@"
+if [ ! -x "$UCC_REPO/ucc" ]; then
+    echo "ucc: binary not found at $UCC_REPO/ucc, building..." >&2
+    (cd "$UCC_REPO" && make && gcc -O2 ucc.c -o ucc)
 fi
 
-TCC="${TCC:-$(command -v tcc || echo "$HARVEY/../tinycc/tcc")}"
-if [ ! -x "$TCC" ]; then
-    echo "ucc: cannot find ucc or tcc compiler" >&2
-    exit 1
-fi
-
-MAIN_OBJ="$HARVEY/build/libc/${ARCH}_main9.o"
-LIBC_A="$HARVEY/build/libc.a"
-
-if [ ! -f "$MAIN_OBJ" ] || [ ! -f "$LIBC_A" ]; then
-    echo "ucc: building Harvey libc first..."
-    python3 "$HARVEY/util/9vm/build_libc.py"
-fi
-
-exec "$TCC" -static -nostdlib -Wl,-e,_main \
-    -I"$HARVEY/$ARCH/include" \
-    -I"$HARVEY/sys/include" \
-    "$MAIN_OBJ" \
-    "$@" \
-    "$LIBC_A"
+export HARVEY ARCH
+exec "$UCC_REPO/$(basename "$0")" "$@"
