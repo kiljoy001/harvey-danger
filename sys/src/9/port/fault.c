@@ -168,18 +168,17 @@ fixfault(Segment *s, usize addr, int ftype, int dommuput, int color)
 		goto common;
 
 	case SG_MMAP:
-		print("MMAP fault: req is %p, \n", up->req);
-		if(pagedout(*pg) && up->req){
-			print("Fault in mmap'ed page\n");
-			// hazardous.
-			char f[34];
-			snprint(f, sizeof(f), "W%016x%016x", addr, pgsz);
-			if(qwrite(up->req, f, sizeof(f)) != sizeof(f))
-				error("can't write mmap request");
-			/* read in answer here. */
-			error("not reading answer yet");
+		if(s->image != nil){
+			if(pagedout(*pg))
+				pio(s, addr, soff, pg, color);
+		} else {
+			if(*pg == 0){
+				new = newpage(1, &s, addr, pgsz, color);
+				if(s == 0)
+					return -1;
+				*pg = new;
+			}
 		}
-		error("No mmap support yet");
 		goto common;
 
 	case SG_LOAD:

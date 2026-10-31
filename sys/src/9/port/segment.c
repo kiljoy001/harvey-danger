@@ -171,8 +171,21 @@ dupseg(Segment **seg, int segno, int share)
 	case SG_TEXT: /* New segment shares pte set */
 	case SG_SHARED:
 	case SG_PHYSICAL:
-	case SG_MMAP:
 		goto sameseg;
+
+	case SG_MMAP:
+		if(share)
+			goto sameseg;
+		n = newseg(s->type, s->base, s->size);
+		if(s->image != nil){
+			incref(&s->image->r);
+			n->image = s->image;
+			n->ldseg = s->ldseg;
+		}
+		n->pgszi = s->pgszi;
+		n->color = s->color;
+		n->ptepertab = s->ptepertab;
+		break;
 
 	case SG_STACK:
 		n = newseg(s->type, s->base, s->size);

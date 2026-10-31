@@ -1,0 +1,27 @@
+#!/bin/sh
+# 9c: Compile and link native Plan 9 applications on Harvey OS using TCC
+set -e
+
+HARVEY="${HARVEY:-$(cd "$(dirname "$0")/.." && pwd)}"
+ARCH="${ARCH:-amd64}"
+TCC="${TCC:-$(command -v tcc || echo "$HARVEY/../tinycc/tcc")}"
+
+if [ ! -x "$TCC" ]; then
+    echo "9c: cannot find tcc executable at $TCC" >&2
+    exit 1
+fi
+
+MAIN_OBJ="$HARVEY/build/libc/${ARCH}_main9.o"
+LIBC_A="$HARVEY/build/libc.a"
+
+if [ ! -f "$MAIN_OBJ" ] || [ ! -f "$LIBC_A" ]; then
+    echo "9c: building Harvey libc first..."
+    python3 "$HARVEY/util/9vm/build_libc.py"
+fi
+
+exec "$TCC" -static -nostdlib -Wl,-e,_main \
+    -I"$HARVEY/$ARCH/include" \
+    -I"$HARVEY/sys/include" \
+    "$MAIN_OBJ" \
+    "$@" \
+    "$LIBC_A"

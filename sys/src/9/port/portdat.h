@@ -644,7 +644,7 @@ enum {
  *  Maximum number of process memory segments
  */
 enum {
-	NSEG = 12
+	NSEG = 64
 };
 
 enum {

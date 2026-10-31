@@ -455,6 +455,44 @@
 			"Ret": [
 				"i32"
 			]
+		},
+		{
+			"Args": [
+				"void*",
+				"usize",
+				"i32",
+				"i32",
+				"i32",
+				"i64"
+			],
+			"Id": 55,
+			"Name": "mmap",
+			"Ret": [
+				"void*"
+			]
+		},
+		{
+			"Args": [
+				"void*",
+				"usize"
+			],
+			"Id": 56,
+			"Name": "munmap",
+			"Ret": [
+				"i32"
+			]
+		},
+		{
+			"Args": [
+				"void*",
+				"usize",
+				"i32"
+			],
+			"Id": 57,
+			"Name": "mprotect",
+			"Ret": [
+				"i32"
+			]
 		}
 	],
 	"Syserrors": [
