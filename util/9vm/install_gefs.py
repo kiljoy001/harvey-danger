@@ -38,6 +38,8 @@ STAGE = (
     ("bin/cat", "build/aspera-cat"),
     ("bin/test", "build/aspera-test"),
     ("bin/echo", "build/aspera-echo"),
+    ("bin/ucc", "build/ucc"),
+    ("bin/tcc", "build/tcc"),
     ("rc/lib/rcmain", "rc/lib/rcmain"),
     ("boot/boot", "boot/boot"),
     ("boot/gefs", "build/gefs-guest"),
@@ -106,6 +108,8 @@ def main() -> int:
                     help=f"image size in MiB (default 256, minimum {MIN_MIB})")
     ap.add_argument("--stage", default="/tmp/9vm/stage",
                     help="staged minimal root the guest copies (default /tmp/9vm/stage)")
+    ap.add_argument("--root", type=Path,
+                    help="use an existing full root tree instead of the minimal stage")
     ap.add_argument("--timeout", type=float, default=180.0)
     args = ap.parse_args()
 
@@ -122,8 +126,9 @@ def main() -> int:
         f.truncate(args.size * 1024 * 1024)
     print(f"created {image} ({args.size} MiB)")
 
-    stage = Path(args.stage)
-    make_stage(stage)
+    stage = args.root if args.root else Path(args.stage)
+    if not args.root:
+        make_stage(stage)
     log = run(image, stage, args.timeout)
     if "INSTALL-OK" not in log:
         print("install failed:", file=sys.stderr)
