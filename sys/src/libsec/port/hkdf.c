@@ -1,0 +1,37 @@
+#include <u.h>
+#include <libc.h>
+#include <libsec.h>
+
+/* rfc5869 */
+void
+hkdf_x(uchar *salt, u32 nsalt, uchar *info, u32 ninfo,
+	uchar *key, u32 nkey, uchar *d, u32 dlen,
+	DigestState* (*x)(uchar*, u32, uchar*, u32, uchar*, DigestState*), int xlen)
+{
+	uchar prk[256], tmp[256], cnt;
+	DigestState *ds;
+
+	assert(xlen <= sizeof(tmp));
+
+	memset(tmp, 0, xlen);
+	if(nsalt == 0){
+		salt = tmp;
+		nsalt = xlen;
+	}
+	/* note that salt and key are swapped in this case */
+	(*x)(key, nkey, salt, nsalt, prk, nil);
+	ds = nil;
+	for(cnt = 1;; cnt++) {
+		if(ninfo > 0)
+			ds = (*x)(info, ninfo, prk, xlen, nil, ds);
+		(*x)(&cnt, 1, prk, xlen, tmp, ds);
+		if(dlen <= xlen){
+			memmove(d, tmp, dlen);
+			break;
+		}
+		memmove(d, tmp, xlen);
+		dlen -= xlen;
+		d += xlen;
+		ds = (*x)(tmp, xlen, prk, xlen, nil, nil);
+	}
+}

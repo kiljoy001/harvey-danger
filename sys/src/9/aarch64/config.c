@@ -65,6 +65,9 @@ u64 ringhostpa;
 /* Reserved physically contiguous DMA arena, published through #P/dma. */
 u64 arm64dmabase;
 u64 arm64dmasize = 8*1024*1024;
+/* Vendor RK3566 OP-TEE static NSEC SHM, published through #P/tee. */
+u64 arm64teeshmbase;
+u64 arm64teeshmsize;
 int printallsyscalls;
 u32 kerndate = KERNDATE;
 Conf conf;

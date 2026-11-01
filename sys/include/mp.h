@@ -29,7 +29,11 @@ struct mpint
 
 enum
 {
-	MPstatic=	0x01,
+	MPstatic=	0x01,	/* static constant */
+	MPnorm=		0x02,	/* normalization status */
+	MPtimesafe=	0x04,	/* request time invariant computation */
+	MPfield=	0x08,	/* this mpint is a field modulus */
+
 	Dbytes=		sizeof(mpdigit),	/* bytes per digit */
 	Dbits=		Dbytes*8		/* bits per digit */
 };
@@ -39,12 +43,14 @@ void	mpsetminbits(int n);	/* newly created mpint's get at least n bits */
 mpint*	mpnew(int n);		/* create a new mpint with at least n bits */
 void	mpfree(mpint *b);
 void	mpbits(mpint *b, int n);	/* ensure that b has at least n bits */
-void	mpnorm(mpint *b);		/* dump leading zeros */
+mpint*	mpnorm(mpint *b);		/* dump leading zeros */
 mpint*	mpcopy(mpint *b);
 void	mpassign(mpint *old, mpint *new);
 
 /* random bits */
 mpint*	mprand(int bits, void (*gen)(u8*, int), mpint *b);
+/* return uniform random [0..n-1] */
+mpint*	mpnrand(mpint *n, void (*gen)(u8*, int), mpint *b);
 
 /* conversion */
 mpint*	strtomp(char*, char**, int, mpint*);	/* ascii */
@@ -54,6 +60,7 @@ mpint*	letomp(u8*, u32, mpint*);	/* byte array, little-endian */
 int	mptole(mpint*, u8*, u32, u8**);
 mpint*	betomp(u8*, u32, mpint*);	/* byte array, little-endian */
 int	mptobe(mpint*, u8*, u32, u8**);
+void	mptober(mpint *b, u8 *p, int n);	/* big-endian, fixed width */
 u32	mptoui(mpint*);			/* unsigned int */
 mpint*	uitomp(u32, mpint*);
 int	mptoi(mpint*);			/* int */
@@ -76,11 +83,22 @@ void	mpmul(mpint *b1, mpint *b2, mpint *prod);	/* prod = b1*b2 */
 void	mpexp(mpint *b, mpint *e, mpint *m, mpint *res);	/* res = b**e mod m */
 void	mpmod(mpint *b, mpint *m, mpint *remainder);	/* remainder = b mod m */
 
+/* modular arithmetic, time invariant when 0<=b1<=m-1 and 0<=b2<=m-1 */
+void	mpmodadd(mpint *b1, mpint *b2, mpint *m, mpint *sum);	/* sum = b1+b2 % m */
+void	mpmodsub(mpint *b1, mpint *b2, mpint *m, mpint *diff);	/* diff = b1-b2 % m */
+void	mpmodmul(mpint *b1, mpint *b2, mpint *m, mpint *prod);	/* prod = b1*b2 % m */
+
 /* quotient = dividend/divisor, remainder = dividend % divisor */
 void	mpdiv(mpint *dividend, mpint *divisor,  mpint *quotient, mpint *remainder);
 
 /* return neg, 0, pos as b1-b2 is neg, 0, pos */
 int	mpcmp(mpint *b1, mpint *b2);
+
+/* res = s != 0 ? b1 : b2 */
+void	mpsel(int s, mpint *b1, mpint *b2, mpint *res);
+
+/* field modulus hook; returns N or an equivalent accelerated modulus */
+mpint*	mpfield(mpint *N);
 
 /* extended gcd return d, x, and y, s.t. d = gcd(a,b) and ax+by = d */
 void	mpextendedgcd(mpint *a, mpint *b, mpint *d, mpint *x, mpint *y);

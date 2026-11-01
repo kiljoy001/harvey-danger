@@ -1,0 +1,9 @@
+*.ta
+*.elf
+*.o
+*.dmp
+*.lds
+*.map
+dyn_list
+.*.cmd
+.*.d

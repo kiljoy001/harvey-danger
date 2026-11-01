@@ -116,7 +116,7 @@ mpfree(mpint *b)
 	free(b);
 }
 
-void
+mpint*
 mpnorm(mpint *b)
 {
 	int i;
@@ -127,6 +127,7 @@ mpnorm(mpint *b)
 	b->top = i+1;
 	if(b->top == 0)
 		b->sign = 1;
+	return b;
 }
 
 mpint*

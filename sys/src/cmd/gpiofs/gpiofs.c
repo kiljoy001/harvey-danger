@@ -22,6 +22,7 @@ enum {
 	Fdata = 0,
 	Fdir = 1,
 	Fctl = 2,
+	Fwait = 3,
 };
 
 typedef struct Bank Bank;
@@ -29,6 +30,8 @@ struct Bank {
 	char name[64];
 	u64 base;
 	volatile u32 *regs;
+	int irq;
+	int waitfd;
 };
 
 typedef struct Gpio Gpio;
@@ -130,6 +133,24 @@ mapdev(char *name, u64 base, u64 size)
 }
 
 /* Insert a bank into the table keeping it sorted by base address. */
+static int
+readnum(char *path)
+{
+	char buf[64];
+	long n;
+	int fd;
+
+	fd = open(path, OREAD);
+	if(fd < 0)
+		return -1;
+	n = read(fd, buf, sizeof buf - 1);
+	close(fd);
+	if(n <= 0)
+		return -1;
+	buf[n] = 0;
+	return atoi(buf);
+}
+
 static void
 addbank(char *name, u64 base)
 {
@@ -203,8 +224,13 @@ discover(void)
 		return -1;
 
 	/* Map banks, then the pinmux, in base order. */
-	for(i = 0; i < g.nbank; i++)
+	for(i = 0; i < g.nbank; i++){
+		char path[128];
+
 		g.bank[i].regs = mapdev(g.bank[i].name, g.bank[i].base, 0x100);
+		snprint(path, sizeof path, "#P/%s/irq", g.bank[i].name);
+		g.bank[i].irq = readnum(path);
+	}
 	if(havegrf)
 		g.grf = mapdev(grfname, grfbase, 0x10000);
 	if(havepmugrf)
@@ -287,13 +313,90 @@ setvalue(int bank, int pin, int val)
 	gpio_set(reg, v);
 }
 
-/* "N in" | "N out" | "N out 0|1" */
+/* Per-pin interrupt registers: L for pins 0-15, H for 16-31. */
+static volatile u32 *
+intreg(Bank *b, u32 baseoff, int pin)
+{
+	return &b->regs[(baseoff + (pin < 16 ? 0 : 4)) / 4];
+}
+
+static void
+intbit(volatile u32 *r, int pin, int on)
+{
+	u32 v;
+
+	v = *r;
+	if(on)
+		v |= 1u << (pin % 16);
+	else
+		v &= ~(1u << (pin % 16));
+	*r = v;
+}
+
+/* "irq <pin> low|high|rising|falling|both|none" */
+static char *
+irqcmd(int bank, char *s)
+{
+	Bank *b;
+	char *p, *word;
+	int pin, edge, pol, both, on;
+
+	b = &g.bank[bank];
+	if(b->regs == nil)
+		return "bank not mapped";
+	pin = strtol(s, &p, 0);
+	if(p == s || pin < 0 || pin > 31)
+		return "bad pin";
+	while(*p == ' ' || *p == '\t')
+		p++;
+	for(word = p; *p && *p != ' ' && *p != '\t' && *p != '\n'; p++)
+		;
+	if(*p){
+		*p = 0;
+		p++;
+	}
+	setdir(bank, pin, 0);
+	intbit(intreg(b, RK_GPIO_INTEN_L, pin), pin, 0);
+	intbit(intreg(b, RK_GPIO_INTMASK_L, pin), pin, 1);
+	intbit(intreg(b, RK_GPIO_INTBOTH_L, pin), pin, 0);
+	if(strcmp(word, "none") == 0){
+		/* clear any pending edge */
+		intbit(intreg(b, RK_GPIO_INTSTATUS_L, pin), pin, 0);
+		return nil;
+	}
+	edge = pol = both = 0;
+	on = 1;
+	if(strcmp(word, "low") == 0){
+		edge = 0; pol = 1;
+	}else if(strcmp(word, "high") == 0){
+		edge = 0; pol = 0;
+	}else if(strcmp(word, "rising") == 0){
+		edge = 1; pol = 0;
+	}else if(strcmp(word, "falling") == 0){
+		edge = 1; pol = 1;
+	}else if(strcmp(word, "both") == 0){
+		edge = 1; both = 1;
+	}else
+		return "want low|high|rising|falling|both|none";
+	intbit(intreg(b, RK_GPIO_INTTYPE_L, pin), pin, edge);
+	intbit(intreg(b, RK_GPIO_INTPOL_L, pin), pin, pol);
+	intbit(intreg(b, RK_GPIO_INTBOTH_L, pin), pin, both);
+	intbit(intreg(b, RK_GPIO_INTMASK_L, pin), pin, 0);
+	intbit(intreg(b, RK_GPIO_INTEN_L, pin), pin, on);
+	return nil;
+}
+
+/* "N in" | "N out" | "N out 0|1" | "irq <pin> <type>" */
 static char *
 ctlcmd(int bank, char *s)
 {
 	char *p;
 	int pin, out, val;
 
+	while(*s == ' ' || *s == '\t')
+		s++;
+	if(strncmp(s, "irq", 3) == 0 && (s[3] == ' ' || s[3] == '\t'))
+		return irqcmd(bank, s + 3);
 	pin = strtol(s, &p, 0);
 	if(p == s || pin < 0 || pin > 31)
 		return "bad pin";
@@ -335,9 +438,9 @@ fsread(Req *r)
 		n += snprint(buf + n, sizeof(buf) - n, "banks %d\n", g.nbank);
 		for(i = 0; i < g.nbank; i++)
 			n += snprint(buf + n, sizeof(buf) - n,
-				"gpio%d base 0x%llx %s\n", i,
+				"gpio%d base 0x%llx irq %d %s\n", i,
 				(unsigned long long)g.bank[i].base,
-				g.bank[i].regs == nil ? "unmapped" : "mapped");
+				g.bank[i].irq, g.bank[i].regs == nil ? "unmapped" : "mapped");
 		n += snprint(buf + n, sizeof(buf) - n,
 			"grf 0x%llx %s\n", (unsigned long long)g.grfbase,
 			g.grf == nil ? "unmapped" : "mapped");
@@ -365,6 +468,30 @@ fsread(Req *r)
 		v |= gpio_get(&g.bank[bank].regs[RK_GPIO_DDR_H / 4]) << 16;
 		snprint(buf, sizeof buf, "0x%08x\n", v);
 		break;
+	case Fwait: {
+		char path[128], tmp[32];
+		u32 lo, hi;
+
+		if(g.bank[bank].waitfd < 0){
+			snprint(path, sizeof path, "#P/%s/wait",
+				g.bank[bank].name);
+			g.bank[bank].waitfd = open(path, OREAD);
+		}
+		if(g.bank[bank].waitfd < 0){
+			respond(r, "no interrupt");
+			return;
+		}
+		if(read(g.bank[bank].waitfd, tmp, sizeof tmp) <= 0){
+			respond(r, "irq wait failed");
+			return;
+		}
+		lo = g.bank[bank].regs[RK_GPIO_INTSTATUS_L / 4];
+		hi = g.bank[bank].regs[RK_GPIO_INTSTATUS_H / 4];
+		g.bank[bank].regs[RK_GPIO_INTSTATUS_L / 4] = lo;
+		g.bank[bank].regs[RK_GPIO_INTSTATUS_H / 4] = hi;
+		snprint(buf, sizeof buf, "0x%08x\n", lo | (hi << 16));
+		break;
+	}
 	default:
 		respond(r, "read not permitted");
 		return;
@@ -458,6 +585,7 @@ main(int argc, char **argv)
 		createfile(d, "data", nil, 0666, AUX(i, Fdata));
 		createfile(d, "dir", nil, 0666, AUX(i, Fdir));
 		createfile(d, "ctl", nil, 0666, AUX(i, Fctl));
+		createfile(d, "wait", nil, 0444, AUX(i, Fwait));
 	}
 
 	postmountsrv(&fs, "gpio", nil, MREPL | MCREATE);

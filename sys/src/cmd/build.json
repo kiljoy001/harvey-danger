@@ -71,6 +71,7 @@
 			"troff2html/build.json",
 			"units/build.json",
 			"vac/build.json",
+			"vdir/vdir.json",
 			"vnc/build.json"
 		]
 	}

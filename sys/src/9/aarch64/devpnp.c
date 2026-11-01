@@ -26,6 +26,11 @@ enum {
 	Qdmaclean,
 	Qdmainval,
 	Qdmacivac,
+	Qtee,
+	Qteesmc,
+	Qteeversion,
+	Qteeshbase,
+	Qteeshsize,
 };
 
 /* 6 type bits: the DMA control files are past the old 4-bit field. */
@@ -37,6 +42,7 @@ static Fdtdev pnpdev[Maxfdtdev];
 static u32 npnpdev;
 static u64 consolebase;
 extern u64 arm64dmabase, arm64dmasize;
+extern u64 arm64teeshmbase, arm64teeshmsize;
 
 /*
  * DMA sub-allocation inside the reserved arena.  A driver maps the arena
@@ -71,6 +77,75 @@ struct Dmactl {
 	char buf[Dmactlmax];
 	int n;
 };
+
+/*
+ * OP-TEE SMC gate.  The kernel only executes a whitelisted secure-monitor
+ * call at EL1; the OP-TEE client, shared-memory registration, sessions and
+ * supplicant RPC all live in userspace.  The message-argument physical
+ * address must lie in the #P/dma arena.
+ */
+enum {
+	Teesmcreq	= 8,	/* a0..a7 */
+	Teesmcres	= 4,	/* a0..a3 */
+};
+typedef struct Teesmc Teesmc;
+struct Teesmc {
+	u64 a[Teesmcreq];
+};
+static Teesmc teereq, teeres;
+static Lock teelock;
+
+static void
+teesmccall(u64 *in, u64 *out)
+{
+	register u64 x0 asm("x0") = in[0];
+	register u64 x1 asm("x1") = in[1];
+	register u64 x2 asm("x2") = in[2];
+	register u64 x3 asm("x3") = in[3];
+	register u64 x4 asm("x4") = in[4];
+	register u64 x5 asm("x5") = in[5];
+	register u64 x6 asm("x6") = in[6];
+	register u64 x7 asm("x7") = in[7];
+
+	__asm__ volatile("smc #0"
+		: "+r"(x0), "+r"(x1), "+r"(x2), "+r"(x3),
+		  "+r"(x4), "+r"(x5), "+r"(x6), "+r"(x7)
+		:
+		: "memory");
+
+	out[0] = x0;
+	out[1] = x1;
+	out[2] = x2;
+	out[3] = x3;
+}
+
+static int inrange(u64, u64, u64, u64);
+
+/*
+ * OP-TEE function IDs we are willing to forward.  PSCI and every other
+ * secure-monitor service stay in the kernel.
+ */
+static int
+teesmcok(u64 fn, u64 hi, u64 lo)
+{
+	u64 pa;
+
+	switch(fn){
+	case 0x32000001:	/* GET_SHM_CONFIG */
+		return 1;
+	case 0x32000004:	/* CALL_WITH_ARG */
+		pa = (hi << 32) | (lo & 0xffffffff);
+		if(inrange(pa, 8, arm64dmabase, arm64dmasize) ||
+		   inrange(pa, 8, arm64teeshmbase, arm64teeshmsize))
+			return 1;
+		return 0;
+	case 0x32000003:	/* RETURN_FROM_RPC */
+		return 1;
+	}
+	if(fn >= 0xbf00ff00 && fn <= 0xbf00ff1f)
+		return 1;
+	return 0;
+}
 
 static u64
 dmaalloc(u64 size, u64 align)
@@ -153,13 +228,21 @@ dmafree(u64 pa, u64 len)
 
 enum { Dclean, Dinval, Dcleaninval };
 
+static int
+inrange(u64 pa, u64 len, u64 base, u64 size)
+{
+	return base != 0 && pa >= base && pa - base <= size &&
+	       len <= size - (pa - base);
+}
+
 static void
 dmacache(int op, u64 pa, u64 len)
 {
 	u64 a, end;
 
-	if(len == 0 || pa < arm64dmabase ||
-	   pa - arm64dmabase > arm64dmasize || len > arm64dmasize - (pa - arm64dmabase))
+	if(len == 0 ||
+	   (!inrange(pa, len, arm64dmabase, arm64dmasize) &&
+	    !inrange(pa, len, arm64teeshmbase, arm64teeshmsize)))
 		error(Ebadarg);
 	a = (u64)KADDR(pa) & ~63ULL;
 	end = (u64)KADDR(pa) + len;
@@ -239,7 +322,13 @@ pnpgen(Chan *c, char *name, Dirtab *tab, int ntab, int s, Dir *dp)
 			devdir(c, q, "dma", 0, eve, DMDIR|0555, dp);
 			return 1;
 		}
-		if(s < 0 || s > (int)npnpdev || (s == (int)npnpdev && arm64dmasize == 0))
+		if(s == (int)npnpdev + (arm64dmasize != 0)){
+			q.path = QPATH(npnpdev, Qtee);
+			q.type = QTDIR;
+			devdir(c, q, "tee", 0, eve, DMDIR|0555, dp);
+			return 1;
+		}
+		if(s < 0 || s >= (int)npnpdev + 1 + (arm64dmasize != 0))
 			return -1;
 		d = &pnpdev[s];
 		q.path = QPATH(s, Qdevdir);
@@ -344,6 +433,38 @@ pnpgen(Chan *c, char *name, Dirtab *tab, int ntab, int s, Dir *dp)
 			return 1;
 		}
 		return -1;
+	case Qtee:
+		if(s == DEVDOTDOT){
+			q.path = QPATH(0, Qtopdir);
+			q.type = QTDIR;
+			devdir(c, q, "#P", 0, eve, DMDIR|0555, dp);
+			return 1;
+		}
+		if(s == 0){
+			q.path = QPATH(npnpdev, Qteesmc);
+			q.type = QTFILE;
+			devdir(c, q, "smc", 0, eve, 0600, dp);
+			return 1;
+		}
+		if(s == 1){
+			q.path = QPATH(npnpdev, Qteeversion);
+			q.type = QTFILE;
+			devdir(c, q, "version", 0, eve, 0444, dp);
+			return 1;
+		}
+		if(s == 2){
+			q.path = QPATH(npnpdev, Qteeshbase);
+			q.type = QTFILE;
+			devdir(c, q, "shmbase", 0, eve, 0444, dp);
+			return 1;
+		}
+		if(s == 3){
+			q.path = QPATH(npnpdev, Qteeshsize);
+			q.type = QTFILE;
+			devdir(c, q, "shmsize", 0, eve, 0444, dp);
+			return 1;
+		}
+		return -1;
 	}
 	return -1;
 }
@@ -377,8 +498,8 @@ pnpopen(Chan *c, int omode)
 		if(m != OREAD)
 			error(Eperm);
 	}else if(t == Qdmaalloc || t == Qdmafree || t == Qdmaclean ||
-	         t == Qdmainval || t == Qdmacivac){
-		/* DMA control files accept reads and writes. */
+	         t == Qdmainval || t == Qdmacivac || t == Qteesmc){
+		/* DMA control files and the SMC gate accept reads and writes. */
 	}else if(m != OREAD)
 		error(Eperm);
 	if(t == Qwait){
@@ -414,6 +535,19 @@ pnpwrite(Chan *c, void *a, i32 n, i64 off)
 	USED(off);
 	if(n <= 0)
 		error(Ebadarg);
+	if(TYPE(c) == Qteesmc){
+		if(n != sizeof teereq)
+			error(Ebadarg);
+		lock(&teelock);
+		memmove(&teereq, a, n);
+		if(!teesmcok(teereq.a[0], teereq.a[1], teereq.a[2])){
+			unlock(&teelock);
+			error(Eperm);
+		}
+		teesmccall(teereq.a, teeres.a);
+		unlock(&teelock);
+		return n;
+	}
 	if((ct = c->aux) == nil){
 		ct = malloc(sizeof *ct);
 		if(ct == nil)
@@ -499,6 +633,32 @@ pnpread(Chan *c, void *a, i32 n, i64 off)
 		        dmalast.len);
 		unlock(&dmalock);
 		return readstr(off, a, n, dbuf);
+	}
+	if(TYPE(c) == Qteeversion){
+		return readstr(off, a, n, "optee-smc-gate 1\n");
+	}
+	if(TYPE(c) == Qteeshbase){
+		snprint(buf, sizeof buf, "0x%llx\n", arm64teeshmbase);
+		return readstr(off, a, n, buf);
+	}
+	if(TYPE(c) == Qteeshsize){
+		snprint(buf, sizeof buf, "0x%llx\n", arm64teeshmsize);
+		return readstr(off, a, n, buf);
+	}
+	if(TYPE(c) == Qteesmc){
+		int len;
+
+		lock(&teelock);
+		len = Teesmcres * sizeof(u64);
+		if(off >= len){
+			unlock(&teelock);
+			return 0;
+		}
+		if(n > len - off)
+			n = len - off;
+		memmove(a, (u8*)&teeres + off, n);
+		unlock(&teelock);
+		return n;
 	}
 	dev = DEV(c);	if(dev < 0 || dev >= (int)npnpdev)
 		error(Ebadarg);

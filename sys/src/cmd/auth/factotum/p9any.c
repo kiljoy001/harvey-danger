@@ -22,7 +22,8 @@
 #include "dat.h"
 
 static Proto *negotiable[] = {
-	&p9sk1,
+	&p9sk1,		/* has to be first because of drawterm bug */
+	&dp9ik,
 };
 
 struct State

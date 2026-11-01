@@ -1,0 +1,6 @@
+#ifndef PQCLEAN_MLKEM768_CLEAN_COMPAT_H
+#define PQCLEAN_MLKEM768_CLEAN_COMPAT_H
+
+#define PQCLEAN_PREVENT_BRANCH_HACK(x) do { (void)(x); } while(0)
+
+#endif

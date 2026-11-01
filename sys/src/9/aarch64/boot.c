@@ -73,6 +73,7 @@ extern void arm64clockready(void);
 extern void arm64virtio9pconfigure(Fdtinfo *);
 extern void arm64pnpinit(Fdtinfo *);
 extern u64 arm64dmabase, arm64dmasize;
+extern u64 arm64teeshmbase, arm64teeshmsize;
 extern Dev etherdevtab, ipdevtab;
 extern void ethergmacinit(void);
 extern void ethermediumlink(void);
@@ -197,7 +198,7 @@ uartwrite(char *buf, int n)
 
 static volatile int workerphase;
 static volatile int userprocessphase;
-static u64 useruartbase;
+u64 useruartbase;
 static u32 useruarttype;
 static Fdtinfo *bootinfo;
 
@@ -270,10 +271,12 @@ initprocess(void *arg)
 	p->dot = cclone(p->slash);
 	devtabinit();
 	consoleuartinit(bootinfo);
-	ethergmacinit();
-	ethermediumlink();
-	etherdevtab.reset();
-	ipdevtab.reset();
+	if(useruartbase == 0xfe660000ULL){
+		ethergmacinit();
+		ethermediumlink();
+		etherdevtab.reset();
+		ipdevtab.reset();
+	}
 	kproc("alarm", alarmkproc, nil);
 	arm64uartputs("HARVEY-ARM64 FILE-EXEC START\n");
 	arm64runprocessargs(ARM64EXECSTUBENTRY, USTKTOP-512,
@@ -434,6 +437,16 @@ physseginit(Fdtinfo *info)
 		if(addphysseg(&seg) == 0)
 			n++;
 	}
+	if(arm64teeshmbase != 0 && arm64teeshmsize != 0){
+		memset(&seg, 0, sizeof seg);
+		seg.attr = SG_PHYSICAL | SG_READ | SG_WRITE | SG_CACHED;
+		seg.pgszi = -1;
+		seg.name = "teeshm";
+		seg.pa = arm64teeshmbase;
+		seg.size = arm64teeshmsize / BIGPGSZ;
+		if(addphysseg(&seg) == 0)
+			n++;
+	}
 	return n;
 }
 
@@ -570,6 +583,9 @@ arm64kernelstart(Fdtinfo *info)
 	addbootfile("hubfs", (u8 *)arm64hubfself, sizeof(arm64hubfself));
 	addbootfile("drvman", (u8 *)arm64drvmanelf, sizeof(arm64drvmanelf));
 	addbootfile("i2cfs", (u8 *)arm64i2cfself, sizeof(arm64i2cfself));
+	addbootfile("pmicfs", (u8 *)arm64pmicfself, sizeof(arm64pmicfself));
+	addbootfile("mkdir", (u8 *)arm64mkdirelf, sizeof(arm64mkdirelf));
+	addbootfile("mount", (u8 *)arm64mountelf, sizeof(arm64mountelf));
 	addbootfile("usbpower", (u8 *)arm64usbpowerelf, sizeof(arm64usbpowerelf));
 	addbootfile("rc", (u8 *)arm64rcelf, sizeof(arm64rcelf));
 	addbootfile("echo", (u8 *)arm64echoelf, sizeof(arm64echoelf));

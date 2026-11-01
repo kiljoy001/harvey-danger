@@ -28,6 +28,13 @@ static Driver drivers[] = {
 	{ nil,	nil,	nil },
 };
 
+/* Drivers for devices that are not #P classes: they sit on top of another
+ * service, so they start after the class registry has been launched. */
+static Driver children[] = {
+	{ "pmic",	"/boot/pmicfs",	"pmic" },
+	{ nil,	nil,	nil },
+};
+
 static void
 say(char *s)
 {
@@ -195,6 +202,22 @@ main(int argc, char **argv)
 			say(drv->class);
 			say(" FAIL\n");
 			failed = 1;
+		}
+	}
+	for(i = 0; children[i].class != nil; i++){
+		if(strcmp(children[i].class, "pmic") == 0){
+			fd = open("/srv/i2c", OREAD);
+			if(fd < 0)
+				continue;
+			close(fd);
+		}
+		snprint(srvpath, sizeof srvpath, "/srv/%s", children[i].srv);
+		if(launch(&children[i]) < 0)
+			continue;
+		if(waitfor(srvpath, 50) == 0){
+			say("HARVEY-ARM64 DRVMAN ");
+			say(children[i].class);
+			say(" PASS\n");
 		}
 	}
 	markdone(failed);

@@ -44,6 +44,7 @@ prototab[] =
 	&p9cr,
 	&p9sk1,
 	&p9sk2,
+	&dp9ik,
 	&pass,
 /*	&srs, */
 	&rsa,

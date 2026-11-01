@@ -83,6 +83,57 @@ void	bfECBencrypt(u8*, int, BFstate*);
 void	bfECBdecrypt(u8*, int, BFstate*);
 
 /*
+ * ChaCha20 and ChaCha20-Poly1305
+ */
+
+typedef struct DigestState DigestState;
+
+enum
+{
+	ChachaBsize=	64,
+};
+
+typedef struct Chachastate Chachastate;
+struct Chachastate
+{
+	union{
+		u32int	input[16];
+		struct {
+			u32int	constant[4];
+			u32int	key[8];
+			u32int	counter;
+			u32int	iv[3];
+		};
+	};
+	u32int	xkey[8];
+	int	rounds;
+	int	ivwords;
+};
+
+void	setupChachastate(Chachastate*, uchar*, ulong, uchar*, ulong, int);
+void	chacha_setiv(Chachastate*, uchar*);
+void	chacha_setblock(Chachastate*, u64int);
+void	chacha_encrypt(uchar*, ulong, Chachastate*);
+void	chacha_encrypt2(uchar*, uchar*, ulong, Chachastate*);
+
+void	ccpoly_encrypt(uchar *dat, ulong ndat, uchar *aad, ulong naad,
+		       uchar tag[16], Chachastate *cs);
+int	ccpoly_decrypt(uchar *dat, ulong ndat, uchar *aad, ulong naad,
+		       uchar tag[16], Chachastate *cs);
+DigestState*	poly1305(uchar*, ulong, uchar*, ulong, uchar*, DigestState*);
+
+int	tsmemcmp(void*, void*, ulong);
+
+void	pbkdf2_x(uchar *p, u32 plen, uchar *s, u32 slen,
+		u32 rounds, uchar *d, u32 dlen,
+		DigestState* (*x)(uchar*, u32, uchar*, u32, uchar*, DigestState*),
+		int xlen);
+void	hkdf_x(uchar *salt, u32 nsalt, uchar *info, u32 ninfo,
+	       uchar *key, u32 nkey, uchar *d, u32 dlen,
+	       DigestState* (*x)(uchar*, u32, uchar*, u32, uchar*, DigestState*),
+	       int xlen);
+
+/*
  * DES definitions
  */
 

@@ -14,17 +14,37 @@ unsupported   no native driver; use a compatibility host or sponsor a port
 | Function | L1 | L2 | L3 | L4 | Status | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
 | UART console | `#P` | PL011 | — | `/dev/cons` | partial | early console; user-space UART service exists |
-| GPIO | `#P` | gpio bank | gpiofs | `/srv/gpio` | partial | bank/pinmux discovery on board |
-| I2C | `#P` | RK I2C | i2cfs | `/srv/i2c` | experimental | controller setup, no device drivers |
+| GPIO | `#P` | gpio bank | gpiofs | `/srv/gpio` | partial | banks, pinmux, per-pin IRQ via `/gpioN/wait` |
+| I2C | `#P` | RK I2C | i2cfs | `/srv/i2c` | partial | six controllers, polled transfers |
+| PMIC / regulators | `#P` | RK809 | pmicfs | `/srv/pmic` | partial | rails, RTC+alarm, CLKOUT2, power key (IRQ), thermal reporting |
 | USB xHCI | `#P` | o9xhci | — | — | partial | root-port enumeration; no hubs |
 | USB UAC1 | `#P` | o9xhci | UAC1 | pending | experimental | K670 48k/16/2 probe; no audio service |
 | USB HID | `#P` | o9xhci | HID | pending | unsupported | HID class driver not written |
 | USB storage | `#P` | o9xhci | MSC | pending | unsupported | class driver not written |
-| Display / HDMI | `#P` | VOP2/DW-HDMI | — | `/dev/display` | experimental | kernel driver removed; user-space port pending |
-| eMMC / SD | `#P` | SDHCI | — | `/srv/...` | unsupported | no block driver in kernel |
-| Ethernet | `#P` | GMAC/PHY | — | `/srv/net` | unsupported | no native driver |
-| WiFi / BT | `#P` | SDIO/UART | — | — | unsupported | vendor BSP candidate for compatibility host |
-| PMIC / regulators | `#P` | RK809 | — | — | partial | fixed rails; no full PMIC service |
+| Display / HDMI | `#P` | VOP2/DW-HDMI | o9display | `#V/display` | partial | fixed 1920x1080 RGB888 on HDMI0; no EDID/modeset, no audio |
+| IOMMU | `#P` | rkiommu | — | — | partial | two-level tables, 40-bit PA; used by VOP2 |
+| eMMC | `#P` | SDHCI (dwcmshc) | emmc/emmcfs | `/srv/emmc` | partial | user-space PIO+ADMA2, HS200 8-bit |
+| SD card | `#P` | SDHCI (sdmmc0) | — | — | unsupported | slot not driven |
+| SPI NOR | `#P` | RK SFC | — | — | unsupported | boot flash not readable |
+| Ethernet | `#P` | GMAC/PHY | — | `/srv/net` | partial | kernel `#l`, 10 Mbps, ping works |
+| WiFi / BT | `#P` | SDIO/UART | — | — | experimental | CP boots, scans, WPA2 associates; data path blocked by link budget |
+| Audio codec | `#P` | RK809 codec + I2S | — | — | unsupported | analog out/in, headphone detect |
+| HDMI audio | `#P` | DW-HDMI | — | — | unsupported | — |
+| SARADC | `#P` | RK SARADC | — | — | unsupported | — |
+| TSADC / thermal | `#P` | RK TSADC | — | — | unsupported | SoC temperature and trip points |
+| PWM / fan | `#P` | RK PWM | — | — | unsupported | fan and IR carrier |
+| Watchdog | `#P` | RK WDT | — | — | unsupported | — |
+| TRNG | `#P` | RK RNG | — | — | unsupported | hardware random source |
+| Crypto engine | `#P` | RK crypto | — | — | unsupported | AES/SHA offload |
+| PCIe 2x1 | `#P` | DWC PCIe + combphy | — | — | unsupported | M.2 slot; no NVMe |
+| VPU (decode) | `#P` | rkvdec | — | — | unsupported | H.264/H.265 decode |
+| VEPU (encode) | `#P` | vepu | — | — | unsupported | — |
+| RGA (2D) | `#P` | rga | — | — | unsupported | blit/scale |
+| NPU | `#P` | rknpu (NVDLA-derived) | — | — | experimental | regcmd/task format and 0xfde40000 block decoded in 9rock; vendor driver present; no Harvey driver yet |
+| GPU | `#P` | Mali G52 | — | — | unsupported | — |
+| ISP / camera | `#P` | rkisp + vicap | — | — | unsupported | MIPI CSI |
+| eFuse / OTP | `#P` | RK efuse | — | — | unsupported | — |
+| TPM 2.0 (add-on) | `#P` | CRB/TIS | tpmfs | `/mnt/tpm` | experimental | SPI/CRB module, PCR and seal/unseal |
 
 ## Policy
 

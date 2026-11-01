@@ -411,6 +411,11 @@ dwc3init_otg0(void)
 static void
 xreset(void)
 {
+	extern u64 useruartbase;
+
+	if(useruartbase != 0xfe660000ULL)
+		return;
+
 	/*
 	 * Initialize board power, PHYs and controller host modes before the
 	 * user-space xHCI engine takes ownership. This reprograms U-Boot state.

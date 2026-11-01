@@ -101,27 +101,348 @@ CMD5/CMD3/CMD7 followed by CCCR/CIS dumps.
 
 ## Current state
 
-`sdprobe` brings the host up cleanly:
+`sdprobe` now completes SDIO enumeration on the v1.1 board:
 
 ```
-sdprobe: controller reset, verid 5342270a hcon 04c434c1 clkdiv 0
-sdprobe: clksel30 00005520 ckgate15 00000000 pwren 1 rstn 1 clkena 00010001
-sdprobe: cmd5 try 0: e=2 resp=00000000 rintsts=00000100 status=00000176
+sdprobe: cmd5 try 0: e=0 resp=91ffff00 rintsts=00000004 status=0001f9e6 cmd=20000045 cdetect=00000001
+sdprobe: CMD5 resp 91ffff00
+sdprobe: CMD5 ready, OCR 91ffff00
+sdprobe: CMD3 RCA 8800 (resp 88000000)
+sdprobe: CMD7 selected, resp 00001e00
+sdprobe: CCCR[00] = 43
+sdprobe: CCCR[01] = 03
+sdprobe: CCCR[02] = 00
+sdprobe: common CIS pointer 001000
+sdprobe: cis manufacturer id 0000
+sdprobe: cis product id 000c
+sdprobe: function 1 enabled, IOReady 02
+sdprobe: function 1 CIS pointer 002000
+sdprobe: function 1 block size 0
+sdprobe: block size set to 200
+sdprobe: DT read AON_APB: 00000000 00000000 00043014 000014e0
+sdprobe: DT write/read CP SRAM: ok (512/512)
+sdprobe: firmware /boot/wcnmodem.bin 947120 bytes
+sdprobe: firmware written to 0x40500000
+sdprobe: CP_RESET_REG 00000001
+sdprobe: CP reset released
+sdprobe: sync 9eedc767
+sdprobe: sync f0f0f0f1
+...
+sdprobe: CP boot finished
+sdprobe: DONE
 ```
 
-`e=2` is a response timeout: the controller transmits CMD5 but the card
-does not answer.  Verified so far: WL_REG_ON is high, the pins are muxed
-with pull-ups, `vccio3` is 3.3 V, the CRU gates are open, and the host
-command path runs (a bad clock-update previously produced no completion
-at all; that is fixed).
+This confirms the module is the Unisoc part (`manufacturer id 0000`,
+product `000c`) and that WL_REG_ON, the pinmux, the 3.3 V IO domain,
+the CRU gates and the DW command path are all correct.  The earlier
+CMD5 timeout was a host-side clock/pin issue, not a dead card.
 
-Next steps, in order:
+Function 1 starts with block size zero.  `sdprobe` now sets it to 512
+(`0x200`) through FBR `0x110/0x111`, writes the DT system address
+`0x4083C000` to FBR `0x15c..0x15f`, and reads one block from function 1
+address `0x0f`.  The read returns:
 
-1. Capture Linux's GRF/CRU/DW register values after enumeration and
-   diff them against ours.  The initramfs has no `devmem`, so the plan
-   is to inject a tiny static aarch64 register dumper into the Armbian
-   initrd (or use `dd` on `/dev/mem` with a helper).
-2. Check the DW `UHS_REG`/`ENABLE_SHIFT`/`CDTHRCTL` registers and the
-   phase registers written with the CRU hiword mask (drive 90 degrees,
-   sample 0).
-3. Only then move on to the firmware download stage.
+```
+00000000 00000000 00043014 000014e0
+```
+
+That confirms the vendor DT-mode path works: the CP address window is
+reachable over CMD52/CMD53 block transfers.  A 512-byte pattern written
+to CP SRAM reads back correctly.
+
+`sdprobe firmware` then loads `/boot/wcnmodem.bin` (947120 bytes) to
+`CP_START_ADDR` (`0x40500000`), clears the reset bit in
+`CP_RESET_REG` (`0x40088288`), and polls `SYNC_ADDR` (`0x405E73B0`).
+The CP starts and reaches `SYNC_ALL_FINISHED` (`0xF0F0F0FF`).
+
+## Reference source
+
+The out-of-tree driver is available at:
+
+```
+https://github.com/MichaIng/uwe5622
+```
+
+Relevant files:
+
+- `unisocwcn/platform/wcn_boot.c` — `start_marlin`, firmware load/parse,
+  CP boot.
+- `unisocwcn/sdio/sdiohal_main.c` — SDIO function 1, block size 512,
+  DT/PK mode CMD53 transfers, FBR system-address registers.
+- `unisocwcn/sdio/sdiohal.h` — `SDIOHAL_DT_MODE_ADDR` (`0x0f`),
+  `SDIOHAL_FBR_SYSADDR0..3` (`0x15c..0x15f`), block size 512.
+- `unisocwcn/include/uwe5622_glb.h` — chip ID `0x2355B001` and the
+  AON/APB register map.
+
+## Next steps
+
+1. Port the `sprdwl` WLAN command path now that the CP is running.
+2. Bring up the firmware command channel, chip configuration and
+   scan/join.
+3. Add the WPA2 four-way handshake.
+4. Expose the data path to `/net`.
+
+## PK-mode command probe
+
+After CP boot, `sdprobe pk` wakes the CP (`REG_CP_SLP_CTL` = 0) and sends
+a `WIFI_CMD_GET_INFO` packet on SDIO PK channel 8:
+
+```
+sdprobe: PK GET_INFO send
+sdprobe: PK rx off 0 hdr 0302c83f type 0 subtype 3 len 1424
+sdprobe: PK rx off 1428 hdr ffffffff type 15 subtype 15 len 65535
+sdprobe: PK no command reply
+```
+
+So the PK TX path is accepted and the CP is sending RX packets, but the
+reply is not on the expected command channel.  The vendor driver maps
+RX command port 22 to subtype 10 (`subtype + SDIO_CHN_TX_NUM`, where
+`SDIO_CHN_TX_NUM` is 12); this packet is subtype 3, which the WLAN
+driver would not hand to its command handler.  Before a scan can work,
+the RX channel mapping and the WLAN initialization sequence
+(`WIFI_CMD_OPEN`, ini download, version sync) must be matched to the
+vendor driver.
+
+The next milestone is a scan result, not a full association.
+
+## CP firmware notes
+
+`wcnmodem.bin` is a raw ARM Cortex-M4 image, not encrypted or
+compressed:
+
+- Strings include `cm4_region`, `Hardfault`, `Mpufault`, `Busfault`,
+  `Usagefault`, `WCN_VER`, `flush_wcn_log`, `loopcheck_ack` and
+  `pseudo_atc_cfg`.
+- The vector table at the start has an initial stack pointer of
+  `0x1a0f50` and a reset vector of `0x100319` (Thumb).
+- A literal at file offset `0x380` contains `0x100000`, so the image is
+  linked at base `0x100000`.
+
+Ghidra analysis at base `0x0` resolves the data references (the
+`0x100000` value in the vector table is an alias).  The key findings:
+
+- The command-name table starts at file offset `0x7c348` with 48
+  entries (`WIFI_CMD_MAX_RAM`): `WIFI_CMD_GET_INFO`,
+  `WIFI_CMD_OPEN_DEV`, `WIFI_CMD_SCAN`, ...
+- The firmware contains `WIFI_CMD_DOWNLOAD_INI`,
+  `rf_board_config_section_1_download`,
+  `rf_board_config_section_3_download`, `INI_MAGIC_WORD` and
+  `sizeof(INI_MAC_CFG_T) == len`.
+- The 1424-byte type-0/subtype-3 packet contains code-like words
+  (`f7 f7 09 d5`, `00 00 83 d5`, ...) and an incrementing sequence
+  number at offset `0x0c`.  It is a CP log/dump, not a command reply.
+- Sending `WIFI_CMD_OPEN` without the ini/config produces the same
+  log stream; the CP is asserting before the WLAN subsystem is
+  configured.
+
+So the next required step is the ini/config download, not more channel
+probing.  The vendor driver parses
+`/lib/firmware/uwe5622/wifi_2355b001_1ant.ini` into a `wifi_conf_t`
+and sends three sections with `WIFI_CMD_DOWNLOAD_INI` (command 76):
+
+- section 1: version, board config, TPC, frequency compensation,
+  power tables, reg domain, band-edge offsets;
+- section 2: TX scale, misc, debug registers, coexistence;
+- section 3: RF data.
+
+The `wifi_conf_t` generator now works:
+
+```
+sizeof conf=3296 sec1=328 sec2=1464 rf_len=14
+```
+
+It parses `wifi_2355b001_1ant.ini` with the vendor's table and emits
+`sec1.bin`, `sec2.bin`, `sec3.bin` plus C arrays.  `sdprobe pk` sends
+the three sections with `WIFI_CMD_DOWNLOAD_INI` (command 76), section
+number and CRC16, then sends `WIFI_CMD_OPEN`.
+
+## CP boot handshake
+
+`downloadfirmware()` originally treated `SYNC_ADDR = 0x405E73B0` reading
+`0xF0F0F0F1` as success.  That value is not success: it is
+`SYNC_CALI_WAITING`, the CP asking the host for its SDIO configuration
+and RF calibration data.  The vendor sequence (`wcn_boot.c`) is:
+
+1. write `wcnmodem.bin` to `0x40500000`, release `CP_RESET_REG` bit 0;
+2. poll `SYNC_ADDR` until it reads `SYNC_CALI_WAITING` (`0xF0F0F0F1`);
+3. write `sdio_config` at `SYNC_ADDR + 0x1c`;
+4. write `SYNC_CALI_WRITE_DONE` (`0xF0F0F0F2`) to `SYNC_ADDR`;
+5. poll until `SYNC_ALL_FINISHED` (`0xF0F0F0FF`).
+
+The `sdio_config` word is built from `union wcn_sdiohal_config`:
+
+```
+bit 0      sdio_config_en              1
+bit 3:1    vendor_id                   0 (unisoc default)
+bit 4      sdio_rx_mode                1 (sdma; 0 would be adma)
+bit 7:5    sdio_blk_size               1 (512-byte blocks)
+bit 12:11  sdio_irq_type               1 (inband data1 irq)
+bit 22:18  wake_host_level_duration    2 (20 ms)
+bit 23     wake_host_data_separation   1
+=> 0x00880831
+```
+
+Without this the CP reaches `SYNC_ALL_FINISHED` on its own but never
+initializes the WLAN command path: it accepts PK writes, sends log
+packets, and never answers a command.
+
+## SDIO PK framing, TX and RX
+
+The vendor's public header is `struct sdio_puh_t`:
+
+```
+bits 5:0   pad (CONFIG_SDIOM sets 7 bits)
+bit 6      check_sum (unused for WLAN packets)
+bits 22:7  len (payload length, excludes this header)
+bit 23     eof
+bits 27:24 subtype
+bits 31:28 type
+```
+
+`sdiohal_channel_to_hwtype()` maps TX channel `c` to `type 0,
+subtype c`; RX maps `subtype s` to channel `s + 12`.  WLAN commands go
+out on subtype 8 and their replies come back on subtype 10 (channel 22).
+Subtype 3 (channel 15) is the CP log ring.
+
+The vendor writes each packet as `sdio_writesb(0x20, buf, ALIGN_BLK(used))`:
+
+- `used = 4 + ALIGN4(payload) + 4`, with an eof header (all zero except
+  bit 23) after the payload;
+- the buffer is padded up to a 512-byte multiple;
+- if the total is over 512 bytes the full 512-byte blocks go out in one
+  block-mode CMD53, and the remainder (or the whole packet when it is
+  <= 512 bytes) goes out in a byte-mode CMD53.
+
+That last detail matters: a 512-byte total must be sent in *byte* mode,
+not as one block.  `pkwrite()` now mirrors this and uses the DW MSHC
+IDMAC path for multi-block writes.
+
+RX is an aggregation window: a 4-block (2048-byte) CMD53 read from
+0x20 returns one or more packets followed by a trailer with
+`valid_len` at 2040 and the pending packet count at 2044.  The card
+interrupt is not asserted (`CCCR[05]` stays 0 even with the interrupt
+master enabled), so the driver polls the window.
+
+## Working WLAN sequence
+
+`sdcard: sdprobe pk` now reaches a decoded scan:
+
+```
+sync 9ee4c763
+sync f0f0f0f1
+cali handshake, sdio_config 00880831
+sync f0f0f0ff
+CP boot finished
+INI section 1 len 328 crc 9594      -> id 76 status 0
+INI section 2 len 1464 crc a057     -> id 76 status 0
+INI section 3 len 14 crc a354       -> id 76 status 1
+WIFI_CMD_OPEN  (mode 1, mac 02:00:00:00:00:01)
+                                    -> id 179 (flow control), id 3 status 0
+WIFI_CMD_SCAN  (channels 1..14)     -> id 11 status 0
+                                    -> id 131 x N (beacon/probe response)
+                                    -> id 130 SCAN_DONE, code 1
+scan ap bssid 60:38:e0:cd:5f:f1 ssid [Linksys01314]
+scan ap bssid fa:d0:0e:34:01:21 ssid [cozyyConnections]
+```
+
+Notes:
+
+- Section 3 answers with status 1 rather than 0; the CP stays up and
+  the following commands work, so it is not a failure code in this
+  path.  The reply's byte 9 is a rolling sequence number (0, 1, 2, ...),
+  not a section index.
+- `WIFI_EVENT_MGMT_FRAME` (0x83) carries scan results.  Two payload
+  shapes appear: either a 12-byte `struct sprdwl_event_mgmt_frame`
+  (type=4 for scan, channel, signal, bssid, frame length) followed by
+  the 802.11 frame, or the 802.11 frame directly after the 12-byte
+  command header.  `scanframe()` accepts both and decodes the SSID IE.
+- The scan is slow: the CP walks channels at roughly 40 ms each and
+  completes in 2-4 s.  Results only arrive while the host keeps
+  draining the RX window.
+
+## Association
+
+`WIFI_CMD_CONNECT` (10) takes `struct sprdwl_cmd_connect` (82 bytes on
+arm64, because `WLAN_MAX_KEY_LEN` is 32):
+
+```
+0   u32 wpa_versions
+4   u8  bssid[6]
+10  u8  channel
+11  u8  auth_type       0 = open, 1 = shared
+12  u8  pairwise_cipher (value | 0x80 SPRDWL_VALID_CONFIG)
+13  u8  group_cipher
+14  u8  key_mgmt        2 = PSK
+15  u8  mfp_enable
+16  u8  psk_len         32 (the raw PSK, not the passphrase)
+17  u8  ssid_len
+18  u8  psk[32]
+50  u8  ssid[32]
+```
+
+For WPA2 the firmware wants the 32-byte PSK.  `sdprobe` derives it from
+the passphrase with PBKDF2-HMAC-SHA1 (4096 rounds, SSID as salt), which
+is small enough to carry in the probe.
+
+Measured against `Linksys01314` (WPA2/WPA3 transition mode):
+
+```
+WIFI_CMD_CONNECT ssid [Linksys01314] ch 1 bssid 60:38:e0:cd:5f:f1 psk 32
+cmd 10 -> status 0
+PK reply id 245 plen 23     WIFI_EVENT_STA_LUT_INDEX
+sta lut index 6 ctx 0 action 1
+PK reply id 128 plen 672    WIFI_EVENT_CONNECT
+connect event status 0 bssid 60:38:e0:cd:5f:f1 ch 1 sig -91
+```
+
+`WIFI_EVENT_STA_LUT_INDEX` (0xf5) carries
+`{ctx_id, action, sta_lut_index, ra[6], ht, vht}`; the index is needed
+in every TX data descriptor.
+
+## Data path
+
+TX uses SDIO subtype 10 and RX subtype 12.  The payload starts with
+`struct tx_msdu_dscr` (11 bytes):
+
+```
+0  common        type=2 (DATA), ctx_id
+1  offset        11
+2  tx_ctrl       sw_rate is set for ARP/management-style frames
+3  pkt_len       802.3 frame length
+5  buffer_info   msdu_tid (0 = BE)
+6  sta_lut_index from event 0xf5
+7  color/rsvd
+9  tcp_udp checksum offset
+```
+
+followed by the 802.3 frame.  RX data starts with `struct rx_msdu_desc`;
+`msdu_offset` (byte 1) and `msdu_len` (bytes 2..3) locate the frame.
+
+The firmware also sends `WIFI_EVENT_SDIO_FLOWCON` (0xb3) with four
+credit bytes (VO, VI, BE, BK), 16 each after connect.  Sending without
+credit makes the CP log `TXC_FAIL_Q ... FC: 0`.
+
+### Current blocker: the link is too weak
+
+With the board where it is, `Linksys01314` is heard at -91/-92 dBm
+while the host sees the same AP at 70 %.  Association and the WPA2
+handshake complete, and the probe's DHCP DISCOVER and ARP requests are
+accepted by the CP (`datatx e=0`, BE credit decrements, no `TXC_FAIL_Q`
+on the broadcast), but no frame ever comes back: no DHCP offer and not
+a single subtype-12 packet in 4 s.  The CP itself logs
+`send_notify_cqm_to_host rssi_low_count=61` and starts roaming.
+
+That is a link-budget problem, not a framing one.  The next test needs
+the antenna attached (the v1.1 board has a U.FL connector) or the board
+next to the AP, and then `sdprobe connect <ssid> <passphrase> [channel]`
+should reach DHCP.
+
+## Next
+
+1. Retest association + DHCP with the board next to the AP; then send
+   `WIFI_CMD_NOTIFY_IP_ACQUIRED` (26) and keep the lease.
+2. Turn the one-shot probe into a long-running driver that owns the
+   data channels and exposes a `/net` interface.
+3. WPA2 key install (`WIFI_CMD_KEY`, 14) only matters if the firmware
+   does not keep doing the handshake itself; with a PSK in CONNECT it
+   does.

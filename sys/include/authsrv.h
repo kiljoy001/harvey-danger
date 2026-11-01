@@ -1,3 +1,6 @@
+#ifndef _AUTHSRV_H_
+#define _AUTHSRV_H_
+
 /*
  * This file is part of the UCB release of Plan 9. It is subject to the license
  * terms in the LICENSE file found in the top-level directory of this
@@ -178,3 +181,5 @@ extern	int	_asgetticket(int, char*, char*);
 extern	int	_asrdresp(int, char*, int);
 extern	int	sslnegotiate(int, Ticket*, char**, char**);
 extern	int	srvsslnegotiate(int, Ticket*, char**, char**);
+
+#endif

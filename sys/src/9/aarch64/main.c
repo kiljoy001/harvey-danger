@@ -16,6 +16,7 @@ int arm64contextprobe(void);
 extern char arm64vectors[];
 extern char _start[], __image_end[];
 extern u64 arm64dmabase, arm64dmasize;
+extern u64 arm64teeshmbase, arm64teeshmsize;
 extern u64 arm64bootarchbase;
 extern u32 arm64bootarchsize;
 
@@ -237,6 +238,20 @@ arm64main(usize dtb)
 			info.reserve[info.nreserve++].size = arm64dmasize;
 			arm64dmabase = base;
 		}
+	}
+	/*
+	 * The vendor RK3566 OP-TEE build's memory map puts the static
+	 * non-secure shared memory at 0x09200000, 2 MiB (type
+	 * MEM_AREA_NSEC_SHM, right after TEE/TA RAM).  Reserve it so the
+	 * page allocator never reuses it, and publish it as "teeshm" for
+	 * the userspace OP-TEE client.
+	 */
+	if(info.nreserve < Maxfdtreserve && 0x9200000 >= info.rambase &&
+	   0x9200000 + 0x200000 <= info.rambase + info.ramsize){
+		info.reserve[info.nreserve].base = 0x9200000;
+		info.reserve[info.nreserve++].size = 0x200000;
+		arm64teeshmbase = 0x9200000;
+		arm64teeshmsize = 0x200000;
 	}
 	/*
 	 * U-Boot may load a boot archive next to the kernel (see the board

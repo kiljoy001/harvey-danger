@@ -3,6 +3,7 @@
 
 from pathlib import Path
 import argparse
+import hashlib
 import os
 import shutil
 import struct
@@ -26,6 +27,9 @@ GPIOFS_BASE = 0x1A00000
 HUBFS_BASE = 0x1E00000
 DRVMAN_BASE = 0x2200000
 I2CFS_BASE = 0x2600000
+PMICFS_BASE = 0xA600000
+MKDIR_BASE = 0xAA00000
+MOUNT_BASE = 0xAE00000
 RC_BASE = 0x2A00000
 ECHO_BASE = 0x2E00000
 CAT_BASE = 0x3200000
@@ -33,6 +37,12 @@ LS_BASE = 0x3600000
 RTC_BASE = 0x3E00000
 PING_BASE = 0x8200000
 SDPROBE_BASE = 0x8600000
+KEYROOT_PROBE_BASE = 0x8A00000
+DP9IKTEST_BASE = 0x8E00000
+FACTOTUM_BASE = 0x9600000
+FACTOTUMKEY_BASE = 0x9A00000
+KEYROOT_BASE = 0x9E00000
+KEYROOTTEST_BASE = 0xA200000
 EMMC_BASE = 0x5200000
 EMMCFS_BASE = 0x4600000
 GMAC_BASE = 0x4A00000
@@ -171,7 +181,10 @@ SECTIONS {{
         "-fno-stack-protector", "-fno-vectorize", "-fno-slp-vectorize",
         "-mstrict-align", "-fsigned-char", "-fcommon", "-O2",
         "-I", str(ROOT / "aarch64/include"),
-        "-I", str(ROOT / "sys/include"), "-c", str(source), "-o", str(obj),
+        "-I", str(ROOT / "sys/include"),
+        "-I", str(ROOT / "sys/src/cmd/auth/keyroot/ta/pq/usercompat"),
+        "-I", str(ROOT / "sys/src/cmd/auth/keyroot/ta/pq"),
+        "-c", str(source), "-o", str(obj),
     ], check=True)
     libs = [*extra, libc]
     subprocess.run([
@@ -209,9 +222,100 @@ def build_fs(out: Path, libc: Path, name: str, source: Path,
                      ldflags=["--defsym=threadmain=main"])
 
 
+def build_factotum(out: Path, libc: Path) -> tuple[bytes, int]:
+    """Build factotum with the dp9ik protocol for ARM64 Harvey."""
+    o9 = ROOT / "build/arm64-o9"
+    srcdir = ROOT / "sys/src/cmd/auth/factotum"
+    names = (
+        "apop.c", "chap.c", "confirm.c", "fs.c", "httpdigest.c",
+        "log.c", "p9any.c", "p9cr.c", "p9sk1.c", "dp9ik.c", "pass.c",
+        "rpc.c", "rsa.c", "secstore.c", "util.c", "wep.c",
+    )
+    flags = [
+        CC, "--target=aarch64-none-elf", "-ffreestanding", "-fno-builtin",
+        "-fno-stack-protector", "-fno-unwind-tables",
+        "-fno-asynchronous-unwind-tables", "-fno-vectorize",
+        "-fno-slp-vectorize", "-mstrict-align", "-fsigned-char",
+        "-fcommon", "-O2", "-D__HARVEY__", "-DMONO_PLAN9",
+        "-I", str(ROOT / "aarch64/include"),
+        "-I", str(ROOT / "sys/include"),
+        "-I", str(srcdir),
+    ]
+    objs = []
+    for name in names:
+        obj = out / ("factotum-" + name.replace(".c", ".o"))
+        subprocess.run([*flags, "-c", str(srcdir / name), "-o", str(obj)],
+                       check=True)
+        objs.append(obj)
+    script = out / "factotum.ld"
+    script.write_text(f'''ENTRY(_main)
+PHDRS {{ text PT_LOAD FLAGS(5); data PT_LOAD FLAGS(6); }}
+SECTIONS {{
+  . = 0x{FACTOTUM_BASE:x};
+  .text : {{ *(.text .text.*) *(.rodata .rodata.*) }} :text
+  . = ALIGN(0x{BIG_PAGE:x});
+  .data : {{ *(.data .data.*) *(.sdata .sdata.*) *(.got .got.*) }} :data
+  .bss : {{ *(.bss .bss.*) *(.sbss .sbss.*) COMMON }} :data
+  PROVIDE(end = .);
+  /DISCARD/ : {{ *(.comment) *(.note*) }}
+}}
+''')
+    libs = [
+        o9 / "lib9p.a", o9 / "libthread.a", o9 / "libauth.a",
+        o9 / "libauthsrv.a", o9 / "libsec.a", o9 / "libndb.a",
+        o9 / "libbio.a", o9 / "libmp.a", o9 / "libString.a",
+        o9 / "libip.a", libc,
+    ]
+    elf = out / "factotum"
+    subprocess.run([
+        LD, "-static", "-z", "max-page-size=4096", "-T", str(script),
+        "--allow-multiple-definition", "--defsym=threadmain=main",
+        "-e", "_main", "-u", "_main", *map(str, objs),
+        "--start-group", *map(str, libs), "--end-group",
+        "-o", str(elf),
+    ], check=True)
+    return validate_elf(elf, FACTOTUM_BASE)
+
+
 def build_simple(out: Path, libc: Path, name: str, source: Path,
                  base: int) -> tuple[bytes, int]:
     return build_elf(out, libc, name, source, base, [])
+
+
+def build_pq_objs(out: Path) -> list[Path]:
+    """Compile the Dilithium verifier side for normal-world Harvey."""
+    pqdir = ROOT / "sys/src/cmd/auth/keyroot/ta/pq"
+    names = (
+        "fips202.c", "ntt.c", "packing.c", "poly.c", "polyvec.c",
+        "reduce.c", "rounding.c", "sign.c", "symmetric-shake.c",
+        "randombytes_user.c",
+    )
+    objs: list[Path] = []
+    for name in names:
+        obj = out / ("pq_" + name.replace(".c", ".o"))
+        subprocess.run([
+            CC, "--target=aarch64-none-elf", "-ffreestanding", "-fno-builtin",
+            "-fno-stack-protector", "-fno-vectorize", "-fno-slp-vectorize",
+            "-mstrict-align", "-fsigned-char", "-fcommon", "-O2",
+            "-I", str(ROOT / "aarch64/include"),
+            "-I", str(ROOT / "sys/include"),
+            "-I", str(pqdir / "usercompat"),
+            "-I", str(pqdir),
+            "-c", str(pqdir / name), "-o", str(obj),
+        ], check=True)
+        objs.append(obj)
+    desdir = ROOT / "sys/src/cmd/auth/keyroot/ta/des"
+    for name in ("des.c", "des_crypt.c"):
+        obj = out / ("des_" + name.replace(".c", ".o"))
+        subprocess.run([
+            CC, "--target=aarch64-none-elf", "-ffreestanding", "-fno-builtin",
+            "-fno-stack-protector", "-fno-vectorize", "-fno-slp-vectorize",
+            "-mstrict-align", "-fsigned-char", "-fcommon", "-O2",
+            "-I", str(desdir),
+            "-c", str(desdir / name), "-o", str(obj),
+        ], check=True)
+        objs.append(obj)
+    return objs
 
 
 def build_uartfs(out: Path, libc: Path) -> tuple[bytes, int]:
@@ -237,6 +341,11 @@ def build_drvman(out: Path, libc: Path) -> tuple[bytes, int]:
 def build_i2cfs(out: Path, libc: Path) -> tuple[bytes, int]:
     return build_fs(out, libc, "i2cfs",
                     ROOT / "sys/src/cmd/i2cfs/i2cfs.c", I2CFS_BASE)
+
+
+def build_pmicfs(out: Path, libc: Path) -> tuple[bytes, int]:
+    return build_fs(out, libc, "pmicfs",
+                    ROOT / "sys/src/cmd/pmicfs/pmicfs.c", PMICFS_BASE)
 
 
 def build_emmcfs(out: Path, libc: Path) -> tuple[bytes, int]:
@@ -472,6 +581,8 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--archive", type=Path)
+    parser.add_argument("--ta", type=Path,
+                        help="signed keyroot probe TA for /boot")
     args = parser.parse_args()
     if os.environ.get("ARM64_SKIP_O9") != "1":
         subprocess.run([sys.executable,
@@ -480,6 +591,8 @@ def main() -> None:
     out = args.output.parent / "userland"
     stamp = args.output.parent / "userland.sig"
     sig = userland_signature()
+    if args.ta is not None:
+        sig += ":ta:" + hashlib.sha256(args.ta.read_bytes()).hexdigest()
     if (args.output.exists() and buildcache.up_to_date(stamp, sig)
             and (args.archive is None or args.archive.exists())):
         print("ARM64 userland up to date")
@@ -913,6 +1026,15 @@ main(int argc, char **argv)
     hubfs, _ = build_hubfs(out, libc)
     drvman, _ = build_drvman(out, libc)
     i2cfs, _ = build_i2cfs(out, libc)
+    pmicfs, _ = build_pmicfs(out, libc)
+    mkdirbin, _ = build_elf(out, libc, "mkdir", ROOT / "sys/src/cmd/mkdir.c",
+                            MKDIR_BASE, [])
+    mountbin, _ = build_elf(out, libc, "mount", ROOT / "sys/src/cmd/mount.c",
+                            MOUNT_BASE,
+                            [ROOT / "build/arm64-o9/libauth.a",
+                             ROOT / "build/arm64-o9/libauthsrv.a",
+                             ROOT / "build/arm64-o9/libsec.a",
+                             ROOT / "build/arm64-o9/libndb.a"])
     emmcfs, _ = build_emmcfs(out, libc)
     gmacfs, _ = build_gmacfs(out, libc)
     usbpower, _ = build_usbpower(out, libc)
@@ -1357,6 +1479,36 @@ main(int argc, char **argv)
                         ROOT / "sys/src/cmd/gmac/gmac.c", GMAC_BASE, [])
     sdprobe, _ = build_elf(out, libc, "sdprobe",
                            ROOT / "sys/src/cmd/sdio/sdprobe.c", SDPROBE_BASE, [])
+    keyrootprobe, _ = build_elf(out, libc, "opteeprobe",
+                                ROOT / "sys/src/cmd/auth/keyroot/opteeprobe.c",
+                                KEYROOT_PROBE_BASE, build_pq_objs(out))
+    factotum, _ = build_factotum(out, libc)
+    factotumkey, _ = build_elf(out, libc, "factotumkey",
+                               ROOT / "sys/src/cmd/auth/factotumkeytest.c",
+                               FACTOTUMKEY_BASE, [])
+    keyrootlibs = [
+        ROOT / "build/arm64-o9/lib9p.a",
+        ROOT / "build/arm64-o9/libthread.a",
+        ROOT / "build/arm64-o9/libauth.a",
+        ROOT / "build/arm64-o9/libauthsrv.a",
+        ROOT / "build/arm64-o9/libsec.a",
+        ROOT / "build/arm64-o9/libString.a",
+        ROOT / "build/arm64-o9/libip.a",
+        ROOT / "build/arm64-o9/libmp.a",
+    ]
+    keyrootsvc, _ = build_elf(out, libc, "keyroot",
+                              ROOT / "sys/src/cmd/auth/keyroot/keyroot.c",
+                              KEYROOT_BASE, keyrootlibs,
+                              ldflags=["--defsym=threadmain=main"])
+    keyroottest, _ = build_elf(out, libc, "keyroottest",
+                               ROOT / "sys/src/cmd/auth/keyroottest.c",
+                               KEYROOTTEST_BASE, [])
+    dp9iktest, _ = build_elf(out, libc, "dp9iktest",
+                             ROOT / "sys/src/cmd/auth/dp9iktest.c",
+                             DP9IKTEST_BASE,
+                             [ROOT / "build/arm64-o9/libmp.a",
+                              ROOT / "build/arm64-o9/libauthsrv.a",
+                              ROOT / "build/arm64-o9/libsec.a"])
     displaytest, _ = build_program(out, "displaytest", r'''#include <u.h>
 #include <libc.h>
 
@@ -1515,6 +1667,9 @@ main(int argc, char **argv)
     emit_array(lines, "arm64hubfself", hubfs)
     emit_array(lines, "arm64drvmanelf", drvman)
     emit_array(lines, "arm64i2cfself", i2cfs)
+    emit_array(lines, "arm64pmicfself", pmicfs)
+    emit_array(lines, "arm64mkdirelf", mkdirbin)
+    emit_array(lines, "arm64mountelf", mountbin)
     emit_array(lines, "arm64emmcfsimage", emmcfs)
     emit_array(lines, "arm64gmacfsimage", gmacfs)
     emit_array(lines, "arm64usbpowerelf", usbpower)
@@ -1527,6 +1682,12 @@ main(int argc, char **argv)
     emit_array(lines, "arm64emmcelf", emmc)
     emit_array(lines, "arm64gmacelf", gmac)
     emit_array(lines, "arm64sdprobeelf", sdprobe)
+    emit_array(lines, "arm64opteeprobeelf", keyrootprobe)
+    emit_array(lines, "arm64dp9iktestelf", dp9iktest)
+    emit_array(lines, "arm64factotumelf", factotum)
+    emit_array(lines, "arm64factotumkeyelf", factotumkey)
+    emit_array(lines, "arm64keyrootelf", keyrootsvc)
+    emit_array(lines, "arm64keyroottestelf", keyroottest)
     emit_array(lines, "arm64displaytestelf", displaytest)
     emit_array(lines, "arm64rcmain", rcmain.encode())
     args.output.write_text("\n".join(lines))
@@ -1543,6 +1704,9 @@ main(int argc, char **argv)
         "hubfs": hubfs,
         "drvman": drvman,
         "i2cfs": i2cfs,
+        "pmicfs": pmicfs,
+        "mkdir": mkdirbin,
+        "mount": mountbin,
         "emmcfs": emmcfs,
         "gmacfs": gmacfs,
         "usbpower": usbpower,
@@ -1555,9 +1719,20 @@ main(int argc, char **argv)
         "emmc": emmc,
         "gmac": gmac,
         "sdprobe": sdprobe,
+        "opteeprobe": keyrootprobe,
+        "dp9iktest": dp9iktest,
+        "factotum": factotum,
+        "factotumkey": factotumkey,
+        "keyroot": keyrootsvc,
+        "keyroottest": keyroottest,
         "displaytest": displaytest,
         "rcmain": rcmain.encode(),
     }
+    if args.ta is not None:
+        programs["optee-keyroot.ta"] = args.ta.read_bytes()
+    wcnfw = ROOT / "sys/src/cmd/sdio/wcnmodem.bin"
+    if wcnfw.exists():
+        programs["wcnmodem.bin"] = wcnfw.read_bytes()
     if args.archive is not None:
         write_archive(args.archive, programs)
     buildcache.record(stamp, sig)

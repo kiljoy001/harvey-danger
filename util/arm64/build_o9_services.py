@@ -39,6 +39,9 @@ INCLUDES = [
 ]
 
 LIBRARIES = {
+    "libmp": ROOT / "sys/src/libmp/libmp.json",
+    "libString": ROOT / "sys/src/libString/libString.json",
+    "libip": ROOT / "sys/src/libip/libip.json",
     "libthread": ROOT / "sys/src/libthread/libthread.json",
     "lib9p": ROOT / "sys/src/lib9p/lib9p.json",
     "libauth": ROOT / "sys/src/libauth/libauth.json",

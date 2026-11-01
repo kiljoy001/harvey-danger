@@ -12,6 +12,7 @@ Start here:
   versus the L2 xHCI controller driver.
 - [support-matrix.md](support-matrix.md) — what is supported, partial or
   unsupported per board.
+- [pmic-bringup.md](pmic-bringup.md) — RK809 rail/RTC service over i2cfs.
 - [../boards/orangepi-3b/](../boards/orangepi-3b/) — reference board dossier
   with schematic/DTS/register maps and the UAC1 driver notes.
 
