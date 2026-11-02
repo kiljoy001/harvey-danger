@@ -205,6 +205,25 @@ function start_vps_root() int64 {
             _exits("net.rc");
         }
 
+        /* Rio creates its own namespace, so dns and cs must have mounted
+           /net/dns and /net/cs before it forks.  Wait a bounded time for
+           them; a missing link must not hold up the desktop. */
+        for(i = 0; i < 150; i++){
+            Dir *cd = dirstat("/net/cs");
+            Dir *dd = dirstat("/net/dns");
+            if(cd != nil){
+                free(cd);
+                if(dd != nil){
+                    free(dd);
+                    print("vps: network services mounted\n");
+                    break;
+                }
+            }
+            if(dd != nil)
+                free(dd);
+            sleep(100);
+        }
+
         value = getenv("user");
         if(value == nil || value[0] == 0)
             putenv("user", "glenda");

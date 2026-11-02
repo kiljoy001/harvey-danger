@@ -14,9 +14,9 @@ inb:
 
 .global insb
 insb:
-	MOVL	%edi, %edx			/* MOVL	port+0(FP), DX */
-	MOVQ	%rsi, %rdi
-	MOVL	%edx, %ecx
+	MOVL	%edx, %ecx			/* count */
+	MOVL	%edi, %edx			/* port */
+	MOVQ	%rsi, %rdi			/* buffer */
 	CLD
 	REP;	INSB
 	RET
@@ -30,9 +30,9 @@ ins:
 
 .global inss
 inss:
-	MOVL	%edi, %edx			/* MOVL	port+0(FP), DX */
-	MOVQ	%rsi, %rdi
-	MOVL	%edx, %ecx
+	MOVL	%edx, %ecx			/* count */
+	MOVL	%edi, %edx			/* port */
+	MOVQ	%rsi, %rdi			/* buffer */
 	CLD
 	REP;	INSW
 	RET
@@ -45,9 +45,9 @@ inl:
 
 .global insl
 insl:
-	MOVL	%edi, %edx			/* MOVL	port+0(FP), DX */
-	MOVQ	%rsi, %rdi
-	MOVL	%edx, %ecx
+	MOVL	%edx, %ecx			/* count */
+	MOVL	%edi, %edx			/* port */
+	MOVQ	%rsi, %rdi			/* buffer */
 	CLD
 	REP; INSL
 	RET
@@ -76,8 +76,8 @@ outs:
 
 .global outss
 outss:
-	MOVL	%edi, %edx			/* MOVL	port+0(FP), DX */
-	MOVL	%edx, %ecx
+	MOVL	%edx, %ecx			/* count */
+	MOVL	%edi, %edx			/* port */
 	CLD
 	REP; OUTSW
 	RET
@@ -91,9 +91,8 @@ outl:
 
 .global outsl
 outsl:
-	MOVL	%edi, %edx			/* MOVL	port+0(FP), DX */
-	MOVQ	%rsi, %rdi
-	MOVL	%edx, %ecx
+	MOVL	%edx, %ecx			/* count */
+	MOVL	%edi, %edx			/* port */
 	CLD
 	REP; OUTSL
 	RET

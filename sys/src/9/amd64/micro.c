@@ -50,6 +50,7 @@ Dev *devtab[] = {
 extern void	ethermediumlink(void);
 extern void	loopbackmediumlink(void);
 extern void	ethervirtiolink(void);
+extern void	ether2000link(void);
 
 void
 links(void)
@@ -57,6 +58,7 @@ links(void)
 	ethermediumlink();
 	loopbackmediumlink();
 	ethervirtiolink();
+	ether2000link();
 }
 
 PhysUart* physuart[] = {

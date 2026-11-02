@@ -173,6 +173,8 @@ SOURCES = [
     "sys/src/9/port/dev9ring.c",
     "sys/src/9/port/edf.c",
     "sys/src/9/port/ethervirtio.c",
+    "sys/src/9/port/ether8390.c",
+    "sys/src/9/port/ether2000.c",
     "sys/src/libsec/port/sha1.c",
     "sys/src/libsec/port/sha1block.c",
     "sys/src/libsec/port/hmac.c",
