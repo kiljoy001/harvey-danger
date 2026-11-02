@@ -166,9 +166,10 @@ Running a compiler and linker on Harvey needed three runtime pieces that APEX
 was missing.  They live in APEX now, not in a shim:
 
 - **TLS.** APEX never set the FS base, so any `thread_local` access faulted at
-  address 0 (lld links with a PT_TLS segment). `__libc_start_main` now points
-  the thread pointer at a zeroed TCB and publishes it through
-  `#p/<pid>/tls`; the kernel applies it in `kexit`.
+  address 0 (lld links with a PT_TLS segment). `__libc_start_main` now reads
+  PT_TLS back through `#p/<pid>/text`, copies the `.tdata` initialiser image,
+  builds the TCB and publishes the thread pointer through `#p/<pid>/tls`; the
+  kernel applies it in `kexit`.
 - **Raw mmap syscalls.** `__sys_mmap`/`__sys_munmap`/`__sys_mprotect` called
   the identically named libc functions and recursed until the stack ran out.
   They now issue syscalls 55/56/57 directly.
@@ -178,13 +179,14 @@ was missing.  They live in APEX now, not in a shim:
 
 ## Next rungs
 
-1. Populate `.tdata`: TLS variables with non-zero initialisers are still
-   zero-initialised.
-2. Make `getMainExecutable` more robust. The patch resolves `argv[0]`, so the
+1. Make `getMainExecutable` more robust. The patch resolves `argv[0]`, so the
    driver must be started with a path. A real `/proc/self/exe` equivalent, or
    passing the image path through the environment, would fix bare `clang++`.
-3. Propagate the environment across `exec`. Harvey drops it, so `TMPDIR` and
-   friends cannot be set for a tool the driver spawns.
-4. Add a Harvey toolchain to Clang instead of a config file, so the paths are
+2. Propagate the environment across `exec`. Harvey drops it, so `TMPDIR` and
+   friends cannot be set for a tool the driver spawns. clang works around it
+   by defaulting to `/tmp`, which is why the SDK creates one.
+3. Add a Harvey toolchain to Clang instead of a config file, so the paths are
    baked in and `x86_64-unknown-harvey` is a real target.
-5. `std::filesystem`: the headers are enabled but the library is not built.
+4. `std::filesystem`: the headers are enabled but the library is not built.
+5. Errant messages: APEX uses Linux errno numbers but a Plan 9 `strerror`
+   table, so `ENOENT` reads as "Access denied".

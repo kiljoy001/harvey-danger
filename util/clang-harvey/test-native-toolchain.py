@@ -26,12 +26,32 @@ VM = REPO / "util" / "9vm" / "9vm"
 KERNEL = REPO / "build" / "harvey.32bit"
 
 HELLO = """\
+#include <algorithm>
 #include <cstdio>
+#include <map>
+#include <sstream>
 #include <string>
+#include <vector>
+
+template <typename T>
+T sum(const std::vector<T> &v) {
+    T total{};
+    for (const auto &x : v)
+        total += x;
+    return total;
+}
 
 int main() {
-    std::string who = "harvey";
-    std::printf("hello from %s\\n", who.c_str());
+    std::vector<int> v{3, 1, 4, 1, 5, 9, 2, 6};
+    std::sort(v.begin(), v.end());
+
+    std::map<std::string, int> counts;
+    for (int i : v)
+        counts[std::to_string(i)]++;
+
+    std::ostringstream out;
+    out << "sum=" << sum(v) << " distinct=" << counts.size();
+    std::printf("hello from harvey: %s\\n", out.str().c_str());
     return 0;
 }
 """
@@ -64,14 +84,14 @@ def main():
                                  "panic", "fault", "suicide")):
             print("  " + line)
 
-    if "hello from harvey" not in output:
+    if "hello from harvey: sum=31 distinct=7" not in output:
         sys.exit("the guest-linked program did not run")
     elf = BUILD / "hello"
     if not elf.is_file() or elf.stat().st_size == 0:
         sys.exit("ld.lld produced no executable")
     print(f"native toolchain: clang++ -> cc1 -> ld.lld -> {elf.name} "
           f"({elf.stat().st_size} bytes) ran and printed "
-          f"'hello from harvey'")
+          f"'hello from harvey: sum=31 distinct=7'")
 
 
 if __name__ == "__main__":
