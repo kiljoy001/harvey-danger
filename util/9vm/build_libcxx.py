@@ -210,7 +210,14 @@ def build_library():
         src = LIBCXX / "src" / f"{name}.cpp"
         obj = OBJDIR / f"{name}.o"
         obj.parent.mkdir(parents=True, exist_ok=True)
-        run([CXX, *base_flags(True), "-c", str(src), "-o", str(obj)])
+        extra = []
+        if name == "exception":
+            # std::exception_ptr lives in libc++abi; selecting this build mode
+            # makes exception.cpp use the __cxa_* implementation instead of
+            # the "not yet implemented" fallback.
+            extra.append("-DLIBCXX_BUILDING_LIBCXXABI")
+            extra.append(f"-I{LIBCXXABI / 'include'}")
+        run([CXX, *base_flags(True), *extra, "-c", str(src), "-o", str(obj)])
         objects.append(obj)
 
     compat_obj = OBJDIR / "compat.o"
@@ -243,7 +250,8 @@ def build_library():
     # libc++'s exception.cpp already provides std::terminate and friends, so
     # libc++abi's cxa_handlers/cxa_default_handlers would duplicate them.
     for name in ("cxa_exception", "cxa_personality",
-                 "cxa_exception_storage", "fallback_malloc"):
+                 "cxa_exception_storage", "fallback_malloc",
+                 "stdlib_exception", "cxa_handlers", "cxa_default_handlers"):
         src = LIBCXXABI / "src" / f"{name}.cpp"
         obj = OBJDIR / f"cxa_{name}.o"
         run([CXX, *exc_flags, "-c", str(src), "-o", str(obj)])

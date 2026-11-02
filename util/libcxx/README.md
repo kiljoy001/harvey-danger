@@ -107,7 +107,16 @@ RTTI **is** available: libc++ is built with `-frtti`, and
 - **libm** — APEX ships almost no math library, so `libm_stub.cpp` supplies
   the C99 functions LLVM needs, using x87 instructions.
 - **`__cxa_thread_atexit`** — missing from APEX's libcxxabi stub; compat.cpp
-  registers the destructor and runs it at process exit (there is one thread).
+  registers the destructor per thread and runs it at process exit.
+
+- **`std::exception_ptr`** — exception.cpp is compiled in libc++abi mode
+  (`LIBCXX_BUILDING_LIBCXXABI`) so the `__cxa_*` implementation is used
+  rather than libc++'s "not yet implemented" fallback.  That pulls in
+  libc++abi's `stdlib_exception`, `cxa_handlers` and `cxa_default_handlers`;
+  `bad_cast`/`bad_typeid` are defined in compat.cpp to avoid a second
+  `std::type_info` destructor.
+
+- **`__cxa_demangle`** — stubbed to fail; diagnostics print mangled names.
 - **charconv** — this libc++ snapshot's `src/include/shared/fp_bits.h` is
   missing, so `charconv.cpp` is skipped. `std::to_string` and the integer
   paths used by `<string>` still work.

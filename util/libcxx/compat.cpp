@@ -16,6 +16,7 @@
 #include <link.h>
 #include <dlfcn.h>
 #include <exception>
+#include <typeinfo>
 #include <cstdlib>
 #ifdef PATH_MAX
 #define HARVEY_PATH_MAX PATH_MAX
@@ -50,24 +51,28 @@ extern "C" int nanosleep(const struct timespec *req, struct timespec *rem) {
 static void *harvey_aligned_alloc(size_t n, size_t align);
 
 /*
- * libc++abi's cxa_handlers.cpp defines std::__terminate/std::__unexpected,
- * but it also redefines std::terminate and friends, which libc++'s
- * exception.cpp already provides.  Only the two internal entry points are
- * needed, so define just those here.
+ * With exception.cpp built in libc++abi mode, the bad_cast/bad_typeid
+ * classes come from libc++abi's stdlib_typeinfo.cpp, which would also
+ * redefine std::type_info's destructor (that lives in libc++'s typeinfo.cpp).
+ * Define just the two classes here instead.
  */
 namespace std {
-[[noreturn]] __attribute__((visibility("hidden"))) void
-__terminate(void (*func)()) noexcept {
-    func();
-    abort();
-}
-
-[[noreturn]] __attribute__((visibility("hidden"))) void
-__unexpected(void (*func)()) {
-    func();
-    terminate();
-}
+bad_cast::bad_cast() noexcept {}
+bad_cast::~bad_cast() noexcept {}
+const char *bad_cast::what() const noexcept { return "std::bad_cast"; }
+bad_typeid::bad_typeid() noexcept {}
+bad_typeid::~bad_typeid() noexcept {}
+const char *bad_typeid::what() const noexcept { return "std::bad_typeid"; }
 } // namespace std
+
+/* Demangling is only used for diagnostics; returning failure is legal. */
+extern "C" char *__cxa_demangle(const char *mangled, char *buf, size_t *n,
+                                int *status) {
+    (void)mangled; (void)buf; (void)n;
+    if (status)
+        *status = -1;
+    return nullptr;
+}
 
 /*
  * APEX's libcxxabi stub has no __cxa_thread_atexit().  Harvey has no real
