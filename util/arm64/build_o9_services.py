@@ -20,7 +20,9 @@ LD = os.environ.get("ARM64_LD") or shutil.which("ld.lld") or "ld.lld"
 AR = os.environ.get("ARM64_AR") or shutil.which("llvm-ar-23") or "llvm-ar"
 STRIP = (os.environ.get("ARM64_STRIP") or shutil.which("llvm-strip-23") or
          shutil.which("llvm-strip") or "llvm-strip")
-O9C = O9_ROOT / "o9c/o9c"
+# The repo copy of o9c is a Plan 9 a.out when it is built inside the
+# 9front VM; O9C lets a host build point at its own compiler.
+O9C = Path(os.environ.get("O9C", O9_ROOT / "o9c/o9c")).resolve()
 BIG_PAGE = 0x200000
 
 FLAGS = [
