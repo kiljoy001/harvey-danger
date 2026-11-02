@@ -41,7 +41,7 @@ unsupported   no native driver; use a compatibility host or sponsor a port
 | VEPU (encode) | `#P` | vepu | — | — | unsupported | — |
 | RGA (2D) | `#P` | rga | — | — | unsupported | blit/scale |
 | NPU | `#P` | rknpu (NVDLA-derived) | — | — | experimental | regcmd/task format and 0xfde40000 block decoded in 9rock; vendor driver present; no Harvey driver yet |
-| GPU | `#P` | Mali G52 | — | — | unsupported | — |
+| GPU | `#P` | Mali G52 | gpufs | `/srv/gpu` | partial | power/clock/reset + GPU_ID/feature block on hardware; no GPU MMU, jobs or graphics |
 | ISP / camera | `#P` | rkisp + vicap | — | — | unsupported | MIPI CSI |
 | eFuse / OTP | `#P` | RK efuse | — | — | unsupported | — |
 | TPM 2.0 (add-on) | `#P` | CRB/TIS | tpmfs | `/mnt/tpm` | experimental | SPI/CRB module, PCR and seal/unseal |

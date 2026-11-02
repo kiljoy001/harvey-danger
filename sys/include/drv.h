@@ -61,6 +61,7 @@ struct Drv {
  * device the firmware marked as its console, else the first match.  "*"
  * matches any node that publishes registers.  Both return 0 on success. */
 int	drvfind(Drv*, char *class, int wantconsole);
+int	drvfindreg(Drv*, u64 base);	/* by register base */
 int	drvfindexact(Drv*, char *node);	/* by #P node name */
 
 /* Map the MMIO window (2 MiB aligned, like the kernel's grant). */

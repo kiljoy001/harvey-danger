@@ -98,12 +98,15 @@ drvfindexact(Drv *d, char *node)
 }
 
 /*
- * Scan #P for a node whose class matches.  A console match wins when the
- * caller asks for it; otherwise the first match is the answer and the console
- * device is only a fallback.  "*" matches every node that has registers.
+ * Scan #P.  class matches the node's class ("*" matches every node that has
+ * registers); reg, when given, matches the node's register base instead --
+ * SoC glue such as the PMU and CRU has no useful class, but exactly one node
+ * owns a given physical address.  A console match wins when the caller asks
+ * for it; otherwise the first match is the answer and the console device is
+ * only a fallback.
  */
-int
-drvfind(Drv *d, char *class, int wantconsole)
+static int
+drvscan(Drv *d, char *class, u64 *reg, int wantconsole)
 {
 	Drv first, console, t;
 	uchar dirbuf[16384];
@@ -139,7 +142,10 @@ drvfind(Drv *d, char *class, int wantconsole)
 			continue;
 		if(drvfindexact(&t, de.name) < 0)
 			continue;
-		if(strcmp(class, "*") != 0 && strcmp(t.klass, class) != 0)
+		if(class != nil && strcmp(class, "*") != 0 &&
+		   strcmp(t.klass, class) != 0)
+			continue;
+		if(reg != nil && t.base != *reg)
 			continue;
 		if(t.console){
 			console = t;
@@ -165,6 +171,18 @@ drvfind(Drv *d, char *class, int wantconsole)
 		return 0;
 	}
 	return -1;
+}
+
+int
+drvfind(Drv *d, char *class, int wantconsole)
+{
+	return drvscan(d, class, nil, wantconsole);
+}
+
+int
+drvfindreg(Drv *d, u64 base)
+{
+	return drvscan(d, nil, &base, 0);
 }
 
 /*

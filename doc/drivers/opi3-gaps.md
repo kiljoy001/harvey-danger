@@ -61,7 +61,7 @@ signals that the board DTS does not describe.
 | HDMI audio | `hdmi_sound` enabled in DTS | No audio service/driver | P2 |
 | I2S0/1/2/3, SPDIF, PDM | I2S1 + RK809 sound card in DTS | No I2S/PDM/SPDIF driver or PCM service | P2 |
 | RK809 codec | Regulators/RTC work | No codec driver; analog out/in, HP detect | P2 |
-| GPU (Mali G52) | DTS enabled | No driver | P3 |
+| GPU (Mali G52) | DTS enabled; `gpufs` powers PD_GPU, releases resets and reads G52 feature registers | No GPU MMU, job queues, shader power or graphics stack | P3 |
 | NPU | Vendor driver/`9rock` decode | No Harvey driver/queue | P3 |
 | VPU (decode) | FDT class recognized | No driver | P3 |
 | VEPU (encode) | FDT class recognized | No driver | P3 |
