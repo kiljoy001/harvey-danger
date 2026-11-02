@@ -503,8 +503,16 @@ readfile(Xfile *f, void *vbuf, i64 offset, i32 count)
 		putbuf(buffer);
 	}
 	chat("] ...");
-	inode->i_atime = time(0);
-	dirtybuf(ibuf);
+	/*
+	 * Relative atime.  Stamping the inode on every read dirties a
+	 * block and turns a pure read into a card write, which is the
+	 * dominant wear source on this medium.  Refresh it at most once
+	 * a day; -a restores strict atime for debugging.
+	 */
+	if(strictatime || (u32)time(0) - inode->i_atime > 24*60*60){
+		inode->i_atime = time(0);
+		dirtybuf(ibuf);
+	}
 	putbuf(ibuf);
 	return rcount;
 }

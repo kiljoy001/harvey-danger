@@ -228,11 +228,14 @@ rwrite(Req *r)
 	nr = writefile(f, thdr.data, thdr.offset, thdr.count);
 	if(nr >= 0){
 		/*
-		 * A root filesystem must not lose writes when the board is
-		 * power cycled.  The buffer cache is only a staging area
-		 * here, so push every dirty block out before acknowledging.
+		 * Do not flush per request.  The block and inode bitmaps,
+		 * the group descriptor and the directory block are shared
+		 * by every file in a burst, so flushing each time rewrites
+		 * them once per operation -- the dominant wear source.
+		 * Batch instead: at most one flush every Syncinterval
+		 * seconds, driven by request traffic.
 		 */
-		syncbuf();
+		flushtick();
 		rhdr.count = nr;
 		chat("rcnt=%d...OK\n", nr);
 		respond(r, nil);
@@ -247,7 +250,12 @@ destroyfid(Fid *fid)
 {
 	chat("destroy(fid=%d)\n", fid->fid);
 	xfile(fid, Clunk);
-	/*syncbuf(xf);*/
+	/*
+	 * A file close is the natural durability point: flush if the
+	 * batching interval has elapsed.  This keeps a write-then-close
+	 * on a quiet system durable without paying a flush per file.
+	 */
+	flushtick();
 }
 static void
 ropen(Req *r)

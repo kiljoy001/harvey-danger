@@ -20,6 +20,34 @@
 int	errno;
 int rdonly;
 int force;
+int strictatime;
+
+/*
+ * Write-behind batching.  Small files share the bitmap, group
+ * descriptor and directory blocks, so flushing on every request
+ * rewrites them once per operation.  Flush at most once per
+ * Syncinterval seconds instead; a power cut can lose that window.
+ */
+enum { Syncinterval = 5 };
+
+static i32 lastsync;
+static Lock synclk;
+
+void
+flushtick(void)
+{
+	i32 now;
+
+	now = time(0);
+	if(now - lastsync < Syncinterval)
+		return;
+	lock(&synclk);
+	if(now - lastsync >= Syncinterval){
+		syncbuf();
+		lastsync = now;
+	}
+	unlock(&synclk);
+}
 char	*srvfile;
 char	*deffile;
 
@@ -29,7 +57,7 @@ extern Srv ext2srv;
 void
 usage(void)
 {
-	fprint(2, "usage: %s [-v] [-s] [-r] [-F] [-p passwd] [-g group] [-f devicefile] [srvname]\n", argv0);
+	fprint(2, "usage: %s [-v] [-s] [-r] [-F] [-a] [-p passwd] [-g group] [-f devicefile] [srvname]\n", argv0);
 	exits("usage");
 }
 
@@ -71,6 +99,10 @@ main(int argc, char **argv)
 	case 'F':
 		/* bring-up: mount a filesystem left dirty by a hard reset */
 		force = 1;
+		break;
+	case 'a':
+		/* update atime on every read; costs a card write per read */
+		strictatime = 1;
 		break;
 	default:
 		usage();

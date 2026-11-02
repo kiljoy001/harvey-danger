@@ -232,3 +232,5 @@ extern int	errno;
 extern char	*deffile;
 extern int rdonly;
 extern int force;
+extern int strictatime;
+void flushtick(void);
