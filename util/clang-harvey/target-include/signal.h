@@ -42,6 +42,11 @@ typedef int sig_atomic_t;
 
 #define NSIG     22
 
+#ifndef MINSIGSTKSZ
+#define MINSIGSTKSZ 8192
+#define SIGSTKSZ    (MINSIGSTKSZ * 4)
+#endif
+
 #ifdef __cplusplus
 extern "C" {
 #endif

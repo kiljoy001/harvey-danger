@@ -494,6 +494,26 @@ int sched_yield(void) {
     return 0;
 }
 
+int sched_setaffinity(int pid, size_t setsize, const cpu_set_t *set) {
+    (void)pid;
+    (void)setsize;
+    (void)set;
+    return 0;
+}
+
+int sched_getaffinity(int pid, size_t setsize, cpu_set_t *set) {
+    (void)pid;
+    if (set && setsize >= sizeof(cpu_set_t)) {
+        __builtin_memset(set, 0, sizeof(cpu_set_t));
+        CPU_SET(0, set);
+    }
+    return 0;
+}
+
+int pthread_sigmask(int how, const sigset_t *set, sigset_t *old) {
+    return sigprocmask(how, set, old);
+}
+
 int pthread_getcpuclockid(pthread_t t, clockid_t *id) {
     (void)t;
     if (id) *id = 0;
