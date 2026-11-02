@@ -43,4 +43,11 @@
 #define KZERO 0xffffff8000000000ULL
 #define KTZERO 0x40080000ULL
 
+/*
+ * The bootstrap kernel runs on an identity map, so kernel pointers are
+ * low addresses rather than high-half ones.  User programs are linked
+ * below 0x40000000; the kernel image, heap and device mappings are above.
+ */
+#define KPTR(p) ((usize)(p) >= 0x40000000ULL)
+
 #endif
