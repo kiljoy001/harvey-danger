@@ -202,13 +202,15 @@ static inline int __harvey_fstat(int fd, struct stat *sb) {
 }
 
 /* APEX maps stat()/fstat() onto __stat_ap()/__fstat() with function-like
- * macros.  C++ needs the real functions: it takes their address, and it
- * calls them through a namespace qualification (std::filesystem::detail)
- * after `using ::stat`.  util/libcxx/posix_stat.cpp defines them. */
+ * macros.  Keep them, but qualify the expansion so it works from inside any
+ * namespace.  Code that needs the names as values (libc++'s filesystem) is
+ * patched to call __stat_ap/__fstat directly: defining real stat()/fstat()
+ * symbols captures Plan 9's three-argument stat() and recurses. */
 #undef stat
 #undef fstat
-int stat(const char *, struct stat *);
-int fstat(int, struct stat *);
+#define stat(p, s) ::__stat_ap((p), (s))
+#define fstat(f, s) ::__fstat((f), (s))
+
 int lstat(const char *, struct stat *);
 int truncate(const char *, off_t);
 

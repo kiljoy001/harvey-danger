@@ -52,6 +52,16 @@ EDITS = [
         "#endif\n"
         "#if defined(__APPLE__)",
     ),
+    (
+        "llvm/lib/Support/Unix/Jobserver.inc",
+        "  if (::fstat(FD, &StatBuf) != 0)",
+        "  if (__harvey_fstat(FD, &StatBuf) != 0)",
+    ),
+    (
+        "llvm/lib/Support/Unix/Path.inc",
+        "  int StatRet = ::fstat(FD, &Status);",
+        "  int StatRet = __harvey_fstat(FD, &Status);",
+    ),
     # libc++'s filesystem needs fs_stat/fs_fstat because `using ::stat;` would
     # name the macro and `detail::stat(...)` would expand inside the namespace.
     (

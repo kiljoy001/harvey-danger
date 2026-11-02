@@ -33,6 +33,8 @@ HELLO = """\
 #include <stdexcept>
 #include <filesystem>
 #include <fstream>
+#include <mutex>
+#include <thread>
 #include <string>
 #include <vector>
 
@@ -75,6 +77,19 @@ int main() {
     auto fsz = fs::file_size(dir / "a.txt");
     fs::remove_all(dir);
 
+    int tcount = 0;
+    std::mutex tm;
+    {
+        std::vector<std::thread> ts;
+        for (int i = 0; i < 4; i++)
+            ts.emplace_back([&] {
+                std::lock_guard<std::mutex> g(tm);
+                tcount++;
+            });
+        for (auto &t : ts)
+            t.join();
+    }
+
     int unwound = 0;
     try {
         Guard g(&unwound);
@@ -85,7 +100,7 @@ int main() {
     std::ostringstream out;
     out << "sum=" << sum(v) << " distinct=" << counts.size()
         << " rtti=" << (square ? square->side : -1)
-        << " unwound=" << unwound << " fs=" << fsz;
+        << " unwound=" << unwound << " fs=" << fsz << " threads=" << tcount;
     std::printf("hello from harvey: %s\\n", out.str().c_str());
     return 0;
 }
@@ -119,14 +134,14 @@ def main():
                                  "panic", "fault", "suicide")):
             print("  " + line)
 
-    if "hello from harvey: sum=31 distinct=7 rtti=3 unwound=11 fs=10" not in output:
+    if "hello from harvey: sum=31 distinct=7 rtti=3 unwound=11 fs=10 threads=4" not in output:
         sys.exit("the guest-linked program did not run")
     elf = BUILD / "hello"
     if not elf.is_file() or elf.stat().st_size == 0:
         sys.exit("ld.lld produced no executable")
     print(f"native toolchain: clang++ -> cc1 -> ld.lld -> {elf.name} "
           f"({elf.stat().st_size} bytes) ran and printed "
-          f"'hello from harvey: sum=31 distinct=7 rtti=3 unwound=11 fs=10'")
+          f"'hello from harvey: sum=31 distinct=7 rtti=3 unwound=11 fs=10 threads=4'")
 
 
 if __name__ == "__main__":

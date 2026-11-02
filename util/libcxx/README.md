@@ -79,11 +79,18 @@ RTTI **is** available: libc++ is built with `-frtti`, and
 `libcxxabi/src/private_typeinfo.cpp` (compiled into `libc++.a`) provides the
 `__class_type_info` hierarchy and `__dynamic_cast`.  `dynamic_cast<Ptr>` and
 `typeid` work; the reference form of `dynamic_cast` would need exceptions.
-- **Real threads** — `util/libcxx/pthread.{h,cpp}` is a single-threaded shim.
-  `std::thread` runs its function synchronously, mutexes are counters, and
-  TLS is one static array. This is enough for the libc++ headers and for
-  LLVM built with `LLVM_ENABLE_THREADS=OFF`. Real `rfork`-backed threads are
-  a separate rung.
+- **Threads** — real.  A pthread is an `rfork(RFPROC|RFMEM)` process, which
+  the kernel schedules independently.  `semacquire`/`semrelease` on a word of
+  shared memory provide mutexes and condition variables (Plan 9's futex).
+
+  RFMEM shares the data, bss and heap segments but **not** the stack, so the
+  main thread is moved onto a heap-allocated stack before `main` runs, and
+  thread stacks come from the heap too.  The child switches to its stack
+  inside the assembly `rfork` wrapper, before any C code can touch the
+  shared stack.  APEX's allocator is serialised with a semaphore.
+
+  Not yet per-thread: `errno` is still a single global, and stdio has no
+  locking.
 - **std::filesystem** — supported.  libc++'s own sources are patched to call
   `__stat_ap`/`__fstat` directly (`apply-llvm-patches.py`), because defining
   real `stat`/`fstat` symbols would capture Plan 9's three-argument `stat`
@@ -102,7 +109,7 @@ RTTI **is** available: libc++ is built with `-frtti`, and
 
 ## Next rungs
 
-1. Real `rfork`-backed threads so `std::thread` actually runs in parallel.
+1. Per-thread `errno` and locking around stdio.
 2. Floating-point `charconv`.
 3. `std::exception_ptr`/`std::nested_exception` round-trip tests, and
    `-fno-exceptions` builds of the library for size.
