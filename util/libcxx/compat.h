@@ -218,6 +218,9 @@ int fchown(int, unsigned int, unsigned int);
 int msync(void *, size_t, int);
 int madvise(void *, size_t, int);
 int usleep(unsigned int);
+void *aligned_alloc(size_t, size_t);
+void *memalign(size_t, size_t);
+int posix_memalign(void **, size_t, size_t);
 struct timeval;
 int utimes(const char *, const struct timeval *);
 #ifndef MS_SYNC

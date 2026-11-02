@@ -27,6 +27,7 @@ REPO_ROOT = Path(os.environ.get(
 LIBCXX = Path(os.environ.get(
     "LIBCXX_SRC", REPO_ROOT.parent / "llvm-project" / "libcxx")).resolve()
 LIBCXXABI = LIBCXX.parent / "libcxxabi"
+LIBUNWIND = LIBCXX.parent / "libunwind"
 APEX = REPO_ROOT / "apex"
 BUILD = REPO_ROOT / "build" / "libcxx"
 INCLUDE = BUILD / "include"
@@ -45,6 +46,7 @@ AR = "llvm-ar"
 VM = REPO_ROOT / "util" / "9vm" / "9vm"
 KERNEL = REPO_ROOT / "build" / "harvey.32bit"
 LIBC_A = REPO_ROOT / "build" / "libc.a"
+LIBUNWIND_A = LIBDIR / "libunwind.a"
 
 # libc++ sources that make std::string/vector/map and their support work.
 # Deliberately excluded for now:
@@ -153,7 +155,7 @@ def base_flags(library: bool) -> list[str]:
         "-nostdinc",
         "-mno-red-zone",
         "-fno-stack-protector",
-        "-fno-exceptions",
+        "-fexceptions",
         "-frtti",
         "-fno-threadsafe-statics",
         "-O2",
@@ -171,7 +173,6 @@ def base_flags(library: bool) -> list[str]:
     if library:
         flags += [
             "-D_LIBCPP_BUILDING_LIBRARY",
-            "-D_LIBCPP_HAS_NO_EXCEPTIONS",
         ]
     return flags
 
@@ -198,6 +199,27 @@ def build_library():
         src = LIBCXXABI / "src" / f"{name}.cpp"
         obj = OBJDIR / f"cxxabi_{name}.o"
         run([CXX, *cxxabi_flags, "-c", str(src), "-o", str(obj)])
+        objects.append(obj)
+
+    # The exception runtime: libc++abi's __cxa_* implementation and the
+    # personality routine, on top of libunwind.  APEX's libcxxabi stub has
+    # none of it.
+    exc_flags = [f for f in base_flags(False) if f not in ("-fno-rtti",)]
+    exc_flags += [
+        "-std=c++20",
+        "-D_LIBCPP_ENABLE_CXX17_REMOVED_UNEXPECTED_FUNCTIONS",
+        f"-I{LIBCXXABI / 'include'}",
+        f"-I{LIBCXXABI / 'src'}",
+        f"-I{LIBCXX / 'src'}",
+        f"-I{LIBUNWIND / 'include'}",
+    ]
+    # libc++'s exception.cpp already provides std::terminate and friends, so
+    # libc++abi's cxa_handlers/cxa_default_handlers would duplicate them.
+    for name in ("cxa_exception", "cxa_personality",
+                 "cxa_exception_storage", "fallback_malloc"):
+        src = LIBCXXABI / "src" / f"{name}.cpp"
+        obj = OBJDIR / f"cxa_{name}.o"
+        run([CXX, *exc_flags, "-c", str(src), "-o", str(obj)])
         objects.append(obj)
 
     libm_obj = OBJDIR / "libm_stub.o"
@@ -239,6 +261,7 @@ def build_test(src_var, elf_var, name):
         str(APEX / "amd64" / "lib" / "crti.o"),
         str(test_obj),
         str(LIBDIR / "libc++.a"),
+        str(LIBDIR / "libunwind.a"),
         str(APEX / "amd64" / "lib" / "libcxxabi.a"),
         str(APEX / "amd64" / "lib" / "libap.a"),
         str(LIBC_A),
@@ -277,6 +300,9 @@ def main():
         shutil.rmtree(BUILD, ignore_errors=True)
         print(f"removed {BUILD}")
         return
+
+    # libc++ now references _Unwind_*, so the unwinder has to be built first.
+    run([sys.executable, str(REPO_ROOT / "util" / "9vm" / "build_libunwind.py")])
 
     prepare()
     build_library()

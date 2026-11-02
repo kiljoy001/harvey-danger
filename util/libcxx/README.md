@@ -60,8 +60,20 @@ APEX's C headers predate C11 and carry a few Plan 9-isms. `compat.h` and
 
 ## Deliberately off for now
 
-- **Exceptions** — still `-fno-exceptions`; there is no unwinder yet, so
-  `throw`, `try`/`catch` and `<stdexcept>` cannot be used.
+Exceptions and RTTI **are** available.
+
+Exception support is libunwind (DWARF, built by `util/9vm/build_libunwind.py`)
+plus libc++abi's `__cxa_*` runtime and `__gxx_personality_v0`, compiled into
+`libc++.a`.  Unwinding runs destructors, so RAII works:
+
+```text
+  unwound through main-guard
+caught: boom
+```
+
+Harvey has no dynamic loader, so libunwind finds `.eh_frame` through a
+`dl_iterate_phdr()` shim (compat.cpp) that reports the single static image
+using the ELF header lld exposes as `__ehdr_start`.
 
 RTTI **is** available: libc++ is built with `-frtti`, and
 `libcxxabi/src/private_typeinfo.cpp` (compiled into `libc++.a`) provides the
@@ -86,10 +98,10 @@ RTTI **is** available: libc++ is built with `-frtti`, and
 
 ## Next rungs
 
-1. Exceptions: port libunwind (DWARF) plus libc++abi's `__cxa_*` runtime and
-   `__gxx_personality_v0`, then drop `-fno-exceptions`.
-2. Real `rfork`-backed threads so `std::thread` actually runs in parallel.
-3. `std::filesystem` library, and floating-point `charconv`.
+1. Real `rfork`-backed threads so `std::thread` actually runs in parallel.
+2. `std::filesystem` library, and floating-point `charconv`.
+3. `std::exception_ptr`/`std::nested_exception` round-trip tests, and
+   `-fno-exceptions` builds of the library for size.
 
 
 1. `pthread` / `std::thread` / `mutex` / `condition_variable`.

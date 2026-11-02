@@ -13,6 +13,10 @@
 #include <string.h>
 #include <pwd.h>
 #include <signal.h>
+#include <link.h>
+#include <dlfcn.h>
+#include <exception>
+#include <cstdlib>
 #ifdef PATH_MAX
 #define HARVEY_PATH_MAX PATH_MAX
 #else
@@ -44,6 +48,26 @@ extern "C" int nanosleep(const struct timespec *req, struct timespec *rem) {
 /* POSIX names for APEX's __write/__read/... entry points.  See compat.h. */
 /* APEX has no getpagesize(); Harvey maps 4 KiB pages. */
 static void *harvey_aligned_alloc(size_t n, size_t align);
+
+/*
+ * libc++abi's cxa_handlers.cpp defines std::__terminate/std::__unexpected,
+ * but it also redefines std::terminate and friends, which libc++'s
+ * exception.cpp already provides.  Only the two internal entry points are
+ * needed, so define just those here.
+ */
+namespace std {
+[[noreturn]] __attribute__((visibility("hidden"))) void
+__terminate(void (*func)()) noexcept {
+    func();
+    abort();
+}
+
+[[noreturn]] __attribute__((visibility("hidden"))) void
+__unexpected(void (*func)()) {
+    func();
+    terminate();
+}
+} // namespace std
 
 /*
  * APEX's libcxxabi stub has no __cxa_thread_atexit().  Harvey has no real
@@ -316,6 +340,63 @@ extern "C" int usleep(unsigned int usec) {
     if (sec)
         __sleep(sec);
     return 0;
+}
+
+/* Harvey has no dynamic loader: no shared objects, no symbol lookup. */
+extern "C" void *dlopen(const char *name, int mode) {
+    (void)name; (void)mode;
+    return 0;
+}
+
+extern "C" void *dlsym(void *handle, const char *name) {
+    (void)handle; (void)name;
+    return 0;
+}
+
+extern "C" int dlclose(void *handle) {
+    (void)handle;
+    return -1;
+}
+
+extern "C" char *dlerror(void) {
+    return (char *)"no dynamic loader";
+}
+
+extern "C" int dladdr(const void *addr, Dl_info *info) {
+    (void)addr; (void)info;
+    return 0;
+}
+
+/*
+ * Harvey has no dynamic loader.  libunwind asks where the unwind tables are
+ * through dl_iterate_phdr; report the one loaded image, taken from the ELF
+ * header that lld exposes as __ehdr_start.  The executable is linked
+ * static and non-PIE, so the program headers' addresses are absolute and
+ * there is no load bias.
+ */
+extern "C" int dl_iterate_phdr(int (*callback)(struct dl_phdr_info *, size_t, void *),
+                              void *data) {
+    extern char __ehdr_start;
+    const unsigned char *eh = (const unsigned char *)&__ehdr_start;
+    struct dl_phdr_info info;
+    uint64_t phoff;
+    uint16_t phentsize, phnum;
+
+    if (!(eh[0] == 0x7f && eh[1] == 'E' && eh[2] == 'L' && eh[3] == 'F'))
+        return 0;
+
+    phoff = *(const uint64_t *)(eh + 32);
+    phentsize = *(const uint16_t *)(eh + 54);
+    phnum = *(const uint16_t *)(eh + 56);
+    if (phentsize != sizeof(Elf64_Phdr))
+        return 0;
+
+    memset(&info, 0, sizeof info);
+    info.dlpi_addr = 0;
+    info.dlpi_name = "";
+    info.dlpi_phdr = (const Elf64_Phdr *)(eh + phoff);
+    info.dlpi_phnum = phnum;
+    return callback(&info, sizeof info, data);
 }
 
 extern "C" int getsid(int pid) {

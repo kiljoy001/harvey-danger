@@ -17,7 +17,7 @@ portability shims the Harvey target needs.
 
 | Piece | State |
 | --- | --- |
-| libc++ (containers, iostream, locale, RTTI, threads shim) | builds and runs in 9vm |
+| libc++ (containers, iostream, locale, RTTI, exceptions, threads shim) | builds and runs in 9vm |
 | `LLVMSupport` | builds for the Harvey target |
 | all LLVM/Clang libraries | build for the Harvey target |
 | native `clang` binary | **runs on Harvey and emits object files** |
@@ -184,10 +184,12 @@ was missing.  They live in APEX now, not in a shim:
 
 ## Next rungs
 
-1. Make `getMainExecutable` more robust. The patch resolves `argv[0]`, so the
+1. Exceptions are in; the runtime pieces are `build_libunwind.py` plus the
+   `__cxa_*` objects folded into `libc++.a`.
+2. Make `getMainExecutable` more robust. The patch resolves `argv[0]`, so the
    driver must be started with a path. A real `/proc/self/exe` equivalent, or
    passing the image path through the environment, would fix bare `clang++`.
-2. Add a Harvey toolchain to Clang instead of a config file, so the paths are
+3. Add a Harvey toolchain to Clang instead of a config file, so the paths are
    baked in and `x86_64-unknown-harvey` is a real target.
-3. A native `as`/`objdump` and the rest of the binutils story.
-4. `std::filesystem` needs its library built; the headers alone are enabled.
+4. A native `as`/`objdump` and the rest of the binutils story.
+5. `std::filesystem` needs its library built; the headers alone are enabled.

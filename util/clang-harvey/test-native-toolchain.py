@@ -30,11 +30,18 @@ HELLO = """\
 #include <cstdio>
 #include <map>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
 struct Shape { virtual ~Shape() {} };
 struct Square : Shape { int side = 3; };
+
+struct Guard {
+    int *seen;
+    explicit Guard(int *s) : seen(s) {}
+    ~Guard() { *seen += 1; }
+};
 
 template <typename T>
 T sum(const std::vector<T> &v) {
@@ -54,9 +61,18 @@ int main() {
 
     Shape *shape = new Square;
     Square *square = dynamic_cast<Square *>(shape);
+
+    int unwound = 0;
+    try {
+        Guard g(&unwound);
+        throw std::runtime_error("boom");
+    } catch (const std::exception &e) {
+        unwound += 10;
+    }
     std::ostringstream out;
     out << "sum=" << sum(v) << " distinct=" << counts.size()
-        << " rtti=" << (square ? square->side : -1);
+        << " rtti=" << (square ? square->side : -1)
+        << " unwound=" << unwound;
     std::printf("hello from harvey: %s\\n", out.str().c_str());
     return 0;
 }
@@ -90,14 +106,14 @@ def main():
                                  "panic", "fault", "suicide")):
             print("  " + line)
 
-    if "hello from harvey: sum=31 distinct=7 rtti=3" not in output:
+    if "hello from harvey: sum=31 distinct=7 rtti=3 unwound=11" not in output:
         sys.exit("the guest-linked program did not run")
     elf = BUILD / "hello"
     if not elf.is_file() or elf.stat().st_size == 0:
         sys.exit("ld.lld produced no executable")
     print(f"native toolchain: clang++ -> cc1 -> ld.lld -> {elf.name} "
           f"({elf.stat().st_size} bytes) ran and printed "
-          f"'hello from harvey: sum=31 distinct=7 rtti=3'")
+          f"'hello from harvey: sum=31 distinct=7 rtti=3 unwound=11'")
 
 
 if __name__ == "__main__":

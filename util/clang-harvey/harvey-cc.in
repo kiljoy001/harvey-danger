@@ -21,11 +21,10 @@ LIBCXX="$HARVEY/build/libcxx"
 APEX="$HARVEY/apex"
 TARGET=${HARVEY_TARGET:-x86_64-unknown-linux-elf}
 
-# Harvey's C++ runtime is built without exceptions or RTTI.  Keep the whole
-# tree consistent with it.
+# Harvey's C++ runtime supports exceptions and RTTI.
 if [ "$HARVEY_CXX" = 1 ]; then
     CC=clang++
-    CXXFLAGS=(-fno-exceptions -frtti -D_WCHAR_T)
+    CXXFLAGS=(-fexceptions -frtti -D_WCHAR_T)
 else
     CC=clang
     CXXFLAGS=()
@@ -95,6 +94,7 @@ exec "$CC" "${FLAGS[@]}" \
     "$APEX/amd64/lib/crt0.o" \
     "$APEX/amd64/lib/crti.o" \
     "$LIBCXX/lib/libc++.a" \
+    "$LIBCXX/lib/libunwind.a" \
     "$APEX/amd64/lib/libcxxabi.a" \
     "$APEX/amd64/lib/libap.a" \
     "$HARVEY/build/libc.a" \
