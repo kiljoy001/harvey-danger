@@ -30,6 +30,7 @@ I2CFS_BASE = 0x2600000
 PMICFS_BASE = 0xA600000
 MKDIR_BASE = 0xAA00000
 MOUNT_BASE = 0xAE00000
+MOUNT9_BASE = 0xB200000
 RC_BASE = 0x2A00000
 ECHO_BASE = 0x2E00000
 CAT_BASE = 0x3200000
@@ -1029,6 +1030,8 @@ main(int argc, char **argv)
     pmicfs, _ = build_pmicfs(out, libc)
     mkdirbin, _ = build_elf(out, libc, "mkdir", ROOT / "sys/src/cmd/mkdir.c",
                             MKDIR_BASE, [])
+    mount9bin, _ = build_elf(out, libc, "mount9", ROOT / "sys/src/cmd/mount9.c",
+                            MOUNT9_BASE, [])
     mountbin, _ = build_elf(out, libc, "mount", ROOT / "sys/src/cmd/mount.c",
                             MOUNT_BASE,
                             [ROOT / "build/arm64-o9/libauth.a",
@@ -1670,6 +1673,7 @@ main(int argc, char **argv)
     emit_array(lines, "arm64pmicfself", pmicfs)
     emit_array(lines, "arm64mkdirelf", mkdirbin)
     emit_array(lines, "arm64mountelf", mountbin)
+    emit_array(lines, "arm64mount9elf", mount9bin)
     emit_array(lines, "arm64emmcfsimage", emmcfs)
     emit_array(lines, "arm64gmacfsimage", gmacfs)
     emit_array(lines, "arm64usbpowerelf", usbpower)
@@ -1707,6 +1711,7 @@ main(int argc, char **argv)
         "pmicfs": pmicfs,
         "mkdir": mkdirbin,
         "mount": mountbin,
+        "mount9": mount9bin,
         "emmcfs": emmcfs,
         "gmacfs": gmacfs,
         "usbpower": usbpower,

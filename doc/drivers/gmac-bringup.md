@@ -254,3 +254,49 @@ lives in `/net`.  It is still built for raw-frame work, but refuses to
 start when `/net/ether0` exists (the kernel driver is running) unless
 given `-f`.
 
+
+## Handoff from U-Boot (measured 2026-11-01)
+
+The kernel probe now prints `gmac: no phy`: every MDIO read at
+address 0..7 returns 0 or `0xffff`, and `MAC_CONFIG` reads zero, so the
+block is not answering at all.  What the loader leaves behind, read from
+the U-Boot prompt with `md.l`:
+
+```
+fe010000: 00000000 00000000 00000000 00000000   MAC registers
+fdd20340 .. fdd20354: all zero                  CLKGATE_CON(16..20)
+fdd20438: 00001000                              CRU SOFT_RST_CON(14)
+```
+
+`0x1000` is bit 12, `SRST_A_GMAC1` (reset id 236, `SOFTRST_CON(14)`
+bit 12; bit 13 is `SRST_GMAC1_TIMESTAMP`).  Writing
+`mw.l 0xfdd20438 0x10000000` (data 0, write-mask bit 28) deasserts it,
+and the write is visible on read-back, but `0xfe010000` still reads
+zero and does not accept writes.
+
+U-Boot's own TFTP and DHCP work in that same state, so this is not a
+dead PHY.  A block that ignores writes with its gate register reading
+"ungated" points at the clock **parent**, not the gate: on RK3568
+`aclk_gmac1` is parented to `aclk_usb` and `pclk_gmac1` to `pclk_usb`,
+both in **PD_USB** (`clk-rk3568.c`, "PD_USB" section).  If that domain
+is off, GMAC1 has no bus clock — and the same domain explains why the
+xHCI side is still only partially alive.
+
+So the next step is not in the Ethernet driver: it is to power PD_USB
+(PMU power-domain registers) during device init, before `addethercard`.
+Until then the board has no `/net/ether0`, and `NET-ETH FAIL no free
+devices` is the expected result rather than a driver bug.
+
+The U-Boot environment also still boots `aspera-arm64.img`; the working
+image is `aspera-usb.img`, loaded by hand:
+
+```
+tftpboot 0x40080000 aspera-usb.img
+tftpboot 0x50000000 userland.img
+tftpboot 0x48000000 orangepi-3b-v1.1.dtb
+booti 0x40080000 - 0x48000000
+```
+
+The boot archive at `0x50000000` is a fixed address (`BootarchiveAddr`
+in `sys/src/9/aarch64/main.c`), not an initrd: the third `booti`
+argument stays `-`.
