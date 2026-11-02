@@ -408,7 +408,7 @@ ethervirtioreset(Ether *edev)
 	c->cfg = cfg;
 	c->notify = notify;
 	c->isr = isr;
-	c->notifyoffmult = pcicfgr32(p, cap2->offset + 16);
+	c->notifyoffmult = pcicfgr32(p, cap2->cfg + 16);
 	c->edev = edev;
 
 	/* Reset then acknowledge */
@@ -474,7 +474,6 @@ ethervirtioreset(Ether *edev)
 	vout16(&c->cfg, Vconf_queueenable, 1);
 
 	vout8(&c->cfg, Vconf_status, vin8(&c->cfg, Vconf_status) | DriverOk);
-
 	pcisetbme(p);
 
 	edev->ctlr = c;

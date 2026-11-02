@@ -227,6 +227,7 @@ pcilscan(int bno, char *path, Pcidev **list)
 				c->caplen = pcicfgr8(p, off + PciCapLen);
 				c->type = pcicfgr8(p, off + PciCapType);
 				c->bar = pcicfgr8(p, off + PciCapBar);
+				c->cfg = off;
 				c->offset = pcicfgr32(p, off + PciCapOff);
 				c->length = pcicfgr32(p, off + PciCapLength);
 				off++;

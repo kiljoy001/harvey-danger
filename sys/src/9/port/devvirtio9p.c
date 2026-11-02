@@ -526,7 +526,7 @@ baddev:
 
 		if(virtiomapregs(p, cap2, 2, &c->notify) == nil)
 			goto baddev;
-		c->notifyoffmult = pcicfgr32(p, cap2->offset + 16);
+		c->notifyoffmult = pcicfgr32(p, cap2->cfg + 16);
 
 		/* Reset then acknowledge */
 		vout8(&c->cfg, Vconf_status, 0);

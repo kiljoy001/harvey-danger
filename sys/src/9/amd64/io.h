@@ -317,6 +317,7 @@ struct Pcicap {
 	u8 caplen;	    /* length in the config area */
 	u8 type;	    /* capability config type */
 	u8 bar;	    /* BAR index in the device structure 0 - 5 */
+	u32 cfg;	    /* offset of the capability in PCI config space */
 	u32 offset;    /* offset within BAR */
 	u32 length;    /* length in the memory or IO space */
 };
