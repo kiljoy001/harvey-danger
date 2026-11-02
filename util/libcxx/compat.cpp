@@ -45,6 +45,43 @@ extern "C" int nanosleep(const struct timespec *req, struct timespec *rem) {
 /* APEX has no getpagesize(); Harvey maps 4 KiB pages. */
 static void *harvey_aligned_alloc(size_t n, size_t align);
 
+/*
+ * APEX's libcxxabi stub has no __cxa_thread_atexit().  Harvey has no real
+ * threads, so register the destructor and run it at process exit.
+ */
+namespace {
+struct TlsDtor {
+    void (*fn)(void *);
+    void *obj;
+    TlsDtor *next;
+};
+TlsDtor *tls_dtors;
+bool tls_dtor_registered;
+
+void run_tls_dtors() {
+    while (TlsDtor *d = tls_dtors) {
+        tls_dtors = d->next;
+        d->fn(d->obj);
+        free(d);
+    }
+}
+} // namespace
+
+extern "C" int __cxa_thread_atexit(void (*fn)(void *), void *obj, void *) {
+    TlsDtor *d = (TlsDtor *)malloc(sizeof *d);
+    if (!d)
+        return -1;
+    d->fn = fn;
+    d->obj = obj;
+    d->next = tls_dtors;
+    tls_dtors = d;
+    if (!tls_dtor_registered) {
+        tls_dtor_registered = true;
+        atexit(run_tls_dtors);
+    }
+    return 0;
+}
+
 /* C11 aligned allocation over the same allocator. */
 extern "C" void *aligned_alloc(size_t align, size_t n) {
     /* malloc already satisfies alignments up to 16, and its result is
@@ -236,11 +273,6 @@ extern "C" void _Exit(int status) {
 
 extern "C" int fchown(int fd, unsigned int uid, unsigned int gid) {
     (void)fd; (void)uid; (void)gid;
-    return 0;
-}
-
-extern "C" int msync(void *addr, size_t len, int flags) {
-    (void)addr; (void)len; (void)flags;
     return 0;
 }
 

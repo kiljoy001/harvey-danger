@@ -74,6 +74,8 @@ APEX's C headers predate C11 and carry a few Plan 9-isms. `compat.h` and
   POSIX `*_l` entry points libc++ calls, plus `newlocale`/`uselocale`.
 - **libm** — APEX ships almost no math library, so `libm_stub.cpp` supplies
   the C99 functions LLVM needs, using x87 instructions.
+- **`__cxa_thread_atexit`** — missing from APEX's libcxxabi stub; compat.cpp
+  registers the destructor and runs it at process exit (there is one thread).
 - **charconv** — this libc++ snapshot's `src/include/shared/fp_bits.h` is
   missing, so `charconv.cpp` is skipped. `std::to_string` and the integer
   paths used by `<string>` still work.

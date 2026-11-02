@@ -21,12 +21,21 @@ portability shims the Harvey target needs.
 | `LLVMSupport` | builds for the Harvey target |
 | all LLVM/Clang libraries | build for the Harvey target |
 | native `clang` binary | **runs on Harvey and emits object files** |
-| native `ld.lld` | not yet |
+| native `ld.lld` | **runs on Harvey and links executables** |
 
-The milestone test is `util/clang-harvey/test-native.py`: it boots the
-cross-built `clang` under 9vm, runs the full driver (`clang -target
-x86_64-unknown-elf -c test.c -o test.o`, which forks a `cc1` process),
-and checks the resulting ELF object on the host:
+The end-to-end test is `util/clang-harvey/test-native-toolchain.py`. The
+guest compiles `hello.cpp` with the native clang, links it with the native
+`ld.lld`, and runs the result — the host only supplies the two binaries:
+
+```text
+  compiled hello.o
+  linked hello.elf
+  hello from harvey
+native toolchain: clang -> ld.lld -> hello.elf (874688 bytes) ran and printed 'hello from harvey'
+```
+
+`util/clang-harvey/test-native.py` is the smaller object-only check (the full
+driver, including the fork/exec of `cc1`):
 
 ```text
 native clang produced build/clang-harvey/test.o (712 bytes) with 'add'
@@ -119,11 +128,28 @@ Runtime pieces live in `util/libcxx/compat.{h,cpp}` and
 - The pthread layer is a single-threaded shim.
 - `realpath()` does not resolve symbolic links.
 
+## Target support added for the toolchain
+
+Running a compiler and linker on Harvey needed three runtime pieces that APEX
+was missing.  They live in APEX now, not in a shim:
+
+- **TLS.** APEX never set the FS base, so any `thread_local` access faulted at
+  address 0 (lld links with a PT_TLS segment). `__libc_start_main` now points
+  the thread pointer at a zeroed TCB and publishes it through
+  `#p/<pid>/tls`; the kernel applies it in `kexit`.
+- **Raw mmap syscalls.** `__sys_mmap`/`__sys_munmap`/`__sys_mprotect` called
+  the identically named libc functions and recursed until the stack ran out.
+  They now issue syscalls 55/56/57 directly.
+- **File mappings.** Harvey's demand pager cannot fault pages in from a 9P
+  channel, so file mappings are materialised into anonymous memory on `mmap`
+  and flushed back on `msync`/`munmap`.
+
 ## Next rungs
 
-1. Port `ld.lld` so `clang++ foo.cpp` can produce an executable without a
-   Linux host.  Until then the driver can emit objects (`-c`) but has no
-   linker to call.
-2. Install a `lib/clang/<version>` resource directory on Harvey so the
+1. Install a `lib/clang/<version>` resource directory on Harvey so the
    driver finds its own builtin headers instead of `/usr/include`.
-3. Give the target a proper default triple so `--target` is not required.
+2. Give the target a proper default triple so `--target` is not required.
+3. Teach the driver where Harvey's runtime lives so plain `clang++ foo.cpp`
+   links without the explicit `ld.lld` invocation.
+4. Populate `.tdata`: TLS variables with non-zero initialisers are still
+   zero-initialised.
