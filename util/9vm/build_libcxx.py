@@ -47,6 +47,8 @@ LIBC_A = REPO_ROOT / "build" / "libc.a"
 
 # libc++ sources that make std::string/vector/map and their support work.
 # Deliberately excluded for now:
+#   filesystem/* - the headers are enabled so that <fstream> exists, but the
+#                  std::filesystem library itself is not built yet
 #   charconv  - this libc++ snapshot's src/include/shared/fp_bits.h is missing
 #   thread/mutex/condition_variable - APEX has no pthread layer yet
 #   locale/iostream/filesystem - disabled in __config_site
@@ -76,6 +78,8 @@ SOURCES = [
     "thread",
     "future",
     "random",
+    "shared_mutex",
+    "regex",
     "locale",
     "ios",
     "ios.instantiations",
@@ -102,7 +106,7 @@ CONFIG_SITE = """\
 #define _LIBCPP_HAS_THREAD_API_WIN32 0
 #define _LIBCPP_HAS_THREAD_API_C11 0
 #define _LIBCPP_HAS_VENDOR_AVAILABILITY_ANNOTATIONS 0
-#define _LIBCPP_HAS_FILESYSTEM 0
+#define _LIBCPP_HAS_FILESYSTEM 1
 #define _LIBCPP_HAS_RANDOM_DEVICE 1
 #define _LIBCPP_HAS_LOCALIZATION 1
 #define _LIBCPP_HAS_UNICODE 0
@@ -144,7 +148,7 @@ def prepare():
 def base_flags(library: bool) -> list[str]:
     flags = [
         "-target", "x86_64-unknown-linux-elf",
-        "-std=c++20",
+        "-std=c++23",
         "-nostdinc",
         "-mno-red-zone",
         "-fno-stack-protector",
@@ -177,12 +181,18 @@ def build_library():
     for name in SOURCES:
         src = LIBCXX / "src" / f"{name}.cpp"
         obj = OBJDIR / f"{name}.o"
+        obj.parent.mkdir(parents=True, exist_ok=True)
         run([CXX, *base_flags(True), "-c", str(src), "-o", str(obj)])
         objects.append(obj)
 
     compat_obj = OBJDIR / "compat.o"
     run([CXX, *base_flags(False), "-c", str(COMPAT_CPP), "-o", str(compat_obj)])
     objects.append(compat_obj)
+
+    libm_obj = OBJDIR / "libm_stub.o"
+    run([CXX, *base_flags(False), "-c",
+         str(REPO_ROOT / "util" / "libcxx" / "libm_stub.cpp"), "-o", str(libm_obj)])
+    objects.append(libm_obj)
 
     locale_obj = OBJDIR / "locale_stub.o"
     run([CXX, *base_flags(False), "-c",

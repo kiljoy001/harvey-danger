@@ -1,10 +1,13 @@
 #include <stdlib.h>
 #include <sys/time.h>
 #include <sys/resource.h>
+#include <sys/statvfs.h>
+#include <utime.h>
 #include <sys/stat.h>
 #include <sys/vfs.h>
 #include <poll.h>
 #include <errno.h>
+#include <stdarg.h>
 #include <time.h>
 #include <unistd.h>
 #include <string.h>
@@ -39,43 +42,25 @@ extern "C" int nanosleep(const struct timespec *req, struct timespec *rem) {
 }
 
 /* POSIX names for APEX's __write/__read/... entry points.  See compat.h. */
-extern "C" ssize_t write(int fd, const void *buf, size_t n) {
-    return __write(fd, buf, n);
-}
-
-extern "C" ssize_t read(int fd, void *buf, size_t n) {
-    return __read(fd, buf, n);
-}
-
-extern "C" int close(int fd) {
-    return __close(fd);
-}
-
-extern "C" int pipe(int fds[2]) {
-    return __pipe(fds);
-}
-
-extern "C" int dup(int fd) {
-    return __dup(fd);
-}
-
-extern "C" int chdir(const char *path) {
-    return __chdir(path);
-}
-
-extern "C" unsigned int alarm(unsigned int sec) {
-    return __alarm(sec);
-}
-
-extern "C" unsigned int sleep(unsigned int sec) {
-    return __sleep(sec);
-}
-
-extern "C" int atexit(void (*fn)(void)) {
-    return __atexit(fn);
-}
-
 /* APEX has no getpagesize(); Harvey maps 4 KiB pages. */
+static void *harvey_aligned_alloc(size_t n, size_t align);
+
+/* C11 aligned allocation over the same allocator. */
+extern "C" void *aligned_alloc(size_t align, size_t n) {
+    return harvey_aligned_alloc(n, align);
+}
+
+extern "C" void *memalign(size_t align, size_t n) {
+    return harvey_aligned_alloc(n, align);
+}
+
+extern "C" int posix_memalign(void **out, size_t align, size_t n) {
+    void *p = harvey_aligned_alloc(n, align);
+    if (!p) return 12 /* ENOMEM */;
+    *out = p;
+    return 0;
+}
+
 extern "C" int getpagesize(void) {
     return 4096;
 }
@@ -245,11 +230,6 @@ extern "C" void _Exit(int status) {
     _exit(status);
 }
 
-extern "C" int fchmod(int fd, unsigned int mode) {
-    (void)fd; (void)mode;
-    return 0;
-}
-
 extern "C" int fchown(int fd, unsigned int uid, unsigned int gid) {
     (void)fd; (void)uid; (void)gid;
     return 0;
@@ -273,6 +253,26 @@ extern "C" int sigaltstack(const stack_t *ss, stack_t *old) {
     }
     (void)ss;
     return 0;
+}
+
+extern "C" int statvfs(const char *path, struct statvfs *vfs) {
+    (void)path; (void)vfs;
+    errno = 38 /* ENOSYS */;
+    return -1;
+}
+
+extern "C" int fstatvfs(int fd, struct statvfs *vfs) {
+    (void)fd; (void)vfs;
+    errno = 38 /* ENOSYS */;
+    return -1;
+}
+
+extern "C" int utimes(const char *path, const struct timeval *tv) {
+    if (!tv) return utime(path, 0);
+    struct utimbuf ut;
+    ut.actime = tv[0].tv_sec;
+    ut.modtime = tv[1].tv_sec;
+    return utime(path, &ut);
 }
 
 extern "C" int usleep(unsigned int usec) {
@@ -299,10 +299,6 @@ extern "C" long double strtold(const char *s, char **end) {
 #ifdef remove
 #undef remove
 #endif
-extern "C" int remove(const char *path) {
-    return __remove(path);
-}
-
 /* C++17 aligned allocation, which APEX's libcxxabi stub does not provide. */
 #include <new>
 #include <stdint.h>
@@ -322,6 +318,24 @@ static void *harvey_aligned_alloc(size_t n, size_t align) {
 
 static void harvey_aligned_free(void *p) {
     if (p) free(((void **)p)[-1]);
+}
+
+/* APEX's malloc only guarantees 8-byte alignment, but x86-64 code compiled
+ * by clang emits 16-byte aligned SSE stores (movaps) into objects from
+ * ordinary new.  Route every allocation through the aligned allocator. */
+/* APEX's malloc is now 16-byte aligned, so the plain operator new/delete
+ * from libcxxabi is usable; only the nothrow and aligned forms are ours. */
+void *operator new(size_t n, const std::nothrow_t &) noexcept {
+    return harvey_aligned_alloc(n, 16);
+}
+void *operator new[](size_t n, const std::nothrow_t &) noexcept {
+    return harvey_aligned_alloc(n, 16);
+}
+void *operator new(size_t n, std::align_val_t a, const std::nothrow_t &) noexcept {
+    return harvey_aligned_alloc(n, (size_t)a);
+}
+void *operator new[](size_t n, std::align_val_t a, const std::nothrow_t &) noexcept {
+    return harvey_aligned_alloc(n, (size_t)a);
 }
 
 void *operator new(size_t n, std::align_val_t a) { return harvey_aligned_alloc(n, (size_t)a); }

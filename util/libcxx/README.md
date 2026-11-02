@@ -68,9 +68,12 @@ APEX's C headers predate C11 and carry a few Plan 9-isms. `compat.h` and
   TLS is one static array. This is enough for the libc++ headers and for
   LLVM built with `LLVM_ENABLE_THREADS=OFF`. Real `rfork`-backed threads are
   a separate rung.
-- **iostream/locale** — no `std::cout`, `std::locale`, or locale-dependent
-  string conversions.
-- **Filesystem** — `std::filesystem` is disabled.
+- **std::filesystem** — the `<filesystem>` headers are enabled (so `<fstream>`
+  exists) but the library itself is not built yet; using it fails to link.
+- **locale data** — Harvey has one C locale; `locale_stub.cpp` implements the
+  POSIX `*_l` entry points libc++ calls, plus `newlocale`/`uselocale`.
+- **libm** — APEX ships almost no math library, so `libm_stub.cpp` supplies
+  the C99 functions LLVM needs, using x87 instructions.
 - **charconv** — this libc++ snapshot's `src/include/shared/fp_bits.h` is
   missing, so `charconv.cpp` is skipped. `std::to_string` and the integer
   paths used by `<string>` still work.

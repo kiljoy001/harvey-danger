@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 # Cross compiler driver for the Harvey/APEX target.
 #
 # This is the compiler CMake (and any other build system) uses when building
@@ -6,12 +6,10 @@
 # clang/clang++ that pins the target triple, the APEX sysroot, libc++, and the
 # Harvey link recipe.
 #
-# Generate the real scripts with:
-#     util/clang-harvey/build-wrappers.py
-#
 # Environment:
-#     HARVEY      Harvey checkout (default: two levels above this script)
-#     HARVEY_CXX  1 to drive clang++ (set by the generated harvey-clang++)
+#     HARVEY        Harvey checkout (default: two levels above this script)
+#     HARVEY_CXX    1 to drive clang++ (set by the generated harvey-clang++)
+#     HARVEY_TARGET target triple (default x86_64-unknown-linux-elf)
 
 set -e
 
@@ -27,10 +25,10 @@ TARGET=${HARVEY_TARGET:-x86_64-unknown-linux-elf}
 # tree consistent with it.
 if [ "$HARVEY_CXX" = 1 ]; then
     CC=clang++
-    CXXFLAGS="-fno-exceptions -fno-rtti -D_WCHAR_T"
+    CXXFLAGS=(-fno-exceptions -fno-rtti -D_WCHAR_T)
 else
     CC=clang
-    CXXFLAGS=
+    CXXFLAGS=()
 fi
 
 if [ ! -d "$LIBCXX/include/c++/v1" ]; then
@@ -58,29 +56,46 @@ if [ "$asm_only" = 1 ]; then
     exec "$CC" -target "$TARGET" "$@"
 fi
 
-set -- -target "$TARGET" -static -nostdinc \
-    -fno-stack-protector -mno-red-zone \
-    -D_SUSV2_SOURCE -D_POSIX_SOURCE -D_LIMITS_EXTENSION -D_GNU_SOURCE -DHARVEY \
-    -I"$selfdir/target-include" \
-    -I"$LIBCXX/include/c++/v1" \
-    -I"$LIBCXX/include" \
-    -include "$LIBCXX/include/compat.h" \
-    -I"$APEX/include" \
-    -I"$APEX/amd64/include" \
-    -isystem "$HARVEY_CLANG_RESOURCE" \
-    $CXXFLAGS \
-    "$@"
+FLAGS=(
+    -target "$TARGET"
+    -static
+    -nostdinc
+    -fno-stack-protector
+    -mno-red-zone
+    -D_SUSV2_SOURCE -D_POSIX_SOURCE -D_LIMITS_EXTENSION -D_GNU_SOURCE -DHARVEY
+    -I"$selfdir/target-include"
+    -I"$LIBCXX/include/c++/v1"
+    -I"$LIBCXX/include"
+    -include "$LIBCXX/include/compat.h"
+    -I"$APEX/include"
+    -I"$APEX/amd64/include"
+    -isystem "$HARVEY_CLANG_RESOURCE"
+)
+FLAGS+=("${CXXFLAGS[@]}")
 
-if [ "$compile_only" = 0 ]; then
-    set -- -fuse-ld=lld -nostdlib -Wl,-z,max-page-size=0x200000 \
-        "$@" \
-        "$APEX/amd64/lib/crt0.o" \
-        "$APEX/amd64/lib/crti.o" \
-        "$LIBCXX/lib/libc++.a" \
-        "$APEX/amd64/lib/libcxxabi.a" \
-        "$APEX/amd64/lib/libap.a" \
-        "$HARVEY/build/libc.a" \
-        "$APEX/amd64/lib/crtn.o"
+if [ "$compile_only" = 1 ]; then
+    exec "$CC" "${FLAGS[@]}" "$@"
 fi
 
-exec "$CC" "$@"
+# Drop host libraries that CMake adds; Harvey's libc and libc++ supply the
+# equivalents, and -lpthread/-lm/-ldl would pull in glibc objects.
+ARGS=()
+for arg in "$@"; do
+    case "$arg" in
+        -lpthread|-lm|-ldl|-lrt|-lc|-lz|-lstdc++|-lgcc|-lgcc_s|--as-needed|--no-as-needed)
+            continue
+            ;;
+    esac
+    ARGS+=("$arg")
+done
+
+exec "$CC" "${FLAGS[@]}" \
+    -fuse-ld=lld -nostdlib -Wl,-z,max-page-size=0x200000 \
+    "${ARGS[@]}" \
+    "$APEX/amd64/lib/crt0.o" \
+    "$APEX/amd64/lib/crti.o" \
+    "$LIBCXX/lib/libc++.a" \
+    "$APEX/amd64/lib/libcxxabi.a" \
+    "$APEX/amd64/lib/libap.a" \
+    "$HARVEY/build/libc.a" \
+    "$APEX/amd64/lib/crtn.o"

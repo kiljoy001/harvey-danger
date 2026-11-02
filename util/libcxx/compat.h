@@ -37,6 +37,24 @@ typedef unsigned int uint_fast32_t;
 #include <stdint.h>
 #include <stdlib.h>
 
+/* APEX's INT64_C/UINT64_C use the "long" suffix even though its int64_t is
+ * "long long".  That makes every UINT64_C() literal a different type from
+ * uint64_t and breaks overload resolution (std::max, constructors). */
+#undef INT64_C
+#undef UINT64_C
+#define INT64_C(c)  c##LL
+#define UINT64_C(c) c##ULL
+#undef INT64_MAX
+#undef INT64_MIN
+#undef UINT64_MAX
+#undef INT64_C
+#undef UINT64_C
+#define INT64_C(c)  c##LL
+#define UINT64_C(c) c##ULL
+#define INT64_MAX  9223372036854775807LL
+#define INT64_MIN  (-INT64_MAX - 1LL)
+#define UINT64_MAX 18446744073709551615ULL
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -82,6 +100,12 @@ int getpagesize(void);
 #define SCNi64 "lli"
 #define SCNu64 "llu"
 #define SCNx64 "llx"
+#define PRIdPTR "ld"
+#define PRIiPTR "li"
+#define PRIuPTR "lu"
+#define PRIoPTR "lo"
+#define PRIxPTR "lx"
+#define PRIXPTR "lX"
 #endif
 
 #ifndef CLOCK_REALTIME
@@ -145,7 +169,6 @@ int remove(const char *);
 #undef write
 #undef read
 #undef close
-#undef open
 #undef pipe
 #undef dup
 #undef chdir
@@ -157,7 +180,6 @@ extern "C" {
 ssize_t write(int, const void *, size_t);
 ssize_t read(int, void *, size_t);
 int close(int);
-int open(const char *, int, ...);
 int pipe(int *);
 int dup(int);
 int chdir(const char *);
@@ -196,6 +218,8 @@ int fchown(int, unsigned int, unsigned int);
 int msync(void *, size_t, int);
 int madvise(void *, size_t, int);
 int usleep(unsigned int);
+struct timeval;
+int utimes(const char *, const struct timeval *);
 #ifndef MS_SYNC
 #define MS_ASYNC 1
 #define MS_INVALIDATE 2
