@@ -302,21 +302,24 @@ So PD_PIPE is necessary but not sufficient.  Forcing the GMAC gates
 (`CLKGATE_CON(17)` bits 2-6,10) and deasserting both GMAC resets
 (`SOFTRST_CON(14)` bits 12/13) before the PHY probe **deadlocks the
 kernel** before `gmac: no phy`, with a `lock ... held by qmalloc`
-panic.  That is not a bus timeout: it points at an interrupt or lock
-ordering problem during the GMAC release.
+panic.  Clearing the MAC interrupt (`INT_EN = 0`) and releasing only
+`SRST_A_GMAC1` also deadlocks.  The reset release itself is the trigger;
+this is a bus/interrupt-path problem, not a missing clock gate.
 
 Next steps, in order:
 
-1. Mask the GMAC interrupt at the MAC (`INT_EN`) and at the GIC before
-   releasing `SRST_A_GMAC1`, then deassert the reset alone.
-2. Verify the `CLK_MAC1_2TOP` parent/divider (`CLKSEL_CON(33)`) and the
-   PHY `CLK_OUT` path before enabling `CLK_MAC1_OUT`/`REF_OUT`.
-3. Add gates one at a time, starting with `ACLK_GMAC1`/`PCLK_GMAC1`.
-4. Only then retry 100/1000 Mbps.
+1. Mask the GMAC SPI at the GIC and verify the ARM64 SError/IRQ path
+   before releasing `SRST_A_GMAC1`; `INT_EN = 0` alone is not enough.
+2. Instrument the reset write: print the CRU reset/status before and
+   after, with the GMAC SPI masked, to separate a bus hang from a
+   spurious interrupt.
+3. Only after a clean reset release, verify the `CLK_MAC1_2TOP`
+   parent/divider (`CLKSEL_CON(33)`) and the PHY `CLK_OUT` path.
+4. Add the gates one at a time, starting with `ACLK_GMAC1`/`PCLK_GMAC1`.
+5. Then retry 100/1000 Mbps.
 
-Do not apply the GMAC gate/reset writes until that ordering is
-understood; the PD_PIPE-only kernel boots and leaves the rest of the
-board usable.
+Do not apply the GMAC reset/gate writes until that path is understood;
+the PD_PIPE-only kernel boots and leaves the rest of the board usable.
 
 The U-Boot environment also still boots `aspera-arm64.img`; the working
 image is `aspera-usb.img`, loaded by hand:
