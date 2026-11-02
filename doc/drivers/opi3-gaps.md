@@ -1,57 +1,126 @@
-# Orange Pi 3B driver gaps
+# Orange Pi 3B hardware and driver gaps
 
 Audit date: 2026-11-01. Board: Orange Pi 3B v1.1 (RK3566).
 Branch: `opi3-driver-audit`.
 
-This is the working gap list behind
-[`support-matrix.md`](support-matrix.md). It distinguishes "no driver" from
-"driver exists but a board-level dependency is missing", because the second
-case is often the shorter path.
+This is the full-board inventory behind
+[`support-matrix.md`](support-matrix.md). It separates three different
+problems that often get conflated:
+
+1. **No driver** for a SoC block or board device.
+2. **Driver exists**, but a board dependency (power domain, clock, pinmux,
+   DTS node) is missing.
+3. **Hardware is present**, but the mainline board DTS does not enable it.
+
+The third case is common on this board: the schematic has eDP, MIPI DSI,
+MIPI CSI, fan, IR, SARADC recovery key, headphone detect, and RTC battery
+signals that the board DTS does not describe.
 
 ## What already works
 
-These are not gaps; they are the base to build on.
-
-- UART console, `gpiofs`, `i2cfs`, `pmicfs`.
+- UART console on UART2 at 1500000 8N1.
+- `gpiofs`, `i2cfs`, `pmicfs`.
 - RK809 regulators, RTC/alarm, CLKOUT2, power key (polled), thermal reporting.
 - eMMC: SDHCI/dwcmshc, 50 MHz 8-bit, HS200 200 MHz, ADMA2, `/srv/emmc`,
-  `emmcfs` with a 9P block interface and a boot-time read/write self-test.
-- GMAC at 10 Mbps with `gmacfs`; the MAC/PHY register path is documented.
+  `emmcfs` with a 9P block interface and boot-time read/write self-test.
+- GMAC at 10 Mbps with `gmacfs`; MAC/PHY register path documented.
 - xHCI root-port enumeration, control/bulk/interrupt transfers, UAC1 probe.
 - VOP2 + DW-HDMI scanout at a fixed 1920x1080 RGB888.
 - RK IOMMU two-level tables, used by VOP2.
 - NPU register/task format decoded in `9rock`; vendor driver exists.
 
-## Missing or unfinished
+## SoC and controller blocks
 
-Priority is for a usable OPi3 product, not for completeness.
+| Block | Current state | Missing / next | Priority |
+| --- | --- | --- | --- |
+| UART0-9 | UART2 console works; `uartfs` exists | UART1 BT HCI, UART0/3-9 on header/debug, general UART service | P1/P2 |
+| GPIO / pinctrl | `gpiofs`; banks GPIO0-4, per-pin IRQ | 40-pin header policy, more pinmux, LED/IR consumers | P1 |
+| I2C0-5 | `i2cfs`; I2C0 = PMIC, I2C1 header | Device drivers on I2C1-5 (sensors, display DDC, camera) | P1 |
+| SPI0-3 | FDT class recognized | No SPI controller driver; header and TPM need it | P1 |
+| PWM0-15 | FDT class recognized | No PWM driver; eDP backlight, fan, IR, header | P1 |
+| SARADC | FDT class recognized | No SARADC/key driver; recovery key, header ADC | P2 |
+| TSADC / thermal | FDT class recognized; PMIC reports temperature | No SoC TSADC, trip points, thermal zones | P1 |
+| Watchdog | FDT class recognized | No RK WDT driver | P1 |
+| TRNG | FDT class recognized | No RK RNG driver | P1 |
+| Crypto engine | SoC block | No AES/SHA offload driver | P3 |
+| eFuse / OTP | Read via U-Boot/Linux only | No Harvey efuse driver; lot code is not a serial | P3 |
+| PMU power domains | PD_PIPE powered, PD_NPU probed | **PD_USB missing**; other domain policy absent | **P0** |
+| CRU / GRF / PMUGRF | Substrate; clocks for UART/eMMC/VOP/USB/GMAC | More clock/reset coverage, DVFS coupling | P1 |
+| GIC / timer / MMU / DMA | Working substrate | Not drivers; keep out of the driver list | — |
+| IOMMU | VOP2 working | Other masters (VPU, VEPU, ISP, RGA, NPU) | P2 |
+| eMMC | HS200/ADMA2/9P works | Partition layer, filesystem, root mount | **P0** |
+| SD card (sdmmc0) | DTS enabled | No driver; second SDHCI instance | P2 |
+| SDIO (sdmmc1) | DTS enabled | No SDIO driver; WiFi/BT module | P2 |
+| GMAC1 / PHY | 10 Mbps works | PD_USB, 100/1000, PHY delay sweep | P1 |
+| USB2 PHY0/1 + EHCI/OHCI | Board probe | No class drivers; OTG role | P1 |
+| USB3 xHCI | Root ports, control/bulk/interrupt, UAC1 probe | Hubs, HID, MSC, audio service, `#P` transport, pending-read cancellation | **P0** |
+| PCIe2x1 / combphy | FDT class recognized | No PCIe driver; M.2 NVMe | P2 |
+| VOP2 / HDMI | Fixed 1920x1080 RGB888 | EDID/DDC, modeset, hotplug, CEC, HDMI audio | P2 |
+| MIPI DSI0/1 | DTS nodes exist; board DSI not enabled | No DSI driver/panel; DSI PHY | P2 |
+| eDP | Schematic has EDP_TX, BL_PWM/EN, HPD | No eDP node/driver, backlight, HPD | P2 |
+| HDMI audio | `hdmi_sound` enabled in DTS | No audio service/driver | P2 |
+| I2S0/1/2/3, SPDIF, PDM | I2S1 + RK809 sound card in DTS | No I2S/PDM/SPDIF driver or PCM service | P2 |
+| RK809 codec | Regulators/RTC work | No codec driver; analog out/in, HP detect | P2 |
+| GPU (Mali G52) | DTS enabled | No driver | P3 |
+| NPU | Vendor driver/`9rock` decode | No Harvey driver/queue | P3 |
+| VPU (decode) | FDT class recognized | No driver | P3 |
+| VEPU (encode) | FDT class recognized | No driver | P3 |
+| RGA (2D) | FDT class recognized | No driver | P3 |
+| ISP / VICAP | FDT class recognized | No driver | P3 |
+| MIPI CSI / DPHY | FDT class recognized | No camera/CSI driver | P3 |
+| SFC / SPI NOR | FDT class recognized; boot flash present | No SFC driver | P2 |
+| SATA | Shared PCIe/USB3 lanes | No SATA connector exposed; not applicable | — |
+| Mailbox / SCMI | Firmware interface | No driver; only if firmware services are needed | P3 |
+| TEE / OP-TEE | Vendor BL32, keyroot oracle | No general TEE driver; vendor TEE is unauditable | P2 |
 
-| Area | Current state | What is missing | Priority | Next step |
+## Board hardware and connectors
+
+| Board device | Evidence | Current state | Missing / next | Priority |
 | --- | --- | --- | --- | --- |
-| PD_USB power domain | PD_PIPE is powered in `devxhci.c`; PD_USB is not | GMAC1 and parts of USB have no bus clock after U-Boot handoff; `fe010000` reads zero | **P0** | Add a PMU power-domain helper and power `PD_USB` before `ethergmacinit()`/`dwc3init()` |
-| Root filesystem | `emmcfs` exposes a raw 9P block device; init only self-tests it | No partition layer, no on-disk filesystem, no root mount; boot archive lives in RAM | **P0** | Mount `/srv/emmc` as a root or `/n/emmc`, add a filesystem and boot from it |
-| USB HID | xHCI control/bulk/interrupt works; no class driver | Keyboard/mouse; hubs; safe endpoint cancellation for idle interrupt reads | **P0** | User-space `#P` transport + HID class service; fix pending-read/cancel semantics |
-| USB MSC | xHCI bulk works | Mass-storage class service; no USB root/removable storage | P1 | MSC bulk-only transport over the same L2 engine |
-| Ethernet 100/1000 | 10 Mbps works; 100/1000 register path open, v1.1 PHY workaround documented | PD_USB, PHY delay sweep, tested 100M/1G | P1 | Power PD_USB, then sweep MAC/PHY delays and measure |
-| Thermal / TSADC | PMIC reports temperature; no SoC TSADC driver | SoC temperature, trip points, warning/shutdown | P1 | TSADC driver + PMIC hot-die policy |
-| Watchdog | none | RK WDT; reset-on-hang for unattended systems | P1 | Small WDT driver/service |
-| TRNG | none | RK RNG hardware source | P1 | Small `/dev/random` or `/srv/trng` backend |
-| TPM 2.0 add-on | `tpmfs` exists; CRB/TIS userspace code exists | RK SPI controller driver + TIS transport on ARM; no discrete TPM on board | P1/P2 | SPI driver, then TIS; ties into the root-of-trust work |
-| Display modes | fixed 1920x1080 RGB888 | EDID read, modeset, hotplug, HDMI audio | P2 | DDC/EDID + mode table; keep fixed mode as fallback |
-| Audio | UAC1 probe reads isochronous frames | UAC1/UAC2 service; RK809 codec + I2S; HDMI audio | P2 | PCM 9P service first, then on-board codec |
-| PCIe / NVMe | FDT class recognized; no driver | DWC PCIe + combphy; NVMe | P2 | Only if eMMC/USB storage is insufficient |
-| SD card slot | eMMC works; SD slot not driven | SDHCI instance for `sdmmc0`; card detect/power | P2 | Parameterize the eMMC SDHCI core for the SD slot |
-| SPI NOR | FDT class recognized | RK SFC; boot flash read | P2 | Needed for firmware/env inspection, not rootfs |
-| SARADC | FDT class recognized | ADC channels (keys, sensors) | P3 | Small driver if a board function needs it |
-| PWM / fan | FDT class recognized | Fan/backlight/IR carrier | P3 | Pair with thermal policy |
-| Crypto engine | none | AES/SHA offload | P3 | Only if CPU crypto is insufficient |
-| eFuse / OTP | read via U-Boot/Linux only | Harvey efuse driver; unique device identity | P3 | Lot code is not a serial; do not treat it as one |
-| VPU / VEPU | FDT class recognized | H.264/H.265 decode/encode | P3 | Product-dependent |
-| RGA | none | 2D blit/scale | P3 | Product-dependent |
-| GPU | FDT class recognized | Mali G52 | P3 | Product-dependent |
-| ISP / camera | FDT class recognized | rkisp + vicap, MIPI CSI | P3 | Product-dependent |
-| NPU | vendor driver in `9rock`; no Harvey driver | rknpu service/queue | P3 | Research path, not a product blocker |
-| WiFi / BT | CP boots, scans, WPA2 associates; data path weak | Link budget, not framing; v1.1 CDW-20U5622 vs v2.1 AP6256 | P3 | Retest next to the AP before writing more code |
+| HDMI Type-A | `hdmi-con`, VOP2/HDMI | Fixed 1080p scanout | EDID/DDC, modeset, HPD, CEC, audio | P2 |
+| eDP output | Schematic: EDP_TX, EDP_BL_PWM/EN, EDP_HPD | No DTS node/driver | eDP controller, backlight PWM, HPD | P2 |
+| MIPI DSI | Schematic: MIPI_DSI_TX1; DSI0/1 nodes | Not enabled on board | DSI panel/connector, DSI PHY | P2 |
+| MIPI CSI camera | Schematic: MIPI_CSI_RX, CAMERA_PDN_L | Not enabled | CSI/DPHY, ISP, camera power | P3 |
+| 3.5 mm earphone/mic | `EARPHONE`, `MIC1_IN`, `HP_DET_L` | No audio service | RK809 codec, HP detect, mic path | P2 |
+| Speaker out | `SPK_OUTp/n` | No audio service | RK809 speaker path | P2 |
+| Fan connector | `FAN1`, 5 V 500 mA | No driver/thermal policy | PWM/tach or always-on policy | P1 |
+| IR receiver | `GPIO0_C6-PWM7_IR` | No input driver | IR decode or GPIO event | P2 |
+| Recovery key | `SARADC_VIN0_KEY/RECOVERY` | No SARADC/key driver | ADC key event | P2 |
+| Power key | `PMIC_PWRON`, RK809 IRQ | Polled by `pmicfs` | Wire GPIO0_A3 IRQ; event service | P1 |
+| T2Key / reset | `T2Key`, `PCIE20_BUTTONRSTn` | Not modeled | Board policy if used | P3 |
+| RTC battery | `VCC_RTC`, SX-3215 | RK809 RTC works | Battery status/monitoring | P3 |
+| Work LED | GPIO0_C0, `work_led` | `gpiofs` can drive | Heartbeat/status service | P3 |
+| Ethernet LEDs | RJ45 PHY LEDs | Hardware default | Optional LED policy | P3 |
+| 40-pin header (CON2) | 2x20 header | GPIO/I2C/UART partial | SPI, PWM, SARADC; header pin policy | P1 |
+| M.2 M-key | `M.2-KEY-M-H3R2`, PCIe2x1 | No driver | PCIe + NVMe | P2 |
+| TF card slot | `TF2`, sdmmc0 | No driver | SDHCI instance, card detect | P2 |
+| eMMC | `sdhci`, HS200 | Works | Root filesystem above it | **P0** |
+| SPI NOR | `sfc`, `jedec,spi-nor` | No driver | SFC read/write | P2 |
+| USB3 host | USB3_HOST1, xHCI | Root ports work | HID/MSC/hubs, `#P` transport | **P0** |
+| USB2 host x2 | USB2_HOST2/3, EHCI/OHCI | Board probe | HID/MSC classes | P1 |
+| USB2 OTG / Type-C | `USB_OTG0`, `TYPEC1` power | PHY/regulator only | OTG role, CC/PD policy | P2 |
+| Ethernet RJ45 | GMAC1 + PHY | 10 Mbps | PD_USB, 100/1000 | P1 |
+| WiFi/BT | SDIO1 + UART1, wake GPIOs | WiFi CP/scan/WPA2; BT not driven | BT HCI, WiFi data path/link budget | P2/P3 |
+| Debug UART | UART2, 1500000 | Works | — | — |
+| Power input | DC 5 V / Type-C power | RK809 rails | No PD/CC policy | P3 |
+
+## Power, thermal, performance, security
+
+| Area | Current state | Missing / next | Priority |
+| --- | --- | --- | --- |
+| RK809 regulators | Rails readable/settable via `pmicfs` | Dynamic voltage for DVFS; full rail policy | P1 |
+| SYR827 CPU regulator | I2C0 device | No regulator/cpufreq coupling | P1 |
+| CPU OPP / DVFS | OPP tables in DTS | No cpufreq driver; fixed frequency | P1 |
+| GPU/NPU DVFS | OPP tables in DTS | No devfreq | P2 |
+| Power domains | PD_PIPE, PD_NPU probe | PD_USB, PD_VPU, PD_RGA, PD_ISP, PD_NPU policy | **P0** |
+| Thermal zones | DTS has GPU/SoC trips | No TSADC driver or cooling policy | P1 |
+| Fan control | FAN1 hardware | No PWM/tach/thermal loop | P1 |
+| Watchdog | WDT node | No driver/reset policy | P1 |
+| TRNG | RNG node | No driver | P1 |
+| Crypto offload | SoC crypto | No driver | P3 |
+| OTP / eFuse | Read via U-Boot/Linux | No driver; not a unique serial | P3 |
+| TEE / secure boot | Vendor BL32 + keyroot oracle | No general TEE driver; no fused secure boot | P2 |
+| SCMI / mailbox | Firmware | No driver; needed only for firmware services | P3 |
 
 ## The three short paths
 
@@ -62,14 +131,6 @@ Priority is for a usable OPi3 product, not for completeness.
 to `aclk_usb`/`pclk_usb` in **PD_USB**. `devxhci.c` powers **PD_PIPE**, but
 not PD_USB. This one PMU change should improve both GMAC and USB, and it is
 much smaller than a new Ethernet driver.
-
-Evidence to collect after the change:
-
-```text
-gmac: phy ... link 1 speed 100/1000
-/net/ether0 exists
-ping 192.168.2.1
-```
 
 ### 2. Root filesystem, not another block driver
 
@@ -110,6 +171,8 @@ result to v2.1 without checking the rail and the DTS.
 - [`pmic-bringup.md`](pmic-bringup.md) — RK809, RTC, power key, thermal gaps.
 - [`wifi-bringup.md`](wifi-bringup.md) — UWE5622 CP, association, link budget.
 - [`../boards/orangepi-3b/`](../boards/orangepi-3b/) — DTS, schematic, USB map.
+- [`../boards/orangepi-3b/dts/rk3566-orangepi-3b.dtsi`](../boards/orangepi-3b/dts/rk3566-orangepi-3b.dtsi) — board nodes.
+- [`../boards/orangepi-3b/refs/orangepi-3b-v2.1-schematic.txt`](../boards/orangepi-3b/refs/orangepi-3b-v2.1-schematic.txt) — schematic extraction.
 - [`../../sys/src/cmd/o9xhci/README.md`](../../sys/src/cmd/o9xhci/README.md) — xHCI scope and class gaps.
 - [`../../sys/src/cmd/tpm/README.md`](../../sys/src/cmd/tpm/README.md) — TPM 2.0 userspace.
 - [`../../../9rock/OPTEE_RK3566_FINDINGS.md`](../../../9rock/OPTEE_RK3566_FINDINGS.md) — RK3566 TEE/OTP findings.
