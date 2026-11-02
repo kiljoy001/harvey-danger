@@ -34,7 +34,7 @@ enum {
 	Fmac        = 1 << 5,   /* Device has given MAC */
 	Fstatus     = 1 << 16,  /* Device status available */
 
-	Qsize       = 16,       /* Virtqueue ring size */
+	Qsize       = 64,       /* Virtqueue ring size */
 };
 
 typedef struct Vconfig Vconfig;
