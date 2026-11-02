@@ -104,7 +104,7 @@ function start_gefs_root() int64 {
                     close(srvfd);
                     goto gefs_done;
                 }
-                if(mount(hfd, -1, "/n", MREPL, "") < 0){
+                if(mount(hfd, -1, "/n", MREPL|MCREATE, "") < 0){
                     print("install: mount host tree: %r\n");
                     close(hfd);
                     close(srvfd);
@@ -127,28 +127,61 @@ function start_gefs_root() int64 {
                 if(df >= 0) close(df);
 
                 /* Copy the complete staged root, not just the bootstrap
-                 * files. The guest has tar in the staged tree; the archive
-                 * is written into the new filesystem so no host-side
-                 * filesystem driver is needed. */
+                 * files.  The archive is kept on the host side: GEFS
+                 * retains old blocks, so writing the tar into the new
+                 * filesystem as well needs far more space than the
+                 * extracted tree.  Build the tar argv from the top level
+                 * entries so the archive is never archived into itself. */
                 if(access("/n/bin/tar", AEXIST) == 0){
-                    chdir("/n");
-                    pid = rfork(RFPROC|RFFDG);
-                    if(pid == 0){
-                        char *targv[] = {"tar", "-cf", "/mnt/root.tar", ".", nil};
-                        exec("/n/bin/tar", targv);
-                        _exits("tar cf");
+                    char *names[160];
+                    char **targv;
+                    Dir *td;
+                    int tfd, ti, tj, tn, tnn;
+
+                    tnn = 0;
+                    tfd = open("/n", OREAD);
+                    if(tfd >= 0){
+                        while((tn = dirread(tfd, &td)) > 0){
+                            for(ti = 0; ti < tn && tnn < 150; ti++){
+                                if(strcmp(td[ti].name, "root.tar") == 0)
+                                    continue;
+                                names[tnn++] = strdup(td[ti].name);
+                            }
+                            free(td);
+                        }
+                        close(tfd);
                     }
-                    if(pid > 0) wait();
+                    targv = malloc((tnn + 4) * sizeof(char*));
+                    if(targv != nil){
+                        targv[0] = "tar";
+                        targv[1] = "-cf";
+                        targv[2] = "/n/root.tar";
+                        for(tj = 0; tj < tnn; tj++)
+                            targv[3 + tj] = names[tj];
+                        targv[3 + tnn] = nil;
+                        chdir("/n");
+                        pid = rfork(RFPROC|RFFDG);
+                        if(pid == 0){
+                            exec("/n/bin/tar", targv);
+                            print("install: exec tar cf: %r\n");
+                            _exits("tar cf");
+                        }
+                        if(pid > 0) wait();
+                        free(targv);
+                    }
+                    for(tj = 0; tj < tnn; tj++)
+                        free(names[tj]);
                     chdir("/mnt");
                     pid = rfork(RFPROC|RFFDG);
                     if(pid == 0){
-                        char *targv[] = {"tar", "-xf", "root.tar", nil};
-                        exec("/n/bin/tar", targv);
+                        char *xargv[] = {"tar", "-xf", "/n/root.tar", nil};
+                        exec("/n/bin/tar", xargv);
+                        print("install: exec tar xf: %r\n");
                         _exits("tar xf");
                     }
                     if(pid > 0) wait();
                     chdir("/");
-                    remove("/mnt/root.tar");
+                    remove("/n/root.tar");
                 }
 
                 ncopy = 0;
@@ -236,12 +269,23 @@ function start_gefs_root() int64 {
                     else if(mount(vfd, -1, "/mnt", MREPL, "") < 0)
                         print("install: verify mount failed: %r\n");
                     else {
-                        vd = dirstat("/mnt/bin/rc");
-                        if(vd != nil){
-                            print("install: verify /bin/rc %lld bytes\n", vd->length);
-                            free(vd);
-                        } else
-                            print("install: verify /bin/rc missing: %r\n");
+                        char *vnames[] = {"bin/rc", "bin/ipconfig",
+                                          "bin/cs", "lib/aspera/net.rc",
+                                          nil};
+                        int vi;
+                        for(vi = 0; vnames[vi] != nil; vi++){
+                            char vp[128];
+                            snprint(vp, sizeof vp, "/mnt/%s", vnames[vi]);
+                            vd = dirstat(vp);
+                            if(vd != nil){
+                                print("install: verify %s %lld bytes\n",
+                                      vp, vd->length);
+                                free(vd);
+                            } else {
+                                print("install: verify %s missing: %r\n", vp);
+                                nfail++;
+                            }
+                        }
                         unmount(nil, "/mnt");
                     }
                     if(vfd >= 0){

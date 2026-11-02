@@ -13,10 +13,11 @@ function start_vps_root() int64 {
     c {
         char *args[] = {"gefs", "-A", "-m", "32", "-n", "asperagefs",
                         "-f", "/dev/initrd", nil};
+        char *image;
         char *rargv[] = {"rio", "-t", "-s", "-i", "rc /lib/aspera/start.rc", nil};
         char *rcargv[] = {"rc", "-i", nil};
         char *dirs[] = {"/home", "/tmp", "/var", "/n", "/n/host", "/srv",
-                        "/dev", "/fd", "/proc", "/mnt", "/mnt/o9", "/vps",
+                        "/dev", "/fd", "/proc", "/mnt", "/mnt/o9", "/net", "/vps",
                         "/vps/ram", "/vps/ram/home", "/vps/ram/tmp",
                         "/vps/ram/var", "/vps/ram/n", "/vps/ram/n/host",
                         "/vps/host", "/vps/host/clip", "/vps/host/downloads",
@@ -34,14 +35,16 @@ function start_vps_root() int64 {
             print("vps: bind #c/#P: %r\n");
             goto vps_done;
         }
-        fd = open("/dev/initrd", ORDWR);
+        image = "/dev/initrd";
+        fd = open(image, ORDWR);
         if(fd < 0){
-            print("vps: no /dev/initrd: %r\n");
+            print("vps: no GEFS image: %r\n");
             goto vps_done;
         }
         close(fd);
-        d = dirstat("/dev/initrd");
-        print("vps: /dev/initrd %s\n", d != nil ? "present" : "missing");
+        args[7] = image;
+        d = dirstat(image);
+        print("vps: image %s %s\n", image, d != nil ? "present" : "missing");
         if(d != nil) free(d);
 
         pid = rfork(RFPROC|RFFDG|RFNOWAIT);
@@ -166,6 +169,12 @@ function start_vps_root() int64 {
             print("vps: bind #i: %r\n");
         if(bind("#m", "/dev", MAFTER) < 0)
             print("vps: bind #m: %r\n");
+        /* Native network stack: #I is IP, #l is ethernet.  Both attach
+           their device trees under /net. */
+        if(bind("#I", "/net", MAFTER) < 0)
+            print("vps: bind #I: %r\n");
+        if(bind("#l", "/net", MAFTER) < 0)
+            print("vps: bind #l: %r\n");
         fd = open("/dev/mousectl", OWRITE);
         if(fd >= 0){
             write(fd, "ps2intellimouse", 15);
@@ -183,6 +192,17 @@ function start_vps_root() int64 {
                 "snarfbridge &\n";
             write(fd, script, strlen(script));
             close(fd);
+        }
+
+        /* Bring up the browser link in the background: DHCP, resolver,
+           connection server.  net.rc logs to the console and never blocks
+           the desktop. */
+        pid = rfork(RFPROC|RFFDG|RFNOWAIT);
+        if(pid == 0){
+            char *nargv[] = {"rc", "/lib/aspera/net.rc", nil};
+            exec("/bin/rc", nargv);
+            print("vps: exec net.rc failed: %r\n");
+            _exits("net.rc");
         }
 
         value = getenv("user");

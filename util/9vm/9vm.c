@@ -251,6 +251,13 @@ struct multiboot_mmap_entry {
     uint32_t type;
 } __attribute__((packed));
 
+struct multiboot_mod {
+    uint32_t mod_start;
+    uint32_t mod_end;
+    uint32_t string;
+    uint32_t reserved;
+} __attribute__((packed));
+
 struct multiboot_info {
     uint32_t flags;
     uint32_t mem_lower;
@@ -290,6 +297,8 @@ static void set_segment(struct kvm_segment *seg, uint16_t sel, uint32_t base, ui
     seg->avl = 0;
     seg->unusable = 0;
 }
+
+static uint64_t kernel_end_pa;
 
 static uint64_t load_elf(const char *path, uint8_t *ram, size_t ram_size) {
     int fd = open(path, O_RDONLY);
@@ -332,6 +341,8 @@ static uint64_t load_elf(const char *path, uint8_t *ram, size_t ram_size) {
                         paddr, phdrs[i].p_memsz, ram_size);
                 exit(1);
             }
+            if ((uint64_t)paddr + phdrs[i].p_memsz > kernel_end_pa)
+                kernel_end_pa = (uint64_t)paddr + phdrs[i].p_memsz;
 
             double t_before_read = get_boot_ms();
             lseek(fd, phdrs[i].p_offset, SEEK_SET);
@@ -399,7 +410,8 @@ static uint64_t load_elf(const char *path, uint8_t *ram, size_t ram_size) {
 }
 
 static void setup_multiboot(uint8_t *ram, size_t ram_size, const char *cmdline,
-                            bool use_hostring) {
+                            bool use_hostring, uint32_t initrd_pa,
+                            uint32_t initrd_len) {
     struct multiboot_info *mbi = (struct multiboot_info *)(ram + MBI_ADDR);
     memset(mbi, 0, sizeof(*mbi));
 
@@ -431,23 +443,40 @@ static void setup_multiboot(uint8_t *ram, size_t ram_size, const char *cmdline,
     mmap[1].type = 2;
 
     /* Extended memory. Keep the last 2 MiB mapped and writable by the
-     * guest kernel, but outside its page allocator. */
-    mmap[2].size = sizeof(struct multiboot_mmap_entry) - 4;
-    mmap[2].addr = 0x100000;
-    mmap[2].len = ram_size - 0x100000 -
-                  (use_hostring ? P9_HOST_REGION_SIZE : 0);
-    mmap[2].type = 1;
+     * guest kernel, but outside its page allocator.  The guest reserves
+     * the initrd module itself when it parses the multiboot module table. */
+    int nm = 2;   /* entries 0 and 1 are the conventional/reserved low memory */
+    uint64_t region_top = ram_size -
+                          (use_hostring ? P9_HOST_REGION_SIZE : 0);
+    uint64_t mem_end = region_top;
+    mmap[nm].size = sizeof(struct multiboot_mmap_entry) - 4;
+    mmap[nm].addr = 0x100000;
+    mmap[nm].len = mem_end - 0x100000;
+    mmap[nm].type = 1;
+    nm++;
 
     if (use_hostring) {
-        mmap[3].size = sizeof(struct multiboot_mmap_entry) - 4;
-        mmap[3].addr = ram_size - P9_HOST_REGION_SIZE;
-        mmap[3].len = P9_HOST_REGION_SIZE;
-        mmap[3].type = 0x9009; /* private 9vm/Harvey shared RAM type */
+        mmap[nm].size = sizeof(struct multiboot_mmap_entry) - 4;
+        mmap[nm].addr = ram_size - P9_HOST_REGION_SIZE;
+        mmap[nm].len = P9_HOST_REGION_SIZE;
+        mmap[nm].type = 0x9009; /* private 9vm/Harvey shared RAM type */
+        nm++;
     }
 
     mbi->mmap_addr = mmap_addr;
-    mbi->mmap_length = (use_hostring ? 4 : 3) *
-                       sizeof(struct multiboot_mmap_entry);
+    mbi->mmap_length = nm * sizeof(struct multiboot_mmap_entry);
+
+    if (initrd_pa != 0) {
+        struct multiboot_mod *mod = (struct multiboot_mod *)(ram + 0x8000);
+        mod->mod_start = initrd_pa;
+        mod->mod_end = initrd_pa + initrd_len;
+        mod->string = 0x8100;
+        mod->reserved = 0;
+        strcpy((char *)(ram + 0x8100), "initrd");
+        mbi->mods_count = 1;
+        mbi->mods_addr = 0x8000;
+        mbi->flags |= 0x08; /* modules */
+    }
 }
 
 static void setup_gdt(uint8_t *ram) {
@@ -1736,6 +1765,7 @@ int main(int argc, char **argv) {
     const char *display_root = NULL;
     const char *gefs_image = NULL;
     const char *disk_image = NULL;
+    const char *initrd_path = NULL;
     bool legacy_host_root = false;
     bool isolated_gefs_root;
     char image_cmdline[256];
@@ -1763,6 +1793,8 @@ int main(int argc, char **argv) {
             display_root = argv[++i];
         } else if (strcmp(argv[i], "-gefs-image") == 0 && i + 1 < argc) {
             gefs_image = argv[++i];
+        } else if (strcmp(argv[i], "-initrd") == 0 && i + 1 < argc) {
+            initrd_path = argv[++i];
         } else if (strcmp(argv[i], "-disk") == 0 && i + 1 < argc) {
             disk_image = argv[++i];
         } else if (strcmp(argv[i], "-legacy-host-root") == 0) {
@@ -1784,7 +1816,7 @@ int main(int argc, char **argv) {
     }
 
     if (!kernel_path) {
-        fprintf(stderr, "Usage: %s [-m <mb>] [-c <cmdline>] [-r <root>] [-boot <guest>] [-display-shm <name>] [-display-root <dir>] [-netfs <sock>] [-net-tap <if>] [-gefs-image <image>] [-disk <image>] [-legacy-host-root] [-no9ring] <kernel-elf>\n", argv[0]);
+        fprintf(stderr, "Usage: %s [-m <mb>] [-c <cmdline>] [-r <root>] [-boot <guest>] [-display-shm <name>] [-display-root <dir>] [-netfs <sock>] [-net-tap <if>] [-gefs-image <image>] [-initrd <file>] [-disk <image>] [-legacy-host-root] [-no9ring] <kernel-elf>\n", argv[0]);
         return 1;
     }
     isolated_gefs_root = gefs_image != NULL && boot_override == NULL && !legacy_host_root;
@@ -2049,7 +2081,35 @@ int main(int argc, char **argv) {
                 ram_size - P9_HOST_REGION_SIZE);
     }
 
-    setup_multiboot(ram, ram_size, cmdline, use_hostring);
+    uint32_t initrd_pa = 0, initrd_len = 0;
+    if (initrd_path != NULL) {
+        int ifd = open(initrd_path, O_RDONLY);
+        struct stat ist;
+        if (ifd < 0 || fstat(ifd, &ist) < 0) {
+            perror("[9vm] initrd");
+            return 1;
+        }
+        if (ist.st_size <= 0 || (uint64_t)ist.st_size > ram_size / 2) {
+            fprintf(stderr, "[9vm] initrd too large for guest RAM\n");
+            return 1;
+        }
+        initrd_len = (uint32_t)ist.st_size;
+        /* Right after the kernel image, inside the direct map. */
+        initrd_pa = (uint32_t)((kernel_end_pa + 0xfff) & ~0xfffULL);
+        if (initrd_pa < 0x200000) {
+            fprintf(stderr, "[9vm] no room for initrd\n");
+            return 1;
+        }
+        ssize_t got = read(ifd, ram + initrd_pa, initrd_len);
+        close(ifd);
+        if (got != (ssize_t)initrd_len) {
+            fprintf(stderr, "[9vm] short initrd read\n");
+            return 1;
+        }
+        fprintf(stderr, "[9vm] initrd %s at 0x%x (%u bytes)\n",
+                initrd_path, initrd_pa, initrd_len);
+    }
+    setup_multiboot(ram, ram_size, cmdline, use_hostring, initrd_pa, initrd_len);
     setup_gdt(ram);
     setup_acpi(ram);
 
