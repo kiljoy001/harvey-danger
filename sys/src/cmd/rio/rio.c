@@ -52,6 +52,7 @@ char		*fontname;
 enum
 {
 	New,
+	Terminal,
 	Reshape,
 	Move,
 	Delete,
@@ -90,6 +91,7 @@ int	Hidden = Exit+1;
 
 char		*menu3str[100] = {
  [New]		"New",
+ [Terminal]	"Terminal",
  [Reshape]	"Resize",
  [Move]		"Move",
  [Delete]		"Delete",
@@ -104,6 +106,7 @@ Menu menu3 =
 };
 
 char *rcargv[] = { "rc", "-i", nil };
+char *vdirargv[] = { "vdir", nil };
 char *kbdargv[] = { "rc", "-c", nil, nil };
 
 int errorshouldabort = 0;
@@ -625,6 +628,11 @@ mousethread(void*)
 				keyboardhide();
 				break;
 			}
+			/* Shift + Right Click emulates Button 2 (Middle Click) */
+			if(shiftdown && (mouse->buttons & 4)){
+				mousectl->buttons = (mousectl->buttons & ~4) | 2;
+				mouse->buttons = mousectl->buttons;
+			}
 		Again:
 			moving = FALSE;
 			winput = input;
@@ -648,6 +656,10 @@ mousethread(void*)
 
 				inside = ptinrect(mouse->xy, insetrect(winput->screenr, Selborder));
 				w = winput;
+				if(inside && ptinrect(mouse->xy, wctrlrect(winput)) && (mouse->buttons & 7)){
+					wclickctrl(winput, mouse->xy, mouse->buttons);
+					continue;
+				}
 				if(winput->mouseopen)
 					scrolling = FALSE;
 				else if(scrolling)
@@ -657,7 +669,8 @@ mousethread(void*)
 				/* topped will be zero or less if window has been bottomed */
 				if(sending == FALSE && !scrolling && inborder(winput->screenr, mouse->xy) && winput->topped>0)
 					moving = TRUE;
-				else if(inside && w->title && ptinrect(mouse->xy, w->title->screenr)
+				else if(inside && !w->mouseopen && w->title && ptinrect(mouse->xy, w->title->screenr)
+						&& !w->title->active
 						&& (mouse->buttons&1) && !isdoubleclick(*(Mouse*)mousectl))
 					moving = TRUE;
 				else if(inside && (scrolling || winput->mouseopen || (mouse->buttons&1)))
@@ -678,7 +691,7 @@ mousethread(void*)
 				incref(winput);
 				sweeping = TRUE;
 				if(mouse->buttons & 3) {
-				  if(w->title && ptinrect(mouse->xy, w->title->screenr))
+				  if(!w->mouseopen && w->title && ptinrect(mouse->xy, w->title->screenr))
 					i = drag1(winput);
 				  else
 					i = bandsize(winput);
@@ -687,6 +700,7 @@ mousethread(void*)
 				sweeping = FALSE;
 				if(i != nil){
 					wcurrent(winput);
+					winput->maximized = 0;
 					wsendctlmesg(winput, Reshaped, i->r, i);
 				}
 				wclose(winput);
@@ -875,6 +889,13 @@ button3menu(void)
 	case -1:
 		break;
 	case New:
+		if(access("/bin/vdir", AEXEC) < 0){
+			fprint(2, "rio: /bin/vdir unavailable; opening a terminal\n");
+			new(sweep(), FALSE, scrolling, 0, nil, "/bin/rc", nil);
+		}else
+			new(sweep(), FALSE, scrolling, 0, nil, "/bin/vdir", vdirargv);
+		break;
+	case Terminal:
 		new(sweep(), FALSE, scrolling, 0, nil, "/bin/rc", nil);
 		break;
 	case Reshape:
@@ -1229,6 +1250,7 @@ resize(void)
 	i = sweep();
 	if(i!=nil){
 		wcurrent(w);
+		w->maximized = 0;
 		wsendctlmesg(w, Reshaped, i->r, i);
 	}
 	wclose(w);
@@ -1247,6 +1269,7 @@ move(void)
 	i = drag(w);
 	if(i!=nil){
 		wcurrent(w);
+		w->maximized = 0;
 		wsendctlmesg(w, Reshaped, i->r, i);
 	}
 	wclose(w);

@@ -41,8 +41,14 @@ meminit(void)
 		case PamPRESERVE:
 		case PamRESERVED:
 		case PamKRDONLY:
-		case PamMODULE:
 			pgattrs |= PteNX;
+			break;
+		case PamMODULE:
+			/* The multiboot module is ordinary RAM: the guest's GEFS
+			 * uses it as a writable image and keeps the host copy
+			 * untouched. */
+			pgattrs |= PteRW | PteNX;
+			break;
 		}
 		mmukphysmap(UINT2PTR(machp()->MMU.pml4->va), m->addr, pgattrs, m->size);
 

@@ -45,6 +45,8 @@ function start_gefs_root() int64 {
                 goto not_installing;
 
             fd = open("#9/2", ORDWR);
+            if(fd < 0)
+                fd = open("#9/1", ORDWR);
             if(fd < 0 || mount(fd, -1, "/mnt", MREPL, "") < 0){
                 print("install: image transport mount failed: %r\n");
                 if(fd >= 0) close(fd);
@@ -123,6 +125,31 @@ function start_gefs_root() int64 {
                 if(df >= 0) close(df);
                 df = create("/mnt/rc/lib", OREAD, DMDIR|0775);
                 if(df >= 0) close(df);
+
+                /* Copy the complete staged root, not just the bootstrap
+                 * files. The guest has tar in the staged tree; the archive
+                 * is written into the new filesystem so no host-side
+                 * filesystem driver is needed. */
+                if(access("/n/bin/tar", AEXIST) == 0){
+                    chdir("/n");
+                    pid = rfork(RFPROC|RFFDG);
+                    if(pid == 0){
+                        char *targv[] = {"tar", "-cf", "/mnt/root.tar", ".", nil};
+                        exec("/n/bin/tar", targv);
+                        _exits("tar cf");
+                    }
+                    if(pid > 0) wait();
+                    chdir("/mnt");
+                    pid = rfork(RFPROC|RFFDG);
+                    if(pid == 0){
+                        char *targv[] = {"tar", "-xf", "root.tar", nil};
+                        exec("/n/bin/tar", targv);
+                        _exits("tar xf");
+                    }
+                    if(pid > 0) wait();
+                    chdir("/");
+                    remove("/mnt/root.tar");
+                }
 
                 ncopy = 0;
                 nfail = 0;
@@ -238,6 +265,8 @@ function start_gefs_root() int64 {
     not_installing:;
 
         fd = open("#9/2", ORDWR);
+        if(fd < 0)
+            fd = open("#9/1", ORDWR);
         if(fd < 0 || mount(fd, -1, "/mnt", MREPL, "") < 0){
             print("aspera: image transport mount failed: %r\n");
             if(fd >= 0) close(fd);

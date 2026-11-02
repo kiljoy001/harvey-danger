@@ -141,6 +141,7 @@ freefont(Font *f)
 		if(s && display && s!=display->defaultsubfont)
 			freesubfont(s);
 	}
+	_freefontshape(f);
 	freeimage(f->cacheimage);
 	free(f->name);
 	free(f->cache);

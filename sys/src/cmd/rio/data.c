@@ -184,29 +184,52 @@ Cursor *corners[9] = {
 	&bl,	&b,	&br,
 };
 
+char riotheme[512];
+
 void
 iconinit(void)
 {
+	ulong back, text, bord, high, titleback, channel;
+	int shift;
+
+	back = 0xFFFFFFFF^reverse;
+	text = 0x000000FF^reverse;
+	bord = 0x999999FF^reverse;
+	high = reverse ? DPurpleblue : 0xCCCCCCFF;
+	/* Match allocimagemix's 63/255 tint over white on true-color displays. */
+	titleback = 0;
+	for(shift = 8; shift <= 24; shift += 8){
+		channel = (((DPalegreygreen >> shift) & 0xff)*63 + 255*192 + 127)/255;
+		titleback |= channel << shift;
+	}
+	/* Shared RGB palette for draw clients, including vdir. */
+	snprint(riotheme, sizeof riotheme,
+		"back %06lux\ntext %06lux\nborder %06lux\nhigh %06lux\n"
+		"htext 000000\ndir 5555ff\nexec 55ff55\n"
+		"link 55ffff\ndev ffff55\npipe ffff55\nbroken ff5555\n"
+		"socket ff55ff\ntitleback %06lux\n",
+		back >> 8, text >> 8, bord >> 8, high >> 8, titleback >> 8);
 	background = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0x777777FF);
 
 	/* Blue */
-	tagcols[BACK] = allocimagemix(display, DPalegreygreen, DNofill);
+	/* The title must erase old text; DNofill leaves the blend uninitialized. */
+	tagcols[BACK] = allocimagemix(display, DPalegreygreen, DWhite);
 	tagcols[HIGH] = allocimage(display, Rect(0,0,1,1), screen->chan, 1, DPalegreygreen);
 	tagcols[BORD] = allocimage(display, Rect(0,0,1,1), screen->chan, 1, DPurpleblue);
 	tagcols[TEXT] = display->black;
 	tagcols[HTEXT] = display->black;
 
 	/* greys are multiples of 0x11111100+0xFF, 14* being palest */
-	cols[BACK] = allocimage(display, Rect(0,0,1,1), CMAP8, 1, 0xFFFFFFFF^reverse);
-	cols[BORD] = allocimage(display, Rect(0,0,1,1), CMAP8, 1, 0x999999FF^reverse);
-	cols[TEXT] = allocimage(display, Rect(0,0,1,1), CMAP8, 1, 0x000000FF^reverse);
+	cols[BACK] = allocimage(display, Rect(0,0,1,1), CMAP8, 1, back);
+	cols[BORD] = allocimage(display, Rect(0,0,1,1), CMAP8, 1, bord);
+	cols[TEXT] = allocimage(display, Rect(0,0,1,1), CMAP8, 1, text);
 	cols[HTEXT] = allocimage(display, Rect(0,0,1,1), CMAP8, 1, 0x000000FF);
 	if(!reverse) {
-		cols[HIGH] = allocimage(display, Rect(0,0,1,1), CMAP8, 1, 0xCCCCCCFF);
+		cols[HIGH] = allocimage(display, Rect(0,0,1,1), CMAP8, 1, high);
 		titlecol = allocimage(display, Rect(0,0,1,1), CMAP8, 1, DGreygreen);
 		lighttitlecol = allocimage(display, Rect(0,0,1,1), CMAP8, 1, DPalegreygreen);
 	} else {
-		cols[HIGH] = allocimage(display, Rect(0,0,1,1), CMAP8, 1, DPurpleblue);
+		cols[HIGH] = allocimage(display, Rect(0,0,1,1), CMAP8, 1, high);
 		titlecol = allocimage(display, Rect(0,0,1,1), CMAP8, 1, DPurpleblue);
 		lighttitlecol = allocimage(display, Rect(0,0,1,1), CMAP8, 1, 0x222222FF);
 	}

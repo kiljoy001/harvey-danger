@@ -1,0 +1,232 @@
+// VPS first user process: the session namespace is the only host connection.
+//
+// #9/0 is the halavps session:
+//
+//	base.gefs   GEFS image (read-only base, writes held in the server's RAM)
+//	ram/        session ramfs (home, tmp, var, n)
+//	host/       browser services (clip, uploads, downloads, usb, fetch, net)
+//
+// GEFS runs on base.gefs, becomes /, and the ramfs is bound over the writable
+// branches. Nothing is persisted on the server; user data leaves through the
+// browser service tree at /n/host.
+function start_vps_root() int64 {
+    c {
+        char *args[] = {"gefs", "-A", "-m", "32", "-n", "asperagefs",
+                        "-f", "/dev/initrd", nil};
+        char *rargv[] = {"rio", "-t", "-s", "-i", "rc /lib/aspera/start.rc", nil};
+        char *rcargv[] = {"rc", "-i", nil};
+        char *dirs[] = {"/home", "/tmp", "/var", "/n", "/n/host", "/srv",
+                        "/dev", "/fd", "/proc", "/mnt", "/mnt/o9", "/vps",
+                        "/vps/ram", "/vps/ram/home", "/vps/ram/tmp",
+                        "/vps/ram/var", "/vps/ram/n", "/vps/ram/n/host",
+                        "/vps/host", "/vps/host/clip", "/vps/host/downloads",
+                        "/vps/host/fetch", "/vps/host/net", "/vps/host/uploads",
+                        "/vps/host/usb", "/vps/host/app", nil};
+        char *value;
+        Dir *d;
+        int fd, pid, i, srvfd;
+
+        /* The immutable GEFS image is the multiboot module. The boot loader
+           copied it into guest RAM; GEFS writes its log there, so the host
+           image is never modified. */
+        if(bind("#c", "/dev", MAFTER) < 0 ||
+           bind("#P", "/dev", MAFTER) < 0){
+            print("vps: bind #c/#P: %r\n");
+            goto vps_done;
+        }
+        fd = open("/dev/initrd", ORDWR);
+        if(fd < 0){
+            print("vps: no /dev/initrd: %r\n");
+            goto vps_done;
+        }
+        close(fd);
+        d = dirstat("/dev/initrd");
+        print("vps: /dev/initrd %s\n", d != nil ? "present" : "missing");
+        if(d != nil) free(d);
+
+        pid = rfork(RFPROC|RFFDG|RFNOWAIT);
+        if(pid == 0){
+            exec("/boot/gefs", args);
+            print("vps: exec gefs failed: %r\n");
+            _exits("gefs");
+        }
+        if(pid < 0){
+            print("vps: gefs fork failed: %r\n");
+            goto vps_done;
+        }
+        srvfd = -1;
+        for(i = 0; i < 200; i++){
+            srvfd = open("/srv/asperagefs", OREAD);
+            if(srvfd >= 0)
+                break;
+            sleep(50);
+        }
+        if(srvfd < 0){
+            print("vps: GEFS did not start: %r\n");
+            goto vps_done;
+        }
+        if(mount(srvfd, -1, "/", MREPL|MCREATE, "") < 0){
+            print("vps: root pivot failed: %r\n");
+            close(srvfd);
+            goto vps_done;
+        }
+        close(srvfd);
+        print("vps: GEFS root mounted\n");
+
+        /* The root pivot drops the old namespace; mount the session afresh.
+           #9 is free because the GEFS image lives in the module, not on it. */
+        d = dirstat("/vps");
+        if(d == nil){
+            fd = create("/vps", OREAD, DMDIR|0777);
+            if(fd >= 0)
+                close(fd);
+        }else
+            free(d);
+        fd = open("#9/0", ORDWR);
+        if(fd >= 0){
+            if(mount(fd, -1, "/vps", MREPL, "") < 0)
+                print("vps: mount session: %r\n");
+            else
+                print("vps: session mounted at /vps\n");
+        } else
+            print("vps: open #9/0: %r\n");
+        d = dirstat("/vps/ram");
+        print("vps: /vps/ram %s\n", d != nil ? "present" : "missing");
+        if(d != nil) free(d);
+        d = dirstat("/vps/host");
+        print("vps: /vps/host %s\n", d != nil ? "present" : "missing");
+        if(d != nil) free(d);
+
+        for(i = 0; dirs[i] != nil; i++){
+            d = dirstat(dirs[i]);
+            if(d != nil){
+                free(d);
+                continue;
+            }
+            fd = create(dirs[i], OREAD, DMDIR|0777);
+            if(fd >= 0)
+                close(fd);
+        }
+
+        /* Writable data is the session ramfs, not the GEFS image. */
+        d = dirstat("/vps/ram/home");
+        print("vps: /vps/ram/home %s\n", d != nil ? "present" : "missing");
+        if(d != nil) free(d);
+        if(bind("/vps/ram/home", "/home", MREPL|MCREATE) < 0)
+            print("vps: bind /home: %r\n");
+        if(bind("/vps/ram/tmp", "/tmp", MREPL|MCREATE) < 0)
+            print("vps: bind /tmp: %r\n");
+        if(bind("/vps/ram/var", "/var", MREPL|MCREATE) < 0)
+            print("vps: bind /var: %r\n");
+        if(bind("/vps/ram/n", "/n", MREPL|MCREATE) < 0)
+            print("vps: bind /n: %r\n");
+        d = dirstat("/vps/ram/n");
+        print("vps: /vps/ram/n %s\n", d != nil ? "present" : "missing");
+        if(d != nil) free(d);
+        d = dirstat("/n/host");
+        print("vps: /n/host %s\n", d != nil ? "present" : "missing");
+        if(d != nil) free(d);
+        else {
+            fd = create("/n/host", OREAD, DMDIR|0777);
+            if(fd >= 0) close(fd);
+            else print("vps: create /n/host: %r\n");
+        }
+        if(bind("/vps/host", "/n/host", MREPL|MCREATE) < 0)
+            print("vps: bind /n/host: %r\n");
+        else {
+            print("vps: browser services at /n/host\n");
+            /* Tell the page that the guest namespace is ready before it
+               starts its service pollers; otherwise they contend with the
+               boot-time 9P traffic. */
+            fd = create("/n/host/ready", OWRITE, 0666);
+            if(fd >= 0){
+                write(fd, "ready\n", 6);
+                close(fd);
+            }
+        }
+
+        if(bind("#c", "/dev", MAFTER) < 0)
+            print("vps: bind #c: %r\n");
+        if(bind("#P", "/dev", MAFTER) < 0)
+            print("vps: bind #P: %r\n");
+        if(bind("#d", "/dev", MAFTER) < 0)
+            print("vps: bind #d: %r\n");
+        if(bind("#d", "/fd", MREPL) < 0)
+            print("vps: bind #d/fd: %r\n");
+        if(bind("#p", "/proc", MREPL) < 0)
+            print("vps: bind #p: %r\n");
+        if(bind("#s", "/srv", MREPL|MCREATE) < 0)
+            print("vps: bind #s: %r\n");
+        if(bind("#ec", "/env", MREPL) < 0)
+            print("vps: bind #ec: %r\n");
+        if(bind("#e", "/env", MCREATE|MAFTER) < 0)
+            print("vps: bind #e: %r\n");
+        /* #@ is optional for Rio; the image has its own /mnt/o9. */
+        if(bind("#i", "/dev", MAFTER) < 0)
+            print("vps: bind #i: %r\n");
+        if(bind("#m", "/dev", MAFTER) < 0)
+            print("vps: bind #m: %r\n");
+        fd = open("/dev/mousectl", OWRITE);
+        if(fd >= 0){
+            write(fd, "ps2intellimouse", 15);
+            close(fd);
+        }
+
+        /* A larger first window keeps directory listings and tool output
+           visible; the old 520x40..980x320 shell scrolled entries away. */
+        fd = create("/lib/aspera/start.rc", OWRITE, 0755);
+        if(fd >= 0){
+            char *script =
+                "#!/bin/rc\n"
+                "# Rio startup: large rc window + snarf bridge.\n"
+                "echo 'new -r 16 16 776 568 rc' > /dev/wctl\n"
+                "snarfbridge &\n";
+            write(fd, script, strlen(script));
+            close(fd);
+        }
+
+        value = getenv("user");
+        if(value == nil || value[0] == 0)
+            putenv("user", "glenda");
+        free(value);
+        value = getenv("sysname");
+        if(value == nil || value[0] == 0)
+            putenv("sysname", "aspera");
+        free(value);
+
+        chdir("/");
+        print("vps: starting Rio\n");
+        pid = rfork(RFPROC|RFFDG|RFENVG);
+        if(pid == 0){
+            exec("/bin/rio", rargv);
+            print("vps: rio exec failed: %r\n");
+            _exits("rio");
+        }
+        if(pid > 0){
+            Waitmsg *w = wait();
+            print("vps: Rio exited (%s)\n", w != nil ? w->msg : "?");
+            free(w);
+        }
+
+        print("vps: falling back to rc\n");
+        exec("/bin/rc", rcargv);
+        print("vps: rc exec failed: %r\n");
+
+    vps_done:;
+    }
+    return 1;
+}
+
+function stay_alive() int64 {
+    c { for(;;) sleep(1000); }
+    return 0;
+}
+
+main {
+    print("\nHalatha VPS session\n");
+    Task<int64> boot = spawn start_vps_root();
+    if(boot.await() == 1) {
+        Task<int64> idle = spawn stay_alive();
+        idle.await();
+    }
+}

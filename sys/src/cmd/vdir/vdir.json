@@ -1,0 +1,9 @@
+[
+	{
+		"Name": "vdir",
+		"Include": ["/sys/src/cmd/cmd.json"],
+		"Install": "/$ARCH/bin/",
+		"Program": "vdir",
+		"SourceFiles": ["vdir.c", "alert.c", "confirm.c", "theme.c", "enter.c"]
+	}
+]

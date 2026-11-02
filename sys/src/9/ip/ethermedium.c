@@ -233,6 +233,8 @@ etherbind(Ipifc *ifc, int argc, char **argv)
 	 */
 	cchan6->dev->write(cchan6, nbmsg, strlen(nbmsg), 0);
 
+	print("etherbind: dev %s m4 %p m6 %p a %p\n",
+		argv[2], mchan4, mchan6, achan);
 	er = smalloc(sizeof(*er));
 	er->mchan4 = mchan4;
 	er->cchan4 = cchan4;
@@ -364,6 +366,7 @@ etherread4(void *a)
 	}
 	for(;;){
 		bp = er->mchan4->dev->bread(er->mchan4, ifc->maxtu, 0);
+		print("etherread4: got %d\n", bp ? (int)BLEN(bp) : -1);
 		if(!canrlock(&ifc->rwl)){
 			freeb(bp);
 			continue;

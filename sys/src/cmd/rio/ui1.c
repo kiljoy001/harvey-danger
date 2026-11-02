@@ -123,8 +123,8 @@ void spawnstage(char **argv, int infd, int outfd) {
 
 void bol(Window *w) {
   int nb;
-  if(w->q0 == 0 || w->run[w->q0-1] == '\n')
-  /* if(w->q0 == 0 || w->q0 == w->qh || w->run[w->q0-1] == '\n') */
+  if(w->q0 == 0 || w->run[w->q0-1] == '\n'
+     || (w->mode == M_TERM && w->qh > 0 && w->q0 == w->qh))
 	return;
   nb = wbswidth(w, 0x15 /* ^U */);
   wsetselect(w, w->q0-nb, shiftdown ? w->q1 : w->q0-nb);
@@ -482,15 +482,19 @@ void delcharl(Window *w1, int i) {
   if (i > 0) {
 	w = (w1->title && w1->title->active) ? w1->title : w1;
 	
-	q0 = q1 = w->q0;
-	q0 = max(q0 - i, 0);
-	/* Avoid deleting selection here i.e. no w->q1 */
-	if (w->mode != M_MULTI_EDIT)
-	  q1 = w->q1;
+	q0 = w->q0;
+	q1 = w->mode == M_MULTI_EDIT ? q0 : w->q1;
+	if(q0 == q1) {
+	  /* Do not backspace from pending terminal input into shell output. */
+	  if(w->mode == M_TERM && w->qh > 0 && q0 >= w->qh)
+	    q0 = max(q0 - i, w->qh);
+	  else
+	    q0 = max(q0 - i, 0);
+	}
 	wdelete(w, q0, q1);
-	/* wsetselect(w, q0, q0); */
-	if (!isspace(w->run[q0 - 1]))
-	namecomplete(w1, 1);
+	if(w->mode != M_MULTI_EDIT)
+	  wsetselect(w, q0, q0);
+	/* Completion is explicit: asynchronous suggestions race deletions. */
   }
 }
 
@@ -498,13 +502,13 @@ void delcharr(Window *w, int i) {
   int q0, q1;
   if (i > 0) {
 	q0 = w->q0;
-	/* Avoid deleting selection here i.e. no w->q1 */
-	q1 = min(q0 + i, w->nr);
+	q1 = w->mode != M_MULTI_EDIT && w->q1 > q0 ? w->q1 : min(q0 + i, w->nr);
 	if (w->mode == M_MULTI_EDIT)
 	  wdelete(w, q1, q0);
-	else
-	wdelete(w, q0, q1);
-	/* wsetselect(w, q0, q0); */
+	else {
+	  wdelete(w, q0, q1);
+	  wsetselect(w, q0, q0);
+	}
   }
 }
 
@@ -1476,11 +1480,14 @@ void buffer_close(Window *w) {
   clear(w);
   w->file = nil;
   w->dir = cwd();
+  w->mode = w->prev_mode = M_TERM;
   setmodified(w, 0);
   w->undo = w->scratch;
   undostackfree(buf->undo);
   cleanreg(buf->id);
   buf->id = -1;
+  if (w->enable_title)
+    wtagrepaint(w);
   /* free in buffer_locate */
   /* free(buf); */
   /* if (w->enable_title) */

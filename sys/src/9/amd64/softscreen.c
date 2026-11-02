@@ -184,7 +184,8 @@ attachscreen(Rectangle *r, u32 *chan, int *d, int *width, int *softscreen)
 
 		memimageinit();
 		gscreendata.bdata = (uchar *)lfb;
-		gscreen = allocmemimaged(Rect(0, 0, ScrW, ScrH), ARGB32, &gscreendata);
+		/* Bochs ignores the high byte; framebuffer copies must be opaque. */
+		gscreen = allocmemimaged(Rect(0, 0, ScrW, ScrH), XRGB32, &gscreendata);
 		if(gscreen == nil){
 			print("softscreen: allocmemimaged failed\n");
 			return nil;

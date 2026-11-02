@@ -341,6 +341,168 @@ wsetselect(Window *w, uint q0, uint q1)
 	frsetcol(&w->Frame, fg, bg);
 }
 
+Rectangle
+wctrlrect(Window *w)
+{
+	Rectangle r;
+	int w_btn = 16;
+	int h_btn = 14;
+	int total_w = 3 * w_btn;
+
+	if(w == nil || w->i == nil)
+		return ZR;
+	if(Dx(w->screenr) < 120 || Dy(w->screenr) < 60)
+		return ZR;
+	r.max = Pt(w->screenr.max.x - Selborder, w->screenr.max.y - Selborder);
+	r.min = Pt(r.max.x - total_w, r.max.y - h_btn);
+	return r;
+}
+
+void
+wdrawctrl(Window *w, int type)
+{
+	Rectangle r, b0, b1, b2;
+	Image *bg, *fg, *bcol;
+	int w_btn = 16;
+	int cy;
+
+	if(w == nil || w->i == nil)
+		return;
+	r = wctrlrect(w);
+	if(eqrect(r, ZR))
+		return;
+
+	b0 = Rect(r.min.x, r.min.y, r.min.x + w_btn, r.max.y);
+	b1 = Rect(r.min.x + w_btn, r.min.y, r.min.x + 2*w_btn, r.max.y);
+	b2 = Rect(r.min.x + 2*w_btn, r.min.y, r.max.x, r.max.y);
+
+	if(type == Selborder){
+		bg = tagcols[BACK];
+		fg = tagcols[TEXT];
+		bcol = titlecol;
+	}else{
+		bg = cols[BACK];
+		fg = lighttitlecol;
+		bcol = lighttitlecol;
+	}
+
+	/* Box background & outer border */
+	draw(w->i, r, bg, nil, ZP);
+	border(w->i, r, 1, bcol, ZP);
+
+	/* Dividers between buttons */
+	draw(w->i, Rect(b1.min.x, r.min.y, b1.min.x+1, r.max.y), bcol, nil, ZP);
+	draw(w->i, Rect(b2.min.x, r.min.y, b2.min.x+1, r.max.y), bcol, nil, ZP);
+
+	/* Button 0: Minimize / Hide (horizontal bar) */
+	cy = b0.min.y + Dy(b0)/2;
+	draw(w->i, Rect(b0.min.x + 4, cy, b0.max.x - 4, cy + 2), fg, nil, ZP);
+
+	/* Button 1: Maximize / Restore (square outline) */
+	border(w->i, insetrect(b1, 3), 1, fg, ZP);
+
+	/* Button 2: Close / Delete (diagonal X) */
+	for(cy = 0; cy < 6; cy++){
+		draw(w->i, Rect(b2.min.x + 5 + cy, b2.min.y + 4 + cy, b2.min.x + 7 + cy, b2.min.y + 5 + cy), fg, nil, ZP);
+		draw(w->i, Rect(b2.min.x + 5 + cy, b2.max.y - 5 - cy, b2.min.x + 7 + cy, b2.max.y - 4 - cy), fg, nil, ZP);
+	}
+}
+
+void
+wtogglemax(Window *w)
+{
+	Rectangle r;
+	Image *im;
+
+	if(w == nil || w->deleted)
+		return;
+
+	if(w->maximized){
+		r = w->normr;
+		if(!goodrect(r))
+			r = Rect(screen->clipr.min.x + 20, screen->clipr.min.y + 20,
+			         screen->clipr.min.x + 640, screen->clipr.min.y + 480);
+		w->maximized = 0;
+	}else{
+		w->normr = w->screenr;
+		w->maximized = 1;
+		r = screen->clipr;
+	}
+	im = allocwindow(wscreen, r, Refbackup, DNofill);
+	if(im != nil){
+		wcurrent(w);
+		wsendctlmesg(w, Reshaped, r, im);
+	}
+}
+
+void
+wclickctrl(Window *w, Point p, int buttons)
+{
+	Rectangle r, b0, b1, b2, hitcell;
+	int w_btn = 16;
+	int btn;
+
+	if(w == nil || w->deleted)
+		return;
+
+	r = wctrlrect(w);
+	if(!ptinrect(p, r))
+		return;
+
+	/* If Right Click (button 3 / bit 4) or Middle Click (button 2 / bit 2):
+	 * open Button 2 window edit menu (Cut, Paste, Snarf, Send, Scroll) */
+	if(buttons & (2 | 4)){
+		if(!w->deleted && !w->mouseopen){
+			incref(w);
+			button2menu(w);
+			wclose(w);
+		}
+		return;
+	}
+
+	b0 = Rect(r.min.x, r.min.y, r.min.x + w_btn, r.max.y);
+	b1 = Rect(r.min.x + w_btn, r.min.y, r.min.x + 2*w_btn, r.max.y);
+	b2 = Rect(r.min.x + 2*w_btn, r.min.y, r.max.x, r.max.y);
+
+	if(ptinrect(p, b0)){
+		btn = 0;
+		hitcell = b0;
+	}else if(ptinrect(p, b1)){
+		btn = 1;
+		hitcell = b1;
+	}else if(ptinrect(p, b2)){
+		btn = 2;
+		hitcell = b2;
+	}else
+		return;
+
+	/* Visual press feedback */
+	draw(w->i, hitcell, titlecol, nil, ZP);
+	flushimage(display, 1);
+
+	while(mousectl->buttons & 1)
+		readmouse(mousectl);
+
+	/* Restore normal button drawing */
+	wdrawctrl(w, Selborder);
+	flushimage(display, 1);
+
+	/* If released within the hit cell, trigger action */
+	if(ptinrect(mousectl->xy, hitcell)){
+		switch(btn){
+		case 0:
+			whide(w);
+			break;
+		case 1:
+			wtogglemax(w);
+			break;
+		case 2:
+			wsendctlmesg(w, Deleted, ZR, nil);
+			break;
+		}
+	}
+}
+
 static void
 wborder(Window *w, int type)
 {
@@ -360,6 +522,7 @@ wborder(Window *w, int type)
 			col = lighttitlecol;
 	}
 	border(w->i, w->i->r, Selborder, col, ZP);
+	wdrawctrl(w, type);
 }
 
 static void
@@ -402,14 +565,15 @@ char* mtext[] = { "", "Text", "Media", "Debug", "Multi-Edit", "Narrow", nil, "Lo
 
 void wtagrepaint(Window *w) {
   Window *w1;
-  Rectangle r1;
+  Rectangle r1, textrect;
   Fmt f;
   Rune *rp;
   uint nr, n;
-  char sfmt[128], *s;
+  char sfmt[128], *s, *user, *host;
   Point p;
 
-  if (!w->title)
+  /* Graphical clients own the complete window interior, including this row. */
+  if (!w->title || w->mouseopen)
 	return;
   w1 = w->title;
   r1 = w1->screenr;
@@ -437,17 +601,26 @@ void wtagrepaint(Window *w) {
   }
 
   wdelete(w1, 0, w1->nr);
-  snprint(sfmt, sizeof(sfmt), "%s %s@%s", s, getenv("user"), getenv("sysname"));
+  user = getenv("user");
+  host = getenv("sysname");
+  snprint(sfmt, sizeof(sfmt), "%s %s@%s", s, user ? user : "", host ? host : "");
+  free(user);
+  free(host);
   n = stringwidth(w->font, sfmt);
   draw(w1->i, r1, tagcols[BACK], nil, ZP); // Start a clean slate
-  string(w1->i, Pt(r1.max.x - n - Selborder, r1.min.y + Selborder),
-		 tagcols[TEXT], ZP, w->font, sfmt);
+  textrect = insetrect(r1, Selborder);
+  if(n + Selborder + 32 < Dx(textrect)) {
+    textrect.max.x -= n + Selborder;
+    string(w1->i, Pt(r1.max.x - n - Selborder, r1.min.y + Selborder),
+           tagcols[TEXT], ZP, w->font, sfmt);
+  }
+  frsetrects(&w1->Frame, textrect, w1->i);
 
   rp = runefmtstrflush(&f);
   nr = runestrlen(rp);
   winsert(w1, rp, nr, 0);
   p  = frptofchar(&w1->Frame, nr);
-  if (w->file) {
+  if (w->file && p.x + stringwidth(w->font, "*") <= textrect.max.x) {
 	/* fprint(2, "%d %d, ", w->fmodified, w1->active); */
 	string(w1->i, p,
 		   w->fmodified && !w1->active ? tagcols[TEXT] : tagcols[BACK],
@@ -1639,6 +1812,21 @@ wselect(Window *w)
 {
 	uint q0, q1;
 	int b, x, y, dx, dy, mode, first;
+	Window *tag;
+
+	/* mousethread already distinguished title dragging from editing.
+	 * Select in the title's frame; the document frame starts below it. */
+	tag = w->title;
+	if(tag != nil && ptinrect(w->mc.xy, tag->screenr)){
+		if(!tag->active){
+			w->prev_mode = w->mode;
+			tag->active = 1;
+			wtagrepaint(w);
+		}
+		frselect(&tag->Frame, &w->mc);
+		wsetselect(tag, tag->org + tag->p0, tag->org + tag->p1);
+		return;
+	}
 
 	first = 1;
 	selectwin = w;
@@ -1659,10 +1847,6 @@ wselect(Window *w)
 	if(w->mc.msec-clickmsec >= 500 || clickwin != w || clickcount > 3 || dx > 3 || dy > 3)
 		clickcount = 0;
 	if(clickwin == w && clickcount >= 1 && w->mc.msec-clickmsec < 500){
-	if (ptinrect(w->mc.xy, w->title->screenr)) {
-	  w->title->active = 1;
-	  wtagrepaint(w);
-	}
 		mode = (clickcount > 2) ? 2 : clickcount;
 		wstretchsel(w, selectq, &q0, &q1, mode);
 		wsetselect(w, q0, q1);
@@ -2281,6 +2465,11 @@ winctl(void *arg)
 			recv(cwm.cw, &pair);
 			rp = pair.s;
 			nr = pair.ns;
+			/* File mode can begin after alt enabled this console write. */
+			if(w->file != nil){
+				free(rp);
+				break;
+			}
 			for(i=0; i<nr; i++)
 				if(rp[i] == '\b'){
 					up = rp+i;

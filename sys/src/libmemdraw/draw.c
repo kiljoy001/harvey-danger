@@ -31,8 +31,9 @@ static int	tablesbuilt;
 #define MUL(x, y, t)	(t = (x)*(y)+128, (t+(t>>8))>>8)
 #define MASK13	0xFF00FF00
 #define MASK02	0x00FF00FF
-#define MUL13(a, x, t)		(t = (a)*(((x)&MASK13)>>8)+128, ((t+((t>>8)&MASK02))>>8)&MASK02)
-#define MUL02(a, x, t)		(t = (a)*(((x)&MASK02)>>0)+128, ((t+((t>>8)&MASK02))>>8)&MASK02)
+/* Round both packed 16-bit lanes; a single +128 biases red and alpha. */
+#define MUL13(a, x, t)		(t = (a)*(((x)&MASK13)>>8)+0x00800080, ((t+((t>>8)&MASK02))>>8)&MASK02)
+#define MUL02(a, x, t)		(t = (a)*(((x)&MASK02)>>0)+0x00800080, ((t+((t>>8)&MASK02))>>8)&MASK02)
 #define MUL0123(a, x, s, t)	((MUL13(a, x, s)<<8)|MUL02(a, x, t))
 
 #define MUL2(u, v, x, y)	(t = (u)*(v)+(x)*(y)+256, (t+(t>>8))>>8)

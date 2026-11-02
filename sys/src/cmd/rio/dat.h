@@ -8,6 +8,7 @@ enum
 	Qsnarf,
 	Qwctl,
 	Qtap,
+	Qtheme,
 	Qwsys,		/* directory of window directories */
 	Qwsysdir,		/* window directory, child of wsys */
 
@@ -238,6 +239,8 @@ struct Window
 	Button		*buttons;
 	int		    nbtns;
 	Rectangle	orect;
+	Rectangle	normr;
+	int		maximized;
 	int		    mpreview; /* Preview mode is activated */
 	int		    preview;  /* Window is a live preview window */
 	Completion    *c;

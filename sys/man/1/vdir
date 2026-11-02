@@ -1,0 +1,51 @@
+.TH VDIR 1
+.SH NAME
+vdir \- visual directory browser
+.SH SYNOPSIS
+.B vdir
+[
+.B -r
+]
+[
+.I directory
+]
+.SH DESCRIPTION
+.I Vdir
+browses a directory in a rio window, initially the working directory
+or the directory given as an argument.
+Right-click folders to navigate and files to send them to the plumber.
+The Home, Open, and Up toolbar icons navigate; the two creation icons
+create directories and files. Middle-click an entry to rename or delete it.
+Deletion is recursive only when
+.B -r
+is given.
+.PP
+Click Terminal, choose terminal here from the middle-button menu, or press
+t to open an interactive rc window in the displayed directory.
+This action does not require a running plumber.
+.PP
+Page Up and Page Down scroll. Home goes to $home (or / if unset),
+Up goes to the parent, r refreshes, Space plumbs the directory path,
+and q or Delete exits.
+.PP
+Colors are read at startup from /dev/theme using name RRGGBB lines.
+The background uses titleback when supplied, otherwise back.
+Directory and executable colors default to bright blue and green.
+Missing or invalid theme values retain defaults.
+.SH FILES
+.TF /dev/theme
+.TP
+.B /dev/theme
+optional palette served by rio
+.TP
+.B /dev/wctl
+creates terminal windows
+.TP
+.B /dev/wdir
+updated to the displayed path
+.SH SOURCE
+.B /sys/src/cmd/vdir
+.SH SEE ALSO
+.IR rio (1),
+.IR rio (4),
+.IR plumber (4)

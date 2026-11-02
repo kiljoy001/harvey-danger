@@ -101,6 +101,15 @@ Other files are unique to
 .IR rio .
 .TF window
 .TP
+.B theme
+A read-only palette for graphical clients, including vdir.
+Each line contains a color name and six hexadecimal RGB digits.
+Names are back, text, border, high, htext, dir, exec, link, dev, pipe,
+broken, socket, and titleback.
+Titleback is the solid RGB equivalent of the editable title-bar tint.
+The window colors reflect rio's normal or reverse palette.
+File-type colors use bright ANSI defaults.
+.TP
 .B cons
 is a virtual version of the standard terminal file
 .IR cons (3).
@@ -235,6 +244,14 @@ The commands are
 and
 .B new
 (make a new window).
+The additional command
+.B open
+followed by an absolute path opens a directory in vdir or a text file in
+a new rio editor window.
+The entire remainder after the command separator is the path, without shell
+quoting, so embedded spaces and apostrophes are preserved.
+This command is also available on a windowless attachment.
+Files larger than four megabytes and files with binary headers are rejected.
 The
 .B top
 and

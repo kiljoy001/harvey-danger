@@ -16,7 +16,6 @@ enum {
 static const u64 Maxidentity = 16ULL * 1024 * 1024 * 1024;
 static u64 kernelroot;
 extern u64 arm64dmabase, arm64dmasize;
-static int dmatrace;
 
 enum {
 	Ptevalid = 1,
@@ -360,6 +359,7 @@ ptalloc(Proc *p)
 void
 mmuput(usize va, Page *page, u32 attr)
 {
+	static int dmatrace;
 	Proc *p;
 	u64 *root, *l2, *l3, *kernel, pa, entry;
 	u32 i1, i2, i3, size;

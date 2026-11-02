@@ -219,12 +219,17 @@ The button 3 menu operations are:
 .TF Resize
 .TP
 .B New
-Create a window.
+Create a window running
+.IR vdir (1).
+If /bin/vdir is unavailable, create a shell window instead.
 Press button 3 where one corner of the new rectangle should
 appear (cross cursor), and move the mouse, while holding down button 3, to the
 diagonally opposite corner.
 Releasing button 3 creates the window, and makes it current.
 Very small windows may not be created.
+.TP
+.B Terminal
+Sweep out a window as for New, running an interactive rc shell.
 .TP
 .B Resize
 Change the size and location of a window.

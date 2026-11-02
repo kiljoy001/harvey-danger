@@ -1,0 +1,20 @@
+.TH RIO-OPEN 1
+.SH NAME
+rio-open \- open a path in rio
+.SH SYNOPSIS
+.B rio-open
+.I path
+.SH DESCRIPTION
+.I Rio-open
+opens a directory in vdir or a text file in rio's built-in editor.
+It is used as a plumber start action in the Halatha guest.
+Relative paths are resolved against the working directory.
+If /dev/wctl is absent, it attaches to the rio service named by $wsys.
+Binary files and files larger than four megabytes need another viewer.
+.SH SOURCE
+.B /sys/src/cmd/rio-open.c
+.SH SEE ALSO
+.IR rio (1),
+.IR rio (4),
+.IR vdir (1),
+.IR plumber (4)

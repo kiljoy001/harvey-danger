@@ -403,7 +403,7 @@ execac(Ar0 *ar0, int flags, char *ufile, char **argv)
 		print("execac: execaout returned 0 segs!\n");
 		error(Ebadexec);
 	case -1:
-		nldseg = elf64ldseg(chan, &entry, &ldseg, cputype, BIGPGSZ);
+		nldseg = elf64ldseg(chan, &entry, &ldseg, cputype, PGSZ);
 		if(nldseg == 0){
 			print("execac: elf64ldseg returned 0 segs!\n");
 			error(Ebadexec);

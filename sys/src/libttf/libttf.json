@@ -1,0 +1,24 @@
+[
+	{
+		"Name": "libttf",
+		"Include": [
+			"../lib.json"
+		],
+		"Install": "/$ARCH/lib/",
+		"Library": "libttf.a",
+		"SourceFiles": [
+			"bit.c",
+			"cmap.c",
+			"colr.c",
+			"feature.c",
+			"gdef.c",
+			"glyf.c",
+			"gpos.c",
+			"head.c",
+			"hint.c",
+			"liga.c",
+			"render.c",
+			"scan.c"
+		]
+	}
+]

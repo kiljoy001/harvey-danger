@@ -258,7 +258,9 @@ arm64main(usize dtb)
 	 * boot command).  Reserve it before the page allocator exists so the
 	 * blobs stay intact; program names in it replace the embedded ones.
 	 */
-	if(info.nreserve < Maxfdtreserve){
+	if(info.nreserve < Maxfdtreserve &&
+	   BootarchiveAddr >= info.rambase &&
+	   BootarchiveAddr + 24 <= info.rambase + info.ramsize){
 		u8 *ap = (u8 *)BootarchiveAddr;
 		u32 total = 0;
 

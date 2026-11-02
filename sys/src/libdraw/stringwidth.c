@@ -11,18 +11,15 @@
 #include <libc.h>
 #include <draw.h>
 
-static Rune empty[] = { 0 };
-
 int
 _stringnwidth(Font *f, char *s, Rune *r, int len)
 {
-	int wid, twid, n, max, l;
-	char *name;
+	int wid, twid, n, max, try, nr;
 	enum { Max = 64 };
-	u16 cbuf[Max];
+	ushort cbuf[Max];
 	Rune rune, **rptr;
 	char *subfontname, **sptr;
-	Font *def;
+	Subfont *sf;
 
 	if(s == nil){
 		s = "";
@@ -30,43 +27,63 @@ _stringnwidth(Font *f, char *s, Rune *r, int len)
 	}else
 		sptr = &s;
 	if(r == nil){
-		r = empty;
+		r = (Rune*)L"";
 		rptr = nil;
 	}else
 		rptr = &r;
+	subfontname = nil;
+	sf = nil;
 	twid = 0;
-	while(len>0 && (*s || *r)){
+	try = 0;
+	while(len > 0 && (*s || *r)){
+		char *sp0;
+		Rune *rp0;
+
 		max = Max;
 		if(len < max)
 			max = len;
-		n = 0;
-		while((l = cachechars(f, sptr, rptr, cbuf, max, &wid, &subfontname)) <= 0){
-			if(++n > 10){
-				if(*r)
-					rune = *r;
-				else
-					chartorune(&rune, s);
-				if(f->name != nil)
-					name = f->name;
-				else
-					name = "unnamed font";
-				fprint(2, "stringwidth: bad character set for rune 0x%.4x in %s\n", rune, name);
-				return twid;
+		sp0 = s;
+		rp0 = r;
+		if(subfontname){
+		/*   fprint(2, "_stringnwidth: before _getsubfont f=%p subfont=%s\n", */
+		/* f, subfontname); */
+			freesubfont(sf);
+			if((sf=_getsubfont(f->display, subfontname)) == nil){
+				if(f->display == nil || f->display->defaultfont == nil || f->display->defaultfont == f)
+					break;
+				f = f->display->defaultfont;
 			}
-			if(subfontname){
-				if(_getsubfont(f->display, subfontname) == 0){
-					def = f->display->defaultfont;
-					if(def && f!=def)
-						f = def;
-					else
-						break;
-				}
-			}
+		/* 	fprint(2, "_stringnwidth: after _getsubfont f=%p subfont=%s\n", */
+		/* f, subfontname); */
 		}
+		if((n = _cachecharsn(f, sptr, rptr, cbuf, max, &wid, &subfontname, nil, nil, len)) <= 0){
+			if(n == 0){
+				if(++try > 10)
+					break;
+				continue;
+			}
+			if(*r)
+				r++;
+			else
+				s += chartorune(&rune, s);
+			len--;
+			continue;
+		}
+		try = 0;
+
+		if(rptr != nil)
+			nr = r - rp0;
+		else
+			nr = utfnlen(sp0, s - sp0);
+
+		if(nr <= 0)
+			break;
+
 		agefont(f);
 		twid += wid;
-		len -= l;
+		len -= nr;
 	}
+	freesubfont(sf);
 	return twid;
 }
 

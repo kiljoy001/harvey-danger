@@ -4,9 +4,11 @@ import sys
 import subprocess
 
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
-BUILD_DIR = os.path.join(REPO_ROOT, "build/kernel")
-OUT_ELF = os.path.join(REPO_ROOT, "build/harvey.elf")
-OUT_32BIT = os.path.join(REPO_ROOT, "build/harvey.32bit")
+# Alternate init/output let the VPS flavour be built alongside the stock
+# kernel without disturbing 9vm install/tests.
+BUILD_DIR = os.environ.get("HARVEY_BUILD_DIR", os.path.join(REPO_ROOT, "build/kernel"))
+OUT_ELF = os.environ.get("HARVEY_OUT_ELF", os.path.join(REPO_ROOT, "build/harvey.elf"))
+OUT_32BIT = os.environ.get("HARVEY_OUT_32BIT", os.path.join(REPO_ROOT, "build/harvey.32bit"))
 
 CC = "clang"
 LD = "ld.lld"
@@ -200,6 +202,7 @@ SOURCES = [
     "sys/src/9/port/sysfile.c",
     "sys/src/9/port/sysproc.c",
     "sys/src/9/port/sysseg.c",
+    "sys/src/9/port/sysmmap.c",
     "sys/src/9/port/syszio.c",
     "sys/src/9/port/taslock.c",
     "sys/src/9/port/tod.c",
@@ -276,8 +279,10 @@ def main():
     os.makedirs(os.path.dirname(OUT_ELF), exist_ok=True)
 
     from prism import compile_o9
-    gefs_init = os.path.join(REPO_ROOT, "boot/gefs_init.o9")
-    gefs_init_bin = os.path.join(REPO_ROOT, "boot/gefsinit")
+    gefs_init = os.environ.get("HARVEY_GEFS_INIT",
+                               os.path.join(REPO_ROOT, "boot/gefs_init.o9"))
+    gefs_init_bin = os.environ.get("HARVEY_GEFS_INIT_BIN",
+                                   os.path.join(REPO_ROOT, "boot/gefsinit"))
     gefs_server = os.path.join(REPO_ROOT, "build/gefs-guest")
     o9irc_server = os.path.join(REPO_ROOT, "build/o9irc-ircfs")
     if not os.path.exists(gefs_init_bin) or os.path.getmtime(gefs_init_bin) < os.path.getmtime(gefs_init):

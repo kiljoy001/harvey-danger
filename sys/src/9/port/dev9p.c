@@ -36,10 +36,6 @@ void mntdirfix(u8 *dirbuf, Chan *c);
 
 extern char Esbadstat[];
 
-// We use this version string to communicate with QEMU virtio-9P.
-
-#define VERSION9PU "9P2000.u"
-
 // Same as in devmnt.c
 
 #define MAXRPC (IOHDRSZ + 128 * 1024)
@@ -238,9 +234,10 @@ do_request(int gdescr, int tidx, void *inbuf, i32 inlen, void *outbuf,
 }
 
 // We expect only 9p messages be written, and only for a non-empty chan path (mount tag).
-// Some messages need massaging (like Tversion because QEMU does not support vanilla 9P2000
-// and we have to cheat here about the protocol version). In such case some additional logic
-// applies based on the extracted message type.
+// Requests are passed through unchanged: the version string is whatever the kernel
+// client negotiated (9P2000). QEMU's virtfs only accepts 9P2000.u/.L, but this driver
+// targets plain 9P servers (Wanix over virtio-9p, or a native 9P mount); the old
+// rewrite to 9P2000.u existed solely for QEMU and is not wanted here.
 
 static i32
 phwrite(Chan *c, void *va, i32 n, i64 offset)
@@ -249,34 +246,18 @@ phwrite(Chan *c, void *va, i32 n, i64 offset)
 	int tidx = findtag(chanpath(c));
 	if(tidx < 0 || tidx >= nv9p)
 		error(Enonexist);
-	u8 *msg = va;
-	int mtype = GBIT8(msg + 4);
 	void *nva;
 	int lnva;
 	int alloc;
-	switch(mtype){
-	case Tversion:
-		alloc = 1;
-		Fcall f = {
-			.type = mtype,
-			.tag = GBIT16(msg + 5),
-			.msize = GBIT32(msg + 7),
-			.version = VERSION9PU};
-		lnva = IOHDRSZ + strlen(f.version) + 20;
+	if(n >= mounts[tidx].msize){
+		nva = va;
+		lnva = n;
+		alloc = 0;
+	} else {
+		lnva = mounts[tidx].msize;
 		nva = mallocz(lnva, 1);
-		convS2M(&f, nva, lnva);
-		break;
-	default:
-		if(n >= mounts[tidx].msize){
-			nva = va;
-			lnva = n;
-			alloc = 0;
-		} else {
-			lnva = mounts[tidx].msize;
-			nva = mallocz(lnva, 1);
-			alloc = 1;
-			memmove(nva, va, n);
-		}
+		alloc = 1;
+		memmove(nva, va, n);
 	}
 	u16 descr[1];
 	struct v9pmnt *pm = mounts + tidx;
@@ -373,10 +354,10 @@ v9pread(Chan *c, void *buf, i32 n, i64 off)
 }
 
 // We expect only 9p messages to be received.
-// Some messages need massaging (like Rversion because QEMU does not support vanilla 9P2000
-// and we have to cheat here about the protocol version). In such case some additional logic
-// applies based on the extracted message type. The function checks for a held write buffer,
-// absence of such is an error. The length returned may length extracted from the first
+// Rversion is normalised back to the version the kernel client negotiated
+// (9P2000) and its msize is recorded for later request padding; every other
+// reply passes through. The function checks for a held write buffer, absence
+// of such is an error. The length returned may be extracted from the first
 // 4 bytes of the message in some cases.
 
 static i32

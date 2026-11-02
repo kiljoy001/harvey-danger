@@ -33,11 +33,13 @@ void hoverexit(Window *w);
 void oaction(Window *w);
 Keymap *keymap_load(Keydef key_map[]);
 void execprim(Window *w, char *p);
+void fload(Window *w, Rune *path, int npath);
 char* cwd(void);
 
 /* props.c */
 void waddspan(Window *w, Span s);
 void waddcolorspan(Window *w, uint pos, uint len);
+extern char riotheme[512];
 void spansadjust(Window *w, uint pos, int delta);
 void wcolordraw(Window *w, uint q0, uint q1);
 int wcolinuse(Window *w, Image *col);
@@ -73,6 +75,10 @@ void		wshow(Window*, uint);
 void		wsnarf(Window*);
 void 		wscrsleep(Window*, uint);
 void 		wtagrepaint(Window*);
+Rectangle	wctrlrect(Window*);
+void		wdrawctrl(Window*, int);
+void		wclickctrl(Window*, Point, int);
+void		wtogglemax(Window*);
 
 void 		interruptproc(void*);
 void 		namecomplete(Window*, int);

@@ -862,6 +862,8 @@ vnet_open_tap(const char *name) {
 
 static void
 vnet_irq(struct virtio_net *vn) {
+    if (getenv("VM_TRACE_NET"))
+        fprintf(stderr, "[vnet] irq raise\n");
     vn->bar0[0x200] |= 1;
     struct kvm_irq_level irq = { .irq = vn->irq, .level = 1 };
     ioctl(vn->vm, KVM_IRQ_LINE, &irq);
@@ -934,6 +936,9 @@ vnet_tx(struct virtio_net *vn) {
         return;
     avail = vnet_u16(vn, avail_pa + 2);
     last = q->last_avail;
+    if (getenv("VM_TRACE_NET") && last != avail)
+        fprintf(stderr, "[vnet] tx enabled=%d qsize=%u last=%u avail=%u\n",
+                q->enabled, qsize, last, avail);
     while (last != avail) {
         head = vnet_u16(vn, avail_pa + 4 + (last % qsize) * 2);
         last++;
@@ -943,6 +948,9 @@ vnet_tx(struct virtio_net *vn) {
         l0 = vnet_u32(vn, desc_pa + head * 16 + 8);
         flags0 = vnet_u16(vn, desc_pa + head * 16 + 12);
         next0 = vnet_u16(vn, desc_pa + head * 16 + 14);
+        if (getenv("VM_TRACE_NET"))
+            fprintf(stderr, "[vnet] tx head=%u flags=%#x next=%u l0=%u\n",
+                    head, flags0, next0, l0);
         if ((flags0 & 1) == 0 || next0 >= qsize)
             continue;
         d1 = vnet_u64(vn, desc_pa + next0 * 16);
@@ -982,6 +990,9 @@ vnet_rx(struct virtio_net *vn) {
         return;
     avail = vnet_u16(vn, avail_pa + 2);
     last = q->last_avail;
+    if (getenv("VM_TRACE_NET") && last != avail)
+        fprintf(stderr, "[vnet] tx enabled=%d qsize=%u last=%u avail=%u\n",
+                q->enabled, qsize, last, avail);
     while (last != avail) {
         head = vnet_u16(vn, avail_pa + 4 + (last % qsize) * 2);
         last++;
@@ -991,6 +1002,9 @@ vnet_rx(struct virtio_net *vn) {
         l0 = vnet_u32(vn, desc_pa + head * 16 + 8);
         uint16_t flags0 = vnet_u16(vn, desc_pa + head * 16 + 12);
         uint16_t next0 = vnet_u16(vn, desc_pa + head * 16 + 14);
+        if (getenv("VM_TRACE_NET"))
+            fprintf(stderr, "[vnet] rx head=%u flags=%#x next=%u l0=%u\n",
+                    head, flags0, next0, l0);
         if ((flags0 & 3) != 3 || next0 >= qsize)
             continue;
         d1 = vnet_u64(vn, desc_pa + next0 * 16);
@@ -998,6 +1012,10 @@ vnet_rx(struct virtio_net *vn) {
         if (l0 < 12 || !vnet_range(vn, d0, 12) || !vnet_range(vn, d1, l1))
             continue;
         n = read(vn->tapfd, frame, sizeof(frame));
+        if (getenv("VM_TRACE_NET") && n > 0)
+            fprintf(stderr, "[vnet] rx read n=%zd head=%u eth=%02x:%02x:%02x:%02x:%02x:%02x type=%02x%02x\n",
+                    n, head, frame[0], frame[1], frame[2], frame[3], frame[4], frame[5],
+                    frame[12], frame[13]);
         if (n <= 0) {
             q->last_avail = last - 1;
             break;
@@ -1025,6 +1043,9 @@ vnet_mmio_write(struct virtio_net *vn, uint64_t addr,
     uint64_t off = addr - VIRTIO_NET_BAR0_ADDR;
     if (off + len > VIRTIO_BAR0_SIZE)
         return;
+    if (getenv("VM_TRACE_NET"))
+        fprintf(stderr, "[vnet] write off=%#llx len=%u val=%#x\n",
+                (unsigned long long)off, len, len && len <= 8 ? *(uint32_t *)data : 0);
     memcpy(vn->bar0 + off, data, len);
     if (off == 0x14 && len >= 1 && vn->bar0[0x14] == 0) {
         memset(&vn->rxq, 0, sizeof(vn->rxq));
@@ -1101,6 +1122,8 @@ vnet_mmio_read(struct virtio_net *vn, uint64_t addr, uint8_t *data, uint32_t len
         return;
     }
     if (off == 0x200) {
+        if (getenv("VM_TRACE_NET"))
+            fprintf(stderr, "[vnet] isr read\n");
         memcpy(data, vn->bar0 + off, len);
         vn->bar0[0x200] = 0;
         struct kvm_irq_level irq = { .irq = vn->irq, .level = 0 };

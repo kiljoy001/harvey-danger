@@ -284,12 +284,15 @@ struct Cachefont
 	char		*subfontname;		/* to access subfont */
 };
 
+enum { MAXCLUSTER = 8 };
+
 struct Cacheinfo
 {
 	u16		x;		/* left edge of bits */
 	u8		width;		/* width of baseline */
 	i8		left;		/* offset of baseline */
-	Rune		value;	/* value of character at this slot in cache */
+	Rune		value[MAXCLUSTER];	/* rune cluster in this cache slot */
+	u8		nval;
 	u16		age;
 };
 
@@ -316,6 +319,7 @@ struct Font
 	Cachesubf	*subf;
 	Cachefont	**sub;	/* as read from file */
 	Image		*cacheimage;
+	void		*shapeaux;	/* private TTF capability and shaping cache */
 };
 
 #define	Dx(r)	((r).max.x-(r).min.x)
@@ -481,6 +485,10 @@ extern Font*	mkfont(Subfont*, Rune);
 extern int	cachechars(Font*, char**, Rune**, u16*, int,
 			     int*,
 			     char**);
+extern int	cachecharscluster(Font*, char**, Rune**, u16*, int, int*, char**, int*, int*);
+extern int	_cachecharsn(Font*, char**, Rune**, u16*, int, int*, char**, int*, int*, int);
+extern int	nextclusterlen(Font*, Rune*, int);
+extern void	_freefontshape(Font*);
 extern void	agefont(Font*);
 extern Subfont*	allocsubfont(char*, int, int, int, Fontchar*,
 				    Image*);

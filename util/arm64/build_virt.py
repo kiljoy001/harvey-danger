@@ -27,7 +27,15 @@ def main() -> None:
         flags.append("-DARM64_TEST_FAULT")
     if os.environ.get("ARM64_TEST_RESERVE") == "1":
         flags.append("-DARM64_TEST_RESERVE")
-    objects = []
+    stubs = OUT / "stubs.c"
+    stubs.write_text("""
+#include <stdint.h>
+uint64_t arm64dmabase = 0, arm64dmasize = 0;
+uint64_t arm64teeshmbase = 0, arm64teeshmsize = 0;
+""")
+    stub_obj = OUT / "stubs.o"
+    subprocess.run([CC, *flags, "-c", str(stubs), "-o", str(stub_obj)], check=True)
+    objects = [stub_obj]
     for name in ("l.S", "user.S", "context.S", "main.c", "fdt.c", "timer.c", "phys.c", "mmu.c", "user.c", "context.c"):
         obj = OUT / (name + ".o")
         subprocess.run([CC, *flags, "-c", str(SOURCE / name), "-o", str(obj)], check=True)

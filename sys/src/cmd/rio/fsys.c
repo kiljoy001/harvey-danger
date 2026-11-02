@@ -26,6 +26,7 @@ Dirtab dirtab[]=
 	{ "snarf",		QTFILE,	Qsnarf,		0600 },
 	{ "wctl",		QTFILE,	Qwctl,		0600 },
 	{ "kbdtap",	QTFILE,	Qtap,	0660 },
+	{ "theme",		QTFILE,	Qtheme,		0400 },
 	{ "wsys",		QTDIR,	Qwsys,		0500|DMDIR },
 
 	{ "cons",		QTFILE,	Qcons,		0600 },

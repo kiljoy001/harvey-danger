@@ -120,6 +120,21 @@ mbmoduleread(Chan *c, void *buf, i32 len, i64 off)
 	return readmem(off, buf, len, data, modlen);
 }
 
+/* The module is ordinary RAM once the boot loader has copied it. GEFS uses
+ * the image as its writable backing store, so session writes stay in the
+ * guest and never touch the host image. */
+static i32
+mbmodulewrite(Chan *c, void *buf, i32 len, i64 off)
+{
+	if (!initrd)
+		error("mbmodulewrite: module not found");
+	u64 modlen = initrd->modend - initrd->modstart;
+	if (off < 0 || len < 0 || (u64)off + (u64)len > modlen)
+		error("mbmodulewrite: out of range");
+	memmove(KADDR(initrd->modstart) + off, buf, len);
+	return len;
+}
+
 int
 multiboot(u32 magic, u32 pmbi, int vflag)
 {
@@ -198,8 +213,14 @@ multiboot(u32 magic, u32 pmbi, int vflag)
 					if (!name || *++name == '\0') {
 						name = p;
 					}
+					if (*name == '\0')
+						name = "initrd";
 
-					addarchfile(name, 0444, mbmoduleread, nil);
+					{
+						Dirtab *dp = addarchfile(name, 0666, mbmoduleread, mbmodulewrite);
+						if(dp != nil)
+							dp->length = mod->modend - mod->modstart;
+					}
 					initrd = mod;
 				}
 			}

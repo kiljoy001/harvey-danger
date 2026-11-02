@@ -33,6 +33,7 @@ enum
 	Delete,
 	Color,
 	ECommand,
+	Open,
 };
 
 static char *cmds[] = {
@@ -50,6 +51,7 @@ static char *cmds[] = {
 	[Delete]	= "delete",
 	[Color]	= "color",
 	[ECommand]	= "cmd",
+	[Open]	= "open",
 	nil
 };
 
@@ -276,6 +278,13 @@ parsewctl(char **argp, Rectangle r, Rectangle *rp, int *pidp, int *idp, int *hid
 	*scrollingp = scrolling;
 	*cdp = nil;
 	cmd = word(&s, cmds);
+	if(cmd == Open){
+		while(isspace(*s))
+			s++;
+		if(argp)
+			*argp = s;
+		return cmd;
+	}
 	/* Don't parse color here */
 	if (cmd == Color || cmd == ECommand) return cmd;
 	if(cmd < 0){
@@ -553,6 +562,91 @@ wctlcmd(Window *w, Rectangle r, int cmd, char *err)
 	return -1;
 }
 
+static int
+wctlopenfile(char *path, char *err)
+{
+	Dir *d;
+	Image *i;
+	Window *w;
+	Rune *r;
+	char *args[3], buf[4096];
+	void *launch[5];
+	Channel *pidc;
+	int fd, n, nb, nr, pid;
+
+	if(path[0] != '/'){
+		strcpy(err, "open requires an absolute path");
+		return -1;
+	}
+	d = dirstat(path);
+	if(d == nil){
+		rerrstr(err, ERRMAX);
+		return -1;
+	}
+	if(!(d->mode & DMDIR)){
+		if(d->length > 4*1024*1024){
+			free(d);
+			strcpy(err, "file too large for rio's text editor");
+			return -1;
+		}
+		fd = open(path, OREAD);
+		if(fd < 0){
+			free(d);
+			rerrstr(err, ERRMAX);
+			return -1;
+		}
+		n = read(fd, buf, sizeof buf);
+		close(fd);
+		if(n < 0 || memchr(buf, 0, n) != nil){
+			free(d);
+			if(n < 0)
+				rerrstr(err, ERRMAX);
+			else
+				strcpy(err, "binary file: no viewer configured");
+			return -1;
+		}
+	}
+	i = allocwindow(wscreen, rectonscreen(newrect()), Refbackup, DNofill);
+	if(d->mode & DMDIR){
+		args[0] = "vdir";
+		args[1] = path;
+		args[2] = nil;
+		w = new(i, FALSE, scrolling, 0, nil, "/bin/vdir", args);
+	}else{
+		/* Establish file mode before rc can produce its first prompt. */
+		w = new(i, FALSE, scrolling, -1, nil, nil, nil);
+		if(w != nil){
+			r = runemalloc(strlen(path)+1);
+			cvttorunes(path, strlen(path), r, &nb, &nr, nil);
+			fload(w, r, nr);
+			free(r);
+			pidc = chancreate(sizeof(int), 0);
+			args[0] = "rc";
+			args[1] = "-i";
+			args[2] = nil;
+			launch[0] = w;
+			launch[1] = pidc;
+			launch[2] = "/bin/rc";
+			launch[3] = args;
+			launch[4] = nil;
+			proccreate(winshell, launch, STACK);
+			pid = recvul(pidc);
+			chanfree(pidc);
+			wsetpid(w, pid, 0);
+			wsetselect(w, 0, 0);
+			wshow(w, 0);
+			wtagrepaint(w);
+			flushimage(display, 1);
+		}
+	}
+	free(d);
+	if(w == nil){
+		strcpy(err, "cannot create file window");
+		return -1;
+	}
+	return 1;
+}
+
 int
 writewctl(Xfid *x, char *err)
 {
@@ -588,12 +682,14 @@ writewctl(Xfid *x, char *err)
 		}
 	}
 
-	if(w == nil && cmd != New){
+	if(w == nil && cmd != New && cmd != Open){
 		strcpy(err, "command needs to be run within a window");
 		return -1;
 	}
 
 	switch(cmd){
+	case Open:
+		return wctlopenfile(arg, err);
 	case New:
 		return wctlnew(r, arg, pid, hideit, scrollit, dir, err);
 	case Set:

@@ -942,6 +942,11 @@ xfidread(Xfid *x)
 		n = strlen(t);
 		goto Text;
 
+	case Qtheme:
+		t = estrdup(riotheme);
+		n = strlen(t);
+		goto Text;
+
 	case Qwinid:
 		n = sprint(buf, "%11d ", w->id);
 		t = estrdup(buf);
