@@ -48,7 +48,7 @@ signals that the board DTS does not describe.
 | CRU / GRF / PMUGRF | Substrate; clocks for UART/eMMC/VOP/USB/GMAC | More clock/reset coverage, DVFS coupling | P1 |
 | GIC / timer / MMU / DMA | Working substrate | Not drivers; keep out of the driver list | — |
 | IOMMU | VOP2 working | Other masters (VPU, VEPU, ISP, RGA, NPU) | P2 |
-| eMMC | HS200/ADMA2/9P works | Partition layer, filesystem, root mount | **P0** |
+| eMMC | HS200/ADMA2/9P; MBR partitions; ext2 root mounted at boot | Re-root onto the eMMC filesystem | **P0** |
 | SD card (sdmmc0) | DTS enabled | No driver; second SDHCI instance | P2 |
 | SDIO (sdmmc1) | DTS enabled | No SDIO driver; WiFi/BT module | P2 |
 | GMAC1 / PHY | 10/100 Mbps link, `/net` up, ping passes | 1 Gbps: TX DMA underflow, no traffic (v1.1) | P2 |
@@ -94,7 +94,7 @@ signals that the board DTS does not describe.
 | 40-pin header (CON2) | 2x20 header | GPIO/I2C/UART partial | SPI, PWM, SARADC; header pin policy | P1 |
 | M.2 M-key | `M.2-KEY-M-H3R2`, PCIe2x1 | No driver | PCIe + NVMe | P2 |
 | TF card slot | `TF2`, sdmmc0 | No driver | SDHCI instance, card detect | P2 |
-| eMMC | `sdhci`, HS200 | Works | Root filesystem above it | **P0** |
+| eMMC | `sdhci`, HS200 | Works; ext2 root mounted at `/mnt/emmcroot` | Boot with `/` on eMMC | **P0** |
 | SPI NOR | `sfc`, `jedec,spi-nor` | No driver | SFC read/write | P2 |
 | USB3 host | USB3_HOST1, xHCI | Root ports work | HID/MSC/hubs, `#P` transport | **P0** |
 | USB2 host x2 | USB2_HOST2/3, EHCI/OHCI | Board probe | HID/MSC classes | P1 |
@@ -149,10 +149,14 @@ transmits nothing (TX DMA underflow), see `gmac-bringup.md`.
 
 ### 2. Root filesystem, not another block driver
 
-`emmcfs` already serves `/srv/emmc` at HS200 with ADMA2 and has a boot-time
-self-test. The missing layer is above it: partition discovery, a filesystem,
-and a root mount. Until that exists the system runs from the RAM boot archive,
-so every reboot loses state and the image size is bounded by the boot archive.
+`emmcfs` serves `/srv/emmc` at HS200 with ADMA2, parses the DOS partition
+table and exposes `/partN`.  `ext2srv` is built for ARM64 and init mounts the
+ext2 root partition at `/mnt/emmcroot` during boot, so the filesystem stack is
+complete.  What is left is re-rooting: mount the eMMC filesystem over `/`,
+rebind `/dev`, `/srv` and `/proc` inside it, and run `rc` from `/bin`.
+
+Until that exists the system still runs from the RAM boot archive, so every
+reboot loses state and the image size is bounded by the boot archive.
 
 The SD slot is a convenience, not a prerequisite: eMMC is soldered and already
 works. Fix the root path before adding a second SDHCI instance.

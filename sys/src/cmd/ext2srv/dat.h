@@ -230,3 +230,4 @@ extern int	chatty;
 extern int	errno;
 extern char	*deffile;
 extern int rdonly;
+extern int force;

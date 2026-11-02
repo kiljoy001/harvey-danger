@@ -3,8 +3,10 @@
  *
  * The card is identified once at startup and then served as:
  *
- *   /ctl    negotiated speed, geometry and capacity (read)
+ *   /ctl    negotiated speed, geometry, capacity and partitions (read)
  *   /data   the raw device, byte addressable (read/write)
+ *   /partN  the Nth DOS partition of /data (read/write)
+ *   /flush  flush the card write cache (write)
  *
  * The driver core is ../emmc/emmc.c, built with -DEMMCFS_LIB.  The
  * controller has a single command queue, so every transfer is serialised
@@ -26,6 +28,17 @@ enum {
 	Qctl,
 	Qdata,
 	Qflush,
+
+	Qpart		= 0x100,	/* + slot index */
+	Maxpart		= 4,
+};
+
+typedef struct Part Part;
+struct Part {
+	u64	off;		/* byte offset on the card */
+	u64	len;		/* byte length */
+	int	slot;		/* 1-based MBR slot */
+	u8	type;		/* MBR partition type */
 };
 
 static void fsread(Req *);
@@ -37,7 +50,9 @@ static Srv fs = {
 };
 static QLock cardlk;
 static u64 capacity;
-static char ctl[256];
+static char ctl[512];
+static Part part[Maxpart];
+static int npart;
 static u64 nread, nwrite, nreadreq, nwritereq;
 
 static void
@@ -115,34 +130,105 @@ cardio(u64 off, void *vbuf, long n, int write)
 	return 0;
 }
 
+/*
+ * Read the DOS partition table in the master boot sector.  The card may
+ * have none, or may carry a Rockchip IDB at sector 0x40; either way only
+ * sector 0 is inspected here, so the bootloader area is never touched.
+ */
+static void
+readparts(void)
+{
+	u8 mbr[Block];
+	u64 base, len;
+	u8 *e;
+	int i, n;
+
+	if(emmcread(0, 1, mbr) < 0)
+		return;
+	if(mbr[510] != 0x55 || mbr[511] != 0xaa)
+		return;
+	for(i = 0; i < Maxpart && npart < Maxpart; i++){
+		e = mbr + 446 + i*16;
+		len = (u64)e[12] | (u64)e[13]<<8 | (u64)e[14]<<16 |
+		      (u64)e[15]<<24;
+		base = (u64)e[8] | (u64)e[9]<<8 | (u64)e[10]<<16 |
+		       (u64)e[11]<<24;
+		if(e[4] == 0 || len == 0 || base >= capacity/Block)
+			continue;
+		n = capacity/Block - base;
+		if(len > (u64)n)
+			len = n;
+		part[npart].off = base * Block;
+		part[npart].len = len * Block;
+		part[npart].slot = i + 1;
+		part[npart].type = e[4];
+		npart++;
+	}
+}
+
+/* The partition backing this fid, or nil for /data and friends. */
+static Part *
+partof(Req *r)
+{
+	int i;
+
+	i = (int)(uintptr)r->fid->file->aux - Qpart;
+	if(i < 0 || i >= npart)
+		return nil;
+	return &part[i];
+}
+
+/*
+ * Clip a request against a window [base, base+len) and return the number
+ * of bytes to move.
+ */
+static long
+clamp(u64 off, long n, u64 base, u64 limit, u64 *cardoff)
+{
+	if(off >= limit)
+		return 0;
+	if((u64)n > limit - off)
+		n = limit - off;
+	*cardoff = base + off;
+	return n;
+}
+
 static void
 fsread(Req *r)
 {
+	Part *p;
 	u64 off;
 	long n;
 
 	if((uintptr)r->fid->file->aux == Qctl){
 		char buf[512];
+		int i, l;
 
-		snprint(buf, sizeof buf,
+		l = snprint(buf, sizeof buf,
 			"%smsize %ud\n"
 			"read %llud bytes in %llud requests\n"
 			"write %llud bytes in %llud requests\n",
 			ctl, fs.msize, nread, nreadreq, nwrite, nwritereq);
+		for(i = 0; i < npart && l < (int)sizeof buf; i++)
+			l += snprint(buf+l, sizeof buf-l,
+				"part%d type %#ux offset %llud bytes %llud\n",
+				part[i].slot, part[i].type,
+				part[i].off, part[i].len);
 		readstr(r, buf);
 		respond(r, nil);
 		return;
 	}
-	if((uintptr)r->fid->file->aux != Qdata){
+	p = partof(r);
+	if(p == nil && (uintptr)r->fid->file->aux != Qdata){
 		respond(r, "permission denied");
 		return;
 	}
 	off = r->ifcall.offset;
 	n = r->ifcall.count;
-	if(off >= capacity)
-		n = 0;
-	else if((u64)n > capacity - off)
-		n = capacity - off;
+	if(p != nil)
+		n = clamp(off, n, p->off, p->len, &off);
+	else
+		n = clamp(off, n, 0, capacity, &off);
 	if(n > 0){
 		qlock(&cardlk);
 		nreadreq++;
@@ -161,6 +247,7 @@ fsread(Req *r)
 static void
 fswrite(Req *r)
 {
+	Part *p;
 	u64 off;
 	long n;
 
@@ -176,18 +263,17 @@ fswrite(Req *r)
 		respond(r, nil);
 		return;
 	}
-	if((uintptr)r->fid->file->aux != Qdata){
+	p = partof(r);
+	if(p == nil && (uintptr)r->fid->file->aux != Qdata){
 		respond(r, "write not permitted");
 		return;
 	}
 	off = r->ifcall.offset;
 	n = r->ifcall.count;
-	if(off >= capacity){
-		respond(r, "write past end");
-		return;
-	}
-	if((u64)n > capacity - off)
-		n = capacity - off;
+	if(p != nil)
+		n = clamp(off, n, p->off, p->len, &off);
+	else
+		n = clamp(off, n, 0, capacity, &off);
 	if(n > 0){
 		qlock(&cardlk);
 		nwritereq++;
@@ -207,6 +293,8 @@ void
 main(int argc, char **argv)
 {
 	File *f;
+	char name[16];
+	int i;
 
 	USED(argc);
 	USED(argv);
@@ -215,16 +303,18 @@ main(int argc, char **argv)
 	capacity = emmccapacity();
 	if(capacity == 0)
 		fatal("emmcfs: cannot read EXT_CSD");
+	readparts();
 
 	snprint(ctl, sizeof ctl,
 		"emmc rk3566\n"
 		"mode %s\n"
 		"blocks %llud\n"
 		"blocksize %d\n"
-		"bytes %llud\n",
-		emmcmodename(), capacity/Block, Block, capacity);
-	print("emmcfs: %s, %llud blocks\n", emmcmodename(),
-	      capacity/Block);
+		"bytes %llud\n"
+		"partitions %d\n",
+		emmcmodename(), capacity/Block, Block, capacity, npart);
+	print("emmcfs: %s, %llud blocks, %d partitions\n", emmcmodename(),
+	      capacity/Block, npart);
 
 	/* Match the kernel's MAXRPC: one 128 KiB message per transfer. */
 	fs.msize = 128*1024 + IOHDRSZ;
@@ -239,6 +329,16 @@ main(int argc, char **argv)
 	if(f == nil)
 		fatal("emmcfs: createfile data: %r");
 	f->length = capacity;
+	for(i = 0; i < npart; i++){
+		snprint(name, sizeof name, "part%d", part[i].slot);
+		f = createfile(fs.tree->root, name, nil, 0666,
+			       (void*)(uintptr)(Qpart + i));
+		if(f == nil)
+			fatal("emmcfs: createfile %s: %r", name);
+		f->length = part[i].len;
+		print("emmcfs: %s type %#ux offset %llud bytes %llud\n",
+		      name, part[i].type, part[i].off, part[i].len);
+	}
 	f = createfile(fs.tree->root, "flush", nil, 0222, (void*)Qflush);
 	if(f == nil)
 		fatal("emmcfs: createfile flush: %r");

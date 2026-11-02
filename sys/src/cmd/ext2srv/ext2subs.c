@@ -117,8 +117,10 @@ ext2fs(Xfs *xf)
 	}
 	if( !(superblock.s_state & EXT2_VALID_FS) ){
 		chat("fs not checked...");
-		errno = Enotclean;
-		return -1;
+		if(!force){
+			errno = Enotclean;
+			return -1;
+		}
 	}
 
 	xf->block_size = EXT2_MIN_BLOCK_SIZE << superblock.s_log_block_size;

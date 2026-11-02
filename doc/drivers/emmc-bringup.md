@@ -474,3 +474,65 @@ transport (read-only runs stay above 50 MB/s).
 
 The server owns the controller while it runs, so the `/boot/emmc` CLI
 must not be used at the same time (it re-initialises the card).
+
+## Partitions and the ext2 root
+
+The card is 233 GiB.  Its user area carries a Rockchip IDB at sector
+`0x40` (`RKNS`) and no DOS partition table, so the master boot sector
+was free.  The layout now in use:
+
+```
+sector 0        MBR, one partition, type 0x83
+sector 0x40     Rockchip IDB (untouched)
+sector 0x8000   partition 1: 128 MiB ext2, label harvey-root
+```
+
+`emmcfs` reads the MBR once at startup and exports each used entry as
+`/partN` next to `/data`, so a filesystem server never has to know
+about offsets:
+
+```
+emmcfs: hs200 200MHz 8bit, 488554496 blocks, 1 partitions
+emmcfs: part1 type 0x83 offset 16777216 bytes 134217728
+HARVEY-ARM64 EMMCFS PASS
+HARVEY-ARM64 EMMC-ROOT PASS
+```
+
+`ext2srv` is built for ARM64 and init starts it with
+`-F -f /mnt/emmc/part1 ext2`, then mounts `/srv/ext2` at
+`/mnt/emmcroot`.  The `-F` flag is a bring-up allowance: ext2srv clears
+`EXT2_VALID_FS` while it has the filesystem open and only restores it
+when the last reference goes away, so a board that was power-cycled
+without unmounting comes back dirty.
+
+The image itself is built on the host from the boot archive: `mke2fs
+-t ext2 -b 1024 -O ^dir_index,^resize_inode,^ext_attr`, then every blob
+from `userland.img` is written to `/bin` with `debugfs`.
+
+Note that U-Boot must load **both** the kernel and the boot archive:
+
+```
+tftpboot 0x40080000 harvey.img
+tftpboot 0x50000000 userland.img
+tftpboot 0x48000000 orangepi-3b-v1.1.dtb
+booti 0x40080000 - 0x48000000
+```
+
+Without the archive at `0x50000000` the kernel falls back to the
+programs embedded in its image, which is an older and much smaller set:
+`/boot/emmcfs` is missing and the eMMC test reports `EXEC FAIL`.
+
+### Writing the images to the card
+
+From U-Boot, with the images on the TFTP server:
+
+```
+tftpboot 0x10000000 mbr.bin
+mmc dev 0
+mmc write 0x10000000 0 1
+tftpboot 0x10000000 rootfs.ext2
+mmc write 0x10000000 0x8000 0x40000
+```
+
+U-Boot parses numbers as hex, and `mmc dev 0` is the eMMC
+(`mmc@fe310000`); `mmc dev 1` is the SD slot.

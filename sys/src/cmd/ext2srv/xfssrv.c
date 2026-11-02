@@ -19,6 +19,7 @@
 
 int	errno;
 int rdonly;
+int force;
 char	*srvfile;
 char	*deffile;
 
@@ -28,7 +29,7 @@ extern Srv ext2srv;
 void
 usage(void)
 {
-	fprint(2, "usage: %s [-v] [-s] [-r] [-p passwd] [-g group] [-f devicefile] [srvname]\n", argv0);
+	fprint(2, "usage: %s [-v] [-s] [-r] [-F] [-p passwd] [-g group] [-f devicefile] [srvname]\n", argv0);
 	exits("usage");
 }
 
@@ -66,6 +67,10 @@ main(int argc, char **argv)
 		break;
 	case 'r':
 		rdonly = 1;
+		break;
+	case 'F':
+		/* bring-up: mount a filesystem left dirty by a hard reset */
+		force = 1;
 		break;
 	default:
 		usage();

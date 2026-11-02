@@ -31,6 +31,7 @@ PMICFS_BASE = 0xA600000
 MKDIR_BASE = 0xAA00000
 MOUNT_BASE = 0xAE00000
 MOUNT9_BASE = 0xB200000
+EXT2SRV_BASE = 0xBA00000
 RC_BASE = 0x2A00000
 ECHO_BASE = 0x2E00000
 CAT_BASE = 0x3200000
@@ -398,6 +399,58 @@ SECTIONS {{
     image, entry = validate_elf(elf, EMMCFS_BASE)
     if symbol_value(elf, "_main") != entry:
         raise RuntimeError("emmcfs entry does not name _main")
+    return image, entry
+
+
+def build_ext2srv(out: Path, libc: Path) -> tuple[bytes, int]:
+    """The ext2 file server, linked with lib9p over an emmc partition."""
+    o9 = ROOT / "build/arm64-o9"
+    src = ROOT / "sys/src/cmd/ext2srv"
+    flags = [
+        CC, "--target=aarch64-none-elf", "-ffreestanding", "-fno-builtin",
+        "-fno-stack-protector", "-fno-vectorize", "-fno-slp-vectorize",
+        "-mstrict-align", "-fsigned-char", "-fcommon", "-O2",
+        "-I", str(ROOT / "aarch64/include"),
+        "-I", str(ROOT / "sys/include"),
+        "-I", str(src),
+    ]
+    objects = []
+    for name in ("chat.c", "ext2fs.c", "ext2subs.c", "iobuf.c", "xfile.c",
+                 "xfssrv.c"):
+        obj = out / f"ext2srv-{name}.o"
+        subprocess.run([*flags, "-c", str(src / name), "-o", str(obj)],
+                       check=True)
+        objects.append(obj)
+    script = out / "ext2srv.ld"
+    elf = out / "ext2srv"
+    script.write_text(f'''ENTRY(_main)
+PHDRS {{
+  text PT_LOAD FLAGS(5);
+  data PT_LOAD FLAGS(6);
+}}
+SECTIONS {{
+  . = 0x{EXT2SRV_BASE:x};
+  .text : {{ *(.text .text.*) *(.rodata .rodata.*) }} :text
+  . = ALIGN(0x{BIG_PAGE:x});
+  .data : {{ *(.data .data.*) *(.sdata .sdata.*) *(.got .got.*) }} :data
+  .bss : {{ *(.bss .bss.*) *(.sbss .sbss.*) COMMON }} :data
+  PROVIDE(end = .);
+  /DISCARD/ : {{ *(.comment) *(.note*) }}
+}}
+''')
+    subprocess.run([
+        LD, "-static", "-z", "max-page-size=4096", "-T", str(script),
+        "--allow-multiple-definition", "--defsym=threadmain=main",
+        "-e", "_main", "-u", "_main", *map(str, objects),
+        "--start-group",
+        str(o9 / "lib9p.a"), str(o9 / "libthread.a"), str(o9 / "libauth.a"),
+        str(o9 / "libauthsrv.a"), str(o9 / "libsec.a"), str(o9 / "libndb.a"),
+        str(o9 / "libbio.a"), str(libc),
+        "--end-group", "-o", str(elf),
+    ], check=True)
+    image, entry = validate_elf(elf, EXT2SRV_BASE)
+    if symbol_value(elf, "_main") != entry:
+        raise RuntimeError("ext2srv entry does not name _main")
     return image, entry
 
 
@@ -769,6 +822,39 @@ fail:
 	return -1;
 }
 
+/*
+ * Serve the ext2 filesystem on the eMMC root partition and mount it.
+ * The partition is whatever emmcfs found in the DOS table; the ext2
+ * server inherits this namespace so it can open /mnt/emmc/part1.
+ */
+static int
+emmcroot(void)
+{
+	char *ext2argv[] = { "/boot/ext2srv", "-F", "-f", "/mnt/emmc/part1",
+			     "ext2", nil };
+	int fd, pid;
+
+	if(access("/mnt/emmc/part1", AEXIST) < 0)
+		return -1;
+	pid = rfork(RFPROC|RFNOWAIT|RFFDG|RFREND);
+	if(pid == 0){
+		exec("/boot/ext2srv", ext2argv);
+		_exits("exec");
+	}
+	if(pid < 0 || waitfor("/srv/ext2", 100) < 0)
+		return -1;
+	create("/mnt/emmcroot", OREAD, DMDIR|0755);
+	fd = open("/srv/ext2", ORDWR);
+	if(fd < 0)
+		return -1;
+	if(mount(fd, -1, "/mnt/emmcroot", MREPL|MCREATE, "") < 0){
+		close(fd);
+		return -1;
+	}
+	close(fd);
+	return 0;
+}
+
 void
 main(int argc, char **argv)
 {
@@ -856,9 +942,13 @@ main(int argc, char **argv)
 		}
 		if(pid < 0 || waitfor("/srv/emmc", 200) < 0)
 			say("HARVEY-ARM64 EMMCFS FAIL\n");
-		else if(emmctest() == 0)
+		else if(emmctest() == 0){
 			say("HARVEY-ARM64 EMMCFS PASS\n");
-		else
+			if(emmcroot() == 0)
+				say("HARVEY-ARM64 EMMC-ROOT PASS\n");
+			else
+				say("HARVEY-ARM64 EMMC-ROOT SKIP\n");
+		}else
 			say("HARVEY-ARM64 EMMCFS FAIL\n");
 	}
 	{
@@ -1039,6 +1129,7 @@ main(int argc, char **argv)
                              ROOT / "build/arm64-o9/libsec.a",
                              ROOT / "build/arm64-o9/libndb.a"])
     emmcfs, _ = build_emmcfs(out, libc)
+    ext2srv, _ = build_ext2srv(out, libc)
     gmacfs, _ = build_gmacfs(out, libc)
     usbpower, _ = build_usbpower(out, libc)
     rc, rc_entry = build_rc(out, libc)
@@ -1713,6 +1804,7 @@ main(int argc, char **argv)
         "mount": mountbin,
         "mount9": mount9bin,
         "emmcfs": emmcfs,
+        "ext2srv": ext2srv,
         "gmacfs": gmacfs,
         "usbpower": usbpower,
         "rc": rc,

@@ -23,7 +23,7 @@ unsupported   no native driver; use a compatibility host or sponsor a port
 | USB storage | `#P` | o9xhci | MSC | pending | unsupported | class driver not written |
 | Display / HDMI | `#P` | VOP2/DW-HDMI | o9display | `#V/display` | partial | fixed 1920x1080 RGB888 on HDMI0; no EDID/modeset, no audio |
 | IOMMU | `#P` | rkiommu | — | — | partial | two-level tables, 40-bit PA; used by VOP2 |
-| eMMC | `#P` | SDHCI (dwcmshc) | emmc/emmcfs | `/srv/emmc` | partial | user-space PIO+ADMA2, HS200 8-bit |
+| eMMC | `#P` | SDHCI (dwcmshc) | emmc/emmcfs, ext2srv | `/srv/emmc`, `/mnt/emmcroot` | partial | PIO+ADMA2, HS200 8-bit; DOS partitions; ext2 root partition mounted at boot |
 | SD card | `#P` | SDHCI (sdmmc0) | — | — | unsupported | slot not driven |
 | SPI NOR | `#P` | RK SFC | — | — | unsupported | boot flash not readable |
 | Ethernet | `#P` | GMAC/PHY | — | `/srv/net` | partial | kernel `#l`; cold boot releases `SRST_A_GMAC1`, negotiates 10/100 Mbps, ping passes; 1 Gbps links but TX DMA underflows (v1.1 limitation) |
