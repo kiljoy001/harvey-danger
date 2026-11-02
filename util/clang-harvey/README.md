@@ -187,6 +187,5 @@ was missing.  They live in APEX now, not in a shim:
    by defaulting to `/tmp`, which is why the SDK creates one.
 3. Add a Harvey toolchain to Clang instead of a config file, so the paths are
    baked in and `x86_64-unknown-harvey` is a real target.
-4. `std::filesystem`: the headers are enabled but the library is not built.
-5. Errant messages: APEX uses Linux errno numbers but a Plan 9 `strerror`
-   table, so `ENOENT` reads as "Access denied".
+4. A native `as`/`objdump` and the rest of the binutils story.
+5. `std::filesystem` needs its library built; the headers alone are enabled.
