@@ -39,7 +39,7 @@ function WelcomeRun(int64 pages,
             fprint(2, "welcome: no window system (run from Rio)\n");
             goto wout;
         }
-        if(initdraw(nil, nil, "Welcome") < 0){
+        if(initdraw(nil, nil, "Objective-9c v0.4.0 Tour") < 0){
             fprint(2, "welcome: initdraw: %r\n");
             goto wout;
         }
@@ -137,28 +137,28 @@ function WelcomeRun(int64 pages,
 
 main {
     Task<int64> run = spawn WelcomeRun(4,
-        "Welcome to Aspera",
-        "Your desktop is Harvey, a Plan 9-derived system.",
-        "Every window is a process; the shell window is rc.",
-        "This tour shows how to use the desktop.",
-        "Click or press Enter to continue.",
+        "Objective-9c v0.4.0",
+        "Welcome to Objective-9c running on the Harvey microkernel.",
+        "This entire interactive tour is written in welcome.o9.",
+        "Objective-9c brings actors, CSP channels, and 9P services to C.",
+        "Click or press Enter to explore the language tour.",
 
-        "Using windows",
-        "Click a window to use it. Drag its title bar to move it.",
-        "Drag the box at the top left to resize it.",
-        "Hide, Maximize and Close sit at the right of the title bar.",
-        "The bar down the left side scrolls the window.",
+        "Concurrency & Memory",
+        "Actors run concurrently and communicate via typed CSP channels.",
+        "Zero-copy o9_string_data() delivers 0-allocation string passing.",
+        "Scoped DataFrames provide linear scratchpads with O(1) scope resets.",
+        "Full C sandwich: transparently embed raw C blocks inside O9.",
 
-        "Mouse and clipboard",
-        "Left: click, and drag to select text.",
-        "Right in the text: paste the browser clipboard.",
-        "Right on the desktop or title bar: Rio's menu, with New,",
-        "Terminal, Resize, Move, Delete, Hide and Exit.",
+        "In-Guest o9c Compiler",
+        "The o9c compiler is installed right here at /bin/o9c.",
+        "Tour source is staged at /sys/src/welcome.o9.",
+        "Try compiling:  o9c /sys/src/welcome.o9 > welcome.c",
+        "Actors dynamically export 9P filesystem trees under /mnt/o9.",
 
-        "The shell is rc",
-        "Type a command after the % prompt.",
-        "Try:  ls /net    ls /home    cat /dev/time",
-        "cs and dns are running;  ping example.com  tests the link.",
-        "A middle button is optional.  Esc closes this tour.");
+        "Explore System & Shell",
+        "Every window is an isolated process in the Rio window system.",
+        "The shell is rc. Try:  cat /sys/src/welcome.o9    o9c --version",
+        "Your browser clipboard syncs automatically via /n/host/clip.",
+        "Press Esc or close this window to drop into the rc shell.");
     run.await();
 }
