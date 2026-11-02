@@ -188,7 +188,7 @@ function start_vps_root() int64 {
             char *script =
                 "#!/bin/rc\n"
                 "# Rio startup: large rc window + snarf bridge.\n"
-                "echo 'new -r 16 16 776 568 rc' > /dev/wctl\n"
+                "echo 'new -r 16 16 776 568 welcome; exec rc' > /dev/wctl\n"
                 "snarfbridge &\n";
             write(fd, script, strlen(script));
             close(fd);

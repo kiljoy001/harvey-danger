@@ -15,7 +15,7 @@ import time
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
 O9_REPO = os.path.abspath(os.environ.get(
     "O9_REPO", os.path.join(REPO_ROOT, "..", "objective-9c")))
-O9C_BIN = os.path.join(O9_REPO, "o9c/o9c")
+O9C_BIN = os.environ.get("O9C_BIN", os.path.join(O9_REPO, "o9c/o9c"))
 VM_BIN = os.path.join(REPO_ROOT, "util/9vm/9vm")
 KERNEL_BIN = os.path.join(REPO_ROOT, "build/harvey.32bit")
 
