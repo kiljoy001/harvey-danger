@@ -321,6 +321,36 @@ Next steps, in order:
 Do not apply the GMAC reset/gate writes until that path is understood;
 the PD_PIPE-only kernel boots and leaves the rest of the board usable.
 
+## U-Boot register experiment (2026-11-02)
+
+At the U-Boot prompt after a successful TFTP transfer:
+
+```text
+PMU_PWR_DWN_ST        0x00000003   PD_PIPE bit 8 = on
+SOFTRST_CON(14)       0x00001000   SRST_A_GMAC1 asserted
+CLKGATE_CON(17)       0x00000000   GMAC gates on
+CLKSEL_CON(33)        0x00000000   speed/parent state cleared
+GMAC MAC/DMA regs     all zero
+```
+
+Doing the release sequence at U-Boot is safe but still does not wake the
+MAC:
+
+```text
+mw.l 0xfdd20438 0x30000000     deassert both GMAC resets
+mw.l 0xfdd20344 0x047c0000     enable ACLK/PCLK and MAC clocks
+mw.l 0xfdd20184 0x00300020     10 Mbps RGMII divider
+md.l 0xfe010000 4               still 00000000 00000000 00000000 00000000
+```
+
+So reset and gates are not sufficient.  The missing piece is the GMAC
+clock parent/rate setup that Linux's `rk_gmac_set_to_rgmii()` does:
+`mac_clk_rx`, `mac_clk_tx`, `clk_mac_speed`, `clk_mac_refout`,
+`clk_gmac1_ptp_ref`, and the `CLK_MAC1_2TOP`/`SCLK_GMAC1` muxes.
+Harvey's `setspeed()` only writes the RGMII divider bits 5:4, and it runs
+after the PHY probe.  Port the full clock setup before MDIO, and keep
+the U-Boot reset-release experiment separate from the kernel deadlock.
+
 The U-Boot environment also still boots `aspera-arm64.img`; the working
 image is `aspera-usb.img`, loaded by hand:
 
