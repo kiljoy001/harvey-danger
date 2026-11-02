@@ -1,5 +1,45 @@
 # 9vm host 9P transports
 
+## Plain QEMU (amd64)
+
+The amd64 kernel is a 64-bit Harvey in a 32-bit Multiboot wrapper, and QEMU
+can load it directly with the GEFS image as a Multiboot module — no 9vm, no
+v86:
+
+```sh
+sh util/9vm/run-qemu.sh
+```
+
+It boots to Rio on the Bochs framebuffer with the VPS flavour of the embedded
+init, which starts GEFS on `/dev/initrd` and `rio`; the stock init expects a
+host tree through `#~/host` and is meant for 9vm.  Networking is the NE2000
+with QEMU user-mode DHCP.
+
+Build that flavour from source on the host (with `o9c` built as in
+`util/arm64/build_o9c.sh`):
+
+```sh
+HARVEY_GEFS_INIT=boot/vps_init.o9 HARVEY_GEFS_INIT_BIN=build/vpsinit \
+HARVEY_BUILD_DIR=build/kernel-vps \
+HARVEY_OUT_ELF=build/harvey-vps.elf \
+HARVEY_OUT_32BIT=build/harvey-vps.32bit \
+python3 util/9vm/build_kernel.py
+```
+
+The kernel names the module after the loader's path *and* always registers
+`/dev/initrd`, so QEMU does not care what the image file is called
+(`sys/src/9/amd64/multiboot.c`).
+
+What is missing compared with the browser session: `/n/host` (clipboard,
+uploads, downloads, fetch, USB, net) comes from the Wanix page, and 9vm's
+`#~/host` ring is absent, so the session root is RAM-backed and files do not
+leave the guest.
+
+For bare metal the same Multiboot header works from GRUB with the kernel and
+the image as a module and the same `-append` line.  The work there is device
+coverage — AHCI or virtio storage, real NICs, VESA/EDID display, PS/2 and USB
+input — not the boot path.
+
 To launch the current GEFS-backed graphical Aspera VM from this checkout, run
 `./bin/aspera check` followed by `./bin/aspera start`. Run
 `./bin/aspera preview` for the host-tree Objective-9C development boot. See

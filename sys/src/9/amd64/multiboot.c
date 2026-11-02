@@ -208,6 +208,8 @@ multiboot(u32 magic, u32 pmbi, int vflag)
 				// This code will only accept the first module as the initrd
 				// file.  Subsequent modules will be ignored.
 				if (!initrd) {
+					u64 len = mod->modend - mod->modstart;
+
 					// We just want the name - no directories
 					char *name = strrchr(p, '/');
 					if (!name || *++name == '\0') {
@@ -219,7 +221,19 @@ multiboot(u32 magic, u32 pmbi, int vflag)
 					{
 						Dirtab *dp = addarchfile(name, 0666, mbmoduleread, mbmodulewrite);
 						if(dp != nil)
-							dp->length = mod->modend - mod->modstart;
+							dp->length = len;
+					}
+					/*
+					 * The image is also /dev/initrd whatever the loader
+					 * called it: QEMU names the module after the file
+					 * path, 9vm calls it "initrd", and the GEFS
+					 * bootstrap opens /dev/initrd.  Two names, one
+					 * module, no renaming the file before boot.
+					 */
+					if (strcmp(name, "initrd") != 0) {
+						Dirtab *dp = addarchfile("initrd", 0666, mbmoduleread, mbmodulewrite);
+						if(dp != nil)
+							dp->length = len;
 					}
 					initrd = mod;
 				}
