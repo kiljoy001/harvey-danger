@@ -47,15 +47,19 @@ static void *harvey_aligned_alloc(size_t n, size_t align);
 
 /* C11 aligned allocation over the same allocator. */
 extern "C" void *aligned_alloc(size_t align, size_t n) {
+    /* malloc already satisfies alignments up to 16, and its result is
+     * free()able; larger alignments use the offset allocator. */
+    if (align <= 16)
+        return malloc(n);
     return harvey_aligned_alloc(n, align);
 }
 
 extern "C" void *memalign(size_t align, size_t n) {
-    return harvey_aligned_alloc(n, align);
+    return aligned_alloc(align, n);
 }
 
 extern "C" int posix_memalign(void **out, size_t align, size_t n) {
-    void *p = harvey_aligned_alloc(n, align);
+    void *p = aligned_alloc(align, n);
     if (!p) return 12 /* ENOMEM */;
     *out = p;
     return 0;
@@ -325,12 +329,10 @@ static void harvey_aligned_free(void *p) {
  * ordinary new.  Route every allocation through the aligned allocator. */
 /* APEX's malloc is now 16-byte aligned, so the plain operator new/delete
  * from libcxxabi is usable; only the nothrow and aligned forms are ours. */
-void *operator new(size_t n, const std::nothrow_t &) noexcept {
-    return harvey_aligned_alloc(n, 16);
-}
-void *operator new[](size_t n, const std::nothrow_t &) noexcept {
-    return harvey_aligned_alloc(n, 16);
-}
+/* The nothrow forms pair with the ordinary operator delete, so they must
+ * return pointers that free() accepts.  APEX's malloc is 16-byte aligned. */
+void *operator new(size_t n, const std::nothrow_t &) noexcept { return malloc(n); }
+void *operator new[](size_t n, const std::nothrow_t &) noexcept { return malloc(n); }
 void *operator new(size_t n, std::align_val_t a, const std::nothrow_t &) noexcept {
     return harvey_aligned_alloc(n, (size_t)a);
 }

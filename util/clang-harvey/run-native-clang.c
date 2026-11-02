@@ -15,13 +15,14 @@ int main(void) {
         return 1;
     }
 
+    /* Use the real driver, not -cc1: this also exercises fork/exec of the
+     * cc1 process inside the guest. */
     char *argv[] = {
         "clang",
-        "-cc1",
-        "-triple", "x86_64-unknown-elf",
-        "-emit-obj",
-        "-o", "test.o",
+        "-target", "x86_64-unknown-elf",
+        "-c",
         "test.c",
+        "-o", "test.o",
         0,
     };
 

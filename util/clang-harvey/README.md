@@ -24,8 +24,9 @@ portability shims the Harvey target needs.
 | native `ld.lld` | not yet |
 
 The milestone test is `util/clang-harvey/test-native.py`: it boots the
-cross-built `clang` under 9vm, compiles `test-native-clang.c` with `-cc1
--emit-obj`, and checks the resulting ELF object on the host:
+cross-built `clang` under 9vm, runs the full driver (`clang -target
+x86_64-unknown-elf -c test.c -o test.o`, which forks a `cc1` process),
+and checks the resulting ELF object on the host:
 
 ```text
 native clang produced build/clang-harvey/test.o (712 bytes) with 'add'
@@ -120,7 +121,9 @@ Runtime pieces live in `util/libcxx/compat.{h,cpp}` and
 
 ## Next rungs
 
-1. Get the Clang libraries and the `clang` binary linking.
-2. Run `clang -cc1` on Harvey and produce an object file.
-3. Port `ld.lld` (or drive a Harvey-side linker) so `clang++ foo.cpp` can
-   produce an executable without a Linux host.
+1. Port `ld.lld` so `clang++ foo.cpp` can produce an executable without a
+   Linux host.  Until then the driver can emit objects (`-c`) but has no
+   linker to call.
+2. Install a `lib/clang/<version>` resource directory on Harvey so the
+   driver finds its own builtin headers instead of `/usr/include`.
+3. Give the target a proper default triple so `--target` is not required.
