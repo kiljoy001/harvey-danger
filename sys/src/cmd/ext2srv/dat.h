@@ -223,7 +223,8 @@ enum{
 	Elongname,
 	Eintern,
 	Ecorrupt,
-	Enotclean
+	Enotclean,
+	Erofs
 };
 
 extern int	chatty;

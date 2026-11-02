@@ -156,8 +156,12 @@ complete, and init re-roots onto it: it mounts `/srv/ext2` on `/`, aliases
 `/boot` to `/bin` and rebinds `/dev`, `/env`, `/srv`, `/mnt` and `/proc`.
 A file written before a power cycle is still there afterwards.
 
-What is left is hygiene: an fsck or journal so the partition does not need
-`-F`, and growing the partition beyond the first 128 MiB.
+The root is mounted read-only, so a boot writes **zero bytes** to the card;
+`/tmp` and `/mnt` are the kernel RAM filesystem.  See
+[`filesystem.md`](filesystem.md) for the comparison behind that choice.
+
+What is left is a small read-write partition for persistent data, and
+growing the system partition beyond the first 128 MiB.
 
 The SD slot is a convenience, not a prerequisite: eMMC is soldered and already
 works. Fix the root path before adding a second SDHCI instance.

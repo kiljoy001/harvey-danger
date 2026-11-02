@@ -54,6 +54,7 @@ static char ctl[512];
 static Part part[Maxpart];
 static int npart;
 static u64 nread, nwrite, nreadreq, nwritereq;
+static u64 wear;
 
 static void
 fatal(char *fmt, ...)
@@ -305,14 +306,17 @@ main(int argc, char **argv)
 		fatal("emmcfs: cannot read EXT_CSD");
 	readparts();
 
+	wear = emmcwear();
 	snprint(ctl, sizeof ctl,
 		"emmc rk3566\n"
 		"mode %s\n"
 		"blocks %llud\n"
 		"blocksize %d\n"
 		"bytes %llud\n"
-		"partitions %d\n",
-		emmcmodename(), capacity/Block, Block, capacity, npart);
+		"partitions %d\n"
+		"wear pre-eol %d type-a %d type-b %d\n",
+		emmcmodename(), capacity/Block, Block, capacity, npart,
+		(int)((wear>>16)&0xff), (int)((wear>>8)&0xff), (int)(wear&0xff));
 	print("emmcfs: %s, %llud blocks, %d partitions\n", emmcmodename(),
 	      capacity/Block, npart);
 

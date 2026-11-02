@@ -1430,6 +1430,25 @@ emmccapacity(void)
 }
 
 /*
+ * EXT_CSD[267..269]: PRE_EOL_INFO and the two device life-time
+ * estimates, as percentages of rated write endurance already spent.
+ */
+u64
+emmcwear(void)
+{
+	u8 e[512];
+
+	wr16(Blksize, 512);
+	wr16(Blkcount, 1);
+	wr16(Xfer, 1<<4);
+	if(command(8, 0, CmdData|Rsp48b|CmdCrc|CmdIdx, nil) < 0)
+		return ~0ULL;
+	if(dataio(e, 512, 0) < 0)
+		return ~0ULL;
+	return ((u64)e[267]<<16) | ((u64)e[268]<<8) | e[269];
+}
+
+/*
  * EXT_CSD[247] FLUSH_CACHE.  CMD6 with R1b: the card holds DAT0 busy
  * while it writes the cache out.
  */

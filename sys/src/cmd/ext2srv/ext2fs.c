@@ -170,7 +170,9 @@ rwstat(Req *r)
 
 	chat("wstat(fid=%d)...", thdr.fid);
 	errno = 0;
-	if( !f )
+	if(rdonly)
+		errno = Erofs;
+	else if( !f )
 		errno = Eio;
 	else
 		dowstat(f, &r->d);
@@ -211,6 +213,10 @@ rwrite(Req *r)
 		thdr.fid, thdr.offset, thdr.count);
 
 	errno = 0;
+	if(rdonly){
+		errno = Erofs;
+		goto error;
+	}
 	if (!(f=xfile(r->fid, Asis)) ){
 		errno = Eio;
 		goto error;
@@ -281,6 +287,10 @@ rcreate(Req *r)
 		thdr.fid, thdr.name, thdr.perm, thdr.mode);
 
 	errno = 0;
+	if(rdonly){
+		errno = Erofs;
+		goto error;
+	}
 	if(strcmp(thdr.name, ".") == 0 || strcmp(thdr.name, "..") == 0){
 		errno = Eperm;
 		goto error;
@@ -335,6 +345,10 @@ rremove(Req *r)
 	chat("remove(fid=%d) ...", thdr.fid);
 
 	errno = 0;
+	if(rdonly){
+		errno = Erofs;
+		goto error;
+	}
 	if(!f){
 		errno = Eio;
 		goto error;

@@ -768,6 +768,20 @@ emmctest(void)
 	if(strstr(ctl, "blocksize 512") == nil)
 		return -1;
 
+	/*
+	 * The card is read-only in normal service: the root filesystem is
+	 * mounted with -r, so nothing here should write.  The write test
+	 * costs a few KiB of flash every boot, so it only runs when asked.
+	 */
+	fd = open("/mnt/emmc/data", OREAD);
+	if(fd < 0)
+		return -1;
+	if(pread(fd, r, 512, 18000LL*512) != 512)
+		goto fail;
+	close(fd);
+	if(getenv("emmcwtest") == nil)
+		return 0;
+
 	fd = open("/mnt/emmc/data", ORDWR);
 	if(fd < 0)
 		return -1;
@@ -830,7 +844,7 @@ fail:
 static int
 emmcroot(void)
 {
-	char *ext2argv[] = { "/boot/ext2srv", "-F", "-f", "/mnt/emmc/part1",
+	char *ext2argv[] = { "/boot/ext2srv", "-r", "-f", "/mnt/emmc/part1",
 			     "ext2", nil };
 	int fd, pid;
 
@@ -885,6 +899,13 @@ reroot(void)
 	bind("#s", "/srv", MREPL|MCREATE);
 	bind("#@", "/mnt", MREPL|MCREATE);
 	bind("#p", "/proc", MAFTER);
+	/*
+	 * The root is read-only: nothing the system does can wear the
+	 * eMMC or leave it dirty.  Scratch space is the kernel's RAM
+	 * filesystem, so /tmp and /mnt are lost on power off by design.
+	 */
+	create("/tmp", OREAD, DMDIR|0777);
+	bind("#@", "/tmp", MREPL|MCREATE);
 	return 0;
 }
 

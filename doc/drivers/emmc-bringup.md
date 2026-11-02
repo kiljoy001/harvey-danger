@@ -499,15 +499,17 @@ HARVEY-ARM64 EMMC-ROOT PASS
 ```
 
 `ext2srv` is built for ARM64 and init starts it with
-`-F -f /mnt/emmc/part1 ext2`, then mounts `/srv/ext2` at
-`/mnt/emmcroot`.  The `-F` flag is a bring-up allowance: ext2srv clears
-`EXT2_VALID_FS` while it has the filesystem open and only restores it
-when the last reference goes away, so a board that was power-cycled
-without unmounting comes back dirty.
+`-r -f /mnt/emmc/part1 ext2`, then mounts `/srv/ext2` at
+`/mnt/emmcroot` and re-roots onto it.  `-r` is deliberate: see
+[`filesystem.md`](filesystem.md) for why the root is immutable and what
+it costs to keep it writable.
 
-The image itself is built on the host from the boot archive: `mke2fs
--t ext2 -b 1024 -O ^dir_index,^resize_inode,^ext_attr`, then every blob
-from `userland.img` is written to `/bin` with `debugfs`.
+The image is built on the host from the boot archive with
+`util/arm64/mkrootfs.py`: `mke2fs -t ext2 -b 1024 -O
+^dir_index,^resize_inode,^ext_attr`, then every blob from `userland.img`
+is written to `/bin` with `debugfs`, plus the directories that init and
+the device servers bind onto.  A read-only root cannot create a mount
+point, so a missing directory is a boot failure.
 
 ## Re-rooting
 
