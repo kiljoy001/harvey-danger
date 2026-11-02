@@ -31,6 +31,8 @@ HELLO = """\
 #include <map>
 #include <sstream>
 #include <stdexcept>
+#include <filesystem>
+#include <fstream>
 #include <string>
 #include <vector>
 
@@ -62,6 +64,17 @@ int main() {
     Shape *shape = new Square;
     Square *square = dynamic_cast<Square *>(shape);
 
+    namespace fs = std::filesystem;
+    fs::path dir = "/n/host/build/clang-harvey/fs-smoke";
+    fs::remove_all(dir);
+    fs::create_directories(dir);
+    {
+        std::ofstream f(dir / "a.txt");
+        f << "0123456789";
+    }
+    auto fsz = fs::file_size(dir / "a.txt");
+    fs::remove_all(dir);
+
     int unwound = 0;
     try {
         Guard g(&unwound);
@@ -72,7 +85,7 @@ int main() {
     std::ostringstream out;
     out << "sum=" << sum(v) << " distinct=" << counts.size()
         << " rtti=" << (square ? square->side : -1)
-        << " unwound=" << unwound;
+        << " unwound=" << unwound << " fs=" << fsz;
     std::printf("hello from harvey: %s\\n", out.str().c_str());
     return 0;
 }
@@ -106,14 +119,14 @@ def main():
                                  "panic", "fault", "suicide")):
             print("  " + line)
 
-    if "hello from harvey: sum=31 distinct=7 rtti=3 unwound=11" not in output:
+    if "hello from harvey: sum=31 distinct=7 rtti=3 unwound=11 fs=10" not in output:
         sys.exit("the guest-linked program did not run")
     elf = BUILD / "hello"
     if not elf.is_file() or elf.stat().st_size == 0:
         sys.exit("ld.lld produced no executable")
     print(f"native toolchain: clang++ -> cc1 -> ld.lld -> {elf.name} "
           f"({elf.stat().st_size} bytes) ran and printed "
-          f"'hello from harvey: sum=31 distinct=7 rtti=3 unwound=11'")
+          f"'hello from harvey: sum=31 distinct=7 rtti=3 unwound=11 fs=10'")
 
 
 if __name__ == "__main__":

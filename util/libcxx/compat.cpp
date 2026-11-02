@@ -327,6 +327,195 @@ extern "C" int fstatvfs(int fd, struct statvfs *vfs) {
     return -1;
 }
 
+/*
+ * POSIX *at() family.  Harvey has no dirfd-relative lookup, so resolve the
+ * directory path with fd2path() and join; AT_FDCWD means "relative to cwd",
+ * which is what a plain relative path already does.
+ */
+extern "C" int fd2path(int, char *, int);
+
+namespace {
+
+/*
+ * Harvey's fd2path() reports an empty path for descriptors opened with
+ * open(), and libc++'s remove_all() threads directory descriptors through
+ * openat()/fdopendir().  Record the paths openat() opens so fdopendir() can
+ * find them again.
+ */
+struct FdPath {
+    int fd;
+    char path[1024];
+};
+FdPath fdpaths[64];
+
+void record_fd_path(int fd, const char *path) {
+    if (fd < 0)
+        return;
+    for (auto &e : fdpaths) {
+        if (e.fd == 0 || e.fd == fd) {
+            e.fd = fd;
+            size_t n = strlen(path);
+            if (n >= sizeof e.path)
+                n = sizeof e.path - 1;
+            memcpy(e.path, path, n);
+            e.path[n] = 0;
+            return;
+        }
+    }
+}
+
+const char *lookup_fd_path(int fd) {
+    for (auto &e : fdpaths)
+        if (e.fd != 0 && e.fd == fd)
+            return e.path;
+    return nullptr;
+}
+
+int harvey_dirfd_path(int dirfd, char *buf, size_t n) {
+    int r;
+    const char *known;
+    if (dirfd == AT_FDCWD)
+        return getcwd(buf, n) ? 0 : -1;
+    known = lookup_fd_path(dirfd);
+    if (known) {
+        if (strlen(known) + 1 > n)
+            return -1;
+        strcpy(buf, known);
+        return 0;
+    }
+    r = fd2path(dirfd, buf, (int)n - 1);
+    if (r < 0)
+        return -1;
+    if (r >= (int)n)
+        r = (int)n - 1;
+    buf[r] = 0;
+    while (r > 0 && (buf[r - 1] == '\n' || buf[r - 1] == ' '))
+        buf[--r] = 0;
+    return 0;
+}
+
+int harvey_join(int dirfd, const char *path, char *out, size_t n) {
+    char dir[1024];
+    if (path[0] == '/' || path[0] == 0 || dirfd == AT_FDCWD) {
+        if (strlen(path) + 1 > n)
+            return -1;
+        strcpy(out, path);
+        return 0;
+    }
+    if (harvey_dirfd_path(dirfd, dir, sizeof dir) < 0)
+        return -1;
+    if (strlen(dir) + 1 + strlen(path) + 1 > n)
+        return -1;
+    strcpy(out, dir);
+    strcat(out, "/");
+    strcat(out, path);
+    return 0;
+}
+
+} // namespace
+
+extern "C" int openat(int dirfd, const char *path, int flags, ...) {
+    char full[1200];
+    int mode = 0;
+    if (flags & O_CREAT) {
+        va_list ap;
+        va_start(ap, flags);
+        mode = va_arg(ap, int);
+        va_end(ap);
+    }
+    if (harvey_join(dirfd, path, full, sizeof full) < 0)
+        return -1;
+    int fd = __open(full, flags, mode);
+    if (fd >= 0)
+        record_fd_path(fd, full);
+    return fd;
+}
+
+extern "C" int unlinkat(int dirfd, const char *path, int flags) {
+    char full[1200];
+    if (harvey_join(dirfd, path, full, sizeof full) < 0)
+        return -1;
+    return (flags & AT_REMOVEDIR) ? rmdir(full) : unlink(full);
+}
+
+extern "C" int mkdirat(int dirfd, const char *path, mode_t mode) {
+    char full[1200];
+    if (harvey_join(dirfd, path, full, sizeof full) < 0)
+        return -1;
+    return mkdir(full, mode);
+}
+
+extern "C" int renameat(int oldfd, const char *oldpath, int newfd,
+                        const char *newpath) {
+    char a[1200], b[1200];
+    if (harvey_join(oldfd, oldpath, a, sizeof a) < 0 ||
+        harvey_join(newfd, newpath, b, sizeof b) < 0)
+        return -1;
+    return rename(a, b);
+}
+
+extern "C" int symlinkat(const char *target, int dirfd, const char *path) {
+    char full[1200];
+    if (harvey_join(dirfd, path, full, sizeof full) < 0)
+        return -1;
+    return symlink(target, full);
+}
+
+extern "C" ssize_t readlinkat(int dirfd, const char *path, char *buf, size_t n) {
+    char full[1200];
+    if (harvey_join(dirfd, path, full, sizeof full) < 0)
+        return -1;
+    return readlink(full, buf, n);
+}
+
+extern "C" int fstatat(int dirfd, const char *path, struct stat *sb, int flags) {
+    char full[1200];
+    if (harvey_join(dirfd, path, full, sizeof full) < 0)
+        return -1;
+    return (flags & AT_SYMLINK_NOFOLLOW) ? lstat(full, sb) : stat(full, sb);
+}
+
+extern "C" int fchmodat(int dirfd, const char *path, mode_t mode, int flags) {
+    char full[1200];
+    (void)flags;
+    if (harvey_join(dirfd, path, full, sizeof full) < 0)
+        return -1;
+    return chmod(full, mode);
+}
+
+extern "C" int utimensat(int dirfd, const char *path,
+                         const struct timespec ts[2], int flags) {
+    char full[1200];
+    struct timeval tv[2];
+    (void)flags;
+    if (harvey_join(dirfd, path, full, sizeof full) < 0)
+        return -1;
+    if (!ts)
+        return utimes(full, 0);
+    tv[0].tv_sec = ts[0].tv_sec;
+    tv[0].tv_usec = ts[0].tv_nsec / 1000;
+    tv[1].tv_sec = ts[1].tv_sec;
+    tv[1].tv_usec = ts[1].tv_nsec / 1000;
+    return utimes(full, tv);
+}
+
+extern "C" DIR *fdopendir(int fd) {
+    char path[1024];
+    if (harvey_dirfd_path(fd, path, sizeof path) < 0)
+        return 0;
+    return opendir(path);
+}
+
+extern "C" int truncate(const char *path, off_t length) {
+    int fd = __open(path, O_WRONLY);
+    int r;
+    if (fd < 0)
+        return -1;
+    r = ftruncate(fd, length);
+    __close(fd);
+    return r;
+}
+
 extern "C" int utimes(const char *path, const struct timeval *tv) {
     if (!tv) return utime(path, 0);
     struct utimbuf ut;

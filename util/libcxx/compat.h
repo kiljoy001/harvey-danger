@@ -165,6 +165,7 @@ int remove(const char *);
 #include <fcntl.h>
 #include <stdlib.h>
 #include <sys/stat.h>
+#include <dirent.h>
 
 #undef write
 #undef read
@@ -200,8 +201,43 @@ static inline int __harvey_fstat(int fd, struct stat *sb) {
     return __fstat(fd, sb);
 }
 
-/* These live behind _BSD_EXTENSION in APEX's <sys/stat.h>. */
+/* APEX maps stat()/fstat() onto __stat_ap()/__fstat() with function-like
+ * macros.  C++ needs the real functions: it takes their address, and it
+ * calls them through a namespace qualification (std::filesystem::detail)
+ * after `using ::stat`.  util/libcxx/posix_stat.cpp defines them. */
+#undef stat
+#undef fstat
+int stat(const char *, struct stat *);
+int fstat(int, struct stat *);
 int lstat(const char *, struct stat *);
+int truncate(const char *, off_t);
+
+/* POSIX *at() family.  Harvey is Plan 9 underneath: there is no
+ * dirfd-relative lookup, so these resolve the directory with fd2path() and
+ * join the path. */
+#ifndef AT_FDCWD
+#define AT_FDCWD             (-100)
+#define AT_SYMLINK_NOFOLLOW  0x100
+#define AT_REMOVEDIR         0x200
+#define AT_EACCESS           0x200
+#define AT_SYMLINK_FOLLOW    0x400
+#define AT_NO_AUTOMOUNT      0x800
+#define AT_EMPTY_PATH        0x1000
+#endif
+#ifndef UTIME_NOW
+#define UTIME_NOW  ((1l << 30) - 1l)
+#define UTIME_OMIT ((1l << 30) - 2l)
+#endif
+int openat(int, const char *, int, ...);
+int unlinkat(int, const char *, int);
+int mkdirat(int, const char *, mode_t);
+int renameat(int, const char *, int, const char *);
+int symlinkat(const char *, int, const char *);
+ssize_t readlinkat(int, const char *, char *, size_t);
+int fstatat(int, const char *, struct stat *, int);
+int fchmodat(int, const char *, mode_t, int);
+int utimensat(int, const char *, const struct timespec *, int);
+DIR *fdopendir(int);
 int symlink(const char *, const char *);
 ssize_t readlink(const char *, char *, size_t);
 

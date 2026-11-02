@@ -1,14 +1,17 @@
 #!/usr/bin/env python3
 """Apply Harvey portability edits to the LLVM checkout.
 
-These are two small, mechanical changes: LLVM takes the address of the bare
-POSIX stat()/fstat() names in two places, but APEX defines those as
-function-like macros that forward to __stat_ap()/__fstat().  The edits use
-inlinable wrappers declared by util/libcxx/compat.h instead.
+These are small, mechanical changes: LLVM and libc++ take the address of, or
+qualify, the POSIX stat()/fstat() names, which APEX defines as function-like
+macros forwarding to __stat_ap()/__fstat().  Defining real stat()/fstat()
+symbols instead would capture Plan 9's three-argument stat() and recurse.
 
 Run once after cloning LLVM, and again after updating the checkout:
 
     util/clang-harvey/apply-llvm-patches.py [/path/to/llvm-project]
+
+The script is idempotent: an edit whose replacement text is already present is
+left alone.
 """
 import os
 import sys
@@ -17,6 +20,7 @@ from pathlib import Path
 DEFAULT = Path(os.environ.get("LLVM_PROJECT", Path.home() / "Repo" / "llvm-project"))
 
 EDITS = [
+    # lib/Support: the bare names are used as function values / qualified calls.
     (
         "llvm/lib/Support/Unix/Process.inc",
         "    if (RetryAfterSignal(-1, ::fstat, StandardFD, &st) < 0) {",
@@ -27,6 +31,9 @@ EDITS = [
         "  int StatRet = (Follow ? ::stat : ::lstat)(P.begin(), &Status);",
         "  int StatRet = (Follow ? __harvey_stat : ::lstat)(P.begin(), &Status);",
     ),
+    # Harvey has no /proc/self/exe and no dyld; the driver is always started
+    # with a path, so resolve argv[0].  Without this InstalledDir is empty and
+    # the driver cannot find its own cc1 or its resource directory.
     (
         "llvm/lib/Support/Unix/Path.inc",
         "std::string getMainExecutable(const char *argv0, void *MainAddr) {\n"
@@ -44,6 +51,28 @@ EDITS = [
         "  }\n"
         "#endif\n"
         "#if defined(__APPLE__)",
+    ),
+    # libc++'s filesystem needs fs_stat/fs_fstat because `using ::stat;` would
+    # name the macro and `detail::stat(...)` would expand inside the namespace.
+    (
+        "libcxx/src/filesystem/posix_compat.h",
+        "using ::fstat;",
+        "inline int fs_fstat(int __fd, struct stat *__st) { return ::__fstat(__fd, __st); }",
+    ),
+    (
+        "libcxx/src/filesystem/posix_compat.h",
+        "using ::stat;",
+        "inline int fs_stat(const char *__p, struct stat *__st) { return ::__stat_ap(__p, __st); }",
+    ),
+    (
+        "libcxx/src/filesystem/file_descriptor.h",
+        "  if (detail::stat(p.c_str(), &path_stat) == -1)",
+        "  if (detail::fs_stat(p.c_str(), &path_stat) == -1)",
+    ),
+    (
+        "libcxx/src/filesystem/file_descriptor.h",
+        "  if (detail::fstat(fd, &m_stat) == -1)",
+        "  if (detail::fs_fstat(fd, &m_stat) == -1)",
     ),
 ]
 

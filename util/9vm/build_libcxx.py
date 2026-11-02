@@ -28,6 +28,7 @@ LIBCXX = Path(os.environ.get(
     "LIBCXX_SRC", REPO_ROOT.parent / "llvm-project" / "libcxx")).resolve()
 LIBCXXABI = LIBCXX.parent / "libcxxabi"
 LIBUNWIND = LIBCXX.parent / "libunwind"
+COMPILER_RT = LIBCXX.parent / "compiler-rt" / "lib" / "builtins"
 APEX = REPO_ROOT / "apex"
 BUILD = REPO_ROOT / "build" / "libcxx"
 INCLUDE = BUILD / "include"
@@ -42,6 +43,7 @@ TEST_THREADS_CPP = REPO_ROOT / "util" / "libcxx" / "test_threads.cpp"
 TEST_THREADS_ELF = BUILD / "test_threads.elf"
 
 CXX = "clang++"
+CC = "clang"
 AR = "llvm-ar"
 VM = REPO_ROOT / "util" / "9vm" / "9vm"
 KERNEL = REPO_ROOT / "build" / "harvey.32bit"
@@ -50,8 +52,6 @@ LIBUNWIND_A = LIBDIR / "libunwind.a"
 
 # libc++ sources that make std::string/vector/map and their support work.
 # Deliberately excluded for now:
-#   filesystem/* - the headers are enabled so that <fstream> exists, but the
-#                  std::filesystem library itself is not built yet
 #   charconv  - this libc++ snapshot's src/include/shared/fp_bits.h is missing
 #   thread/mutex/condition_variable - APEX has no pthread layer yet
 #   locale/iostream/filesystem - disabled in __config_site
@@ -89,6 +89,14 @@ SOURCES = [
     "iostream",
     "fstream",
     "strstream",
+    "filesystem/filesystem_clock",
+    "filesystem/filesystem_error",
+    "filesystem/path",
+    "filesystem/directory_entry",
+    "filesystem/directory_iterator",
+    "filesystem/operations",
+    # __divti3 and friends for the 128-bit arithmetic in the filesystem clock.
+    "filesystem/int128_builtins",
 ]
 
 CONFIG_SITE = """\
@@ -177,6 +185,25 @@ def base_flags(library: bool) -> list[str]:
     return flags
 
 
+def c_flags():
+    """Flags for the handful of compiler-rt builtins we compile (C)."""
+    return [
+        "-target", "x86_64-unknown-linux-elf",
+        "-std=c11",
+        "-nostdinc",
+        "-mno-red-zone",
+        "-fno-stack-protector",
+        "-O2",
+        "-g",
+        f"-I{REPO_ROOT / 'util' / 'clang-harvey' / 'target-include'}",
+        f"-I{APEX / 'include'}",
+        f"-I{APEX / 'amd64' / 'include'}",
+        "-D_SUSV2_SOURCE", "-D_POSIX_SOURCE", "-D_LIMITS_EXTENSION",
+        "-D_GNU_SOURCE", "-DHARVEY",
+        "-include", str(INCLUDE / "compat.h"),
+    ]
+
+
 def build_library():
     objects = []
     for name in SOURCES:
@@ -221,6 +248,15 @@ def build_library():
         obj = OBJDIR / f"cxa_{name}.o"
         run([CXX, *exc_flags, "-c", str(src), "-o", str(obj)])
         objects.append(obj)
+
+    # 128-bit division, used by std::filesystem's clock conversion.  These are
+    # compiler-rt builtins; Harvey has no compiler-rt runtime otherwise.
+    for name in ("divti3", "udivti3", "modti3", "umodti3", "udivmodti4"):
+        src = COMPILER_RT / f"{name}.c"
+        obj = OBJDIR / f"crt_{name}.o"
+        run([CC, *c_flags(), f"-I{COMPILER_RT}", "-c", str(src), "-o", str(obj)])
+        objects.append(obj)
+
 
     libm_obj = OBJDIR / "libm_stub.o"
     run([CXX, *base_flags(False), "-c",

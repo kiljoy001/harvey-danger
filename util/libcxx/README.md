@@ -84,8 +84,12 @@ RTTI **is** available: libc++ is built with `-frtti`, and
   TLS is one static array. This is enough for the libc++ headers and for
   LLVM built with `LLVM_ENABLE_THREADS=OFF`. Real `rfork`-backed threads are
   a separate rung.
-- **std::filesystem** — the `<filesystem>` headers are enabled (so `<fstream>`
-  exists) but the library itself is not built yet; using it fails to link.
+- **std::filesystem** — supported.  libc++'s own sources are patched to call
+  `__stat_ap`/`__fstat` directly (`apply-llvm-patches.py`), because defining
+  real `stat`/`fstat` symbols would capture Plan 9's three-argument `stat`
+  and recurse.  The `*at()` family is implemented over `fd2path` plus a small
+  fd-to-path table, and compiler-rt's 128-bit division builtins are compiled
+  in for the filesystem clock.
 - **locale data** — Harvey has one C locale; `locale_stub.cpp` implements the
   POSIX `*_l` entry points libc++ calls, plus `newlocale`/`uselocale`.
 - **libm** — APEX ships almost no math library, so `libm_stub.cpp` supplies
@@ -99,7 +103,7 @@ RTTI **is** available: libc++ is built with `-frtti`, and
 ## Next rungs
 
 1. Real `rfork`-backed threads so `std::thread` actually runs in parallel.
-2. `std::filesystem` library, and floating-point `charconv`.
+2. Floating-point `charconv`.
 3. `std::exception_ptr`/`std::nested_exception` round-trip tests, and
    `-fno-exceptions` builds of the library for size.
 

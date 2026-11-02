@@ -134,6 +134,10 @@ Apply `apply-llvm-patches.py` to a fresh LLVM checkout first:
 util/clang-harvey/apply-llvm-patches.py ~/Repo/llvm-project
 ```
 
+It patches LLVM Support (`stat`/`fstat`, `getMainExecutable`) and libc++'s
+filesystem (`fs_stat`/`fs_fstat`) — the latter because `using ::stat;` would
+name APEX's macro and `detail::stat(...)` would expand inside the namespace.
+
 ## What the target needs that APEX does not have
 
 `target-include/` shadows or supplies headers for the POSIX surface LLVM
