@@ -1,0 +1,84 @@
+# Minimal libc++ for Harvey/APEX
+
+This is the first rung of the Harvey C++ ladder: a real libc++ header tree and
+a small library that is enough for `std::string`, `std::vector`, and
+`std::map`. It builds a Harvey ELF and runs under 9vm.
+
+```sh
+util/9vm/build_libcxx.py --run
+```
+
+The smoke test prints:
+
+```text
+hello 2 2 42 42
+[init] PID 1 exited cleanly (), shutting down.
+libc++ smoke test passed
+```
+
+It is deliberately not a full libc++ port yet.
+
+## What the build does
+
+- copies the libc++ headers into `build/libcxx/include/c++/v1` (API version 1,
+  namespace `std::__1`),
+- generates `__config_site` with threads, exceptions, RTTI, localization,
+  wide characters, filesystem, random-device and time-zone support off,
+- compiles the subset of libc++ sources needed by the containers:
+  `string`, `stdexcept`, `exception`, `typeinfo`, `functional`, `memory`,
+  `hash`, `algorithm`, `any`, `optional`, `variant`, `new_handler`,
+  `new_helpers`, `verbose_abort`,
+- builds `build/libcxx/lib/libc++.a`, including `compat.o`,
+- links `util/libcxx/test_stl.cpp` against APEX (`crt0.o`, `libap.a`,
+  `libc.a`, `libcxxabi.a`) and runs it with 9vm.
+
+`ucc`'s C++ mode picks the tree up automatically when it exists:
+
+```sh
+HARVEY=$HOME/Repo/harvey $HOME/Repo/ucc/c++ util/libcxx/test_stl.cpp \
+    -o build/libcxx/test_ucxx.elf
+util/9vm/9vm -boot build/libcxx/test_ucxx.elf build/harvey.32bit
+```
+
+The `-boot` path must be inside the Harvey checkout because 9vm's hostfs
+resolves it relative to the host root.
+
+## APEX compatibility shim
+
+APEX's C headers predate C11 and carry a few Plan 9-isms. `compat.h` and
+`compat.cpp` fill the gaps until they move into APEX proper:
+
+- `lldiv_t` / `lldiv`
+- `max_align_t`
+- `int_fast16_t`, `int_fast32_t`, `uint_fast16_t`, `uint_fast32_t`
+- `strtof` / `strtold` (currently via `strtod`, so float precision is
+  approximate)
+- `#define remove __remove` is undone so `std::ranges::remove` is not a macro
+  casualty; `remove()` is re-declared and forwarded to `__remove`
+- C++17 aligned `operator new`/`delete` (the APEX `libcxxabi` stub only has
+  the unaligned forms)
+
+## Deliberately off for now
+
+- **Exceptions** — built with `-fno-exceptions`; libc++ aborts instead of
+  throwing.
+- **RTTI** — built with `-fno-rtti`.
+- **Threads** — APEX has no pthread layer yet; `std::thread`, `mutex`, and
+  `condition_variable` are unavailable.
+- **iostream/locale** — no `std::cout`, `std::locale`, or locale-dependent
+  string conversions.
+- **Filesystem** — `std::filesystem` is disabled.
+- **charconv** — this libc++ snapshot's `src/include/shared/fp_bits.h` is
+  missing, so `charconv.cpp` is skipped. `std::to_string` and the integer
+  paths used by `<string>` still work.
+
+## Next rungs
+
+1. `pthread` / `std::thread` / `mutex` / `condition_variable`.
+2. Real `libc++abi` + `libunwind`, then enable `-fexceptions` and `-frtti`.
+3. `iostream`/locale, `charconv`, and `std::filesystem`.
+4. Boost.Filesystem/Thread/ProgramOptions, then LevelDB.
+5. Emercoin's configure/build, once the dependency ladder is real.
+
+The compiler is still the **cross** path: `ucc` drives host `clang++` with the
+APEX sysroot. A native C++ compiler on Harvey is a separate project.
