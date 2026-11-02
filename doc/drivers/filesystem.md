@@ -57,44 +57,74 @@ port and is deliberately deferred.
 
 ## The layout in use
 
-```
-/       ext2 on eMMC, mounted -r     immutable system image
-/tmp    #@, the kernel RAM fs        volatile scratch
-/mnt    #@, the kernel RAM fs        mounts and scratch
-/dev /env /srv /proc   kernel devices, rebound after re-root
-```
-
-`ext2srv` is started with `-r`, so it opens the card `OREAD` and never
-writes the superblock: the filesystem stays clean, `-F` is not needed,
-and a power cut cannot corrupt it.  Writes to `/` now fail with
-`read-only file system` instead of being buffered and lost.
-
-Because the root is read-only, every mount point has to exist in the
-image.  `util/arm64/mkrootfs.py` builds it from the boot archive and
-creates `/bin /boot /dev /env /fd /mnt /n /net /proc /root /srv /tmp`.
-
-## Measurements
-
-A full boot of the read-only layout, with the network up and a ping
-answered:
+A 233 GiB card that is under 10% worn does not need to be read-only.
+The write budget is large, so the design is a normal split: a small
+system filesystem and a large data filesystem, both writable.
 
 ```
-msize 65536
-read 823808 bytes in 805 requests
-write 0 bytes in 0 requests
+/        ext2, 128 MiB, sector 0x8000     system
+/mnt/data  ext2, 200 GiB, sector 0x48000  data, writable
+/tmp /mnt  #@, the kernel RAM filesystem  scratch
 ```
 
-Zero bytes written to the card for the whole boot.  The boot self-test
-now reads instead of writing; the old write test is behind
-`/env/emmcwtest` for when the write path needs exercising.
+`ext2srv` serves each partition from `emmcfs`'s `/partN`, init starts the
+data server before re-rooting and mounts it afterwards, and both mounts
+are read-write.
 
-## Persistent data
+Writes to the data partition are pushed to the card before the request
+is acknowledged (`syncbuf()` in `rwrite`), because that is where a
+program asked for durability.  `ext2srv -r` still exists for a
+read-only mount and now rejects create/write/remove/wstat with
+`read-only file system` instead of buffering them into a cache whose
+device is open `OREAD`.
 
-When the system needs storage that survives a power cycle, add a second
-partition and mount it read-write on demand.  Keep it small, keep the
-system image out of it, and leave `ext2srv`'s write-through `syncbuf()`
-in place for that mount: durability is worth the writes when a program
-explicitly asked for them.
+## Creating the data filesystem
+
+A fresh 200 GiB ext2 has only about 13 MiB of non-zero metadata, but
+TFTP cannot send a 200 GiB sparse file.  `util/arm64/mkmmcdata.py`
+builds the filesystem on the host, extracts the non-zero 4 KiB blocks,
+and packs them into one blob with a table of (partition block, count)
+runs.  `provision` then copies each run through `emmcfs`:
+
+```
+python3 util/arm64/mkmmcdata.py --size 200G --outdir /tmp/mmc
+# write /tmp/mmc/mbr.bin to sector 0 from U-Boot (two partitions)
+ARM64_MMCDATA=/tmp/mmc/datameta.bin python3 util/arm64/build_kernel.py
+# boot, init runs /boot/provision once, then skips it
+```
+
+`provision` is idempotent: it skips the partition when the superblock
+magic is present and the inode size matches what the blob creates.
+The blob is only in the boot archive for the provisioning build; a
+normal build leaves it out.
+
+Two things bit us and are worth remembering:
+
+- `ext2srv` assumes 128-byte inodes (`sizeof(Inode)`).  `mke2fs`
+  defaults to 256 for ext2 now, and the filesystem mounted as garbage
+  instead of failing.  `mkmmcdata.py` passes `-I 128`, and `ext2srv`
+  now refuses a superblock whose `s_inode_size` it cannot handle.
+- `emmcfs` exposes `/partN` with a **partition-relative** offset.  The
+  first version of the table stored card LBAs and wrote every run
+  144 MiB too far.
+
+## Endurance
+
+The card reports its own wear through `emmcfs`'s ctl:
+
+```
+wear pre-eol 1 type-a 1 type-b 0
+```
+
+`PRE_EOL_INFO 1` is normal and `1` in the type-A estimate means under
+10% of rated endurance used.  The boot self-test now reads instead of
+writing ~5 KiB of scratch blocks every boot; the write half is behind
+`/env/emmcwtest`.
+
+The eMMC also supports an enhanced (pseudo-SLC) area that trades
+capacity for endurance.  Setting it erases the card including the
+bootloader area, so it is only worth considering once the boot path no
+longer depends on this card's current contents.
 
 The eMMC also supports an enhanced (pseudo-SLC) area that trades
 capacity for endurance.  Setting it erases the card, including the

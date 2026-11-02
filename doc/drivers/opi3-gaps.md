@@ -48,7 +48,7 @@ signals that the board DTS does not describe.
 | CRU / GRF / PMUGRF | Substrate; clocks for UART/eMMC/VOP/USB/GMAC | More clock/reset coverage, DVFS coupling | P1 |
 | GIC / timer / MMU / DMA | Working substrate | Not drivers; keep out of the driver list | — |
 | IOMMU | VOP2 working | Other masters (VPU, VEPU, ISP, RGA, NPU) | P2 |
-| eMMC | HS200/ADMA2; MBR partitions; ext2 root, re-rooted at boot | fsck/sync policy, partition growth | P1 |
+| eMMC | HS200/ADMA2; MBR partitions; 128 MiB root + 200 GiB data at /mnt/data | fsck policy, unattended boot | P1 |
 | SD card (sdmmc0) | DTS enabled | No driver; second SDHCI instance | P2 |
 | SDIO (sdmmc1) | DTS enabled | No SDIO driver; WiFi/BT module | P2 |
 | GMAC1 / PHY | 10/100 Mbps link, `/net` up, ping passes | 1 Gbps: TX DMA underflow, no traffic (v1.1) | P2 |
@@ -156,12 +156,13 @@ complete, and init re-roots onto it: it mounts `/srv/ext2` on `/`, aliases
 `/boot` to `/bin` and rebinds `/dev`, `/env`, `/srv`, `/mnt` and `/proc`.
 A file written before a power cycle is still there afterwards.
 
-The root is mounted read-only, so a boot writes **zero bytes** to the card;
-`/tmp` and `/mnt` are the kernel RAM filesystem.  See
-[`filesystem.md`](filesystem.md) for the comparison behind that choice.
+Both filesystems are writable: a 128 MiB system image and a 200 GiB
+data partition mounted at `/mnt/data`, with `/tmp` and `/mnt` on the
+kernel RAM filesystem for scratch.  See [`filesystem.md`](filesystem.md)
+for how the data filesystem is created without transferring 200 GiB.
 
-What is left is a small read-write partition for persistent data, and
-growing the system partition beyond the first 128 MiB.
+What is left is unattended boot (the kernel and archive still arrive
+over TFTP) and an fsck story for the data partition.
 
 The SD slot is a convenience, not a prerequisite: eMMC is soldered and already
 works. Fix the root path before adding a second SDHCI instance.

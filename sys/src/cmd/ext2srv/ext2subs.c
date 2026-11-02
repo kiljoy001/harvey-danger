@@ -115,6 +115,23 @@ ext2fs(Xfs *xf)
 		errno = Eformat;
 		return -1;
 	}
+	/*
+	 * The inode table is walked with sizeof(Inode); a filesystem with
+	 * a different inode size would be read at the wrong offsets and
+	 * mount as garbage instead of failing.  s_inode_size sits at
+	 * offset 88 of the superblock and is meaningful from revision 1.
+	 */
+	{
+		u16 isize;
+
+		seek(xf->dev, OFFSET_SUPER_BLOCK + 88, 0);
+		if(read(xf->dev, &isize, 2) == 2 && isize != 0 &&
+		   isize != sizeof(Inode)){
+			chat("inode size %d unsupported...", isize);
+			errno = Eformat;
+			return -1;
+		}
+	}
 	if( !(superblock.s_state & EXT2_VALID_FS) ){
 		chat("fs not checked...");
 		if(!force){

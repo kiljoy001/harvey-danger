@@ -32,6 +32,7 @@ MKDIR_BASE = 0xAA00000
 MOUNT_BASE = 0xAE00000
 MOUNT9_BASE = 0xB200000
 EXT2SRV_BASE = 0xBA00000
+PROVISION_BASE = 0xBE00000
 RC_BASE = 0x2A00000
 ECHO_BASE = 0x2E00000
 CAT_BASE = 0x3200000
@@ -844,7 +845,7 @@ fail:
 static int
 emmcroot(void)
 {
-	char *ext2argv[] = { "/boot/ext2srv", "-r", "-f", "/mnt/emmc/part1",
+	char *ext2argv[] = { "/boot/ext2srv", "-F", "-f", "/mnt/emmc/part1",
 			     "ext2", nil };
 	int fd, pid;
 
@@ -866,6 +867,88 @@ emmcroot(void)
 		return -1;
 	}
 	close(fd);
+	return 0;
+}
+
+/*
+ * Format the data partition once, from the boot archive.  This runs
+ * before the re-root so the blob comes from the archive rather than
+ * from the ext2 root, where a 14 MiB file crosses the indirect-block
+ * boundary of the ext2 reader.  provision exits immediately when the
+ * partition already carries an ext2 superblock.
+ */
+static int
+provision(void)
+{
+	char *argv[] = { "/boot/provision", "/boot/datameta.bin",
+			 "/mnt/emmc/part2", nil };
+	int pid, ok;
+	Waitmsg *w;
+
+	if(access("/boot/datameta.bin", AEXIST) < 0)
+		return -1;
+	if(access("/mnt/emmc/part2", AEXIST) < 0)
+		return -1;
+	pid = rfork(RFPROC|RFFDG);
+	if(pid == 0){
+		exec("/boot/provision", argv);
+		_exits("exec");
+	}
+	if(pid < 0)
+		return -1;
+	w = wait();
+	if(w == nil)
+		return -1;
+	ok = w->msg[0] == 0;
+	free(w);
+	return ok ? 0 : -1;
+}
+
+/*
+ * Mount the large data partition at /mnt/data.  This runs after the
+ * re-root, so it re-attaches emmcfs (the /mnt of the new root is the
+ * RAM filesystem and knows nothing about the earlier mount).
+ */
+static int
+datamount(void)
+{
+	int fd;
+
+	create("/mnt/data", OREAD, DMDIR|0777);
+	fd = open("/srv/data", ORDWR);
+	if(fd < 0)
+		return -1;
+	if(mount(fd, -1, "/mnt/data", MREPL|MCREATE, "") < 0){
+		close(fd);
+		return -1;
+	}
+	close(fd);
+	return 0;
+}
+
+/*
+ * Start the server for the big data partition.  This has to happen
+ * before the re-root: starting a lib9p server after "/" has been
+ * replaced with the eMMC filesystem does not work in this kernel, and
+ * the same restriction is why rc cannot launch a new file server.
+ * Mounting later is just a mount(2) call and works fine.
+ */
+static int
+dataserve(void)
+{
+	char *dataargv[] = { "/boot/ext2srv", "-F", "-f", "/mnt/emmc/part2",
+			     "data", nil };
+	int pid;
+
+	if(access("/mnt/emmc/part2", AEXIST) < 0)
+		return -1;
+	pid = rfork(RFPROC|RFNOWAIT|RFFDG|RFREND);
+	if(pid == 0){
+		exec("/boot/ext2srv", dataargv);
+		_exits("exec");
+	}
+	if(pid < 0 || waitfor("/srv/data", 100) < 0)
+		return -1;
 	return 0;
 }
 
@@ -1000,9 +1083,17 @@ main(int argc, char **argv)
 			say("HARVEY-ARM64 EMMCFS PASS\n");
 			if(emmcroot() == 0){
 				say("HARVEY-ARM64 EMMC-ROOT PASS\n");
-				if(reroot() == 0)
+				if(provision() == 0)
+					say("HARVEY-ARM64 EMMC-PROVISION PASS\n");
+				if(dataserve() == 0)
+					say("HARVEY-ARM64 EMMC-DATASRV PASS\n");
+				if(reroot() == 0){
 					say("HARVEY-ARM64 EMMC-REROOT PASS\n");
-				else
+					if(datamount() == 0)
+						say("HARVEY-ARM64 EMMC-DATA PASS\n");
+					else
+						say("HARVEY-ARM64 EMMC-DATA SKIP\n");
+				}else
 					say("HARVEY-ARM64 EMMC-REROOT SKIP\n");
 			}else
 				say("HARVEY-ARM64 EMMC-ROOT SKIP\n");
@@ -1625,6 +1716,9 @@ main(int argc, char **argv)
 	exits(nil);
 }
 ''', RTC_BASE, libc)
+    provision, _ = build_elf(out, libc, "provision",
+                             ROOT / "sys/src/cmd/emmc/provision.c",
+                             PROVISION_BASE, [])
     emmc, _ = build_elf(out, libc, "emmc",
                         ROOT / "sys/src/cmd/emmc/emmc.c", EMMC_BASE, [])
     gmac, _ = build_elf(out, libc, "gmac",
@@ -1872,6 +1966,7 @@ main(int argc, char **argv)
         "ping": ping,
         "rtc": rtc,
         "emmc": emmc,
+        "provision": provision,
         "gmac": gmac,
         "sdprobe": sdprobe,
         "opteeprobe": keyrootprobe,
@@ -1885,6 +1980,9 @@ main(int argc, char **argv)
     }
     if args.ta is not None:
         programs["optee-keyroot.ta"] = args.ta.read_bytes()
+    mmcdata = os.environ.get("ARM64_MMCDATA")
+    if mmcdata:
+        programs["datameta.bin"] = Path(mmcdata).read_bytes()
     wcnfw = ROOT / "sys/src/cmd/sdio/wcnmodem.bin"
     if wcnfw.exists():
         programs["wcnmodem.bin"] = wcnfw.read_bytes()

@@ -28,6 +28,7 @@ DIRS = ("bin", "boot", "dev", "env", "fd", "mnt", "n", "net", "proc",
         "root", "srv", "tmp")
 MODES = {"tmp": "040777"}
 NONEXEC = ("rcmain", "wcnmodem.bin")
+SKIP = ("datameta.bin",)
 
 
 def archive_files(path: Path) -> dict[str, bytes]:
@@ -66,6 +67,8 @@ def build(archive: Path, output: Path, size: str, label: str) -> None:
             if d in MODES:
                 cmds.append(f"sif /{d} mode {MODES[d]}")
         for name, blob in sorted(files.items()):
+            if name in SKIP:
+                continue
             if "/" in name:
                 raise SystemExit(f"archive entry with a path: {name}")
             src = Path(tmp) / name
