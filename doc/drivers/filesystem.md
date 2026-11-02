@@ -38,22 +38,23 @@ even with nothing else happening:
 
 ## Candidates
 
-| Option | In tree | Write behaviour | Verdict |
-| --- | --- | --- | --- |
-| **ext2, read-only root** | `ext2srv` | none while mounted | **chosen** |
-| ext2, read-write root | `ext2srv` | in-place metadata, dirty bit per mount | rejected: churn and fsck need |
-| kfs | `sys/src/cmd/disk/kfs` | in-place metadata, write-back cache | no wear advantage, 9.3k lines to port |
-| fossil (+venti) | `sys/src/cmd/fossil` | copy-on-write, batched snapshots | best for a writable root, large port |
-| cwfs | `sys/src/cmd/cwfs` | cache + WORM, append-only | designed for optical; heavy |
-| dossrv (FAT) | `sys/src/cmd/dossrv` | in-place, no permissions | rejected |
-| f2fs / squashfs / UBIFS | no | Linux kernel filesystems | not usable: the fs lives in user space |
+| Option | Blocks | Write behaviour | Dependencies | Verdict |
+| --- | --- | --- | --- | --- |
+| ext2 (`ext2srv`) | 1-4 KiB | in-place metadata, now batched | in tree | **current**, wear-mitigated |
+| **gefs** | **16 KiB** | log-structured metadata, snapshots, hash check | libc, libbio, libauth, libavl (341 lines); own 9P | **best wear profile** |
+| hjfs | 4 KiB | cache + archival dump, 10 s sync | lib9p, libthread, libsec, libbio (all built) | easiest port |
+| fossil (+venti) | 4 KiB | copy-on-write, batched snapshots | libventi, 20k+ lines | large port |
+| cwfs | 4 KiB | cache + WORM, append-only | heavy, built for optical | no |
+| kfs | 1-4 KiB | in-place metadata | 9.3k lines | no advantage over ext2 |
+| dossrv (FAT) | 512 B- | in-place, no permissions | in tree | no |
+| f2fs / nilfs2 | - | NAND-aware / log-structured | Linux kernel only | not reachable |
 
-For an immutable system image there is nothing to gain from a
-log-structured or copy-on-write filesystem: the cheapest write is the
-one that never happens.  Fossil becomes interesting only if the system
-itself must be writable, because it turns every change into an
-append-only snapshot with a write-behind cache.  That is a much larger
-port and is deliberately deferred.
+The system filesystem is small and read-mostly, so ext2 with batching
+is adequate there; the wear risk sits on the large data partition,
+which is where a log-structured fileserver earns its keep.  A first
+read-only root was a mistake: it protected the image by making 200 GiB
+of the device unusable, which is not a trade worth making on a card
+that reports under 10% of its endurance used.
 
 ## The layout in use
 
@@ -161,55 +162,40 @@ The textbook answer for media with limited endurance is a
 log-structured or copy-on-write filesystem: everything is appended
 sequentially and metadata is never rewritten in place, so the FTL sees
 large sequential writes and does little garbage collection of its own.
-In tree, the candidates are:
-
-| Option | Behaviour | Cost |
-| --- | --- | --- |
-| ext2 + batching | in-place metadata, amortised | done |
-| fossil | copy-on-write, batched snapshots, write-behind | large port (libventi, snapshots) |
-| cwfs | cache + WORM, append-only | heavy, built for optical |
-| kfs | in-place, same as ext2 | no wear advantage |
-| f2fs / nilfs2 | NAND-aware / log-structured | Linux kernel only |
+Of the options in the table above, the cheap answer is to keep ext2 and
+batch, and the structural answer is gefs.
 
 The honest position: with relative atime and batched write-back this
 stack is fine for a read-mostly system, which is what it is.  If the
-write volume ever grows, the next step is a log-structured file server,
-and fossil is the one already in the tree.
+write volume ever grows, the next step is a log-structured file server.
+**Gefs is the right one**, not fossil:
+
+- 16 KiB blocks -- four to sixteen times fewer, larger writes than
+  ext2, which is what the FTL wants.
+- metadata goes through a log (`flushlog`), so block allocation and
+  inode updates are not rewritten in place one small region at a time.
+- every block is hashed (metrohash64, built in), so corruption is
+  detected rather than propagated.
+- it keeps a write-back cache of 25% of RAM by default (`-m`), so
+  bursts coalesce into sequential writes.
+- it has its own 9P server, so it does not need lib9p.
+
+Its only missing dependency is `libavl`, which is a single 341-line
+file plus a 26-line header.  That makes the port far smaller than
+fossil's.
+
+`hjfs` is the cheaper alternative: ~4k lines, and it already depends on
+lib9p, libthread, libsec and libbio, all of which this tree builds for
+ARM64 today.  It uses 4 KiB blocks, a write-back cache and a 10 second
+sync interval (`SYNCINTERVAL`), so it is also much kinder to the medium
+than per-request ext2, but its metadata is still updated in place.
+
+Either one also removes the need for the provisioning machinery: gefs
+reams with `-r` and grows to the partition with `-g`, and hjfs reams
+with `-r`, so a 200 GiB partition is built on the card instead of being
+generated on the host and transferred.
 
 The eMMC also supports an enhanced (pseudo-SLC) area that trades
 capacity for endurance.  Setting it erases the card including the
 bootloader area, so it is only worth considering once the boot path no
 longer depends on this card's current contents.
-
-## Is ext2 the right filesystem for this?
-
-ext2 is an in-place filesystem: a create or a rename rewrites the block
-bitmap, the inode bitmap, the group descriptor, the directory block and
-the inode.  Batching amortises that across a burst and relative atime
-removes the read side, which is most of what this system does, but the
-per-flush cost stays.
-
-The textbook answer for media with limited endurance is a
-log-structured or copy-on-write filesystem: everything is appended
-sequentially and metadata is never rewritten in place, so the FTL sees
-large sequential writes and does little garbage collection of its own.
-In tree, the candidates are:
-
-| Option | Behaviour | Cost |
-| --- | --- | --- |
-| ext2 + batching | in-place metadata, amortised | done |
-| fossil | copy-on-write, batched snapshots, write-behind | large port (libventi, snapshots) |
-| cwfs | cache + WORM, append-only | heavy, built for optical |
-| kfs | in-place, same as ext2 | no wear advantage |
-| f2fs / nilfs2 | NAND-aware / log-structured | Linux kernel only |
-
-The honest position: with relative atime and batched write-back this
-stack is fine for a read-mostly system, which is what it is.  If the
-write volume ever grows, the next step is a log-structured file server,
-and fossil is the one already in the tree.
-
-The eMMC also supports an enhanced (pseudo-SLC) area that trades
-capacity for endurance.  Setting it erases the card, including the
-bootloader area, so it is not something to do casually; it is worth
-considering only after the boot path no longer depends on this card's
-current contents.
