@@ -107,6 +107,7 @@ struct Vqueue {
 	Vused  *usedent;
 	u16    *usedevent;
 	u16    lastused;
+	int    notifyoff;   /* cached from Vconf_queuenotifyoff */
 };
 
 typedef struct Ctlr Ctlr;
@@ -202,7 +203,7 @@ ethervirtionotify(Vqueue *q)
 
 	if(c == nil || (q->used->flags & 1) != 0)
 		return;
-	off = c->notifyoffmult * vin16(&c->cfg, Vconf_queuenotifyoff);
+	off = q->notifyoff;
 	if(c->notify.type == Vio_port)
 		outs(c->notify.port + off, q->idx);
 	else
@@ -437,6 +438,8 @@ ethervirtioreset(Ether *edev)
 	int rx_size = vin16(&c->cfg, Vconf_queuesize);
 	if(rx_size == 0 || rx_size > Qsize)
 		rx_size = Qsize;
+	/* The device must use the size the driver actually programmed. */
+	vout16(&c->cfg, Vconf_queuesize, rx_size);
 	c->rxq = mkvqueue(rx_size);
 	if(c->rxq == nil){
 		free(c);
@@ -444,6 +447,7 @@ ethervirtioreset(Ether *edev)
 	}
 	c->rxq->idx = 0;
 	c->rxq->c = c;
+	c->rxq->notifyoff = c->notifyoffmult * vin16(&c->cfg, Vconf_queuenotifyoff);
 	vout64(&c->cfg, Vconf_queuedesc, PADDR(c->rxq->desc));
 	vout64(&c->cfg, Vconf_queueavail, PADDR(c->rxq->avail));
 	vout64(&c->cfg, Vconf_queueused, PADDR(c->rxq->used));
@@ -454,6 +458,7 @@ ethervirtioreset(Ether *edev)
 	int tx_size = vin16(&c->cfg, Vconf_queuesize);
 	if(tx_size == 0 || tx_size > Qsize)
 		tx_size = Qsize;
+	vout16(&c->cfg, Vconf_queuesize, tx_size);
 	c->txq = mkvqueue(tx_size);
 	if(c->txq == nil){
 		free(c->rxq);
@@ -462,6 +467,7 @@ ethervirtioreset(Ether *edev)
 	}
 	c->txq->idx = 1;
 	c->txq->c = c;
+	c->txq->notifyoff = c->notifyoffmult * vin16(&c->cfg, Vconf_queuenotifyoff);
 	vout64(&c->cfg, Vconf_queuedesc, PADDR(c->txq->desc));
 	vout64(&c->cfg, Vconf_queueavail, PADDR(c->txq->avail));
 	vout64(&c->cfg, Vconf_queueused, PADDR(c->txq->used));
