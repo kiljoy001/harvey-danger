@@ -166,8 +166,6 @@ etheriq(Ether *ether, Block *bp, int fromwire)
 	len = BLEN(bp);
 	type = (pkt->type[0] << 8) | pkt->type[1];
 	fx = 0;
-	if(type == 0x800)
-		print("etheriq: ipv4 len %d tome?\n", (int)len);
 	ep = &ether->Netif.f[Ntypes];
 
 	multi = pkt->d[0] & 1;
@@ -206,8 +204,6 @@ etheriq(Ether *ether, Block *bp, int fromwire)
 					}
 					if(fromwire && fx == 0){
 						fx = f;
-						print("etheriq: match f=%p type=%d len=%d\n",
-							f, f->type, (int)len);
 						continue;
 					}
 					xbp = iallocb(len);

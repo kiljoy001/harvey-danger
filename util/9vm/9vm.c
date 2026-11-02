@@ -819,6 +819,9 @@ static void *virtio_9p_async_reader(void *arg);
 
 #define VIRTIO_NET_BAR0_ADDR 0xFEB01000ULL
 
+/* Must match Qsize in sys/src/9/port/ethervirtio.c. */
+#define VNET_QSIZE 64
+
 struct vnet_queue {
     uint64_t desc;
     uint64_t avail;
@@ -991,40 +994,63 @@ vnet_rx(struct virtio_net *vn) {
     avail = vnet_u16(vn, avail_pa + 2);
     last = q->last_avail;
     if (getenv("VM_TRACE_NET") && last != avail)
-        fprintf(stderr, "[vnet] tx enabled=%d qsize=%u last=%u avail=%u\n",
-                q->enabled, qsize, last, avail);
+        fprintf(stderr, "[vnet] rx poll qsize=%u last=%u avail=%u used=%u\n",
+                qsize, last, avail, vnet_u16(vn, used_pa + 2));
     while (last != avail) {
         head = vnet_u16(vn, avail_pa + 4 + (last % qsize) * 2);
-        last++;
-        if (head >= qsize)
+        if (head >= qsize) {
+            last++;
             continue;
+        }
         d0 = vnet_u64(vn, desc_pa + head * 16);
         l0 = vnet_u32(vn, desc_pa + head * 16 + 8);
         uint16_t flags0 = vnet_u16(vn, desc_pa + head * 16 + 12);
         uint16_t next0 = vnet_u16(vn, desc_pa + head * 16 + 14);
-        if (getenv("VM_TRACE_NET"))
-            fprintf(stderr, "[vnet] rx head=%u flags=%#x next=%u l0=%u\n",
-                    head, flags0, next0, l0);
-        if ((flags0 & 3) != 3 || next0 >= qsize)
+        d1 = 0;
+        l1 = 0;
+        int ok = 0;
+        if ((flags0 & 3) == 3 && next0 < qsize && l0 >= 12) {
+            d1 = vnet_u64(vn, desc_pa + next0 * 16);
+            l1 = vnet_u32(vn, desc_pa + next0 * 16 + 8);
+            ok = l1 != 0 && vnet_range(vn, d0, 12) &&
+                 vnet_range(vn, d1, l1);
+        }
+        if (!ok) {
+            /*
+             * Not a usable two-descriptor rx chain.  Complete it anyway so
+             * the guest sees the used entry and recycles the descriptor;
+             * otherwise the ring leaks a slot on every malformed chain.
+             */
+            if (getenv("VM_TRACE_NET"))
+                fprintf(stderr, "[vnet] rx bad head=%u flags=%#x next=%u l0=%u l1=%u\n",
+                        head, flags0, next0, l0, l1);
+            vnet_used(vn, used_pa, qsize, head, 0);
+            vnet_irq(vn);
+            last++;
             continue;
-        d1 = vnet_u64(vn, desc_pa + next0 * 16);
-        l1 = vnet_u32(vn, desc_pa + next0 * 16 + 8);
-        if (l0 < 12 || !vnet_range(vn, d0, 12) || !vnet_range(vn, d1, l1))
-            continue;
+        }
         n = read(vn->tapfd, frame, sizeof(frame));
-        if (getenv("VM_TRACE_NET") && n > 0)
+        if (n <= 0) {
+            /*
+             * EAGAIN (or a short read).  Do not consume the descriptor:
+             * the guest posted it and expects a used entry for it.  Burning
+             * it here silently drains the rx ring and deadlocks the link.
+             */
+            break;
+        }
+        last++;
+        if (getenv("VM_TRACE_NET"))
             fprintf(stderr, "[vnet] rx read n=%zd head=%u eth=%02x:%02x:%02x:%02x:%02x:%02x type=%02x%02x\n",
                     n, head, frame[0], frame[1], frame[2], frame[3], frame[4], frame[5],
                     frame[12], frame[13]);
-        if (n <= 0) {
-            q->last_avail = last - 1;
-            break;
-        }
         if ((size_t)n > l1)
             n = l1;
         memset(vn->ram + d0, 0, 12);
         memmove(vn->ram + d1, frame, n);
         vnet_used(vn, used_pa, qsize, head, (uint32_t)n + 12);
+        if (getenv("VM_TRACE_NET"))
+            fprintf(stderr, "[vnet] rx used head=%u len=%u used_idx=%u\n",
+                    head, (uint32_t)n + 12, vnet_u16(vn, used_pa + 2));
         vnet_irq(vn);
     }
     q->last_avail = last;
@@ -1050,19 +1076,24 @@ vnet_mmio_write(struct virtio_net *vn, uint64_t addr,
     if (off == 0x14 && len >= 1 && vn->bar0[0x14] == 0) {
         memset(&vn->rxq, 0, sizeof(vn->rxq));
         memset(&vn->txq, 0, sizeof(vn->txq));
-        vn->rxq.size = vn->txq.size = 16;
+        vn->rxq.size = vn->txq.size = VNET_QSIZE;
+        vn->bar0[0x18] = VNET_QSIZE;
         vn->bar0[0x200] = 0;
         return;
     }
     if (off == 0x16 && len >= 2) {
-        /* queue select is kept in bar0; sizes are fixed at 16 */
+        /* Queue select: publish the size of the newly selected queue. */
+        struct vnet_queue *q = (vn->bar0[0x16] & 1) ? &vn->txq : &vn->rxq;
+        if (q->size == 0 || q->size > VNET_QSIZE)
+            q->size = VNET_QSIZE;
+        *(uint16_t *)(vn->bar0 + 0x18) = q->size;
         return;
     }
     if (off == 0x18 && len >= 2) {
         struct vnet_queue *q = (vn->bar0[0x16] & 1) ? &vn->txq : &vn->rxq;
         q->size = *(uint16_t *)(vn->bar0 + 0x18);
-        if (q->size == 0 || q->size > 256)
-            q->size = 16;
+        if (q->size == 0 || q->size > VNET_QSIZE)
+            q->size = VNET_QSIZE;
         return;
     }
     if (off == 0x1c && len >= 2) {
@@ -1143,9 +1174,9 @@ vnet_init(struct virtio_net *vn, int vm, uint8_t *ram, size_t ram_size, int tapf
     vn->irq = 11;
     vn->bar0[0x04] = 0x20; /* MAC */
     vn->bar0[0x06] = 0x01; /* STATUS */
-    vn->bar0[0x18] = 16;
-    vn->rxq.size = 16;
-    vn->txq.size = 16;
+    vn->bar0[0x18] = VNET_QSIZE;
+    vn->rxq.size = VNET_QSIZE;
+    vn->txq.size = VNET_QSIZE;
     vn->bar0[0x12] = 1;
     vn->bar0[0x10] = 0xff;
     vn->bar0[0x1a] = 0xff;

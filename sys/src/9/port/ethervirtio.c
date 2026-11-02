@@ -342,8 +342,8 @@ ethervirtiointr(Ureg *ur, void *arg)
 				freeb(b);
 			}
 
-			/* Replenish slot */
-			Block *nb = allocb(ETHERMAXTU + 64);
+			/* Replenish slot; this runs in interrupt context. */
+			Block *nb = iallocb(ETHERMAXTU + 64);
 			if(nb != nil){
 				c->rx_blocks[id] = nb;
 				int d0 = id * 2;
