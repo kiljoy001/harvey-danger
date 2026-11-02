@@ -19,6 +19,9 @@ int main(void) {
         return 1;
     }
 
+    /* Harvey's root is read-only, so point clang at a writable temp dir. */
+    setenv("TMPDIR", "/n/host/build/clang-harvey/tmp", 1);
+
     int pid = fork();
     if (pid < 0) {
         perror("fork");

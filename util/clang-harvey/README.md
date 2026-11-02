@@ -165,6 +165,11 @@ Runtime pieces live in `util/libcxx/compat.{h,cpp}` and
 Running a compiler and linker on Harvey needed three runtime pieces that APEX
 was missing.  They live in APEX now, not in a shim:
 
+- **Environment across `exec`.** `execve()` starts with `rfork(RFCENVG)` and
+  then rebuilds `#e` *from `environ`* — but `putenv()` only wrote `/env/NAME`,
+  never `environ`, so any variable set with it vanished at the next `exec`.
+  `putenv`/`setenv`/`unsetenv` now maintain `environ` (and still mirror into
+  `#e`), which is what lets the harness hand `TMPDIR` to the driver.
 - **TLS.** APEX never set the FS base, so any `thread_local` access faulted at
   address 0 (lld links with a PT_TLS segment). `__libc_start_main` now reads
   PT_TLS back through `#p/<pid>/text`, copies the `.tdata` initialiser image,
@@ -182,10 +187,7 @@ was missing.  They live in APEX now, not in a shim:
 1. Make `getMainExecutable` more robust. The patch resolves `argv[0]`, so the
    driver must be started with a path. A real `/proc/self/exe` equivalent, or
    passing the image path through the environment, would fix bare `clang++`.
-2. Propagate the environment across `exec`. Harvey drops it, so `TMPDIR` and
-   friends cannot be set for a tool the driver spawns. clang works around it
-   by defaulting to `/tmp`, which is why the SDK creates one.
-3. Add a Harvey toolchain to Clang instead of a config file, so the paths are
+2. Add a Harvey toolchain to Clang instead of a config file, so the paths are
    baked in and `x86_64-unknown-harvey` is a real target.
-4. A native `as`/`objdump` and the rest of the binutils story.
-5. `std::filesystem` needs its library built; the headers alone are enabled.
+3. A native `as`/`objdump` and the rest of the binutils story.
+4. `std::filesystem` needs its library built; the headers alone are enabled.
