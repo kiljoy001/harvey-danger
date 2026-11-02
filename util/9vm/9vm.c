@@ -2096,8 +2096,10 @@ int main(int argc, char **argv) {
         initrd_len = (uint32_t)ist.st_size;
         /* Right after the kernel image, inside the direct map. */
         initrd_pa = (uint32_t)((kernel_end_pa + 0xfff) & ~0xfffULL);
-        if (initrd_pa < 0x200000) {
-            fprintf(stderr, "[9vm] no room for initrd\n");
+        uint64_t top = ram_size - (use_hostring ? P9_HOST_REGION_SIZE : 0);
+        if (initrd_pa < 0x200000 ||
+            (uint64_t)initrd_pa + initrd_len > top) {
+            fprintf(stderr, "[9vm] initrd does not fit below the guest RAM top\n");
             return 1;
         }
         ssize_t got = read(ifd, ram + initrd_pa, initrd_len);
