@@ -364,3 +364,28 @@ booti 0x40080000 - 0x48000000
 The boot archive at `0x50000000` is a fixed address (`BootarchiveAddr`
 in `sys/src/9/aarch64/main.c`), not an initrd: the third `booti`
 argument stays `-`.
+
+## U-Boot clock capture (2026-11-02)
+
+After `mii info` at the U-Boot prompt, the GMAC clock tree is already
+programmed:
+
+```text
+CLKSEL_CON(80)   0x00000f07   cpll_125m divider /8
+CLKGATE_CON(35)  0x00000000   cpll_125m gate on
+CLKSEL_CON(33)   0x00000020   10 Mbps RGMII divider
+CLKGATE_CON(17)  0x00000000   GMAC gates on
+mii info         PHY 0x00/0x01 detected
+fe010000         all zero
+```
+
+`mii info` proves U-Boot can reach the PHY through MDIO, but the GMAC
+register block still reads zero, and the reset release inside Harvey
+locks the kernel.  This is no longer a clock-tree gap: the v1.1 MAC
+block is only usable while U-Boot's live network state is present, and
+the kernel cannot reproduce that state safely.
+
+Treat v1.1 Ethernet as a board-level limitation until the live U-Boot
+GMAC state can be captured during TFTP or a Linux `devmem` reference is
+taken on the vendor image.  Do not spend more time on the generic
+RK3568 clock setup; it is already correct.
