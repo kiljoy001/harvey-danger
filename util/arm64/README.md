@@ -200,6 +200,15 @@ already classifies the board's peripherals from the device tree through `#P`,
 so each driver discovers its live base addresses from `#P`, maps the MMIO with
 `segattach` (the resource grant), and serves 9P.
 
+That discovery, mapping, 9P-tree and health boilerplate is the driver kit:
+`sys/include/drv.h` and `sys/src/cmd/drvkit/drv.c`. A new driver calls
+`drvfind`/`drvmap`, keeps its register code, describes its files as `DrvFile`
+entries and posts them with `drvsrv`; `drvhealthrun` keeps it in `drvman`'s
+table. `uartfs` is the worked example, and
+[`sys/src/cmd/drvkit/README.md`](../../sys/src/cmd/drvkit/README.md) has the
+API, the 9front-to-drvkit mapping and the limits (no IOMMU isolation, one wait
+per interrupt, no PCI config space on amd64).
+
 The first driver is `gpiofs` (`sys/src/cmd/gpiofs/gpiofs.c`), served at
 `/srv/gpio`:
 
