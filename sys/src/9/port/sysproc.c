@@ -741,14 +741,16 @@ void
 syssleep(Ar0 *ar0, ...)
 {
 	Proc *up = externup();
-	i64 ms;
+	i32 ms;
 	va_list list;
 	va_start(list, ar0);
 
 	/*
 	 * int sleep(long millisecs);
+	 * Go's stub passes a 32-bit count in the low half of the
+	 * 64-bit syscall slot; do not consume the padding.
 	 */
-	ms = va_arg(list, i64);
+	ms = va_arg(list, i32);
 	va_end(list);
 
 	ar0->i = 0;
@@ -767,15 +769,15 @@ syssleep(Ar0 *ar0, ...)
 void
 sysalarm(Ar0 *ar0, ...)
 {
-	u64 ms;
+	u32 ms;
 	va_list list;
 	va_start(list, ar0);
 
 	/*
 	 * long alarm(unsigned long millisecs);
-	 * Odd argument type...
+	 * Go passes a 32-bit count; ignore the slot padding.
 	 */
-	ms = va_arg(list, u64);
+	ms = va_arg(list, u32);
 	va_end(list);
 
 	ar0->vl = procalarm(ms);
@@ -1280,19 +1282,20 @@ systsemacquire(Ar0 *ar0, ...)
 	Proc *up = externup();
 	Segment *s;
 	int *addr;
-	u64 ms;
+	u32 ms;
 	va_list list;
 	va_start(list, ar0);
 
 	/*
-	 * int tsemacquire(long* addr, u64 ms);
-	 * should be (and will be implemented below as) perhaps
-	 * int tsemacquire(int* addr, u64 ms);
+	 * int tsemacquire(long* addr, u32 ms);
+	 * The Plan 9 syscall slot is 64 bits, but the timeout is a
+	 * 32-bit millisecond count as passed by libc/Go; the upper
+	 * half may be padding and must not be treated as part of ms.
 	 */
 	addr = va_arg(list, int *);
 	addr = validaddr(addr, sizeof(int), 1);
 	evenaddr(PTR2UINT(addr));
-	ms = va_arg(list, u64);
+	ms = va_arg(list, u32);
 	va_end(list);
 
 	if((s = seg(up, PTR2UINT(addr), 0)) == nil)

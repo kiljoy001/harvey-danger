@@ -251,7 +251,14 @@ syscall(unsigned int scallnr, Ureg *ureg)
 	Proc *up = externup();
 	if(up->plan9){
 		u64 *a = (void *)ureg->sp;
-		scallnr = ureg->bp + 1024;
+		/*
+		 * Native Plan 9 a.out binaries carry the 9front syscall
+		 * number in BP.  systab is generated from sysconf.json with
+		 * SyscallBase ignored (0-based), so index it directly; the
+		 * old "+ 1024" belongs to the abandoned renumbering and
+		 * makes every a.out syscall out of range.
+		 */
+		scallnr = ureg->bp;
 		if(0)
 			print("up %p plan9 %d sp %#lx bp %#lx\n", up, up->plan9, ureg->sp, scallnr);
 		int i = 1;
