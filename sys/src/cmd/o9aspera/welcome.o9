@@ -8,12 +8,13 @@
 function WelcomeRun(int64 pages,
                     string t0, string a0, string b0, string c0, string d0,
                     string t1, string a1, string b1, string c1, string d1,
-                    string t2, string a2, string b2, string c2, string d2) int64 {
+                    string t2, string a2, string b2, string c2, string d2,
+                    string t3, string a3, string b3, string c3, string d3) int64 {
     int64 ok;
     c {
         extern int welcome_resized;
 
-        char *title[3], *line1[3], *line2[3], *line3[3], *line4[3];
+        char *title[4], *line1[4], *line2[4], *line3[4], *line4[4];
         Image *bg = nil, *accent = nil, *ink = nil, *muted = nil;
         Image *soft = nil, *dot = nil;
         Event e;
@@ -30,6 +31,9 @@ function WelcomeRun(int64 pages,
         title[2] = o9_string_cstr(t2); line1[2] = o9_string_cstr(a2);
         line2[2] = o9_string_cstr(b2); line3[2] = o9_string_cstr(c2);
         line4[2] = o9_string_cstr(d2);
+        title[3] = o9_string_cstr(t3); line1[3] = o9_string_cstr(a3);
+        line2[3] = o9_string_cstr(b3); line3[3] = o9_string_cstr(c3);
+        line4[3] = o9_string_cstr(d3);
 
         if(getenv("wsys") == nil){
             fprint(2, "welcome: no window system (run from Rio)\n");
@@ -132,23 +136,29 @@ function WelcomeRun(int64 pages,
 }
 
 main {
-    Task<int64> run = spawn WelcomeRun(3,
+    Task<int64> run = spawn WelcomeRun(4,
         "Welcome to Aspera",
         "Your desktop is Harvey, a Plan 9-derived system.",
-        "Each window is a process; the shell window is rc.",
+        "Every window is a process; the shell window is rc.",
+        "This tour shows how to use the desktop.",
+        "Click or press Enter to continue.",
+
+        "Using windows",
+        "Click a window to use it. Drag its title bar to move it.",
+        "Drag the box at the top left to resize it.",
+        "Hide, Maximize and Close sit at the right of the title bar.",
+        "The bar down the left side scrolls the window.",
+
+        "Mouse and clipboard",
+        "Left: click, and drag to select text.",
+        "Right in the text: paste the browser clipboard.",
+        "Right on the desktop or title bar: Rio's menu, with New,",
+        "Terminal, Resize, Move, Delete, Hide and Exit.",
+
+        "The shell is rc",
         "Type a command after the % prompt.",
-        "This tour has three short pages.",
-
-        "Getting around",
-        "Drag a window by its title bar to move it.",
-        "The box at the top left resizes it.  Try:  ls /net",
-        "cs and dns are running;  ping example.com  tests it.",
-        "Esc or a right click closes this window.",
-
-        "Files and the browser",
-        "/home, /tmp and /var live in browser RAM.",
-        "A reload starts from a clean desktop.",
-        "Downloads and uploads go through /n/host.",
-        "Nothing is stored on the server.");
+        "Try:  ls /net    ls /home    cat /dev/time",
+        "cs and dns are running;  ping example.com  tests the link.",
+        "A middle button is optional.  Esc closes this tour.");
     run.await();
 }
