@@ -131,6 +131,42 @@ combphyinit(void)
 }
 
 /*
+ * Power the RK3568 PD_PIPE domain and de-idle its NIU bus.
+ *
+ * The RK3568 clock tree groups ACLK_USB/PCLK_USB and the GMAC1 gates
+ * under a "PD_USB" comment, but the actual PM domain is PD_PIPE:
+ * power bit 8 in PMU_PWR_DWN_CON, idle request bit 11 in
+ * PMU_BUS_IDLE_CON.  GMAC1 is parented to ACLK_USB/PCLK_USB, so this
+ * must run before ethergmacinit(), not only when xHCI is opened.
+ */
+int
+rk3566pipepoweron(void)
+{
+	volatile u32 *pmu = (volatile u32 *)KADDR(PmuBase);
+	int i;
+
+	/* Clear PD_PIPE power-down (bit 8), write-mask bit 24. */
+	wm(pmu, 0xa0, 1U<<8, 0);
+	for(i = 0; i < 1000; i++){
+		if((pmu[0x98/4] & (1U<<8)) == 0)
+			break;
+		microdelay(10);
+	}
+	if(i == 1000)
+		return -1;
+
+	/* Clear the PD_PIPE idle request (bit 11), write-mask bit 27. */
+	wm(pmu, 0x50, 1U<<11, 0);
+	for(i = 0; i < 1000; i++){
+		if((pmu[0x60/4] & (1U<<11)) == 0 &&
+		   (pmu[0x68/4] & (1U<<11)) == 0)
+			break;
+		microdelay(10);
+	}
+	return i == 1000 ? -1 : 0;
+}
+
+/*
  * Put the selected DWC3 controller into host mode.  The sequence follows
  * the RK3568 Linux/U-Boot glue: PD_PIPE, CRU gates, resets, USB2 PHY,
  * VBUS, GCTL port capability, and the UTMI/PIPE interface registers.
@@ -140,7 +176,6 @@ dwc3init(void)
 {
 	volatile u32 *cru = (volatile u32 *)KADDR(CruBase);
 	volatile u32 *pmucru = (volatile u32 *)KADDR(PmucruBase);
-	volatile u32 *pmu = (volatile u32 *)KADDR(PmuBase);
 	volatile u32 *pmugrf = (volatile u32 *)KADDR(PmuGrfBase);
 	volatile u32 *grf0 = (volatile u32 *)KADDR(Usbgrf0Base);
 	volatile u32 *grf1 = (volatile u32 *)KADDR(Usbgrf1Base);
@@ -149,8 +184,8 @@ dwc3init(void)
 	u32 v;
 
 	/* PD_PIPE power on and idle request clear. */
-	wm(pmu, 0xa0, 1U<<8, 0);
-	wm(pmu, 0x50, 1U<<11, 0);
+	if(rk3566pipepoweron() < 0)
+		print("xhci: PD_PIPE power-on timeout\n");
 
 	/* ACLK_PIPE/PCLK_PIPE and USB3OTG1 gates. */
 	wm(cru, 0x328, (1U<<0)|(1U<<1)|(1U<<12)|(1U<<13)|(1U<<14), 0);

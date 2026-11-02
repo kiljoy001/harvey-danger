@@ -44,14 +44,14 @@ signals that the board DTS does not describe.
 | TRNG | FDT class recognized | No RK RNG driver | P1 |
 | Crypto engine | SoC block | No AES/SHA offload driver | P3 |
 | eFuse / OTP | Read via U-Boot/Linux only | No Harvey efuse driver; lot code is not a serial | P3 |
-| PMU power domains | PD_PIPE powered, PD_NPU probed | **PD_USB missing**; other domain policy absent | **P0** |
+| PMU power domains | PD_PIPE powered before GMAC, PD_NPU probed | Other domain policy absent; GMAC reset/IRQ ordering after PD_PIPE | **P0** |
 | CRU / GRF / PMUGRF | Substrate; clocks for UART/eMMC/VOP/USB/GMAC | More clock/reset coverage, DVFS coupling | P1 |
 | GIC / timer / MMU / DMA | Working substrate | Not drivers; keep out of the driver list | — |
 | IOMMU | VOP2 working | Other masters (VPU, VEPU, ISP, RGA, NPU) | P2 |
 | eMMC | HS200/ADMA2/9P works | Partition layer, filesystem, root mount | **P0** |
 | SD card (sdmmc0) | DTS enabled | No driver; second SDHCI instance | P2 |
 | SDIO (sdmmc1) | DTS enabled | No SDIO driver; WiFi/BT module | P2 |
-| GMAC1 / PHY | 10 Mbps works | PD_USB, 100/1000, PHY delay sweep | P1 |
+| GMAC1 / PHY | 10 Mbps only when bootloader leaves clocks; PD_PIPE now powered | Cold boot still `gmac: no phy`; GMAC reset/IRQ ordering; 100/1000 | P1 |
 | USB2 PHY0/1 + EHCI/OHCI | Board probe | No class drivers; OTG role | P1 |
 | USB3 xHCI | Root ports, control/bulk/interrupt, UAC1 probe | Hubs, HID, MSC, audio service, `#P` transport, pending-read cancellation | **P0** |
 | PCIe2x1 / combphy | FDT class recognized | No PCIe driver; M.2 NVMe | P2 |
@@ -99,7 +99,7 @@ signals that the board DTS does not describe.
 | USB3 host | USB3_HOST1, xHCI | Root ports work | HID/MSC/hubs, `#P` transport | **P0** |
 | USB2 host x2 | USB2_HOST2/3, EHCI/OHCI | Board probe | HID/MSC classes | P1 |
 | USB2 OTG / Type-C | `USB_OTG0`, `TYPEC1` power | PHY/regulator only | OTG role, CC/PD policy | P2 |
-| Ethernet RJ45 | GMAC1 + PHY | 10 Mbps | PD_USB, 100/1000 | P1 |
+| Ethernet RJ45 | GMAC1 + PHY | 10 Mbps with bootloader clocks only | GMAC reset/IRQ ordering, 100/1000 | P1 |
 | WiFi/BT | SDIO1 + UART1, wake GPIOs | WiFi CP/scan/WPA2; BT not driven | BT HCI, WiFi data path/link budget | P2/P3 |
 | Debug UART | UART2, 1500000 | Works | — | — |
 | Power input | DC 5 V / Type-C power | RK809 rails | No PD/CC policy | P3 |
@@ -124,13 +124,20 @@ signals that the board DTS does not describe.
 
 ## The three short paths
 
-### 1. PD_USB first
+### 1. PD_PIPE, then the GMAC reset ordering
 
 `doc/drivers/gmac-bringup.md` records the important fact: after U-Boot,
 `fe010000` reads zero and ignores writes while the GMAC clocks are parented
-to `aclk_usb`/`pclk_usb` in **PD_USB**. `devxhci.c` powers **PD_PIPE**, but
-not PD_USB. This one PMU change should improve both GMAC and USB, and it is
-much smaller than a new Ethernet driver.
+to `aclk_usb`/`pclk_usb` in the clock-tree group labelled **PD_USB**.
+The actual RK3568 PM domain is **PD_PIPE**. The kernel now powers PD_PIPE
+before `ethergmacinit()` and prints `PD_PIPE PASS`, but a cold boot still
+reports `gmac: no phy`.
+
+The next step is not another Ethernet driver: it is the GMAC release
+ordering. Forcing `CLKGATE_CON(17)` and `SOFTRST_CON(14)` deadlocks the
+kernel before the PHY probe. Mask the GMAC interrupt, deassert
+`SRST_A_GMAC1` alone, then add gates one at a time. See the detailed
+sequence in `gmac-bringup.md`.
 
 ### 2. Root filesystem, not another block driver
 

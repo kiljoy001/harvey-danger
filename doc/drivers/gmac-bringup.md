@@ -278,14 +278,45 @@ U-Boot's own TFTP and DHCP work in that same state, so this is not a
 dead PHY.  A block that ignores writes with its gate register reading
 "ungated" points at the clock **parent**, not the gate: on RK3568
 `aclk_gmac1` is parented to `aclk_usb` and `pclk_gmac1` to `pclk_usb`,
-both in **PD_USB** (`clk-rk3568.c`, "PD_USB" section).  If that domain
-is off, GMAC1 has no bus clock — and the same domain explains why the
-xHCI side is still only partially alive.
+both in the clock-tree group labelled **PD_USB** (`clk-rk3568.c`).  That
+label is not a separate RK3568 PM domain: the actual domain is
+**PD_PIPE** (PMU_PWR_DWN_CON bit 8, PMU_BUS_IDLE_CON bit 11).  If that
+domain is off, GMAC1 has no bus clock — and the same domain explains why
+the xHCI side is still only partially alive.
 
-So the next step is not in the Ethernet driver: it is to power PD_USB
+So the next step is not in the Ethernet driver: it is to power PD_PIPE
 (PMU power-domain registers) during device init, before `addethercard`.
 Until then the board has no `/net/ether0`, and `NET-ETH FAIL no free
 devices` is the expected result rather than a driver bug.
+
+## PD_PIPE result (2026-11-02)
+
+The kernel now powers PD_PIPE before `ethergmacinit()` and reports:
+
+```text
+HARVEY-ARM64 PD_PIPE PASS
+gmac: no phy
+```
+
+So PD_PIPE is necessary but not sufficient.  Forcing the GMAC gates
+(`CLKGATE_CON(17)` bits 2-6,10) and deasserting both GMAC resets
+(`SOFTRST_CON(14)` bits 12/13) before the PHY probe **deadlocks the
+kernel** before `gmac: no phy`, with a `lock ... held by qmalloc`
+panic.  That is not a bus timeout: it points at an interrupt or lock
+ordering problem during the GMAC release.
+
+Next steps, in order:
+
+1. Mask the GMAC interrupt at the MAC (`INT_EN`) and at the GIC before
+   releasing `SRST_A_GMAC1`, then deassert the reset alone.
+2. Verify the `CLK_MAC1_2TOP` parent/divider (`CLKSEL_CON(33)`) and the
+   PHY `CLK_OUT` path before enabling `CLK_MAC1_OUT`/`REF_OUT`.
+3. Add gates one at a time, starting with `ACLK_GMAC1`/`PCLK_GMAC1`.
+4. Only then retry 100/1000 Mbps.
+
+Do not apply the GMAC gate/reset writes until that ordering is
+understood; the PD_PIPE-only kernel boots and leaves the rest of the
+board usable.
 
 The U-Boot environment also still boots `aspera-arm64.img`; the working
 image is `aspera-usb.img`, loaded by hand:

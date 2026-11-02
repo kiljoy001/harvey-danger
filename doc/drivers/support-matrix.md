@@ -26,7 +26,7 @@ unsupported   no native driver; use a compatibility host or sponsor a port
 | eMMC | `#P` | SDHCI (dwcmshc) | emmc/emmcfs | `/srv/emmc` | partial | user-space PIO+ADMA2, HS200 8-bit |
 | SD card | `#P` | SDHCI (sdmmc0) | — | — | unsupported | slot not driven |
 | SPI NOR | `#P` | RK SFC | — | — | unsupported | boot flash not readable |
-| Ethernet | `#P` | GMAC/PHY | — | `/srv/net` | partial | kernel `#l`, 10 Mbps, ping works |
+| Ethernet | `#P` | GMAC/PHY | — | `/srv/net` | partial | kernel `#l`; 10 Mbps only when bootloader leaves clocks; PD_PIPE now powered, cold boot still `gmac: no phy` (GMAC reset/IRQ ordering) |
 | WiFi / BT | `#P` | SDIO/UART | — | — | experimental | CP boots, scans, WPA2 associates; data path blocked by link budget |
 | Audio codec | `#P` | RK809 codec + I2S | — | — | unsupported | analog out/in, headphone detect |
 | HDMI audio | `#P` | DW-HDMI | — | — | unsupported | — |

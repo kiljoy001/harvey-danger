@@ -77,6 +77,7 @@ extern u64 arm64teeshmbase, arm64teeshmsize;
 extern Dev etherdevtab, ipdevtab;
 extern void ethergmacinit(void);
 extern void ethermediumlink(void);
+extern int rk3566pipepoweron(void);
 extern Dev rootdevtab;
 extern Dev virtio9pdevtab;
 extern Dev ringdevtab;
@@ -272,6 +273,10 @@ initprocess(void *arg)
 	devtabinit();
 	consoleuartinit(bootinfo);
 	if(useruartbase == 0xfe660000ULL){
+		if(rk3566pipepoweron() < 0)
+			arm64uartputs("HARVEY-ARM64 PD_PIPE FAIL\n");
+		else
+			arm64uartputs("HARVEY-ARM64 PD_PIPE PASS\n");
 		ethergmacinit();
 		ethermediumlink();
 		etherdevtab.reset();
