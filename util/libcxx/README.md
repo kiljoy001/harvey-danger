@@ -60,9 +60,13 @@ APEX's C headers predate C11 and carry a few Plan 9-isms. `compat.h` and
 
 ## Deliberately off for now
 
-- **Exceptions** — built with `-fno-exceptions`; libc++ aborts instead of
-  throwing.
-- **RTTI** — built with `-fno-rtti`.
+- **Exceptions** — still `-fno-exceptions`; there is no unwinder yet, so
+  `throw`, `try`/`catch` and `<stdexcept>` cannot be used.
+
+RTTI **is** available: libc++ is built with `-frtti`, and
+`libcxxabi/src/private_typeinfo.cpp` (compiled into `libc++.a`) provides the
+`__class_type_info` hierarchy and `__dynamic_cast`.  `dynamic_cast<Ptr>` and
+`typeid` work; the reference form of `dynamic_cast` would need exceptions.
 - **Real threads** — `util/libcxx/pthread.{h,cpp}` is a single-threaded shim.
   `std::thread` runs its function synchronously, mutexes are counters, and
   TLS is one static array. This is enough for the libc++ headers and for
@@ -81,6 +85,12 @@ APEX's C headers predate C11 and carry a few Plan 9-isms. `compat.h` and
   paths used by `<string>` still work.
 
 ## Next rungs
+
+1. Exceptions: port libunwind (DWARF) plus libc++abi's `__cxa_*` runtime and
+   `__gxx_personality_v0`, then drop `-fno-exceptions`.
+2. Real `rfork`-backed threads so `std::thread` actually runs in parallel.
+3. `std::filesystem` library, and floating-point `charconv`.
+
 
 1. `pthread` / `std::thread` / `mutex` / `condition_variable`.
 2. Real `libc++abi` + `libunwind`, then enable `-fexceptions` and `-frtti`.

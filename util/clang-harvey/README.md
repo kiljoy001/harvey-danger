@@ -17,7 +17,7 @@ portability shims the Harvey target needs.
 
 | Piece | State |
 | --- | --- |
-| libc++ (containers, iostream, locale, threads shim) | builds and runs in 9vm |
+| libc++ (containers, iostream, locale, RTTI, threads shim) | builds and runs in 9vm |
 | `LLVMSupport` | builds for the Harvey target |
 | all LLVM/Clang libraries | build for the Harvey target |
 | native `clang` binary | **runs on Harvey and emits object files** |

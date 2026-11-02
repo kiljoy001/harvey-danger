@@ -26,6 +26,7 @@ REPO_ROOT = Path(os.environ.get(
     "HARVEY", Path(__file__).resolve().parents[2])).resolve()
 LIBCXX = Path(os.environ.get(
     "LIBCXX_SRC", REPO_ROOT.parent / "llvm-project" / "libcxx")).resolve()
+LIBCXXABI = LIBCXX.parent / "libcxxabi"
 APEX = REPO_ROOT / "apex"
 BUILD = REPO_ROOT / "build" / "libcxx"
 INCLUDE = BUILD / "include"
@@ -153,7 +154,7 @@ def base_flags(library: bool) -> list[str]:
         "-mno-red-zone",
         "-fno-stack-protector",
         "-fno-exceptions",
-        "-fno-rtti",
+        "-frtti",
         "-fno-threadsafe-statics",
         "-O2",
         "-g",
@@ -171,7 +172,6 @@ def base_flags(library: bool) -> list[str]:
         flags += [
             "-D_LIBCPP_BUILDING_LIBRARY",
             "-D_LIBCPP_HAS_NO_EXCEPTIONS",
-            "-D_LIBCPP_HAS_NO_RTTI",
         ]
     return flags
 
@@ -188,6 +188,17 @@ def build_library():
     compat_obj = OBJDIR / "compat.o"
     run([CXX, *base_flags(False), "-c", str(COMPAT_CPP), "-o", str(compat_obj)])
     objects.append(compat_obj)
+
+    # RTTI support: libc++abi's typeinfo implementation.  APEX's own
+    # libcxxabi stub has no typeinfo at all, and __dynamic_cast needs the
+    # __class_type_info hierarchy that private_typeinfo.cpp defines.
+    cxxabi_flags = [f for f in base_flags(False) if f != "-fno-rtti"]
+    cxxabi_flags += ["-frtti", f"-I{LIBCXXABI / 'include'}"]
+    for name in ("private_typeinfo", "cxa_aux_runtime", "abort_message"):
+        src = LIBCXXABI / "src" / f"{name}.cpp"
+        obj = OBJDIR / f"cxxabi_{name}.o"
+        run([CXX, *cxxabi_flags, "-c", str(src), "-o", str(obj)])
+        objects.append(obj)
 
     libm_obj = OBJDIR / "libm_stub.o"
     run([CXX, *base_flags(False), "-c",

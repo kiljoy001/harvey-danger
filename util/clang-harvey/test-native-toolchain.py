@@ -33,6 +33,9 @@ HELLO = """\
 #include <string>
 #include <vector>
 
+struct Shape { virtual ~Shape() {} };
+struct Square : Shape { int side = 3; };
+
 template <typename T>
 T sum(const std::vector<T> &v) {
     T total{};
@@ -49,8 +52,11 @@ int main() {
     for (int i : v)
         counts[std::to_string(i)]++;
 
+    Shape *shape = new Square;
+    Square *square = dynamic_cast<Square *>(shape);
     std::ostringstream out;
-    out << "sum=" << sum(v) << " distinct=" << counts.size();
+    out << "sum=" << sum(v) << " distinct=" << counts.size()
+        << " rtti=" << (square ? square->side : -1);
     std::printf("hello from harvey: %s\\n", out.str().c_str());
     return 0;
 }
@@ -84,14 +90,14 @@ def main():
                                  "panic", "fault", "suicide")):
             print("  " + line)
 
-    if "hello from harvey: sum=31 distinct=7" not in output:
+    if "hello from harvey: sum=31 distinct=7 rtti=3" not in output:
         sys.exit("the guest-linked program did not run")
     elf = BUILD / "hello"
     if not elf.is_file() or elf.stat().st_size == 0:
         sys.exit("ld.lld produced no executable")
     print(f"native toolchain: clang++ -> cc1 -> ld.lld -> {elf.name} "
           f"({elf.stat().st_size} bytes) ran and printed "
-          f"'hello from harvey: sum=31 distinct=7'")
+          f"'hello from harvey: sum=31 distinct=7 rtti=3'")
 
 
 if __name__ == "__main__":
