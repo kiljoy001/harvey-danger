@@ -389,3 +389,70 @@ Treat v1.1 Ethernet as a board-level limitation until the live U-Boot
 GMAC state can be captured during TFTP or a Linux `devmem` reference is
 taken on the vendor image.  Do not spend more time on the generic
 RK3568 clock setup; it is already correct.
+
+## Resolution: the bootloader leaves the MAC in reset
+
+The "clock parent gap" and "board limitation" notes above were wrong.
+The missing step is a single soft-reset release.
+
+`SRST_A_GMAC1` is reset id `0xec` — bank 14, bit 12, so
+`SOFTRST_CON(14)` at `0xfdd20438`.  U-Boot deasserts it while its own
+network stack runs and **re-asserts it when the driver stops**, so the
+kernel inherits an asserted reset:
+
+```text
+U-Boot prompt after autoboot:  SOFTRST_CON(14) = 0x00001000
+                               mii info       returns all zeroes
+mw.l 0xfdd20438 0x10000000     deassert
+mii info                       PHY 0x00/0x01, OUI 0x13D47A (YT8531)
+```
+
+Rockchip soft-reset registers are **hiword-masked**: bits 31:16 select
+which bits to write.  The deassert is therefore `1 << (12+16)`, i.e.
+`0x10000000`, never a plain read-modify-write.
+
+With the reset released the MAC answers normally:
+
+```text
+0xfe010110  MAC_VERSION   0x3051        (DWMAC4/5)
+0xfe01011c  HW_FEATURE    0x160171e7
+0xfe010000  MAC_CONFIG    0x00000000    (MAC not yet enabled)
+```
+
+### Do not open the clock gates
+
+`CLKGATE_CON(17)` reads `0x00000000` at the U-Boot prompt — every GMAC
+clock gate closed — and MDIO still works.  Writing the gates open from
+the kernel (mask `0x47c`, bits 2/3/4/5/6/10) wedges the register block:
+every offset then reads the version value.  So the driver opens no
+gates at all.
+
+### The real deadlock was an uninitialised Rendez
+
+`gmacreset()` and `gmacproc()` declared `Rendez r;` on the stack and
+passed it to `tsleep()` without initialising it.  Since `Rendez` begins
+with a `Lock`, `sleep()` was locking on stack garbage.  This never
+showed up while the PHY probe failed early; once MDIO started working
+the kernel reported:
+
+```text
+lock 0x4113e748 loop key 0x1 pc ... held by pc ... proc 0
+```
+
+`memset(&r, 0, sizeof r)` fixes it.  Any new `tsleep()` site must zero
+its rendezvous struct the same way.
+
+### Current state
+
+```text
+gmac: ver 3051 cfg 0 feat 160171e7 grf 13 rst 0
+gmac: 10 Mbps, phy 0 status 3c40
+#l0: gmac: 10Mbps 024841525645
+HARVEY-ARM64 NET-BIND PASS
+HARVEY-ARM64 NET-IFC PASS
+HARVEY-ARM64 NET-PING PASS
+```
+
+A cold boot now brings up `/net` without any bootloader hand-off, and
+the host can ping `192.168.2.248`.  100 Mbps and 1 Gbps remain the open
+question from the earlier sections.

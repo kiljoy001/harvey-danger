@@ -53,6 +53,8 @@ enum {
 	Gmac1Con0	= 0x388,
 	Gmac1Con1	= 0x38c,
 	CruGmac1Sel33	= 0x184,
+	CruSoftrst14	= 0x438,	/* SOFTRST_CON(14) */
+	GmacRstBit	= 1<<12,	/* SRST_A_GMAC1, reset id 0xec */
 
 	MiiBusy		= 1<<0,
 	MiiRead		= 3<<2,
@@ -307,6 +309,7 @@ gmacproc(void *arg)
 	Rendez r;
 
 	USED(arg);
+	memset(&r, 0, sizeof r);
 	for(;;){
 		gmacpoll();
 		tsleep(&r, return0, nil, 1);
@@ -402,6 +405,22 @@ gmacshutdown(Ether *ether)
 	g->started = 0;
 }
 
+/*
+ * Bring the MAC out of the reset that the bootloader leaves asserted.
+ * Rockchip soft-reset registers are hiword-masked: bits 31:16 select
+ * the bits to write, so only that form touches the register.
+ *
+ * Do not touch CLKGATE_CON(17): the bootloader leaves every GMAC clock
+ * gate closed and the MAC still answers MDIO, while enabling those
+ * gates here wedges the register block.
+ */
+static void
+gmacwake(Gmac *g)
+{
+	cruwr(g, CruSoftrst14, GmacRstBit<<16);	/* 0 = deassert */
+	microdelay(2000);
+}
+
 static int
 gmacreset(Ether *ether)
 {
@@ -412,14 +431,20 @@ gmacreset(Ether *ether)
 
 	if(g->started)
 		return -1;
+	memset(&r, 0, sizeof r);
 	memset(g, 0, sizeof *g);
 	g->regs = (volatile u32 *)KADDR(GmacBase);
 	g->grf = (volatile u32 *)KADDR(GrfBase);
 	g->cru = (volatile u32 *)KADDR(CruBase);
 	g->ether = ether;
 
-	/* RGMII select, keep the MAC delay enables the bootloader set */
-	grfwr(g, Gmac1Con1, (1<<4) | (1<<20) | (1<<21) | (1<<22));
+	gmacwake(g);
+
+	/* RGMII select plus the MAC TX/RX clock delay enables (CON1 = 0x13) */
+	grfwr(g, Gmac1Con1, (0x13U<<16) | 0x13U);
+	print("gmac: ver %ux cfg %ux feat %ux grf %ux rst %ux\n",
+	      rd(g, 0x110), rd(g, 0), rd(g, 0x11c),
+	      grfrd(g, Gmac1Con1), cruRd(g, CruSoftrst14));
 
 	phy = -1;
 	for(i = 0; i < 8; i++){
