@@ -34,8 +34,10 @@ LIBDIR = BUILD / "lib"
 OBJDIR = BUILD / "obj"
 COMPAT_H = REPO_ROOT / "util" / "libcxx" / "compat.h"
 COMPAT_CPP = REPO_ROOT / "util" / "libcxx" / "compat.cpp"
-TEST_CPP = REPO_ROOT / "util" / "libcxx" / "test_stl.cpp"
-TEST_ELF = BUILD / "test_stl.elf"
+TEST_STL_CPP = REPO_ROOT / "util" / "libcxx" / "test_stl.cpp"
+TEST_STL_ELF = BUILD / "test_stl.elf"
+TEST_THREADS_CPP = REPO_ROOT / "util" / "libcxx" / "test_threads.cpp"
+TEST_THREADS_ELF = BUILD / "test_threads.elf"
 
 CXX = "clang++"
 AR = "llvm-ar"
@@ -63,6 +65,16 @@ SOURCES = [
     "new_handler",
     "new_helpers",
     "verbose_abort",
+    "system_error",
+    "error_category",
+    "chrono",
+    "mutex",
+    "mutex_destructor",
+    "condition_variable",
+    "condition_variable_destructor",
+    "call_once",
+    "thread",
+    "future",
 ]
 
 CONFIG_SITE = """\
@@ -73,11 +85,12 @@ CONFIG_SITE = """\
 #define _LIBCPP_ABI_NAMESPACE __1
 #define _LIBCPP_ABI_FORCE_ITANIUM 0
 #define _LIBCPP_ABI_FORCE_MICROSOFT 0
-#define _LIBCPP_HAS_THREADS 0
-#define _LIBCPP_HAS_MONOTONIC_CLOCK 0
+#define _LIBCPP_HAS_THREADS 1
+#define _LIBCPP_HAS_MONOTONIC_CLOCK 1
+#define _LIBCPP_HAS_CLOCK_GETTIME 1
 #define _LIBCPP_HAS_TERMINAL 0
 #define _LIBCPP_HAS_MUSL_LIBC 0
-#define _LIBCPP_HAS_THREAD_API_PTHREAD 0
+#define _LIBCPP_HAS_THREAD_API_PTHREAD 1
 #define _LIBCPP_HAS_THREAD_API_EXTERNAL 0
 #define _LIBCPP_HAS_THREAD_API_WIN32 0
 #define _LIBCPP_HAS_THREAD_API_C11 0
@@ -114,6 +127,10 @@ def prepare():
     shutil.copyfile(LIBCXX / "vendor" / "llvm" / "default_assertion_handler.in",
                     INCLUDE_V1 / "__assertion_handler")
     shutil.copyfile(COMPAT_H, INCLUDE / "compat.h")
+    shutil.copyfile(REPO_ROOT / "util" / "libcxx" / "pthread.h",
+                    INCLUDE / "pthread.h")
+    shutil.copyfile(REPO_ROOT / "util" / "libcxx" / "sched.h",
+                    INCLUDE / "sched.h")
 
 
 def base_flags(library: bool) -> list[str]:
@@ -140,7 +157,6 @@ def base_flags(library: bool) -> list[str]:
     if library:
         flags += [
             "-D_LIBCPP_BUILDING_LIBRARY",
-            "-D_LIBCPP_HAS_NO_THREADS",
             "-D_LIBCPP_HAS_NO_EXCEPTIONS",
             "-D_LIBCPP_HAS_NO_RTTI",
         ]
@@ -159,6 +175,11 @@ def build_library():
     run([CXX, *base_flags(False), "-c", str(COMPAT_CPP), "-o", str(compat_obj)])
     objects.append(compat_obj)
 
+    pthread_obj = OBJDIR / "pthread.o"
+    run([CXX, *base_flags(False), "-c",
+         str(REPO_ROOT / "util" / "libcxx" / "pthread.cpp"), "-o", str(pthread_obj)])
+    objects.append(pthread_obj)
+
     lib = LIBDIR / "libc++.a"
     try:
         lib.unlink()
@@ -168,9 +189,9 @@ def build_library():
     print(f"built {lib} ({lib.stat().st_size} bytes)")
 
 
-def build_test():
-    test_obj = OBJDIR / "test_stl.o"
-    run([CXX, *base_flags(False), "-c", str(TEST_CPP), "-o", str(test_obj)])
+def build_test(src_var, elf_var, name):
+    test_obj = OBJDIR / f"{name}.o"
+    run([CXX, *base_flags(False), "-c", str(src_var), "-o", str(test_obj)])
 
     cmd = [
         CXX,
@@ -187,28 +208,28 @@ def build_test():
         str(APEX / "amd64" / "lib" / "libap.a"),
         str(LIBC_A),
         str(APEX / "amd64" / "lib" / "crtn.o"),
-        "-o", str(TEST_ELF),
+        "-o", str(elf_var),
     ]
     run(cmd)
-    print(f"built {TEST_ELF} ({TEST_ELF.stat().st_size} bytes)")
+    print(f"built {elf_var} ({elf_var.stat().st_size} bytes)")
 
 
-def run_test():
+def run_test(elf, expect):
     if not VM.is_file() or not KERNEL.is_file():
         sys.exit(f"need {VM} and {KERNEL} to run the smoke test")
-    print(f"+ {VM} -boot {TEST_ELF} {KERNEL}")
+    print(f"+ {VM} -boot {elf} {KERNEL}")
     proc = subprocess.run(
-        [str(VM), "-boot", str(TEST_ELF), str(KERNEL)],
+        [str(VM), "-boot", str(elf), str(KERNEL)],
         cwd=REPO_ROOT, text=True, capture_output=True, timeout=20)
     output = proc.stdout + proc.stderr
     for line in output.splitlines():
         if line.strip():
             print("  " + line)
-    if "hello 2 2 42 42" not in output:
-        sys.exit("libc++ smoke test did not print 'hello 2 2 42 42'")
+    if expect not in output:
+        sys.exit(f"smoke test {elf.name} did not print {expect!r}")
     if proc.returncode != 0:
         sys.exit(f"9vm exited {proc.returncode}")
-    print("libc++ smoke test passed")
+    print(f"smoke test {elf.name} passed")
 
 
 def main():
@@ -224,9 +245,11 @@ def main():
 
     prepare()
     build_library()
-    build_test()
+    build_test(TEST_STL_CPP, TEST_STL_ELF, "test_stl")
+    build_test(TEST_THREADS_CPP, TEST_THREADS_ELF, "test_threads")
     if args.run:
-        run_test()
+        run_test(TEST_STL_ELF, "hello 2 2 42 42")
+        run_test(TEST_THREADS_ELF, "threads-ok 7 14")
 
 
 if __name__ == "__main__":

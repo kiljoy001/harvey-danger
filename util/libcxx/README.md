@@ -63,8 +63,11 @@ APEX's C headers predate C11 and carry a few Plan 9-isms. `compat.h` and
 - **Exceptions** — built with `-fno-exceptions`; libc++ aborts instead of
   throwing.
 - **RTTI** — built with `-fno-rtti`.
-- **Threads** — APEX has no pthread layer yet; `std::thread`, `mutex`, and
-  `condition_variable` are unavailable.
+- **Real threads** — `util/libcxx/pthread.{h,cpp}` is a single-threaded shim.
+  `std::thread` runs its function synchronously, mutexes are counters, and
+  TLS is one static array. This is enough for the libc++ headers and for
+  LLVM built with `LLVM_ENABLE_THREADS=OFF`. Real `rfork`-backed threads are
+  a separate rung.
 - **iostream/locale** — no `std::cout`, `std::locale`, or locale-dependent
   string conversions.
 - **Filesystem** — `std::filesystem` is disabled.

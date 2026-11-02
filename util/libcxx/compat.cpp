@@ -1,4 +1,30 @@
 #include <stdlib.h>
+#include <sys/time.h>
+#include <time.h>
+#include <unistd.h>
+#include <string.h>
+
+extern "C" long long nsec(void);
+
+extern "C" int clock_gettime(clockid_t clk, struct timespec *ts) {
+    if (!ts) return -1;
+    if (clk == CLOCK_REALTIME) {
+        ts->tv_sec = time(0);
+        ts->tv_nsec = 0;
+    } else {
+        long long ns = nsec();
+        ts->tv_sec = (time_t)(ns / 1000000000LL);
+        ts->tv_nsec = (long)(ns % 1000000000LL);
+    }
+    return 0;
+}
+
+extern "C" int nanosleep(const struct timespec *req, struct timespec *rem) {
+    if (req && req->tv_sec > 0)
+        __sleep((unsigned int)req->tv_sec);
+    if (rem) { rem->tv_sec = 0; rem->tv_nsec = 0; }
+    return 0;
+}
 
 extern "C" float strtof(const char *s, char **end) {
     return (float)strtod(s, end);

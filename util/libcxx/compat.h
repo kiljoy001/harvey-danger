@@ -32,15 +32,33 @@ typedef unsigned int uint_fast16_t;
 typedef unsigned int uint_fast32_t;
 #endif
 
+#include <sys/types.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdlib.h>
+
+#ifndef CLOCK_REALTIME
+typedef int clockid_t;
+#define CLOCK_REALTIME 0
+#define CLOCK_MONOTONIC 1
+#define CLOCK_MONOTONIC_RAW CLOCK_MONOTONIC
+#endif
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+int clock_gettime(clockid_t, struct timespec *);
+int nanosleep(const struct timespec *, struct timespec *);
+#ifdef __cplusplus
+}
+#endif
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 float strtof(const char *, char **);
 long double strtold(const char *, char **);
+char *strerror_r(int, const char *, int);
 #ifdef __cplusplus
 }
 #endif
