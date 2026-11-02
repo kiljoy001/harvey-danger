@@ -24,6 +24,7 @@ BIG_PAGE = 0x200000
 O9DRVMAN_BASE = 0x600000
 UARTFS_BASE = 0x1600000
 GPIOFS_BASE = 0x1A00000
+GPUS_BASE = 0xD000000
 HUBFS_BASE = 0x1E00000
 DRVMAN_BASE = 0x2200000
 I2CFS_BASE = 0x2600000
@@ -34,6 +35,7 @@ MOUNT9_BASE = 0xB200000
 EXT2SRV_BASE = 0xBA00000
 PROVISION_BASE = 0xBE00000
 GEFS_BASE = 0xC200000
+BIGTEST_BASE = 0xCA00000
 RC_BASE = 0x2A00000
 ECHO_BASE = 0x2E00000
 CAT_BASE = 0x3200000
@@ -352,6 +354,11 @@ def build_uartfs(out: Path, libc: Path) -> tuple[bytes, int]:
 def build_gpiofs(out: Path, libc: Path) -> tuple[bytes, int]:
     return build_fs(out, libc, "gpiofs",
                     ROOT / "sys/src/cmd/gpiofs/gpiofs.c", GPIOFS_BASE)
+
+
+def build_gpufs(out: Path, libc: Path) -> tuple[bytes, int]:
+    return build_fs(out, libc, "gpufs",
+                    ROOT / "sys/src/cmd/gpufs/gpufs.c", GPUS_BASE)
 
 
 def build_hubfs(out: Path, libc: Path) -> tuple[bytes, int]:
@@ -1364,6 +1371,7 @@ main(int argc, char **argv)
     testaudio, _ = validate_elf(ROOT / "build/arm64-o9/test-audio", TESTAUDIO_BASE)
     uartfs, _ = build_uartfs(out, libc)
     gpiofs, _ = build_gpiofs(out, libc)
+    gpufs, _ = build_gpufs(out, libc)
     hubfs, _ = build_hubfs(out, libc)
     drvman, _ = build_drvman(out, libc)
     i2cfs, _ = build_i2cfs(out, libc)
@@ -1382,6 +1390,20 @@ main(int argc, char **argv)
     ext2srv, _ = build_ext2srv(out, libc)
     gmacfs, _ = build_gmacfs(out, libc)
     usbpower, _ = build_usbpower(out, libc)
+    bigtest, _ = build_program(out, "bigtest", r'''#include <u.h>
+#include <libc.h>
+
+/* Large enough that the file crosses whatever limit exec runs into. */
+static char pad[400000] = { 1 };
+
+void
+main(void)
+{
+	pad[1] = pad[0];
+	print("BIGTEST OK %d\n", pad[1]);
+	exits(nil);
+}
+''', BIGTEST_BASE, libc)
     rc, rc_entry = build_rc(out, libc)
     echo, _ = build_program(out, "echo", r'''#include <u.h>
 #include <libc.h>
@@ -2014,6 +2036,7 @@ main(int argc, char **argv)
     emit_array(lines, "arm64testxhci1elf", testxhci1)
     emit_array(lines, "arm64testaudioelf", testaudio)
     emit_array(lines, "arm64uartfself", uartfs)
+    emit_array(lines, "arm64gpufself", gpufs)
     emit_array(lines, "arm64gpiofself", gpiofs)
     emit_array(lines, "arm64hubfself", hubfs)
     emit_array(lines, "arm64drvmanelf", drvman)
@@ -2052,6 +2075,7 @@ main(int argc, char **argv)
         "test-xhci1": testxhci1,
         "test-audio": testaudio,
         "uartfs": uartfs,
+        "gpufs": gpufs,
         "gpiofs": gpiofs,
         "hubfs": hubfs,
         "drvman": drvman,
@@ -2072,6 +2096,7 @@ main(int argc, char **argv)
         "rtc": rtc,
         "emmc": emmc,
         "provision": provision,
+        "bigtest": bigtest,
         **({"gefs": gefs} if os.environ.get("ARM64_BUILD_GEFS") == "1" else {}),
         "gmac": gmac,
         "sdprobe": sdprobe,
