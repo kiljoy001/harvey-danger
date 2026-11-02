@@ -152,7 +152,25 @@ Started, not finished.  In place so far:
   `build_gefs` target that links against libavl, libbio, libauth,
   libsec, libmp and libc.
 
-The blocker is Plan 9's anonymous struct member extension:
+**Status: gefs compiles and links for ARM64 with ucc, and does not run
+yet.**  The build uses `ucc -m9 -marm64`, which understands Plan 9 C
+(including anonymous struct members), then links the objects with
+ld.lld and the same big-page script as the other services.  TCC has no
+`__atomic` builtins, so the atomic accessors come from a clang-compiled
+object; `util/arm64/gefscompat.c` supplies the four libc calls this
+libc lacks (`tmnow`, `tmnorm`, `tmfmtinstall`, `procsetname`).
+
+Running it revealed a more basic problem: **a binary of more than about
+300 KiB does not run when exec'd from the ext2 root.**  `rc` (283 KiB)
+runs; `usbpower` (602 KiB), `ext2srv` (626 KiB) and `gefs` (692 KiB)
+all exit silently with no output and no fault, while the same programs
+run normally from the boot archive.  That also explains why no lib9p
+server can be started after the re-root.  Fix that first; it is
+probably a single bug in how the file image is paged in.
+
+The original notes on the port follow.
+
+The original obstacle was Plan 9's anonymous struct member extension:
 
 ```c
 struct Kvp { Key; Val; };      /* Plan 9: injects k, nk, nv, v */

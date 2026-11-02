@@ -486,32 +486,44 @@ GEFS_SOURCES = (
 
 
 def build_gefs(out: Path, libc: Path) -> tuple[bytes, int]:
-    """gefs: log-structured, snapshotting file server (9front)."""
+    """gefs: compiled by ucc in Plan 9 mode, linked with our own layout.
+
+    ucc (-m9) understands Plan 9 C, including anonymous struct members,
+    so the 9front sources compile unchanged.  Its own driver links a
+    three-segment image, while this kernel's user loader expects one
+    text page and one data page, so the objects are linked here with
+    ld.lld and the same script as the other services.
+    """
     o9 = ROOT / "build/arm64-o9"
     src = ROOT / "sys/src/cmd/gefs"
-    flags = [
-        CC, "--target=aarch64-none-elf", "-ffreestanding", "-fno-builtin",
-        "-fno-stack-protector", "-fno-vectorize", "-fno-slp-vectorize",
-        "-mstrict-align", "-fsigned-char", "-fcommon", "-O2",
-        # gefs is Plan 9 C: anonymous struct members flatten field
-        # access.  Clang implements the same extension as MSVC.
-        "-fms-extensions", "-Wno-microsoft-anon-tag",
-        "-Wno-parentheses", "-Wno-missing-braces", "-Wno-unknown-pragmas",
-        "-Wno-unused-function", "-Wno-unused-variable",
-        "-I", str(ROOT / "aarch64/include"),
-        "-I", str(ROOT / "sys/include"),
-        "-I", str(src),
-    ]
+    ucc = os.environ.get("UCC") or shutil.which("ucc") or "/home/scott/Repo/ucc/ucc"
+    if not Path(ucc).is_file():
+        raise RuntimeError("ucc not found; set UCC to the compiler driver")
     objects = []
     for name in GEFS_SOURCES:
         obj = out / f"gefs-{name}.o"
-        subprocess.run([*flags, "-c", str(src / name), "-o", str(obj)],
-                       check=True)
+        subprocess.run([ucc, "-m9", "-marm64", "-c", str(src / name),
+                        "-o", str(obj)], check=True)
         objects.append(obj)
+    # TCC has no __atomic builtins; the accessors come from clang.
     atomic = out / "gefs-atomic9.o"
-    subprocess.run([*flags, "-c", str(ROOT / "util/arm64/atomic9.c"),
+    subprocess.run([CC, "--target=aarch64-none-elf", "-ffreestanding",
+                    "-fno-builtin", "-mstrict-align", "-fsigned-char",
+                    "-fcommon", "-O2",
+                    "-I", str(ROOT / "aarch64/include"),
+                    "-I", str(ROOT / "sys/include"),
+                    "-c", str(ROOT / "util/arm64/atomic9.c"),
                     "-o", str(atomic)], check=True)
     objects.append(atomic)
+    compat = out / "gefs-compat.o"
+    subprocess.run([CC, "--target=aarch64-none-elf", "-ffreestanding",
+                    "-fno-builtin", "-mstrict-align", "-fsigned-char",
+                    "-fcommon", "-O2",
+                    "-I", str(ROOT / "aarch64/include"),
+                    "-I", str(ROOT / "sys/include"),
+                    "-c", str(ROOT / "util/arm64/gefscompat.c"),
+                    "-o", str(compat)], check=True)
+    objects.append(compat)
     script = out / "gefs.ld"
     elf = out / "gefs"
     script.write_text(f'''ENTRY(_main)
@@ -531,10 +543,10 @@ SECTIONS {{
 ''')
     subprocess.run([
         LD, "-static", "-z", "max-page-size=4096", "-T", str(script),
-        "--allow-multiple-definition",
-        "-e", "_main", "-u", "_main", *map(str, objects),
+        "--allow-multiple-definition", "-e", "_main", "-u", "_main",
+        *map(str, objects),
         "--start-group",
-        str(o9 / "libavl.a"), str(o9 / "libauth.a"), str(o9 / "libbio.a"),
+        str(o9 / "libavl.a"), str(o9 / "libbio.a"), str(o9 / "libauth.a"),
         str(o9 / "libsec.a"), str(o9 / "libmp.a"), str(libc),
         "--end-group", "-o", str(elf),
     ], check=True)

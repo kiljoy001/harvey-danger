@@ -242,7 +242,7 @@ postfd(char *name, char *suff, int mode)
 }
 
 static void
-runannounce(int, void *arg)
+runannounce(int lfd, void *arg)
 {
 	char *ann, adir[40], ldir[40];
 	int actl, lctl, fd;

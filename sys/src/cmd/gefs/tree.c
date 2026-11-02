@@ -332,7 +332,7 @@ copyup(Blk *n, Path *pp, int *nbytes)
 		if(pp->nl->nbuf > 0){
 			getmsg(pp->nl, 0, &m);
 			if(keycmp(&kv, &m) > 0)
-				kv.Key = m.Key;
+				*KKEY(&kv) = *MKEY(&m);
 		}
 		setptr(n, &kv, pp->nl->bp, blkfill(pp->nl));
 		if(nbytes != nil)
@@ -343,7 +343,7 @@ copyup(Blk *n, Path *pp, int *nbytes)
 		if(pp->nr->nbuf > 0){
 			getmsg(pp->nr, 0, &m);
 			if(keycmp(&kv, &m) > 0)
-				kv.Key = m.Key;
+				*KKEY(&kv) = *MKEY(&m);
 		}
 		setptr(n, &kv, pp->nr->bp, blkfill(pp->nr));
 		if(nbytes != nil)
@@ -791,7 +791,7 @@ splitleaf(Tree *t, Path *up, Path *p, Kvp *mid)
  * than one.
  */
 static void
-splitpiv(Tree *t, Path *, Path *p, Path *pp, Kvp *mid)
+splitpiv(Tree *t, Path *q, Path *p, Path *pp, Kvp *mid)
 {
 	int i, copied, halfsz;
 	Blk *b, *d, *l, *r;

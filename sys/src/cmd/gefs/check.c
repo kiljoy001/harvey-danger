@@ -219,9 +219,10 @@ checkdlist(int fd)
 }
 
 static int
-checkdata(int, Tree *t)
+checkdata(int fd, Tree *t)
 {
 	char pfx[1];
+	USED(fd);
 	Bptr bp;
 	Scan s;
 	Blk *b;

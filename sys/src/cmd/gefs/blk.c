@@ -205,7 +205,7 @@ grabrange(Avltree *t, vlong off, vlong len)
 	assert(len % Blksz == 0);
 	q.off = off;
 	q.len = len;
-	r = (Arange*)avllookup(t, &q.Avl, -1);
+	r = (Arange*)avllookup(t, (Avl*)&q, -1);
 	if(r == nil || off + len > r->off + r->len)
 		abort();
 
@@ -1070,9 +1070,10 @@ Out:
 }
 
 void
-runsync(int, void *p)
+runsync(int fd, void *p)
 {
 	Arena *a;
+	USED(fd);
 	Syncq *q;
 	Qent qe;
 

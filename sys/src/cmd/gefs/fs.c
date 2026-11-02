@@ -577,7 +577,7 @@ getdent(Mount *mnt, vlong pqid, Xdir *d)
 		nexterror();
 	}
 	de = emalloc(sizeof(Dent), 1);
-	de->Xdir = *d;
+	*DXDIR(de) = *d;
 	de->ref = 1;
 	de->up = pqid;
 	de->qid = d->qid;
@@ -751,7 +751,7 @@ clunkmount(Mount *mnt)
 			aswapp(&fs->mounts, p->next);
 		else
 			*pp = p->next;
-		limbo(DFmnt, (Limbo*)p);
+		limbo(DFmnt, &p->Limbo);
 	}
 	qunlock(&fs->mountlk);
 }
@@ -827,7 +827,7 @@ dupfid(Conn *c, u32int new, Fid *f)
 		return nil;
 
 	*n = *f;
-	memset(&n->RWLock, 0, sizeof(RWLock));
+	memset((RWLock*)n, 0, sizeof(RWLock));
 	n->fid = new;
 	n->ref = 2; /* one for dup, one for clunk */
 	n->mode = -1;
@@ -1394,7 +1394,7 @@ fswalk(Fmsg *m)
 	up = o->pqpath;
 	prev = o->qpath;
 	rlock(o->dent);
-	d = *o->dent;
+	d = *DXDIR(o->dent);
 	runlock(o->dent);
 	duid = d.uid;
 	dgid = d.gid;
@@ -1568,7 +1568,7 @@ fswstat(Fmsg *m, int id, Amsg **ao)
 		error(Edir);
 
 	t = agetp(&f->mnt->root);
-	n = de->Xdir;
+	n = *DXDIR(de);
 	n.qid.vers++;
 	p = opbuf+1;
 	nulldir = 1;
@@ -1719,14 +1719,14 @@ fswstat(Fmsg *m, int id, Amsg **ao)
 	nm = 0;
 	if(rename && !de->gone){
 		mb[nm].op = Oclobber;
-		mb[nm].Key = de->Key;
+		*MKEY(&mb[nm]) = *DKEY(de);
 		mb[nm].v = nil;
 		mb[nm].nv = 0;
 		nm++;
 	
 		mb[nm].op = Oinsert;
 		dir2kv(f->pqpath, &n, &mb[nm], rnbuf, sizeof(rnbuf));
-		k = mb[nm].Key;
+		k = *MKEY(&mb[nm]);
 		nm++;
 
 		if(de->qid.type & QTDIR){
@@ -1742,7 +1742,7 @@ fswstat(Fmsg *m, int id, Amsg **ao)
 	}else{
 		opbuf[0] = op;
 		mb[nm].op = Owstat;
-		mb[nm].Key = de->Key;
+		*MKEY(&mb[nm]) = *DKEY(de);
 		mb[nm].v = opbuf;
 		mb[nm].nv = p - opbuf;
 		nm++;
@@ -1750,7 +1750,7 @@ fswstat(Fmsg *m, int id, Amsg **ao)
 	assert(nm <= nelem(mb));
 	upsert(f->mnt, mb, nm);
 
-	de->Xdir = n;
+	*DXDIR(de) = n;
 	if(rename)
 		cpkey(de, &k, de->buf, sizeof(de->buf));
 
@@ -1968,7 +1968,7 @@ fsremove(Fmsg *m, int id, Amsg **ao)
 	 * this means we can theoretically get some deletions
 	 * of files that are already gone.
 	 */
-	if(!btlookup(t, &f->dent->Key, &kv, buf, sizeof(buf)))
+	if(!btlookup(t, DKEY(f->dent), &kv, buf, sizeof(buf)))
 		error(Ephase);
 	if((e = candelete(f)) != nil)
 		error(e);
@@ -2527,8 +2527,9 @@ putconn(Conn *c)
 }
 
 void
-runfs(int, void *pc)
+runfs(int fd, void *pc)
 {
+	USED(fd);
 	char err[128];
 	RWLock *lk;
 	Amsg *a;
@@ -2553,7 +2554,7 @@ runfs(int, void *pc)
 			fshangup(c, "version required");
 			break;
 		}
-		dprint("← %F\n", &m->Fcall);
+		dprint("← %F\n", (Fcall*)((char*)(m) + offsetof(Fmsg, type)));
 
 		if(m->type == Tflush){
 			lk = &fs->flushq[ihash(m->oldtag) % Nflushtab];
@@ -2593,8 +2594,8 @@ runfs(int, void *pc)
 			break;
 
 		default:
-			fprint(2, "unknown message %F\n", &m->Fcall);
-			snprint(err, sizeof(err), "unknown message: %F", &m->Fcall);
+			fprint(2, "unknown message %F\n", (Fcall*)((char*)(m) + offsetof(Fmsg, type)));
+			snprint(err, sizeof(err), "unknown message: %F", (Fcall*)((char*)(m) + offsetof(Fmsg, type)));
 			r.type = Rerror;
 			r.ename = err;
 			respond(m, &r);
@@ -2608,8 +2609,9 @@ runfs(int, void *pc)
 }
 
 void
-runmutate(int id, void *)
+runmutate(int id, void *x)
 {
+	USED(x);
 	Fmsg *m;
 	Amsg *a;
 	Fid *f;
@@ -2785,8 +2787,9 @@ setconf(int fd, int op, char *snap, char *key, char *val)
 }
 
 void
-runsweep(int id, void*)
+runsweep(int id, void *x)
 {
+	USED(x);
 	char buf[Kvmax];
 	Msg mb[Kvmax/Offksz];
 	Bptr bp, nb, *oldhd;
@@ -3060,16 +3063,17 @@ cronsync(char *name, Cron *c, Tm *tm, vlong now)
 		e = p + sizeof(c->lbl[c->i]);
 		c->i = (c->i+1)%c->cnt;
 	}
-	seprint(p, e, "%s@%s.%τ",
-		name, c->tag,
-		tmfmt(tm, "YYYY.MM.DD[_]hh:mm:ss"));
+	seprint(p, e, "%s@%s.%04d.%02d.%02d %02d:%02d:%02d",
+		name, c->tag, tm->year+1900, tm->mon+1, tm->mday,
+		tm->hour, tm->min, tm->sec);
 	snapmsg(name, p);
 	c->last = now;
 }
 
 void
-runtasks(int tid, void *)
+runtasks(int tid, void *x)
 {
+	USED(x);
 	vlong now;
 	Mount *mnt;
 	Amsg *a;

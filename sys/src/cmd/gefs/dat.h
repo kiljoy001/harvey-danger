@@ -52,6 +52,17 @@ typedef struct Xdir	Xdir;
 #define lock(x)			lock((Lock*)(x))
 #define unlock(x)		unlock((Lock*)(x))
 
+
+/*
+ * Plan 9 lets an anonymous member also be named (d->Xdir, m->Key).
+ * -m9 injects the fields but not the name, so compute the address
+ * from the first injected field.
+ */
+#define DXDIR(d)	((Xdir*)((char*)(d) + offsetof(Dent, qid)))
+#define DKEY(d)		((Key*)((char*)(d) + offsetof(Dent, k)))
+#define MKEY(m)		((Key*)((char*)(m) + offsetof(Msg, k)))
+#define KKEY(k)		((Key*)(k))
+
 enum {
 	KiB	= 1024ULL,
 	MiB	= 1024ULL*KiB,
@@ -679,7 +690,7 @@ struct Cron {
 };
 
 struct Mount {
-	Limbo;
+	Limbo Limbo;
 	Lock;
 	Mount	*next;
 	long	ref;

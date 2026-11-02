@@ -15,7 +15,7 @@ struct Cmd {
 	int	minarg;
 	int	maxarg;
 	int	epoch;
-	void	(*fn)(int, char**, int);
+	void	(*fn)(int, char **argv, int n);
 };
 
 static void
@@ -37,14 +37,14 @@ asend(int fd, int op)
 }
 
 static void
-syncfs(int fd, char **, int)
+syncfs(int fd, char **argv, int n)
 {
 	asend(fd, AOsync);
 	fprint(fd, "synced\n");
 }
 
 static void
-haltfs(int fd, char **, int)
+haltfs(int fd, char **argv, int n)
 {
 	asend(fd, AOhalt);
 	fprint(fd, "gefs: ending...\n");
@@ -115,7 +115,7 @@ snapfs(int fd, char **ap, int na)
 }
 
 static void
-fsckfs(int fd, char**, int)
+fsckfs(int fd, char **argv, int n)
 {
 	if(checkfs(fd))
 		fprint(fd, "ok\n");
@@ -124,7 +124,7 @@ fsckfs(int fd, char**, int)
 }
 
 static void
-refreshusers(int fd, char **, int)
+refreshusers(int fd, char **argv, int n)
 {
 	Mount *mnt;
 
@@ -143,7 +143,7 @@ refreshusers(int fd, char **, int)
 }
 
 static void
-showbstate(int fd, char**, int)
+showbstate(int fd, char **argv, int n)
 {
 	char *p, fbuf[8];
 	Blk *b;
@@ -165,7 +165,7 @@ showbstate(int fd, char**, int)
 }
 
 static void
-showusers(int fd, char**, int)
+showusers(int fd, char **argv, int n)
 {
 	User *u, *v;
 	int i, j;
@@ -195,7 +195,7 @@ showusers(int fd, char**, int)
 }
 
 static void
-showdf(int fd, char**, int)
+showdf(int fd, char **argv, int n)
 {
 	char *units[] = {"B", "KiB", "MiB", "GiB", "TiB", "PiB", "EiB", nil};
 	vlong size, used, free;
@@ -232,7 +232,7 @@ showdf(int fd, char**, int)
 }
 
 void
-showfid(int fd, char**, int)
+showfid(int fd, char **argv, int n)
 {
 	int i;
 	Fid *f;
@@ -245,7 +245,7 @@ showfid(int fd, char**, int)
 			for(f = c->fidtab[i]; f != nil; f = f->next){
 				rlock(f->dent);
 				fprint(fd, "\tfid[%d] from %#zx: %d [refs=%ld, k=%K, qid=%Q m=%d, dmode:%d duid: %d, dgid: %d]\n",
-					i, getmalloctag(f), f->fid, f->dent->ref, &f->dent->Key, f->dent->qid,
+					i, getmalloctag(f), f->fid, f->dent->ref, DKEY(f->dent), f->dent->qid,
 					f->mode, f->dmode, f->duid, f->dgid);
 				runlock(f->dent);
 			}
@@ -281,7 +281,7 @@ showtree(int fd, char **ap, int na)
 }
 
 static void
-permflip(int fd, char **ap, int)
+permflip(int fd, char **ap, int n)
 {
 	if(strcmp(ap[0], "on") == 0)
 		permissive = 1;
@@ -327,7 +327,7 @@ savetrace(int fd, char **ap, int na)
 }
 
 static void
-showfree(int fd, char **, int)
+showfree(int fd, char **argv, int n)
 {
 	Arange *r;
 	Arena *a;
@@ -345,7 +345,7 @@ showfree(int fd, char **, int)
 }
 
 static void
-unreserve(int fd, char **ap, int)
+unreserve(int fd, char **ap, int n)
 {
 	if(strcmp(ap[0], "on") == 0)
 		usereserve = 0;
@@ -386,7 +386,7 @@ clrcfg(int fd, char **ap, int n)
 }
 
 static void
-help(int fd, char**, int)
+help(int fd, char **argv, int n)
 {
 	char *msg =
 		"help -- show this help\n"
