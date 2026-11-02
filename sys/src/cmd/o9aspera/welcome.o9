@@ -22,18 +22,18 @@ function WelcomeRun(int64 pages,
         int w, h, i, x, page, running, redraw;
         Point p;
 
-        title[0] = o9_string_cstr(t0); line1[0] = o9_string_cstr(a0);
-        line2[0] = o9_string_cstr(b0); line3[0] = o9_string_cstr(c0);
-        line4[0] = o9_string_cstr(d0);
-        title[1] = o9_string_cstr(t1); line1[1] = o9_string_cstr(a1);
-        line2[1] = o9_string_cstr(b1); line3[1] = o9_string_cstr(c1);
-        line4[1] = o9_string_cstr(d1);
-        title[2] = o9_string_cstr(t2); line1[2] = o9_string_cstr(a2);
-        line2[2] = o9_string_cstr(b2); line3[2] = o9_string_cstr(c2);
-        line4[2] = o9_string_cstr(d2);
-        title[3] = o9_string_cstr(t3); line1[3] = o9_string_cstr(a3);
-        line2[3] = o9_string_cstr(b3); line3[3] = o9_string_cstr(c3);
-        line4[3] = o9_string_cstr(d3);
+        title[0] = o9_string_data(t0); line1[0] = o9_string_data(a0);
+        line2[0] = o9_string_data(b0); line3[0] = o9_string_data(c0);
+        line4[0] = o9_string_data(d0);
+        title[1] = o9_string_data(t1); line1[1] = o9_string_data(a1);
+        line2[1] = o9_string_data(b1); line3[1] = o9_string_data(c1);
+        line4[1] = o9_string_data(d1);
+        title[2] = o9_string_data(t2); line1[2] = o9_string_data(a2);
+        line2[2] = o9_string_data(b2); line3[2] = o9_string_data(c2);
+        line4[2] = o9_string_data(d2);
+        title[3] = o9_string_data(t3); line1[3] = o9_string_data(a3);
+        line2[3] = o9_string_data(b3); line3[3] = o9_string_data(c3);
+        line4[3] = o9_string_data(d3);
 
         if(getenv("wsys") == nil){
             fprint(2, "welcome: no window system (run from Rio)\n");
