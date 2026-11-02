@@ -27,6 +27,24 @@ EDITS = [
         "  int StatRet = (Follow ? ::stat : ::lstat)(P.begin(), &Status);",
         "  int StatRet = (Follow ? __harvey_stat : ::lstat)(P.begin(), &Status);",
     ),
+    (
+        "llvm/lib/Support/Unix/Path.inc",
+        "std::string getMainExecutable(const char *argv0, void *MainAddr) {\n"
+        "#if defined(__APPLE__)",
+        "std::string getMainExecutable(const char *argv0, void *MainAddr) {\n"
+        "#if defined(HARVEY)\n"
+        "  // Harvey has no /proc/self/exe and no dyld.  The driver is always\n"
+        "  // started with a path, so resolve argv[0]; without this the driver\n"
+        "  // reports an empty InstalledDir and cannot find its own cc1.\n"
+        "  if (argv0 && *argv0) {\n"
+        "    char Resolved[PATH_MAX];\n"
+        "    if (::realpath(argv0, Resolved))\n"
+        "      return Resolved;\n"
+        "    return argv0;\n"
+        "  }\n"
+        "#endif\n"
+        "#if defined(__APPLE__)",
+    ),
 ]
 
 

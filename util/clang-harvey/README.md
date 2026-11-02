@@ -22,16 +22,22 @@ portability shims the Harvey target needs.
 | all LLVM/Clang libraries | build for the Harvey target |
 | native `clang` binary | **runs on Harvey and emits object files** |
 | native `ld.lld` | **runs on Harvey and links executables** |
+| self-configuring driver | **`clang++ hello.cpp -o hello` works with no flags** |
 
-The end-to-end test is `util/clang-harvey/test-native-toolchain.py`. The
-guest compiles `hello.cpp` with the native clang, links it with the native
-`ld.lld`, and runs the result — the host only supplies the two binaries:
+The end-to-end test is `util/clang-harvey/test-native-toolchain.py`. It
+installs the SDK and then the guest runs exactly:
+
+```sh
+clang++ hello.cpp -o hello
+```
+
+No `-target`, no include paths, no linker invocation. The driver loads
+`clang++.cfg` from its own directory, derives its resource directory from
+that, runs `cc1`, and invokes the `ld.lld` beside it:
 
 ```text
-  compiled hello.o
-  linked hello.elf
   hello from harvey
-native toolchain: clang -> ld.lld -> hello.elf (874688 bytes) ran and printed 'hello from harvey'
+native toolchain: clang++ -> cc1 -> ld.lld -> hello (877816 bytes) ran and printed 'hello from harvey'
 ```
 
 `util/clang-harvey/test-native.py` is the smaller object-only check (the full
@@ -40,6 +46,32 @@ driver, including the fork/exec of `cc1`):
 ```text
 native clang produced build/clang-harvey/test.o (712 bytes) with 'add'
 ```
+
+## SDK layout
+
+`util/clang-harvey/install-sdk.py` builds the guest-visible tree:
+
+```text
+build/clang-harvey/
+  clang, clang++, ld.lld     the native tools
+  clang.cfg, clang++.cfg     driver configuration (loaded automatically)
+build/lib/clang/22/include   clang's own resource headers
+tmp/                         the guest's /tmp (its root is read-only)
+```
+
+The configuration files in `util/clang-harvey/sdk/` carry the whole recipe:
+target triple, `-nostdinc` plus the APEX and libc++ include paths, the
+compatibility header, `-static -no-pie -nostdlib`, `-fuse-ld=lld`, and the
+runtime objects as `$`-prefixed *tail* arguments — options Clang only passes
+when linking.
+
+Two details matter:
+
+- The triple is `x86_64-unknown-linux-elf`, not `x86_64-unknown-elf`. Clang's
+  generic ELF toolchain links *through gcc*; the Linux one invokes `ld`
+  directly, which is what lets `-fuse-ld=lld` pick up `ld.lld`.
+- `libap.a` must precede `libc.a`. Both define `malloc`; APEX's is the one
+  that works with Harvey's crt0.
 
 ## Using the wrappers
 
@@ -146,10 +178,13 @@ was missing.  They live in APEX now, not in a shim:
 
 ## Next rungs
 
-1. Install a `lib/clang/<version>` resource directory on Harvey so the
-   driver finds its own builtin headers instead of `/usr/include`.
-2. Give the target a proper default triple so `--target` is not required.
-3. Teach the driver where Harvey's runtime lives so plain `clang++ foo.cpp`
-   links without the explicit `ld.lld` invocation.
-4. Populate `.tdata`: TLS variables with non-zero initialisers are still
+1. Populate `.tdata`: TLS variables with non-zero initialisers are still
    zero-initialised.
+2. Make `getMainExecutable` more robust. The patch resolves `argv[0]`, so the
+   driver must be started with a path. A real `/proc/self/exe` equivalent, or
+   passing the image path through the environment, would fix bare `clang++`.
+3. Propagate the environment across `exec`. Harvey drops it, so `TMPDIR` and
+   friends cannot be set for a tool the driver spawns.
+4. Add a Harvey toolchain to Clang instead of a config file, so the paths are
+   baked in and `x86_64-unknown-harvey` is a real target.
+5. `std::filesystem`: the headers are enabled but the library is not built.
