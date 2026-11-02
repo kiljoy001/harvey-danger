@@ -362,6 +362,27 @@ int	casp(void**, void*, void*);
 int	casl(u32*, u32, u32);
 
 /*
+ * Plan 9 typed atomic accessors, as used by the 9front file servers.
+ * The ARM64 userland implements these in util/arm64/atomic9.c.
+ */
+typedef struct Along	{ long v; } Along;
+typedef struct Avlong	{ vlong v; } Avlong;
+typedef struct Aptr	{ void *v; } Aptr;
+
+extern	long	agetl(Along*);
+extern	vlong	agetv(Avlong*);
+extern	void*	agetp(Aptr*);
+extern	long	aswapl(Along*, long);
+extern	vlong	aswapv(Avlong*, vlong);
+extern	void*	aswapp(Aptr*, void*);
+extern	long	aincl(Along*, long);
+extern	vlong	aincv(Avlong*, vlong);
+extern	int	acasl(Along*, long, long);
+extern	int	acasv(Avlong*, vlong, vlong);
+extern	int	acasp(Aptr*, void*, void*);
+extern	void	coherence(void);
+
+/*
  *  synchronization
  */
 typedef

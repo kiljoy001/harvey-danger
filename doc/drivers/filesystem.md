@@ -137,6 +137,48 @@ workload (repeated `ls`, `cat`) costs zero.
 What remains is ext2's in-place metadata: every flush still rewrites the
 shared bitmap and directory blocks, and inodes are updated in place.
 
+## gefs port status
+
+Started, not finished.  In place so far:
+
+- `sys/src/libavl` (avl.c from 9front) plus `sys/include/avl.h`, built
+  for ARM64 as `build/arm64-o9/libavl.a`.  `schar` is not defined in
+  this u.h, so the header uses `signed char`.
+- `sys/include/libc.h` carries 9front's `Along`/`Avlong`/`Aptr` types
+  and accessor prototypes; `util/arm64/atomic9.c` implements them with
+  `__atomic` builtins instead of 9front's hand-written ARM64 assembly.
+  `getcallerpc` now tolerates an argument.
+- `sys/src/cmd/gefs` and `sys/man/4/gefs` are imported, with a
+  `build_gefs` target that links against libavl, libbio, libauth,
+  libsec, libmp and libc.
+
+The blocker is Plan 9's anonymous struct member extension:
+
+```c
+struct Kvp { Key; Val; };      /* Plan 9: injects k, nk, nv, v */
+struct Msg { char op; Kvp; };  /* and flattens two levels */
+```
+
+C has no equivalent, so this copy names the members (`Key Key;`), which
+turns roughly 590 accesses such as `m->v` and `d->qid` into errors
+across `Kvp`, `Msg`, `Dent` and `Fmsg`.  The mechanical fix is to
+inline those members as C11 anonymous structs, which injects the same
+field names with the same layout:
+
+```c
+struct Kvp {
+	struct { char *k; int nk; };
+	struct { short nv; char *v; };
+};
+```
+
+The porting shims for the related implicit conversions (passing a
+container where its leading member is expected, as in `qlock(arena)`
+and `avllookup(t, range, 0)`) are already in `gefs/dat.h`.
+
+Until that is done `build_gefs` only runs with `ARM64_BUILD_GEFS=1` so
+normal builds stay green.
+
 ## Endurance
 
 The card reports its own wear through `emmcfs`'s ctl:

@@ -58,6 +58,7 @@ LIBRARIES = {
     "libsec": ROOT / "sys/src/libsec/libsec.json",
     "libndb": ROOT / "sys/src/libndb/libndb.json",
     "libbio": ROOT / "sys/src/libbio/libbio.json",
+    "libavl": ROOT / "sys/src/libavl/libavl.json",
     "libmemdraw": ROOT / "sys/src/libmemdraw/libmemdraw.json",
     "libdraw": ROOT / "sys/src/libdraw/libdraw.json",
 }

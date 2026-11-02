@@ -33,6 +33,7 @@ MOUNT_BASE = 0xAE00000
 MOUNT9_BASE = 0xB200000
 EXT2SRV_BASE = 0xBA00000
 PROVISION_BASE = 0xBE00000
+GEFS_BASE = 0xC200000
 RC_BASE = 0x2A00000
 ECHO_BASE = 0x2E00000
 CAT_BASE = 0x3200000
@@ -452,6 +453,69 @@ SECTIONS {{
     image, entry = validate_elf(elf, EXT2SRV_BASE)
     if symbol_value(elf, "_main") != entry:
         raise RuntimeError("ext2srv entry does not name _main")
+    return image, entry
+
+
+GEFS_SOURCES = (
+    "blk.c", "cache.c", "check.c", "cons.c", "dump.c", "error.c", "fs.c",
+    "hash.c", "load.c", "main.c", "pack.c", "ream.c", "snap.c", "tree.c",
+    "user.c",
+)
+
+
+def build_gefs(out: Path, libc: Path) -> tuple[bytes, int]:
+    """gefs: log-structured, snapshotting file server (9front)."""
+    o9 = ROOT / "build/arm64-o9"
+    src = ROOT / "sys/src/cmd/gefs"
+    flags = [
+        CC, "--target=aarch64-none-elf", "-ffreestanding", "-fno-builtin",
+        "-fno-stack-protector", "-fno-vectorize", "-fno-slp-vectorize",
+        "-mstrict-align", "-fsigned-char", "-fcommon", "-O2",
+        "-Wno-parentheses", "-Wno-missing-braces", "-Wno-unknown-pragmas",
+        "-Wno-unused-function", "-Wno-unused-variable",
+        "-I", str(ROOT / "aarch64/include"),
+        "-I", str(ROOT / "sys/include"),
+        "-I", str(src),
+    ]
+    objects = []
+    for name in GEFS_SOURCES:
+        obj = out / f"gefs-{name}.o"
+        subprocess.run([*flags, "-c", str(src / name), "-o", str(obj)],
+                       check=True)
+        objects.append(obj)
+    atomic = out / "gefs-atomic9.o"
+    subprocess.run([*flags, "-c", str(ROOT / "util/arm64/atomic9.c"),
+                    "-o", str(atomic)], check=True)
+    objects.append(atomic)
+    script = out / "gefs.ld"
+    elf = out / "gefs"
+    script.write_text(f'''ENTRY(_main)
+PHDRS {{
+  text PT_LOAD FLAGS(5);
+  data PT_LOAD FLAGS(6);
+}}
+SECTIONS {{
+  . = 0x{GEFS_BASE:x};
+  .text : {{ *(.text .text.*) *(.rodata .rodata.*) }} :text
+  . = ALIGN(0x{BIG_PAGE:x});
+  .data : {{ *(.data .data.*) *(.sdata .sdata.*) *(.got .got.*) }} :data
+  .bss : {{ *(.bss .bss.*) *(.sbss .sbss.*) COMMON }} :data
+  PROVIDE(end = .);
+  /DISCARD/ : {{ *(.comment) *(.note*) }}
+}}
+''')
+    subprocess.run([
+        LD, "-static", "-z", "max-page-size=4096", "-T", str(script),
+        "--allow-multiple-definition",
+        "-e", "_main", "-u", "_main", *map(str, objects),
+        "--start-group",
+        str(o9 / "libavl.a"), str(o9 / "libauth.a"), str(o9 / "libbio.a"),
+        str(o9 / "libsec.a"), str(o9 / "libmp.a"), str(libc),
+        "--end-group", "-o", str(elf),
+    ], check=True)
+    image, entry = validate_elf(elf, GEFS_BASE)
+    if symbol_value(elf, "_main") != entry:
+        raise RuntimeError("gefs entry does not name _main")
     return image, entry
 
 
@@ -1716,6 +1780,10 @@ main(int argc, char **argv)
 	exits(nil);
 }
 ''', RTC_BASE, libc)
+    # gefs is mid-port: it needs Plan 9's anonymous-struct member
+    # flattening rewritten for C.  Build it only when asked.
+    if os.environ.get("ARM64_BUILD_GEFS") == "1":
+        gefs, _ = build_gefs(out, libc)
     provision, _ = build_elf(out, libc, "provision",
                              ROOT / "sys/src/cmd/emmc/provision.c",
                              PROVISION_BASE, [])
@@ -1967,6 +2035,7 @@ main(int argc, char **argv)
         "rtc": rtc,
         "emmc": emmc,
         "provision": provision,
+        **({"gefs": gefs} if os.environ.get("ARM64_BUILD_GEFS") == "1" else {}),
         "gmac": gmac,
         "sdprobe": sdprobe,
         "opteeprobe": keyrootprobe,
