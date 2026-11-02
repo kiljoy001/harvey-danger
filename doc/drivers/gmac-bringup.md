@@ -456,3 +456,68 @@ HARVEY-ARM64 NET-PING PASS
 A cold boot now brings up `/net` without any bootloader hand-off, and
 the host can ping `192.168.2.248`.  100 Mbps and 1 Gbps remain the open
 question from the earlier sections.
+
+## 100 Mbps works; 1 Gbps still does not
+
+Once the reset is released and the Rendez is zeroed, the earlier speed
+results no longer reproduce.  Measured on this v1.1 unit with the
+kernel driver:
+
+| Link | PHY status | Traffic |
+| --- | --- | --- |
+| 10 Mbps | `0x3c40` | passes |
+| 100 Mbps | `0x7c40` | passes |
+| 1000 Mbps | `0xbc40` | link up, no frames reach the switch |
+
+The v1.1 device tree is the useful hint:
+
+```
+phy-mode = "rgmii";          /* not "rgmii-id" */
+tx_delay = <0x30>;
+rx_delay = <0x10>;
+```
+
+so the RGMII delays belong in the **MAC**, not the PHY.  `GMAC1_CON0`
+therefore has to carry them; the bootloader value is not a substitute.
+The driver now writes:
+
+```
+GRF GMAC1_CON1 (0x38c) = 0x13   RGMII select + TX/RX delay enables
+GRF GMAC1_CON0 (0x388) = 0x1030 tx 0x30, rx 0x10
+```
+
+100 Mbps passes with exactly that.  The probe advertises 10/100
+(`ANAR 0x01e1`, `GBCR 0`, `BMCR 0x1340`) and runs the MAC at whatever
+autonegotiation picks, so a cold boot comes up at 100 Mbps.
+
+### Why 1 Gbps fails
+
+At 1000 Mbps the MAC still receives — `RXFRAMECOUNT_GB` (0x780) climbs
+during a ping — but `TXFRAMECOUNT_GB` (0x714) never moves and
+`DMA_CH0_STATUS` (0x1160) shows `TBU` (transmit buffer unavailable):
+the TX DMA underflows and nothing is transmitted.  The received frames
+are dropped before IP replies, so the host sees no ARP or ICMP reply.
+
+Sweeping the MAC RX delay from `0x00` to `0x40` with TX at `0x30` did
+not change that, and disabling the MAC delays (`CON1` bit 0/1 clear,
+PHY-delay-only) did not either.  That matches the community reports for
+v1.1 and the fact that U-Boot cannot pass traffic at 1 Gbps on this
+unit either.  Treat 1 Gbps as a board limitation until a vendor image
+proves otherwise on this specific unit.
+
+## Runtime ctl
+
+`/net/ether0/0/ctl` drives the driver without a reboot.  `rc` writes
+each word of `echo a b > ctl` as a separate `write`, so arguments are
+joined with underscores:
+
+```text
+echo status                > /net/ether0/0/ctl
+echo speed_1000            > /net/ether0/0/ctl
+echo delay_0x30_0x10       > /net/ether0/0/ctl
+echo dlyen_3               > /net/ether0/0/ctl
+echo reg_0x110             > /net/ether0/0/ctl
+echo phy_2                 > /net/ether0/0/ctl
+```
+
+`reg` and `phy` take an optional value for a write (`reg_0x1104_0x00080011`).

@@ -51,7 +51,7 @@ signals that the board DTS does not describe.
 | eMMC | HS200/ADMA2/9P works | Partition layer, filesystem, root mount | **P0** |
 | SD card (sdmmc0) | DTS enabled | No driver; second SDHCI instance | P2 |
 | SDIO (sdmmc1) | DTS enabled | No SDIO driver; WiFi/BT module | P2 |
-| GMAC1 / PHY | 10 Mbps link, `/net` up, ping passes | `SRST_A_GMAC1` released at probe; 100/1000 still open | P1 |
+| GMAC1 / PHY | 10/100 Mbps link, `/net` up, ping passes | 1 Gbps: TX DMA underflow, no traffic (v1.1) | P2 |
 | USB2 PHY0/1 + EHCI/OHCI | Board probe | No class drivers; OTG role | P1 |
 | USB3 xHCI | Root ports, control/bulk/interrupt, UAC1 probe | Hubs, HID, MSC, audio service, `#P` transport, pending-read cancellation | **P0** |
 | PCIe2x1 / combphy | FDT class recognized | No PCIe driver; M.2 NVMe | P2 |
@@ -99,7 +99,7 @@ signals that the board DTS does not describe.
 | USB3 host | USB3_HOST1, xHCI | Root ports work | HID/MSC/hubs, `#P` transport | **P0** |
 | USB2 host x2 | USB2_HOST2/3, EHCI/OHCI | Board probe | HID/MSC classes | P1 |
 | USB2 OTG / Type-C | `USB_OTG0`, `TYPEC1` power | PHY/regulator only | OTG role, CC/PD policy | P2 |
-| Ethernet RJ45 | GMAC1 + PHY | 10 Mbps, `/net` up, ping passes | 100/1000 link quality | P1 |
+| Ethernet RJ45 | GMAC1 + PHY | 10/100 Mbps, `/net` up, ping passes | 1 Gbps underflow on v1.1 | P2 |
 | WiFi/BT | SDIO1 + UART1, wake GPIOs | WiFi CP/scan/WPA2; BT not driven | BT HCI, WiFi data path/link budget | P2/P3 |
 | Debug UART | UART2, 1500000 | Works | — | — |
 | Power input | DC 5 V / Type-C power | RK809 rails | No PD/CC policy | P3 |
@@ -141,9 +141,11 @@ Two rules came out of the fix:
   the old failure point: `sleep()` locked on stack garbage and the kernel
   reported a lock loop in `qmalloc`.
 
-A cold boot now reports `gmac: ver 3051 ... phy 0 status 3c40`,
-`#l0: gmac: 10Mbps`, and `NET-BIND`, `NET-IFC`, `NET-PING` all pass.
-100 Mbps and 1 Gbps remain open (see `gmac-bringup.md`).
+A cold boot now reports `gmac: ver 3051 ... phy 0 status 7c40`,
+`#l0: gmac: 100Mbps`, and `NET-BIND`, `NET-IFC`, `NET-PING` all pass.
+The probe advertises 10/100 and runs at whatever autonegotiation picks;
+`/net/ether0/0/ctl` can force a speed at runtime.  1 Gbps still links but
+transmits nothing (TX DMA underflow), see `gmac-bringup.md`.
 
 ### 2. Root filesystem, not another block driver
 

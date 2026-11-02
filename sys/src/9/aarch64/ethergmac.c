@@ -56,11 +56,16 @@ enum {
 	CruSoftrst14	= 0x438,	/* SOFTRST_CON(14) */
 	GmacRstBit	= 1<<12,	/* SRST_A_GMAC1, reset id 0xec */
 
+	PhyAddr		= 0,		/* YT8531 also answers at 1 */
+
 	MiiBusy		= 1<<0,
 	MiiRead		= 3<<2,
 	MiiWrite	= 1<<2,
 	MiiBmcr		= 0,
 	MiiBmsr		= 1,
+	MiiAnar		= 4,
+	MiiGbcr		= 9,
+	MiiStat		= 0x11,
 	MiiPhysid1	= 2,
 	MiiPhysid2	= 3,
 
@@ -388,13 +393,132 @@ gmacifstat(Ether *ether, void *a, i32 n, u32 offset)
 	return 0;
 }
 
+/*
+ * Force a link speed.  The PHY is told to advertise only the requested
+ * speed, autonegotiation restarts, and the MAC is reprogrammed once the
+ * link comes back.  Runtime only: /net/ether0/ctl.
+ */
+static int
+gmaclink(Gmac *g, int mbps)
+{
+	int anar, gbcr, st, i;
+	u32 cfg;
+	Rendez r;
+
+	if(mbps != 10 && mbps != 100 && mbps != 1000)
+		return -1;
+	switch(mbps){
+	case 1000:
+		anar = 0x0001;		/* selector only; 1000 is the offer */
+		gbcr = 0x0300;
+		break;
+	case 100:
+		anar = 0x0181;		/* 100 full */
+		gbcr = 0;
+		break;
+	default:
+		anar = 0x0021;		/* 10 full */
+		gbcr = 0;
+		break;
+	}
+	memset(&r, 0, sizeof r);
+	mdio(g, PhyAddr, MiiAnar, anar, 1);
+	mdio(g, PhyAddr, MiiGbcr, gbcr, 1);
+	mdio(g, PhyAddr, MiiBmcr, 0x1000|0x0200, 1);
+
+	st = 0;
+	for(i = 0; i < 40; i++){
+		st = mdio(g, PhyAddr, MiiStat, 0, 0);
+		if(st > 0 && (st & (1<<10)))
+			break;
+		tsleep(&r, return0, nil, 50);
+	}
+
+	cfg = rd(g, GmacConfig);
+	wr(g, GmacConfig, cfg & ~(CfgTe|CfgRe));
+	setspeed(g, mbps);
+	cfg = rd(g, GmacConfig) & ~(CfgFes|CfgPs);
+	if(mbps == 100)
+		cfg |= CfgFes|CfgPs;
+	else if(mbps == 10)
+		cfg |= CfgPs;
+	wr(g, GmacConfig, cfg | CfgTe | CfgRe);
+	g->ether->Netif.mbps = mbps;
+	print("gmac: link %d mbps, phy stat %ux\n", mbps, st);
+	return 0;
+}
+
 static i32
 gmacctl(Ether *ether, void *a, i32 n)
 {
-	USED(ether);
-	USED(a);
-	USED(n);
-	return 0;
+	Gmac *g = ether->ctlr;
+	char buf[128], *f[4], *p;
+	int i, nf, r, st, tx, rx;
+
+	if(n <= 0 || n >= (i32)sizeof buf)
+		return -1;
+	memmove(buf, a, n);
+	buf[n] = 0;
+	/*
+	 * rc writes each word of "echo a b > ctl" as a separate write, so a
+	 * command arrives one word at a time.  Arguments use underscores:
+	 * "speed_1000", "delay_31_16".
+	 */
+	nf = 0;
+	for(p = buf; *p != 0 && nf < nelem(f); ){
+		while(*p == ' ' || *p == '\t' || *p == '\r' ||
+		      *p == '\n' || *p == '_')
+			p++;
+		if(*p == 0)
+			break;
+		f[nf++] = p;
+		while(*p != 0 && *p != ' ' && *p != '\t' &&
+		      *p != '\r' && *p != '\n' && *p != '_')
+			p++;
+		if(*p != 0)
+			*p++ = 0;
+	}
+	if(nf == 0)
+		return -1;
+
+	qlock(&g->lk);
+	r = 0;
+	if(strcmp(f[0], "speed") == 0 && nf == 2){
+		r = gmaclink(g, atoi(f[1]));
+	}else if(strcmp(f[0], "delay") == 0 && nf == 3){
+		tx = strtoul(f[1], &p, 0);
+		rx = strtoul(f[2], &p, 0);
+		grfwr(g, Gmac1Con0, (tx&0x7f) | ((rx&0x7f)<<8) |
+		      (0x7f<<16) | (0x7f<<24));
+		print("gmac: delay tx %d rx %d\n", tx, rx);
+	}else if(strcmp(f[0], "dlyen") == 0 && nf == 2){
+		/* bit 0: TX delay enable, bit 1: RX delay enable */
+		grfwr(g, Gmac1Con1, (1<<4) | (atoi(f[1]) & 3) | (0x13<<16));
+		print("gmac: dlyen %d\n", atoi(f[1]) & 3);
+	}else if(strcmp(f[0], "reg") == 0 && nf >= 2){
+		i = strtoul(f[1], &p, 0);
+		if(nf >= 3)
+			wr(g, i, strtoul(f[2], &p, 0));
+		else
+			print("gmac: reg %#ux = %ux\n", i, rd(g, i));
+	}else if(strcmp(f[0], "phy") == 0 && nf >= 2){
+		i = strtoul(f[1], &p, 0);
+		if(nf >= 3)
+			mdio(g, PhyAddr, i, strtoul(f[2], &p, 0), 1);
+		else
+			print("gmac: phy %#ux = %ux\n", i,
+			      mdio(g, PhyAddr, i, 0, 0));
+	}else if(strcmp(f[0], "status") == 0){
+		st = mdio(g, PhyAddr, MiiStat, 0, 0);
+		print("gmac: speed %d phy %d stat %ux con0 %ux con1 %ux sel %ux\n",
+		      g->speed, PhyAddr, st, grfrd(g, Gmac1Con0),
+		      grfrd(g, Gmac1Con1), cruRd(g, CruGmac1Sel33));
+	}else{
+		print("gmac: ctl n %d nf %d [%s]\n", n, nf, buf);
+		r = -1;
+	}
+	qunlock(&g->lk);
+	return r < 0 ? -1 : n;
 }
 
 static void
@@ -440,11 +564,16 @@ gmacreset(Ether *ether)
 
 	gmacwake(g);
 
-	/* RGMII select plus the MAC TX/RX clock delay enables (CON1 = 0x13) */
+	/*
+	 * RGMII select plus both MAC clock delay enables (CON1 = 0x13).
+	 * The v1.1 device tree asks for tx 0x30 / rx 0x10 in CON0 and a
+	 * plain "rgmii" PHY mode, i.e. the delays live in the MAC.
+	 */
 	grfwr(g, Gmac1Con1, (0x13U<<16) | 0x13U);
-	print("gmac: ver %ux cfg %ux feat %ux grf %ux rst %ux\n",
+	grfwr(g, Gmac1Con0, (0x30U | (0x10U<<8)) | (0x7fU<<16) | (0x7fU<<24));
+	print("gmac: ver %ux cfg %ux feat %ux grf %ux/%ux rst %ux\n",
 	      rd(g, 0x110), rd(g, 0), rd(g, 0x11c),
-	      grfrd(g, Gmac1Con1), cruRd(g, CruSoftrst14));
+	      grfrd(g, Gmac1Con0), grfrd(g, Gmac1Con1), cruRd(g, CruSoftrst14));
 
 	phy = -1;
 	for(i = 0; i < 8; i++){
@@ -460,27 +589,34 @@ gmacreset(Ether *ether)
 		print("gmac: no phy\n");
 		return -1;
 	}
-	st = mdio(g, phy, 0x11, 0, 0);
-	if(st < 0 || !(st & (1<<10)) || ((st >> 14) & 3) != 0){
-		/* advertise 10 Mbps full duplex and renegotiate */
-		mdio(g, phy, 0x9, 0, 1);
-		mdio(g, phy, 0x4, 0x0061, 1);
-		mdio(g, phy, MiiBmcr, 0x1200, 1);
-		for(i = 0; i < 50; i++){
-			st = mdio(g, phy, 0x11, 0, 0);
-			if(st > 0 && (st & (1<<10)))
-				break;
-			tsleep(&r, return0, nil, 100);
-		}
-		tsleep(&r, return0, nil, 5000);
+	/*
+	 * Advertise 10/100 and let the PHY pick.  1 Gbps is left out: on
+	 * this v1.1 board it links but the TX DMA underflows and no frame
+	 * reaches the switch.  "speed_1000" on the ctl file still forces
+	 * it for experiments.
+	 */
+	mdio(g, phy, MiiGbcr, 0, 1);
+	mdio(g, phy, MiiAnar, 0x01e1, 1);
+	mdio(g, phy, MiiBmcr, 0x1000|0x0200, 1);
+	st = 0;
+	for(i = 0; i < 40; i++){
+		st = mdio(g, phy, MiiStat, 0, 0);
+		if(st > 0 && (st & (1<<10)))
+			break;
+		tsleep(&r, return0, nil, 50);
 	}
-	setspeed(g, 10);
+	switch((st >> 14) & 3){
+	case 1: g->speed = 100; break;
+	case 2: g->speed = 1000; break;
+	default: g->speed = 10; break;
+	}
+	setspeed(g, g->speed);
 	dmainit(g);
 	dmacfg(g);
 
 	memmove(ether->ea, mac, Eaddrlen);
 	memmove(ether->Netif.addr, mac, Eaddrlen);
-	ether->Netif.mbps = 10;
+	ether->Netif.mbps = g->speed;
 	ether->Netif.link = 1;
 	ether->transmit = transmit;
 	ether->interrupt = nil;
