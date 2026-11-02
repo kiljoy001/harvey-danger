@@ -1,0 +1,2 @@
+#!/bin/sh
+HARVEY_CXX=0 exec "$(dirname "$0")/harvey-cc.in" "$@"

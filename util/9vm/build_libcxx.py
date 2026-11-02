@@ -75,6 +75,13 @@ SOURCES = [
     "call_once",
     "thread",
     "future",
+    "random",
+    "locale",
+    "ios",
+    "ios.instantiations",
+    "iostream",
+    "fstream",
+    "strstream",
 ]
 
 CONFIG_SITE = """\
@@ -96,14 +103,15 @@ CONFIG_SITE = """\
 #define _LIBCPP_HAS_THREAD_API_C11 0
 #define _LIBCPP_HAS_VENDOR_AVAILABILITY_ANNOTATIONS 0
 #define _LIBCPP_HAS_FILESYSTEM 0
-#define _LIBCPP_HAS_RANDOM_DEVICE 0
-#define _LIBCPP_HAS_LOCALIZATION 0
+#define _LIBCPP_HAS_RANDOM_DEVICE 1
+#define _LIBCPP_HAS_LOCALIZATION 1
 #define _LIBCPP_HAS_UNICODE 0
-#define _LIBCPP_HAS_WIDE_CHARACTERS 0
+#define _LIBCPP_HAS_WIDE_CHARACTERS 1
 #define _LIBCPP_HAS_TIME_ZONE_DATABASE 0
 #define _LIBCPP_INSTRUMENTED_WITH_ASAN 0
 #define _LIBCPP_HARDENING_MODE_DEFAULT 2
 #define _LIBCPP_PSTL_BACKEND_SERIAL 1
+#define _LIBCPP_PROVIDES_DEFAULT_RUNE_TABLE 1
 
 #endif
 """
@@ -145,6 +153,7 @@ def base_flags(library: bool) -> list[str]:
         "-fno-threadsafe-statics",
         "-O2",
         "-g",
+        f"-I{REPO_ROOT / 'util' / 'clang-harvey' / 'target-include'}",
         f"-I{INCLUDE_V1}",
         f"-I{INCLUDE}",
         f"-I{LIBCXX / 'src'}",
@@ -152,7 +161,7 @@ def base_flags(library: bool) -> list[str]:
         f"-I{APEX / 'amd64' / 'include'}",
         "-include", str(INCLUDE / "compat.h"),
         "-D_SUSV2_SOURCE", "-D_POSIX_SOURCE", "-D_LIMITS_EXTENSION",
-        "-DHARVEY", "-D_WCHAR_T",
+        "-D_GNU_SOURCE", "-DHARVEY", "-D_WCHAR_T",
     ]
     if library:
         flags += [
@@ -174,6 +183,11 @@ def build_library():
     compat_obj = OBJDIR / "compat.o"
     run([CXX, *base_flags(False), "-c", str(COMPAT_CPP), "-o", str(compat_obj)])
     objects.append(compat_obj)
+
+    locale_obj = OBJDIR / "locale_stub.o"
+    run([CXX, *base_flags(False), "-c",
+         str(REPO_ROOT / "util" / "libcxx" / "locale_stub.cpp"), "-o", str(locale_obj)])
+    objects.append(locale_obj)
 
     pthread_obj = OBJDIR / "pthread.o"
     run([CXX, *base_flags(False), "-c",

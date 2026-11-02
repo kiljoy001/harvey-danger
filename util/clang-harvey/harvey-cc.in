@@ -1,0 +1,86 @@
+#!/bin/sh
+# Cross compiler driver for the Harvey/APEX target.
+#
+# This is the compiler CMake (and any other build system) uses when building
+# software that will *run on Harvey*.  It is a thin wrapper around the host
+# clang/clang++ that pins the target triple, the APEX sysroot, libc++, and the
+# Harvey link recipe.
+#
+# Generate the real scripts with:
+#     util/clang-harvey/build-wrappers.py
+#
+# Environment:
+#     HARVEY      Harvey checkout (default: two levels above this script)
+#     HARVEY_CXX  1 to drive clang++ (set by the generated harvey-clang++)
+
+set -e
+
+selfdir=$(cd "$(dirname "$0")" && pwd)
+HARVEY=${HARVEY:-$(cd "$selfdir/../.." && pwd)}
+HARVEY_CXX=${HARVEY_CXX:-0}
+
+LIBCXX="$HARVEY/build/libcxx"
+APEX="$HARVEY/apex"
+TARGET=${HARVEY_TARGET:-x86_64-unknown-linux-elf}
+
+# Harvey's C++ runtime is built without exceptions or RTTI.  Keep the whole
+# tree consistent with it.
+if [ "$HARVEY_CXX" = 1 ]; then
+    CC=clang++
+    CXXFLAGS="-fno-exceptions -fno-rtti -D_WCHAR_T"
+else
+    CC=clang
+    CXXFLAGS=
+fi
+
+if [ ! -d "$LIBCXX/include/c++/v1" ]; then
+    echo "harvey-cc: missing $LIBCXX/include/c++/v1" >&2
+    echo "harvey-cc: run util/9vm/build_libcxx.py first" >&2
+    exit 1
+fi
+
+: "${HARVEY_CLANG_RESOURCE:=$(clang -print-resource-dir)/include}"
+
+compile_only=0
+asm_only=0
+for arg in "$@"; do
+    case "$arg" in
+        *.s|*.S|*.sx)
+            asm_only=1
+            ;;
+        -c|-E|-S|-M|-MM|-fsyntax-only|--version|-dumpversion|-dumpmachine|--help|-print-*)
+            compile_only=1
+            ;;
+    esac
+done
+
+if [ "$asm_only" = 1 ]; then
+    exec "$CC" -target "$TARGET" "$@"
+fi
+
+set -- -target "$TARGET" -static -nostdinc \
+    -fno-stack-protector -mno-red-zone \
+    -D_SUSV2_SOURCE -D_POSIX_SOURCE -D_LIMITS_EXTENSION -D_GNU_SOURCE -DHARVEY \
+    -I"$selfdir/target-include" \
+    -I"$LIBCXX/include/c++/v1" \
+    -I"$LIBCXX/include" \
+    -include "$LIBCXX/include/compat.h" \
+    -I"$APEX/include" \
+    -I"$APEX/amd64/include" \
+    -isystem "$HARVEY_CLANG_RESOURCE" \
+    $CXXFLAGS \
+    "$@"
+
+if [ "$compile_only" = 0 ]; then
+    set -- -fuse-ld=lld -nostdlib -Wl,-z,max-page-size=0x200000 \
+        "$@" \
+        "$APEX/amd64/lib/crt0.o" \
+        "$APEX/amd64/lib/crti.o" \
+        "$LIBCXX/lib/libc++.a" \
+        "$APEX/amd64/lib/libcxxabi.a" \
+        "$APEX/amd64/lib/libap.a" \
+        "$HARVEY/build/libc.a" \
+        "$APEX/amd64/lib/crtn.o"
+fi
+
+exec "$CC" "$@"
