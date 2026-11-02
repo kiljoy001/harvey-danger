@@ -281,7 +281,23 @@ probe proves the privilege boundary needed by a driver server; a restricted
 resource-grant interface is still required.
 
 The build uses `clang-23` if present because this host's default `clang` only
-contains the x86 backend. Kernel sources and integer/text kernel libc use
+contains the x86 backend.
+
+`o9c` (Objective-9C's compiler) is a Plan 9 program: the copy built inside
+the 9front VM is a Plan 9 a.out and cannot run on a Linux build host.  Build
+a host copy first with plan9port's `9c`/`9l`:
+
+```sh
+sh util/arm64/build_o9c.sh          # writes build/host/o9c
+python3 util/arm64/build_userland.py --output build/arm64-o9/userland.h \
+        --archive build/arm64-o9/userland.img
+```
+
+`build_o9_services.py` prefers `build/host/o9c` and falls back to the repo
+copy, so a host without plan9port still builds when the sources were
+transpiled elsewhere.  The host build was verified end to end: all eight
+services transpile with it, compile and link, and the userland and kernel
+built from a clean tree boot to `rc` under QEMU `virt`. Kernel sources and integer/text kernel libc use
 `-mgeneral-regs-only`. Floating-point libc routines retain the standard ARM64
 ABI; they must stay unused until per-process FP state is managed.
 Set `ARM64_CC`, `ARM64_LD` and `ARM64_OBJCOPY` to override the tools.

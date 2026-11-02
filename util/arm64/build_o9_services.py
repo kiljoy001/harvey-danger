@@ -21,8 +21,15 @@ AR = os.environ.get("ARM64_AR") or shutil.which("llvm-ar-23") or "llvm-ar"
 STRIP = (os.environ.get("ARM64_STRIP") or shutil.which("llvm-strip-23") or
          shutil.which("llvm-strip") or "llvm-strip")
 # The repo copy of o9c is a Plan 9 a.out when it is built inside the
-# 9front VM; O9C lets a host build point at its own compiler.
-O9C = Path(os.environ.get("O9C", O9_ROOT / "o9c/o9c")).resolve()
+# 9front VM.  Prefer a host build (util/arm64/build_o9c.sh, plan9port's
+# 9c/9l) when it exists; O9C overrides either.
+_host_o9c = ROOT / "build/host/o9c"
+if os.environ.get("O9C"):
+	O9C = Path(os.environ["O9C"]).resolve()
+elif _host_o9c.is_file():
+	O9C = _host_o9c.resolve()
+else:
+	O9C = (O9_ROOT / "o9c/o9c").resolve()
 BIG_PAGE = 0x200000
 
 FLAGS = [
