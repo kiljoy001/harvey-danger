@@ -221,6 +221,12 @@ rwrite(Req *r)
 	}
 	nr = writefile(f, thdr.data, thdr.offset, thdr.count);
 	if(nr >= 0){
+		/*
+		 * A root filesystem must not lose writes when the board is
+		 * power cycled.  The buffer cache is only a staging area
+		 * here, so push every dirty block out before acknowledging.
+		 */
+		syncbuf();
 		rhdr.count = nr;
 		chat("rcnt=%d...OK\n", nr);
 		respond(r, nil);

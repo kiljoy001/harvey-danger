@@ -855,6 +855,39 @@ emmcroot(void)
 	return 0;
 }
 
+/*
+ * Re-root onto the eMMC filesystem.  Everything the old root supplied
+ * comes from the image or from a kernel device, so the swap is a single
+ * mount on "/" followed by rebinding the per-device trees.  /boot is
+ * aliased to /bin so the rest of init keeps working unchanged.
+ */
+static int
+reroot(void)
+{
+	int fd;
+
+	if(access("/mnt/emmcroot/bin/rc", AEXIST) < 0)
+		return -1;
+	fd = open("/srv/ext2", ORDWR);
+	if(fd < 0)
+		return -1;
+	if(mount(fd, -1, "/", MREPL|MCREATE, "") < 0){
+		close(fd);
+		return -1;
+	}
+	close(fd);
+
+	create("/boot", OREAD, DMDIR|0755);
+	bind("/bin", "/boot", MREPL|MCREATE);
+	bind("#c", "/dev", MAFTER);
+	bind("#V", "/dev", MAFTER);
+	bind("#e", "/env", MCREATE|MAFTER);
+	bind("#s", "/srv", MREPL|MCREATE);
+	bind("#@", "/mnt", MREPL|MCREATE);
+	bind("#p", "/proc", MAFTER);
+	return 0;
+}
+
 void
 main(int argc, char **argv)
 {
@@ -944,9 +977,13 @@ main(int argc, char **argv)
 			say("HARVEY-ARM64 EMMCFS FAIL\n");
 		else if(emmctest() == 0){
 			say("HARVEY-ARM64 EMMCFS PASS\n");
-			if(emmcroot() == 0)
+			if(emmcroot() == 0){
 				say("HARVEY-ARM64 EMMC-ROOT PASS\n");
-			else
+				if(reroot() == 0)
+					say("HARVEY-ARM64 EMMC-REROOT PASS\n");
+				else
+					say("HARVEY-ARM64 EMMC-REROOT SKIP\n");
+			}else
 				say("HARVEY-ARM64 EMMC-ROOT SKIP\n");
 		}else
 			say("HARVEY-ARM64 EMMCFS FAIL\n");

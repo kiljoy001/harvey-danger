@@ -509,6 +509,46 @@ The image itself is built on the host from the boot archive: `mke2fs
 -t ext2 -b 1024 -O ^dir_index,^resize_inode,^ext_attr`, then every blob
 from `userland.img` is written to `/bin` with `debugfs`.
 
+## Re-rooting
+
+Once the filesystem is mounted, init replaces the root with it:
+
+```
+mount /srv/ext2 on "/"          MREPL|MCREATE
+create /boot; bind /bin /boot   the rest of init keeps using /boot
+bind #c #V -> /dev
+bind #e -> /env
+bind #s -> /srv        (MREPL)
+bind #@ -> /mnt        (MREPL)
+bind #p -> /proc
+```
+
+`/boot` is aliased to `/bin` so every `exec("/boot/...")` and the
+`path=(/boot . /bin)` in `rcmain` keep working without a second copy of
+the programs.  The swap is a single mount call, so a failure before it
+leaves the archive root in place.
+
+Boot output:
+
+```
+HARVEY-ARM64 EMMCFS PASS
+HARVEY-ARM64 EMMC-ROOT PASS
+HARVEY-ARM64 EMMC-REROOT PASS
+```
+
+and `ls /` now lists the eMMC tree (`bin dev srv mnt n proc env fd
+root boot net lost+found`).
+
+### Writes must reach the card
+
+Ext2srv keeps a buffer cache and only writes dirty blocks when they are
+evicted or the filesystem is released, so a board that is power cycled
+loses recent writes -- the first version of this rootfs lost a file
+written seconds earlier.  `rwrite` now calls `syncbuf()` before
+acknowledging a write, which costs throughput but makes the root
+filesystem durable.  The superblock is deliberately left dirty while
+the filesystem is open, so `-F` is still needed on the next boot.
+
 Note that U-Boot must load **both** the kernel and the boot archive:
 
 ```
