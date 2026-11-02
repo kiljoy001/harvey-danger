@@ -31,14 +31,11 @@ typedef struct Xdir	Xdir;
 
 
 /*
- * Porting shim.
- *
- * Plan 9 C allows a struct whose first member is declared with only a
- * type name ("QLock;") to be passed where that member's type is
- * expected; the member sits at offset 0.  That declaration style is
- * written out explicitly in this copy, so the implicit conversions are
- * reproduced here with casts.  The same applies to the Avl-based
- * containers and to lock/member pairs in gefs.
+ * Plan 9 C lets a struct whose first member is declared with only a
+ * type name ("QLock;") be passed where that member's type is expected;
+ * the member sits at offset 0.  -fms-extensions accepts the anonymous
+ * member itself, but not that implicit conversion, so reproduce it with
+ * casts.  Same for the Avl-based containers.
  */
 #define avllookup(t, k, f)	avllookup((Avltree*)(t), (Avl*)(k), (f))
 #define avlinsert(t, k)		avlinsert((Avltree*)(t), (Avl*)(k))
@@ -390,13 +387,13 @@ struct Val {
 };
 
 struct Kvp {
-	Key Key;
-	Val Val;
+	Key;
+	Val;
 };
 
 struct Msg {
 	char	op;
-	Kvp Kvp;
+	Kvp;
 };
 
 struct Dlist {
@@ -419,7 +416,7 @@ struct Errctx {
 };
 
 struct Arange {
-	Avl Avl;
+	Avl;
 	vlong	off;
 	vlong	len;
 };
@@ -456,14 +453,15 @@ struct Amsg {
 };
 
 struct Fmsg {
-	Fcall Fcall;
+	Fcall;
 	Conn	*conn;
 	int	sz;	/* the size of the message buf */
 	uchar	buf[];
 };
 
 struct Tree {
-	Limbo Limbo;
+	Limbo;
+
 	/* in-memory */
 	Lock	lk;
 	long	memref;	/* number of in-memory references to this */
@@ -483,7 +481,7 @@ struct Tree {
 };
 
 struct Bfree {
-	Limbo Limbo;
+	Limbo;
 	Bptr bp;
 };
 
@@ -619,7 +617,7 @@ struct Gefs {
 };
 
 struct Arena {
-	QLock QLock;
+	QLock;
 	Avltree *free;
 	Blk	**queue;
 	int	nqueue;
@@ -654,9 +652,9 @@ struct Xdir {
 };
 
 struct Dent {
-	RWLock RWLock;
-	Key Key;
-	Xdir Xdir;
+	RWLock;
+	Key;
+	Xdir;
 	Dent	*next;
 	QLock	trunclk;
 	Rendez	truncrz;
@@ -681,8 +679,8 @@ struct Cron {
 };
 
 struct Mount {
-	Limbo Limbo;
-	Lock Lock;
+	Limbo;
+	Lock;
 	Mount	*next;
 	long	ref;
 	vlong	gen;
@@ -719,7 +717,7 @@ struct Conn {
 };
 
 struct Fid {
-	RWLock RWLock;
+	RWLock;
 	Fid	*next;
 	/*
 	 * if opened with OEXEC, we want to use a snapshot,
@@ -776,7 +774,7 @@ struct Scan {
 };
 
 struct Blk {
-	Limbo Limbo;
+	Limbo;
 	/* cache entry */
 	Blk	*cnext;
 	Blk	*cprev;

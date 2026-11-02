@@ -559,7 +559,7 @@ closesnap(Tree *t)
 {
 	if(t == nil || adec(&t->memref) != 0)
 		return;
-	limbo(DFtree, &t->Limbo);
+	limbo(DFtree, (Limbo*)t);
 }
 
 void

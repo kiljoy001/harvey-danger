@@ -160,9 +160,11 @@ def emit_array(lines: list[str], name: str, image: bytes) -> None:
     lines.extend(("};", ""))
 
 
-def build_elf(out: Path, libc: Path, name: str, source: Path,
-              base: int, extra: list[Path], ldflags: list[str] = ()) -> tuple[bytes, int]:
-    obj = out / f"{name}.o"
+def build_elf(out: Path, libc: Path, name: str, source,
+              base: int, extra: list[Path], ldflags: list[str] = (),
+              cflags: list[str] = ()) -> tuple[bytes, int]:
+    sources = list(source) if isinstance(source, (list, tuple)) else [source]
+    objs = []
     script = out / f"{name}.ld"
     elf = out / name
     script.write_text(f'''ENTRY(_main)
@@ -180,21 +182,26 @@ SECTIONS {{
   /DISCARD/ : {{ *(.comment) *(.note*) }}
 }}
 ''')
-    subprocess.run([
-        CC, "--target=aarch64-none-elf", "-ffreestanding", "-fno-builtin",
-        "-fno-stack-protector", "-fno-vectorize", "-fno-slp-vectorize",
-        "-mstrict-align", "-fsigned-char", "-fcommon", "-O2",
-        "-I", str(ROOT / "aarch64/include"),
-        "-I", str(ROOT / "sys/include"),
-        "-I", str(ROOT / "sys/src/cmd/auth/keyroot/ta/pq/usercompat"),
-        "-I", str(ROOT / "sys/src/cmd/auth/keyroot/ta/pq"),
-        "-c", str(source), "-o", str(obj),
-    ], check=True)
+    for index, src in enumerate(sources):
+        obj = out / (f"{name}.o" if len(sources) == 1
+                     else f"{name}-{index}-{src.stem}.o")
+        subprocess.run([
+            CC, "--target=aarch64-none-elf", "-ffreestanding", "-fno-builtin",
+            "-fno-stack-protector", "-fno-vectorize", "-fno-slp-vectorize",
+            "-mstrict-align", "-fsigned-char", "-fcommon", "-O2",
+            *cflags,
+            "-I", str(ROOT / "aarch64/include"),
+            "-I", str(ROOT / "sys/include"),
+            "-I", str(ROOT / "sys/src/cmd/auth/keyroot/ta/pq/usercompat"),
+            "-I", str(ROOT / "sys/src/cmd/auth/keyroot/ta/pq"),
+            "-c", str(src), "-o", str(obj),
+        ], check=True)
+        objs.append(str(obj))
     libs = [*extra, libc]
     subprocess.run([
         LD, "-static", "-z", "max-page-size=4096", "-T", str(script),
         "--allow-multiple-definition", *ldflags,
-        "-e", "_main", "-u", "_main", str(obj),
+        "-e", "_main", "-u", "_main", *objs,
         "--start-group", *map(str, libs), "--end-group",
         "-o", str(elf),
     ], check=True)
@@ -208,6 +215,11 @@ def build_fs(out: Path, libc: Path, name: str, source: Path,
              base: int) -> tuple[bytes, int]:
     o9 = ROOT / "build/arm64-o9"
     health = out / "driverhealth.o"
+    drvkit = out / "drvkit.o"
+    drvflags = [
+        "-D__HARVEY__",
+        "-I", str(ROOT / "sys/src/cmd/o9drvman"),
+    ]
     if not health.exists():
         subprocess.run([
             CC, "--target=aarch64-none-elf", "-ffreestanding", "-fno-builtin",
@@ -219,11 +231,21 @@ def build_fs(out: Path, libc: Path, name: str, source: Path,
             "-c", str(ROOT / "sys/src/cmd/o9drvman/health.c"),
             "-o", str(health),
         ], check=True)
-    extra = [health, o9 / "lib9p.a", o9 / "libthread.a", o9 / "libauth.a",
-             o9 / "libauthsrv.a", o9 / "libsec.a", o9 / "libndb.a",
-             o9 / "libbio.a"]
+    subprocess.run([
+        CC, "--target=aarch64-none-elf", "-ffreestanding", "-fno-builtin",
+        "-fno-stack-protector", "-fno-vectorize", "-fno-slp-vectorize",
+        "-mstrict-align", "-fsigned-char", "-fcommon", "-O2",
+        *drvflags,
+        "-I", str(ROOT / "aarch64/include"),
+        "-I", str(ROOT / "sys/include"),
+        "-c", str(ROOT / "sys/src/cmd/drvkit/drv.c"),
+        "-o", str(drvkit),
+    ], check=True)
+    extra = [health, drvkit, o9 / "lib9p.a", o9 / "libthread.a",
+             o9 / "libauth.a", o9 / "libauthsrv.a", o9 / "libsec.a",
+             o9 / "libndb.a", o9 / "libbio.a"]
     return build_elf(out, libc, name, source, base, extra,
-                     ldflags=["--defsym=threadmain=main"])
+                     ldflags=["--defsym=threadmain=main"], cflags=drvflags)
 
 
 def build_factotum(out: Path, libc: Path) -> tuple[bytes, int]:
@@ -471,6 +493,9 @@ def build_gefs(out: Path, libc: Path) -> tuple[bytes, int]:
         CC, "--target=aarch64-none-elf", "-ffreestanding", "-fno-builtin",
         "-fno-stack-protector", "-fno-vectorize", "-fno-slp-vectorize",
         "-mstrict-align", "-fsigned-char", "-fcommon", "-O2",
+        # gefs is Plan 9 C: anonymous struct members flatten field
+        # access.  Clang implements the same extension as MSVC.
+        "-fms-extensions", "-Wno-microsoft-anon-tag",
         "-Wno-parentheses", "-Wno-missing-braces", "-Wno-unknown-pragmas",
         "-Wno-unused-function", "-Wno-unused-variable",
         "-I", str(ROOT / "aarch64/include"),

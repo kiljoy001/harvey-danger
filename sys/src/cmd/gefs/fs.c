@@ -751,7 +751,7 @@ clunkmount(Mount *mnt)
 			aswapp(&fs->mounts, p->next);
 		else
 			*pp = p->next;
-		limbo(DFmnt, &p->Limbo);
+		limbo(DFmnt, (Limbo*)p);
 	}
 	qunlock(&fs->mountlk);
 }

@@ -819,7 +819,7 @@ freeblk(Tree *t, Blk *b)
 	setflag(b, Blimbo, 0);
 	holdblk(b);
 	assert(agetl(&b->ref) > 1);
-	limbo(DFblk, &b->Limbo);
+	limbo(DFblk, (Limbo*)b);
 }
 
 void
@@ -838,11 +838,11 @@ freebp(Tree *t, Bptr bp)
 	while(fs->bfree == nil)
 		rsleep(&fs->bfreerz);
 	f = fs->bfree;
-	fs->bfree = (Bfree*)f->Limbo.next;
+	fs->bfree = (Bfree*)f->next;
 	qunlock(&fs->bfreelk);
 
 	f->bp = bp;
-	limbo(DFbp, &f->Limbo);
+	limbo(DFbp, (Limbo*)f);
 }
 
 void
@@ -933,7 +933,7 @@ epochclean(void)
 			qe.b = nil;
 			qput(a->sync, qe);
 			qlock(&fs->bfreelk);
-			f->Limbo.next = (Limbo*)fs->bfree;
+			f->next = (Limbo*)fs->bfree;
 			fs->bfree = f;
 			rwakeup(&fs->bfreerz);
 			qunlock(&fs->bfreelk);

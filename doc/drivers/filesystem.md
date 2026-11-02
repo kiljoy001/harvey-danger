@@ -159,25 +159,27 @@ struct Kvp { Key; Val; };      /* Plan 9: injects k, nk, nv, v */
 struct Msg { char op; Kvp; };  /* and flattens two levels */
 ```
 
-C has no equivalent, so this copy names the members (`Key Key;`), which
-turns roughly 590 accesses such as `m->v` and `d->qid` into errors
-across `Kvp`, `Msg`, `Dent` and `Fmsg`.  The mechanical fix is to
-inline those members as C11 anonymous structs, which injects the same
-field names with the same layout:
+Plan 9's `9c` on this host is a gcc wrapper: it cannot target ARM64 and
+it does not implement the extension either, so it is not a way out.
 
-```c
-struct Kvp {
-	struct { char *k; int nk; };
-	struct { short nv; char *v; };
-};
-```
+Clang does, under another name: the same construct is the MSVC
+anonymous-struct extension, and `-fms-extensions` accepts it
+unchanged.  That alone takes gefs from about 590 errors to about 30
+without touching the source.  The build now passes it.
 
-The porting shims for the related implicit conversions (passing a
-container where its leading member is expected, as in `qlock(arena)`
-and `avllookup(t, range, 0)`) are already in `gefs/dat.h`.
+What is left is that Plan 9 also lets the member be *named* (`d->Xdir`,
+`m->Key`, `f->RWLock`), which the C extension cannot do at the same
+time as injection, plus a handful of implicit conversions and one
+duplicate member.  Those are a few dozen sites, not a rewrite.
 
-Until that is done `build_gefs` only runs with `ARM64_BUILD_GEFS=1` so
-normal builds stay green.
+One question to settle before trusting the result: some conversions
+pass a `Msg *` where a `Key *` is expected, and `Msg` starts with
+`char op`, so the member is not at offset 0.  Plan 9 must be adding the
+member offset; a plain cast would not, which would silently corrupt
+keys.  Verify that against 9front's own compiler before shipping.
+
+Until this is finished `build_gefs` only runs with
+`ARM64_BUILD_GEFS=1` so normal builds stay green.
 
 ## Endurance
 
