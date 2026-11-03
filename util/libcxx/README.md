@@ -92,10 +92,14 @@ RTTI **is** available: libc++ is built with `-frtti`, and
   Not yet per-thread: `errno` is still a single global, and stdio has no
   locking.
 
-  The layer is complete enough that `LLVMSupport` builds with
-  `LLVM_ENABLE_THREADS=ON`: `pthread_sigmask`, CPU affinity (a single-CPU
-  stub) and `MINSIGSTKSZ` are provided for LLVM's threading and signal
-  code.
+  The layer is complete enough that LLVM itself cross-builds with
+  `LLVM_ENABLE_THREADS=ON` (pthread_sigmask, CPU affinity, MINSIGSTKSZ are
+  all provided), and `std::thread`, `std::async` and `std::condition_variable`
+  work for ordinary programs.
+
+  One known bug remains: lld built with threads crashes inside
+  `llvm::parallelForEach`.  Linking with `--threads=1` succeeds, so the
+  fault is in our thread pool interaction, not in lld.
 - **std::filesystem** — supported.  libc++'s own sources are patched to call
   `__stat_ap`/`__fstat` directly (`apply-llvm-patches.py`), because defining
   real `stat`/`fstat` symbols would capture Plan 9's three-argument `stat`

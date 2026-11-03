@@ -67,7 +67,7 @@ SOURCES = [
     "any",
     "optional",
     "variant",
-    "new_handler",
+    # new_handler is provided by libc++abi's cxa_handlers.cpp in abi mode.
     "new_helpers",
     "verbose_abort",
     "system_error",

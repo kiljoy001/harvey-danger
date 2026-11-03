@@ -23,6 +23,7 @@ portability shims the Harvey target needs.
 | native `clang` binary | **runs on Harvey and emits object files** |
 | native `ld.lld` | **runs on Harvey and links executables** |
 | self-configuring driver | **`clang++ hello.cpp -o hello` works with no flags** |
+| LLVM cross-built with `LLVM_ENABLE_THREADS=ON` | builds; parallel lld crashes (use `--threads=1`) |
 
 The end-to-end test is `util/clang-harvey/test-native-toolchain.py`. It
 installs the SDK and then the guest runs exactly:
