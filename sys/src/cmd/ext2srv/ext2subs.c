@@ -482,25 +482,30 @@ readfile(Xfile *f, void *vbuf, i64 offset, i32 count)
 	o = offset % xf->block_size;
 	rcount = 0;
 	while( count > 0 ){
+		/*
+		 * A zero in the block map is a hole, not an error.  Sparse
+		 * files are legal on ext2 and read as zeros; debugfs also
+		 * writes sparse files when the source has long zero runs.
+		 */
 		baddr = bmap(f, cur_block++);
-		if( !baddr ){
-			putbuf(ibuf);
-			return -1;
-		}
-		buffer = getbuf(xf, baddr);
-		if( !buffer ){
-			putbuf(ibuf);
-			return -1;
-		}
-		chat("%d ", baddr);
 		len = xf->block_size - o;
 		if( len > count )
 			len = count;
-		memcpy(&buf[rcount], &buffer->iobuf[o], len);
+		if( baddr == 0 ){
+			memset(&buf[rcount], 0, len);
+		}else{
+			buffer = getbuf(xf, baddr);
+			if( !buffer ){
+				putbuf(ibuf);
+				return -1;
+			}
+			chat("%d ", baddr);
+			memcpy(&buf[rcount], &buffer->iobuf[o], len);
+			putbuf(buffer);
+		}
 		rcount += len;
 		count -= len;
 		o = 0;
-		putbuf(buffer);
 	}
 	chat("] ...");
 	/*
