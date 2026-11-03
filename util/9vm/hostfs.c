@@ -80,7 +80,17 @@ static struct hostfs_fid *find_fid(struct hostfs *h, uint32_t fid) {
     return NULL;
 }
 
+static int
+hostfs_trace(void)
+{
+    static int trace = -1;
+    if (trace < 0)
+        trace = getenv("VM_TRACE_HOSTFS") != NULL;
+    return trace;
+}
+
 static struct hostfs_fid *alloc_fid(struct hostfs *h, uint32_t fid) {
+    static int allocs;
     struct hostfs_fid *f = find_fid(h, fid);
     if (f) return f;
     for (int i = 0; i < HOSTFS_MAX_FIDS; i++) {
@@ -90,7 +100,27 @@ static struct hostfs_fid *alloc_fid(struct hostfs *h, uint32_t fid) {
             h->fids[i].fid = fid;
             h->fids[i].fd = -1;
             h->fids[i].omode = -1;
+            allocs++;
+            if (hostfs_trace() && allocs % 4096 == 0) {
+                int used = 0;
+                for (int k = 0; k < HOSTFS_MAX_FIDS; k++)
+                    used += h->fids[k].in_use;
+                fprintf(stderr, "[hostfs] allocs=%d inuse=%d\n", allocs, used);
+            }
             return &h->fids[i];
+        }
+    }
+    {
+        int used = 0, dumped = 0;
+        for (int k = 0; k < HOSTFS_MAX_FIDS; k++)
+            used += h->fids[k].in_use;
+        fprintf(stderr, "[hostfs] out of fids: %d in use\n", used);
+        for (int k = 0; k < HOSTFS_MAX_FIDS && dumped < 24; k++) {
+            if (!h->fids[k].in_use) continue;
+            fprintf(stderr, "[hostfs] leak fid=%u fd=%d omode=%d path=%s\n",
+                    h->fids[k].fid, h->fids[k].fd, h->fids[k].omode,
+                    h->fids[k].path);
+            dumped++;
         }
     }
     return NULL;
@@ -444,11 +474,25 @@ uint32_t hostfs_dispatch(struct hostfs *h, const uint8_t *req, uint32_t req_len,
         }
 
         if (nwname > 0 && nwqid == 0) {
+            /* 9P: a failed first element is Rwalk with zero qids, not an
+             * error, and the new fid is not created. */
             if (newfid != fid) free_fid(h, newfid);
-            return send_rerror(tag, "file does not exist", resp, resp_max);
+            uint32_t rsize = 4 + 1 + 2 + 2;
+            if (rsize > resp_max) return 0;
+            *(uint32_t *)(resp + 0) = rsize;
+            resp[4] = Rwalk;
+            *(uint16_t *)(resp + 5) = tag;
+            *(uint16_t *)(resp + 7) = 0;
+            return rsize;
         }
 
-        if (nwqid == nwname) {
+        /*
+         * Record the path whether the walk was complete, partial or a
+         * zero-element clone.  A partial walk still creates newfid, and the
+         * client continues walking from it; leaving the path empty made the
+         * continuation resolve from "/" and leaked the fid.
+         */
+        if (nwqid > 0 || nwname == 0) {
             strncpy(nf->path, cur_path, sizeof(nf->path) - 1);
             stat(nf->path, &nf->st);
         }
