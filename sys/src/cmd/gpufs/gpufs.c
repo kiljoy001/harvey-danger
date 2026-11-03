@@ -1023,10 +1023,14 @@ gpuclr(Gpu *g, u32 color, u32 cw, u32 ch, int tiled, u32 cfgarg)
 
 	/* Framebuffer parameters at 0, 64 bytes. */
 	g->job[0] = 0;				/* pre/post frame: never */
-	/* Sample-locations table at +0x200: (0,0) then 31 x (-128,-128). */
-	for(i = 0; i < 32; i++)
-		g->job[(0x200/4) + i] = i == 0 ? 0 : 0x8080;
-	g->job[4] = (u32)JobVa + 0x200;
+	/* Sample-locations table in its own page at DataVa. */
+	{
+		u32 *sl = g->data;
+		for(i = 0; i < 256; i++)
+			sl[i] = i == 0 ? 0 : 0x8080;
+		drvdmacache(DrvClean, g->datapa, 4096);
+	}
+	g->job[4] = (u32)DataVa;
 	g->job[5] = 0;
 	g->job[8] = (fi.width - 1) | ((fi.height - 1) << 16);
 	g->job[9] = 0;				/* bound min 0,0 */
@@ -1035,7 +1039,9 @@ gpuclr(Gpu *g, u32 color, u32 cw, u32 ch, int tiled, u32 cfgarg)
 	 * no downsample, rt_count-1, cbuf_alloc >> 10. */
 	g->job[11] = (0 << 0) | (0 << 3) | (2 << 6) | (8 << 9) |
 		     (0 << 13) | (0 << 16) | (0 << 19) | (1 << 24);
-	g->job[12] = 0;				/* no ZS, no CRC */
+	/* Z internal format is D24 (1) even with no depth buffer; Linux's
+	 * captured FBD has 0x00010000 here.  No ZS enables, no CRC. */
+	g->job[12] = 1 << 16;
 	g->job[13] = 0;				/* z clear */
 	g->job[14] = 0;				/* tiler */
 	g->job[15] = 0;

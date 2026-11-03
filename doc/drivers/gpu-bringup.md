@@ -210,11 +210,31 @@ step.
 
 Sweeping `JS_CONFIG` over 0x87300, 0x87700, 0x87b00, 0x83300 and 0x83700
 gives `CONFIG_FAULT` in every case, so the slot configuration is not it
-either.  What is left is the memory layout: the captured chain has its
-framebuffer descriptor, render target and sample-locations table at
-`0xa008000`, `0xa004000` and `0xa000000`, while `gpufs` packs the descriptor
-and render target into the job page and maps the scanout buffer at
-`0x20000000`.
+either.
+
+Reading the GPU registers from Linux after its successful submit (via
+`devmem` on `/dev/mem`, which reaches the device window) gives:
+
+```text
+0xfde61800 0x0A008140   JS0_HEAD    = the job header address
+0xfde61818 0x00007B00   JS0_CONFIG  = AS 0, pri 8, start/end clean+invalidate,
+                                     flush reduction, job-chain flag
+0xfde61824 0x00000000   JS0_STATUS  = no exception
+```
+
+which is one of the values `gpufs` already tries.  The descriptor dump from
+`PAN_MESA_DEBUG=...dump` is the decisive part: comparing the raw bytes of
+`memory_a008000` with what `gpufs` writes shows they are **identical** except
+for three addresses (the framebuffer-descriptor tag, the render-target base
+and the sample-locations pointer).  The one field that differed,
+`z_internal_format = 1` (D24), is fixed.
+
+So `CONFIG_FAULT` is not the FBD contents, the payload or the slot config.
+The next diagnostic is to submit this exact chain from Linux userspace
+(`DRM_IOCTL_PANFROST_SUBMIT` with the same bytes): if that works, the
+descriptor is fine and the difference is in `gpufs`' kernel-side setup — the
+AS registers, which `devmem` could not read because the GPU had already
+runtime-suspended.
 
 ### What still fails
 
