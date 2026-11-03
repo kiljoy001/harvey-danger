@@ -154,6 +154,15 @@ def run(cmd, **kwargs):
     return subprocess.run(cmd, check=True, **kwargs)
 
 
+def copy_if_changed(src: Path, dst: Path) -> None:
+    """Copy only when the bytes differ, so unchanged headers do not get a
+    new mtime and force a rebuild of everything that includes them."""
+    if dst.is_file() and dst.stat().st_size == src.stat().st_size:
+        if dst.read_bytes() == src.read_bytes():
+            return
+    shutil.copyfile(src, dst)
+
+
 def prepare():
     if not (LIBCXX / "include" / "__config").is_file():
         sys.exit(f"libcxx source not found at {LIBCXX}")
@@ -162,14 +171,21 @@ def prepare():
 
     # The libc++ headers are installed into the build tree so ucc does not
     # depend on the LLVM checkout path.
-    shutil.copytree(LIBCXX / "include", INCLUDE_V1, dirs_exist_ok=True)
-    (INCLUDE_V1 / "__config_site").write_text(CONFIG_SITE)
-    shutil.copyfile(LIBCXX / "vendor" / "llvm" / "default_assertion_handler.in",
+    src_inc = LIBCXX / "include"
+    for root, _, files in os.walk(src_inc):
+        rel = Path(root).relative_to(src_inc)
+        (INCLUDE_V1 / rel).mkdir(parents=True, exist_ok=True)
+        for name in files:
+            copy_if_changed(Path(root) / name, INCLUDE_V1 / rel / name)
+    site = INCLUDE_V1 / "__config_site"
+    if not site.is_file() or site.read_text() != CONFIG_SITE:
+        site.write_text(CONFIG_SITE)
+    copy_if_changed(LIBCXX / "vendor" / "llvm" / "default_assertion_handler.in",
                     INCLUDE_V1 / "__assertion_handler")
-    shutil.copyfile(COMPAT_H, INCLUDE / "compat.h")
-    shutil.copyfile(REPO_ROOT / "util" / "libcxx" / "pthread.h",
+    copy_if_changed(COMPAT_H, INCLUDE / "compat.h")
+    copy_if_changed(REPO_ROOT / "util" / "libcxx" / "pthread.h",
                     INCLUDE / "pthread.h")
-    shutil.copyfile(REPO_ROOT / "util" / "libcxx" / "sched.h",
+    copy_if_changed(REPO_ROOT / "util" / "libcxx" / "sched.h",
                     INCLUDE / "sched.h")
 
     # from_chars_floating_point.h includes "shared/fp_bits.h".  Upstream
