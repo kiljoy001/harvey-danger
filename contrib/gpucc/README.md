@@ -4,10 +4,17 @@
 uses Mesa's NIR and Bifrost backend directly, with no Gallium, DRM, LLVM or
 EGL, and emits a Bifrost binary for the Mali-G52.
 
-It currently compiles one shader: a fragment shader that writes a constant
-color to `FRAG_RESULT_COLOR`. That is the shader a GPU clear needs. The
-result on this host is a **320-byte Bifrost binary**; the disassembly shows
-`ATEST` and `BLEND` writing `r0`/`r1` from the constants.
+It compiles both shaders for a full-screen triangle:
+
+- **fragment** (`frag.bin`, 320 bytes): writes opaque red to
+  `FRAG_RESULT_COLOR`; the disassembly shows `ATEST`/`BLEND` writing
+  `r0`/`r1`.
+- **vertex** (`vert.bin`, 160 bytes): reads a `vec4` position from
+  attribute 0 and stores it to `VARYING_SLOT_POS`.
+
+The vertex shader uses **attribute 0**, not `gl_VertexID`. The vertex-ID
+path needs the Gallium driver's IDVS/raw-vertex-offset preload; the
+attribute path avoids that and is what the tiler job will feed.
 
 ## Build
 
@@ -35,9 +42,9 @@ ninja -C build src/panfrost/clc/gpucc
 ```sh
 cd /tmp/gpucc
 /path/to/mesa/build/src/panfrost/clc/gpucc
-# gpucc: binary 320 bytes stage 4 tls 0 outputs 0x4
-# ... Bifrost disassembly ...
-# frag.bin
+# frag: binary 320 bytes stage 4 tls 0 outputs 0x4
+# vert: binary 160 bytes stage 0 tls 0 outputs 0x1
+# frag.bin vert.bin
 ```
 
 The raw GPU ID passed to the compiler is `0x74021000` (G52, arch 7,
@@ -53,7 +60,14 @@ chain**:
 - `RENDERER_STATE` (shader pointer, early-Z, blend, output format)
 - `FRAMEBUFFER`/render-target descriptors
 - `SHADER_PROGRAM` descriptor built from the blob and `pan_shader_info`
-- the vertex/tiler half, or a tile-enable map for a full-screen clear
+- a `TILER_JOB` with the vertex shader, an attribute buffer holding the
+  three `vec4` positions, the tiler context/heap, and the fragment RSD/blend
+- a `FRAGMENT_JOB` with the FBD for the VOP scanout buffer
+- the tiler -> fragment chain, with the shader/attribute/FBD/tiler GPU
+  addresses patched at submit time
+
+The vertex shader reads attribute 0, so the tiler job must provide a
+three-vertex attribute buffer; there is no vertex-ID preload path yet.
 
 `gpufs` can already map a buffer into the GPU's A64 page tables and submit a
 job; it still rejects the synthetic `NULL`/`WRITE_VALUE` jobs. The next
