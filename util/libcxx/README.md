@@ -115,7 +115,22 @@ RTTI **is** available: libc++ is built with `-frtti`, and
   errno-ok main=33 a=11/2 b=22/2
   ```
 
-  Still not thread-safe: stdio has no locking.
+  stdio is locked.  Each `FILE` has a recursive lock: `__lockfile` returns
+  1 when the call acquired it and 0 when the thread already held it, which
+  is what the existing musl-style `FLOCK`/`FUNLOCK` and `fgetc`/`fputc`
+  paths expect.  The owner token is the address of a thread-local variable,
+  so no lookup is needed, and the lock word is a semaphore that blocks in
+  the kernel only on contention.  The open-file list has its own lock,
+  always taken before a stream lock so `fflush(NULL)` and `fclose` cannot
+  deadlock.  Caller-allocated `FILE`s inside `snprintf`/`sscanf` stay
+  unlocked, since they are private to the call.
+
+  `test_stdio.cpp` has four threads write 200 records each through one
+  `FILE` and then checks every line:
+
+  ```text
+  stdio-ok lines=800 bad=0 seen=800
+  ```
 - **std::filesystem** — supported.  libc++'s own sources are patched to call
   `__stat_ap`/`__fstat` directly (`apply-llvm-patches.py`), because defining
   real `stat`/`fstat` symbols would capture Plan 9's three-argument `stat`
@@ -143,8 +158,7 @@ RTTI **is** available: libc++ is built with `-frtti`, and
 
 ## Next rungs
 
-1. Locking around stdio.  `errno` is done; a mutex per `FILE` is the next
-   shared-state fix.
-2. Floating-point `charconv`.
-3. `std::exception_ptr`/`std::nested_exception` round-trip tests, and
+1. Floating-point `charconv`.
+2. `std::exception_ptr`/`std::nested_exception` round-trip tests, and
    `-fno-exceptions` builds of the library for size.
+3. `flockfile`/`funlockfile` for programs that manage a stream lock by hand.
