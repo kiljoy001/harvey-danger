@@ -25,7 +25,7 @@ portability shims the Harvey target needs.
 | self-configuring driver | **`clang++ hello.cpp -o hello` works with no flags** |
 | LLVM cross-built with `LLVM_ENABLE_THREADS=ON` | **builds and runs: threaded clang + lld link in the guest** |
 | building LLVM on Harvey | **`test-selfhost.py` compiles `CommandLine.cpp`; `test-selfbuild.py` builds `llvm-tblgen`; `test-selfcore.py` builds `LLVMCore`; `test-selfas.py` builds `llvm-as` and `llvm-dis`** |
-| correctness against a reference compiler | **`test-diff.py`: 12 `-O3` Support/IR TUs compile byte-identically to a host clang from the same checkout** |
+| correctness against a reference compiler | **`test-diff.py`: 12 `-O3` Support/IR TUs compile byte-identically to a host clang from the same checkout; `test-diffrun.py`: 8 programs print the same thing on both** |
 
 The end-to-end test is `util/clang-harvey/test-native-toolchain.py`. It
 installs the SDK and then the guest runs exactly:
@@ -341,6 +341,46 @@ preprocessor and its target ABI agree with the reference.
 
 The system `clang-22` is a *different revision* and is not a valid oracle for
 this comparison.
+
+`util/clang-harvey/test-diffrun.py` then tests the *runtime*: each program in
+`util/clang-harvey/difftests/` is built by both compilers and run on its own
+platform, and the outputs are compared.
+
+```text
+  == run guest/chrono status 0
+  == run guest/containers status 0
+  == run guest/exceptions status 0
+  == run guest/filesystem status 0
+  == run guest/format status 0
+  == run guest/math status 0
+  == run guest/regex status 0
+  == run guest/threads status 0
+  approx math: same to 1e-12 relative
+differential run: 8 programs print the same thing on the host and on Harvey
+```
+
+Seven are byte-identical: containers and algorithms, `<charconv>` floating
+point plus iostream formatting, exception unwinding (`exception_ptr`,
+rethrow, destructor unwind), threads (`mutex`, `condition_variable`, `async`,
+`thread_local`), `std::filesystem` create/write/iterate/rename/copy/remove,
+and `<regex>`.
+
+`math` is compared numerically because APEX's `libm` is the Plan 9
+implementation (Hart and Cheney coefficients), not a correctly-rounded one
+like glibc's: results agree to about 1e-16 but the last bits differ. That is
+a property of the platform's math library, not of the compiler.
+
+Two platform bugs came out of this test, both fixed at the source rather than
+worked around:
+
+- `rfork(RFPROC)` gave the child `Proc.tls = 0`, so the child's first failed
+  syscall faulted writing `errno` at `%fs:-8`. The kernel now copies the
+  parent's TLS pointer; the child's segments are a copy at the same virtual
+  addresses, so it is valid there (`sys/src/9/port/sysproc.c`).
+- `open()` ignored `O_DIRECTORY`, so `openat(..., O_DIRECTORY)` on a regular
+  file succeeded and libc++'s `remove_all()` left every file behind. APEX now
+  checks with `fstat()` and fails with `ENOTDIR`
+  (`apex/src/ap/plan9/_open.c`).
 
 ## Next rungs
 
