@@ -165,6 +165,40 @@ def main():
         for i, a in enumerate(argv[:-1]):
             if a == "-o":
                 host_path(argv[i + 1]).parent.mkdir(parents=True, exist_ok=True)
+    # A fourth stage: use the tablegen we just built to generate a header,
+    # so the manifest proves the tool works and not only that it links.
+    def tg(a: str) -> str:
+        return a.replace(str(build), GB).replace(str(src), GS)
+
+    gen_stage = []
+    for line in text.splitlines():
+        if "-gen-vt" not in line:
+            continue
+        for part in line.split(" && "):
+            if "llvm-tblgen" not in part:
+                continue
+            argv = shlex.split(part)
+            if not argv or not argv[0].endswith("llvm-tblgen"):
+                continue
+            cmd = [GUEST + "/bin/llvm-tblgen"]
+            i = 1
+            while i < len(argv):
+                a = argv[i]
+                if a == "--write-if-changed":
+                    i += 1
+                    continue
+                if a == "-d":
+                    i += 2
+                    continue
+                if a == "-o":
+                    cmd.extend(["-o", GUEST + "/gen/" + argv[i + 1]])
+                    i += 2
+                    continue
+                cmd.append(tg(a))
+                i += 1
+            gen_stage.append(cmd)
+        break
+
     for out in asm_objs:
         if not out.startswith(GUEST + "/"):
             continue
@@ -178,7 +212,11 @@ def main():
             print(f"warning: no cross-built assembly object {s}")
     (REPO / "build" / "llvm-guest" / "lib").mkdir(parents=True, exist_ok=True)
     (REPO / "build" / "llvm-guest" / "bin").mkdir(parents=True, exist_ok=True)
+    (REPO / "build" / "llvm-guest" / "gen").mkdir(parents=True, exist_ok=True)
     (REPO / "build" / "llvm-guest" / "tmp").mkdir(parents=True, exist_ok=True)
+
+    if gen_stage:
+        stages.append(gen_stage)
 
     out = REPO / "build" / "llvm-guest" / f"{target}.build"
     with out.open("w") as f:
@@ -189,8 +227,8 @@ def main():
                 f.write(" ".join(argv) + "\n")
 
     print(f"{out}: {len(stages[0])} compiles, {len(stages[1])} archives, "
-          f"{len(stages[2])} links ({len(asm_objs)} prebuilt assembly objects, "
-          f"{skipped} up to date)")
+          f"{len(stages[2])} links, {len(gen_stage)} generate "
+          f"({len(asm_objs)} prebuilt assembly objects, {skipped} up to date)")
     for a in stages[2]:
         for i, x in enumerate(a[:-1]):
             if x == "-o":

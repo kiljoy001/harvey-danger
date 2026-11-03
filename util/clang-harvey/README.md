@@ -85,10 +85,15 @@ link.
   hbuild: stage done: 270/270 (0 failed)
   hbuild: stage done: 4/4 (0 failed)
   hbuild: stage done: 1/1 (0 failed)
+  hbuild: stage done: 1/1 (0 failed)
   == hbuild status 0
   LLVM (http://llvm.org/):
     LLVM version 22.0.0git
 ```
+
+The last stage uses the tool it just built: it runs `llvm-tblgen -gen-vt`
+on `ValueTypes.td`, and the resulting `GenVT.inc` is byte-identical to the
+file the host tablegen produced from the same source.
 
 The four BLAKE3 assembly objects are reused from the cross build: the
 guest driver's config force-includes `compat.h`, which the assembler cannot

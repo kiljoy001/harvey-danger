@@ -87,8 +87,18 @@ def main():
     elf = GUEST / "bin" / "llvm-tblgen"
     if not elf.is_file() or elf.stat().st_size == 0:
         sys.exit("no llvm-tblgen was produced")
+
+    # The last build stage ran the new tool on ValueTypes.td.  Compare its
+    # output with the host tool's, which was generated from the same source.
+    gen = GUEST / "gen" / "GenVT.inc"
+    host_gen = llvm_build / "include" / "llvm" / "CodeGen" / "GenVT.inc"
+    if not gen.is_file() or gen.stat().st_size == 0:
+        sys.exit("the guest tablegen produced no GenVT.inc")
+    if host_gen.is_file() and gen.read_bytes() != host_gen.read_bytes():
+        sys.exit("guest GenVT.inc differs from the host tool's")
     print(f"selfbuild: {len(list(GUEST.rglob('*.o')))} objects -> "
-          f"{elf.name} ({elf.stat().st_size} bytes) built and run on Harvey")
+          f"{elf.name} ({elf.stat().st_size} bytes) built and run on Harvey; "
+          f"GenVT.inc ({gen.stat().st_size} bytes) matches the host tool")
 
 
 if __name__ == "__main__":
