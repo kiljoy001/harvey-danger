@@ -381,6 +381,16 @@ worked around:
   file succeeded and libc++'s `remove_all()` left every file behind. APEX now
   checks with `fstat()` and fails with `ENOTDIR`
   (`apex/src/ap/plan9/_open.c`).
+- A failed first element of a 9P `Twalk` comes back as `Rwalk` with zero
+  qids, not as an error. `mntwalk()` returned nil without setting a message,
+  so `errno` for a missing file was whatever an earlier failure had left in
+  the process's buffer — `EINVAL` in a fresh thread, a stale value in the
+  initial process. It now reports `Enonexist`
+  (`sys/src/9/port/devmnt.c`).
+
+`difftests/errno.cpp` covers the last one directly: `ENOENT` for a missing
+file in the main thread, in a thread, and for a missing intermediate
+directory.
 
 ## Next rungs
 

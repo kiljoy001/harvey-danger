@@ -118,7 +118,14 @@ def main():
     if proc.returncode != 0 or "hbuild: FAILED" in out:
         sys.exit("the guest build or run failed")
 
+    guest_status = {}
+    for line in out.splitlines():
+        if line.startswith("== run ") and " status " in line:
+            _, _, path, _, status = line.split()
+            guest_status[path.split("/")[-1]] = int(status)
+
     print("+ running the host programs")
+    bad = 0
     for name in progs:
         p = subprocess.run([str(OUT / "host" / name)], cwd=OUT / "tmp",
                            capture_output=True, text=True,
@@ -127,8 +134,12 @@ def main():
         (OUT / "host" / (name + ".err")).write_text(p.stderr)
         if p.returncode != 0:
             print(f"  host {name}: exit {p.returncode}\n{p.stderr[-2000:]}")
+            bad += 1
+        st = guest_status.get(name)
+        if st != 0:
+            print(f"  guest {name}: exit {st}")
+            bad += 1
 
-    bad = 0
     for name in progs:
         h = OUT / "host" / (name + ".out")
         g = OUT / "guest" / (name + ".out")

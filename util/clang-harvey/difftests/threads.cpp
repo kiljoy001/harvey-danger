@@ -10,22 +10,29 @@ static std::mutex mtx;
 static std::condition_variable cv;
 static int turn = 0;
 static long shared = 0;
+static bool tls_ok = true;
 static thread_local int tls_counter = 0;
 
 int main() {
     std::vector<std::thread> ts;
     for (int t = 0; t < 8; t++)
-        ts.emplace_back([] {
+        ts.emplace_back([t] {
             long local = 0;
             for (int i = 0; i < 20000; i++)
                 local += i;
-            tls_counter = local;
+            // thread_local must be private to this thread.
+            tls_counter = t + 1;
+            bool ok = (tls_counter == t + 1);
             std::lock_guard<std::mutex> l(mtx);
             shared += local;
+            if (!ok)
+                tls_ok = false;
         });
     for (auto &t : ts)
         t.join();
-    std::printf("shared=%ld tls=%d\n", shared, tls_counter);
+    // The main thread never wrote it, so it must still be zero.
+    std::printf("shared=%ld tls_main=%d tls_ok=%d\n", shared, tls_counter,
+                tls_ok);
 
     const int rounds = 50;
     int counter = 0;
