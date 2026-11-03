@@ -24,6 +24,7 @@ portability shims the Harvey target needs.
 | native `ld.lld` | **runs on Harvey and links executables** |
 | self-configuring driver | **`clang++ hello.cpp -o hello` works with no flags** |
 | LLVM cross-built with `LLVM_ENABLE_THREADS=ON` | **builds and runs: threaded clang + lld link in the guest** |
+| building LLVM on Harvey | **`test-selfhost.py` compiles `CommandLine.cpp` and links it** |
 
 The end-to-end test is `util/clang-harvey/test-native-toolchain.py`. It
 installs the SDK and then the guest runs exactly:
@@ -47,6 +48,28 @@ driver, including the fork/exec of `cc1`):
 ```text
 native clang produced build/clang-harvey/test.o (712 bytes) with 'add'
 ```
+
+## Building LLVM on Harvey
+
+`util/clang-harvey/test-selfhost.py` is the first self-hosting probe.  The
+guest compiles a real LLVM translation unit with its own compiler:
+
+```text
+  == compile llvm/lib/Support/CommandLine.cpp on Harvey
+  == CommandLine.cpp status 0
+  == compile cl.cpp on Harvey
+  == link with the prebuilt LLVMSupport
+  llvm-on-harvey: count=7 name=harvey
+```
+
+It derives the compile flags from the cross build's own ninja graph, rewrites
+the host paths to the guest's `/n/host`, and lets the guest compile the file.
+The test then links the object and a driver against the prebuilt
+`libLLVMSupport.a` and runs it.  The result parses options with
+`llvm::cl::opt`, so the compiled object really is LLVM code, not a stub.
+
+There is no build system in the guest yet, which is what a full self-build
+needs; the probe drives the compiles directly.
 
 ## SDK layout
 
@@ -190,13 +213,13 @@ was missing.  They live in APEX now, not in a shim:
 
 ## Next rungs
 
-1. Threads are real: `util/libcxx/pthread.cpp` uses `rfork(RFPROC|RFMEM)`,
-   with the main thread moved onto a heap stack and `semacquire`/`semrelease`
-   for synchronisation.
-2. Make `getMainExecutable` more robust. The patch resolves `argv[0]`, so the
+1. A build system in the guest.  `test-selfhost.py` drives compiles directly;
+   a full LLVM build wants ninja (and cmake, or a generated build.ninja), which
+   have to be cross-built and then run on Harvey.
+2. Per-thread `errno` and locking around stdio (see `util/libcxx/README.md`).
+3. Make `getMainExecutable` more robust. The patch resolves `argv[0]`, so the
    driver must be started with a path. A real `/proc/self/exe` equivalent, or
    passing the image path through the environment, would fix bare `clang++`.
-3. Add a Harvey toolchain to Clang instead of a config file, so the paths are
+4. Add a Harvey toolchain to Clang instead of a config file, so the paths are
    baked in and `x86_64-unknown-harvey` is a real target.
-4. A native `as`/`objdump` and the rest of the binutils story.
-5. `std::filesystem` needs its library built; the headers alone are enabled.
+5. A native `as`/`objdump` and the rest of the binutils story.
