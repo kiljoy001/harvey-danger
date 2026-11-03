@@ -38,7 +38,11 @@ def main():
             sys.exit(f"missing {path}; build LLVM for Harvey first")
 
     BUILD.mkdir(parents=True, exist_ok=True)
-    for name, src in (("clang", clang), ("clang++", clang), ("ld.lld", lld)):
+    ar = llvm_build / "bin" / "llvm-ar"
+    tools = (("clang", clang), ("clang++", clang), ("ld.lld", lld))
+    if ar.is_file():
+        tools += (("llvm-ar", ar), ("llvm-ranlib", ar))
+    for name, src in tools:
         dst = BUILD / name
         dst.unlink(missing_ok=True)
         shutil.copyfile(src, dst)

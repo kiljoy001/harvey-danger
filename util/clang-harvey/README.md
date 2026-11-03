@@ -24,7 +24,7 @@ portability shims the Harvey target needs.
 | native `ld.lld` | **runs on Harvey and links executables** |
 | self-configuring driver | **`clang++ hello.cpp -o hello` works with no flags** |
 | LLVM cross-built with `LLVM_ENABLE_THREADS=ON` | **builds and runs: threaded clang + lld link in the guest** |
-| building LLVM on Harvey | **`test-selfhost.py` compiles `CommandLine.cpp` and links it** |
+| building LLVM on Harvey | **`test-selfhost.py` compiles `CommandLine.cpp`; `test-selfbuild.py` builds `llvm-tblgen`** |
 
 The end-to-end test is `util/clang-harvey/test-native-toolchain.py`. It
 installs the SDK and then the guest runs exactly:
@@ -68,8 +68,37 @@ The test then links the object and a driver against the prebuilt
 `libLLVMSupport.a` and runs it.  The result parses options with
 `llvm::cl::opt`, so the compiled object really is LLVM code, not a stub.
 
-There is no build system in the guest yet, which is what a full self-build
-needs; the probe drives the compiles directly.
+### Building TableGen in the guest
+
+`util/clang-harvey/test-selfbuild.py` builds a real LLVM tool inside
+Harvey.  It takes the cross build's own command graph for `llvm-tblgen` (270
+translation units, four archives, one link), rewrites the tool and every
+path for the guest, and runs it there with `hbuild`.
+
+`hbuild` is a small native runner: a manifest of commands with `---`
+between stages, up to `-j` children per stage, no shell and no dependency
+graph.  LLVM's static-library + tool shape is exactly compiles → archives →
+link.
+
+```text
+  == hbuild llvm-tblgen.build
+  hbuild: stage done: 270/270 (0 failed)
+  hbuild: stage done: 4/4 (0 failed)
+  hbuild: stage done: 1/1 (0 failed)
+  == hbuild status 0
+  LLVM (http://llvm.org/):
+    LLVM version 22.0.0git
+```
+
+The four BLAKE3 assembly objects are reused from the cross build: the
+guest driver's config force-includes `compat.h`, which the assembler cannot
+parse, and they were already compiled for the same target.
+
+The build currently runs with `-j 1`.  Four-way parallelism exposes a
+transport problem: with several simultaneous clients the 9P server starts
+answering `EINVAL`/`ENOENT` for files that exist, and `rename` fails for
+files it handles serially.  `hbuild` supports `-j`; once that is fixed the
+same manifest runs in parallel.
 
 ## SDK layout
 
@@ -213,9 +242,10 @@ was missing.  They live in APEX now, not in a shim:
 
 ## Next rungs
 
-1. A build system in the guest.  `test-selfhost.py` drives compiles directly;
-   a full LLVM build wants ninja (and cmake, or a generated build.ninja), which
-   have to be cross-built and then run on Harvey.
+1. Greater build parallelism.  `hbuild` and the command manifest exist; the
+   blocker is the 9P transport under several simultaneous clients.
+2. More vCPUs.  `9vm` runs one KVM vCPU, so even a parallel build has little
+   to schedule; adding vCPUs is a 9vm change.
 2. `flockfile`/`funlockfile` for programs that take a stream lock by hand
    (see `util/libcxx/README.md`).
 3. Make `getMainExecutable` more robust. The patch resolves `argv[0]`, so the
