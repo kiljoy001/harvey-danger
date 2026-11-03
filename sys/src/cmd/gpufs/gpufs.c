@@ -74,6 +74,57 @@ enum {
 	GpuIrqResetCompleted = 1<<8,
 	GpuIrqMaskAll	= 0x00030f87,	/* fault, multiple, reset, power,
 					 * perfcnt, clean caches */
+
+	/* Power-on handshake. */
+	L2PwronLo	= 0x1a0,
+	L2ReadyLo	= 0x160,
+	ShaderPwronLo	= 0x180,
+	ShaderReadyLo	= 0x140,
+	TilerPwronLo	= 0x190,
+	TilerReadyLo	= 0x150,
+
+	/* GPU MMU: 0x2400 + (as << 6). */
+	MmuBase		= 0x2400,
+	MmuAsShift	= 6,
+	MmuIntRawstat	= 0x2000,
+	MmuIntClear	= 0x2004,
+	MmuIntMask	= 0x2008,
+	AsTranstabLo	= 0x00,
+	AsTranstabHi	= 0x04,
+	AsMemattrLo	= 0x08,
+	AsMemattrHi	= 0x0c,
+	AsLockaddrLo	= 0x10,
+	AsLockaddrHi	= 0x14,
+	AsCommand	= 0x18,
+	AsStatus	= 0x28,
+	AsTranscfgLo	= 0x30,
+	AsTranscfgHi	= 0x34,
+	AsStatusActive	= 1<<0,
+
+	AsCmdUpdate	= 0x01,
+	AsCmdFlushPt	= 0x04,
+	AsCmdFlushMem	= 0x05,
+
+	/* Job manager: 0x1800 + (slot << 7). */
+	JobIntRawstat	= 0x1000,
+	JobIntClear	= 0x1004,
+	JobIntMask	= 0x1008,
+	JsBase		= 0x1800,
+	JsStride	= 0x80,
+	JobSlot		= 1,	/* JS0 fragment, JS1 vertex/tiler */
+	JsHeadLo	= 0x40,
+	JsHeadHi	= 0x44,
+	JsAffinityLo	= 0x50,
+	JsAffinityHi	= 0x54,
+	JsConfig	= 0x58,
+	JsCommand	= 0x60,
+	JsStatus	= 0x24,
+
+	JobTypeWriteValue = 2,
+	WriteValueImmediate64 = 7,
+
+	JobVa		= 0x10000000ULL,
+	DataVa		= 0x10001000ULL,
 };
 
 typedef struct Gpu Gpu;
@@ -93,6 +144,16 @@ struct Gpu {
 	u32	threads, threadwg, threadbar;
 	u32	shaderlo, shaderhi, tilerlo, tilerhi;
 	u32	l2lo, l2hi, stacklo, stackhi;
+	u32	jsf[3];
+
+	/* MMU and the first job. */
+	u64	pgdpa, l1pa, l2pa, l3pa;
+	u64	jobpa, datapa;
+	u64	*pgd, *pt1, *pt2, *pt3;
+	u64	*job, *data;
+	int	jobok;
+	u64	jobval;
+	char	joberr[96];
 };
 
 static Gpu gpu;
@@ -226,6 +287,9 @@ ident(Gpu *g)
 	g->l2hi = drd(&g->d, GpuL2PresentHi);
 	g->stacklo = drd(&g->d, GpuStackPresentLo);
 	g->stackhi = drd(&g->d, GpuStackPresentHi);
+	g->jsf[0] = drd(&g->d, 0xc0);
+	g->jsf[1] = drd(&g->d, 0xc4);
+	g->jsf[2] = drd(&g->d, 0xc8);
 
 	g->responded = g->rawid != 0 && g->rawid != ~0U;
 	if(!g->responded)
@@ -269,6 +333,8 @@ statustext(Gpu *g, char *buf, int nbuf)
 	            g->l2, g->core, g->tiler, g->mem);
 	p = seprint(p, e, "mmu 0x%08ux va %ud pa %ud as 0x%ux js 0x%ux\n",
 	            g->mmu, va, pa, g->as, g->js);
+	p = seprint(p, e, "js features 0x%08ux 0x%08ux 0x%08ux\n",
+	            g->jsf[0], g->jsf[1], g->jsf[2]);
 	p = seprint(p, e, "present shaders 0x%08ux%08ux tiler 0x%08ux%08ux l2 0x%08ux%08ux stack 0x%08ux%08ux\n",
 	            g->shaderhi, g->shaderlo, g->tilerhi, g->tilerlo,
 	            g->l2hi, g->l2lo, g->stackhi, g->stacklo);
@@ -278,6 +344,10 @@ statustext(Gpu *g, char *buf, int nbuf)
 	if(g->why[0] != 0)
 		p = seprint(p, e, " (%s)", g->why);
 	p = seprint(p, e, "\n");
+	if(g->jobok)
+		p = seprint(p, e, "job pass value 0x%llux\n", g->jobval);
+	else if(g->joberr[0] != 0)
+		p = seprint(p, e, "job fail %s\n", g->joberr);
 	return buf;
 }
 
@@ -339,6 +409,538 @@ softreset(Gpu *g)
 	}
 	drw(&g->d, GpuIntClear, GpuIrqMaskAll);
 	sleep(1);
+}
+
+/* MMU_AS(as) + off, and JS(slot) + off. */
+#define ASOFF(as, off)	(MmuBase + ((as) << MmuAsShift) + (off))
+#define JSOFF(slot, off) (JsBase + ((slot) * JsStride) + (off))
+
+/* Wait for (reg & mask) == want, in milliseconds. */
+static int
+waitbits(Gpu *g, u32 off, u32 mask, u32 want, int ms)
+{
+	int i;
+
+	for(i = 0; i < ms; i++){
+		if((drd(&g->d, off) & mask) == want)
+			return 0;
+		sleep(1);
+	}
+	return -1;
+}
+
+/*
+ * Power the L2, shader and tiler.  The present bitmaps were read with the
+ * feature block; a write-value job needs at least L2, and the others are
+ * powered now so the first shader job does not have to repeat this.
+ */
+static int
+gpupower(Gpu *g)
+{
+	u32 l2, sh, ti;
+
+	l2 = g->l2lo & 1;
+	sh = g->shaderlo & 1;
+	ti = g->tilerlo & 1;
+	if(l2 == 0 || sh == 0 || ti == 0){
+		setwhy(g, "no L2/shader/tiler present (%ux/%ux/%ux)",
+		       g->l2lo, g->shaderlo, g->tilerlo);
+		return -1;
+	}
+
+	drw(&g->d, L2PwronLo, l2);
+	if(waitbits(g, L2ReadyLo, l2, l2, 100) < 0){
+		setwhy(g, "L2 power-on timeout (ready %#ux)", drd(&g->d, L2ReadyLo));
+		return -1;
+	}
+	drw(&g->d, ShaderPwronLo, sh);
+	if(waitbits(g, ShaderReadyLo, sh, sh, 100) < 0){
+		setwhy(g, "shader power-on timeout (ready %#ux)",
+		       drd(&g->d, ShaderReadyLo));
+		return -1;
+	}
+	drw(&g->d, TilerPwronLo, ti);
+	if(waitbits(g, TilerReadyLo, ti, ti, 100) < 0){
+		setwhy(g, "tiler power-on timeout (ready %#ux)",
+		       drd(&g->d, TilerReadyLo));
+		return -1;
+	}
+	return 0;
+}
+
+/* One 4 KiB, zeroed page from the #P DMA arena, with its physical address. */
+static void *
+dmazero(Gpu *g, u64 *pa)
+{
+	void *p;
+
+	p = drvdma(&g->d, 4096, 4096, pa);
+	if(p != nil)
+		memset(p, 0, 4096);
+	return p;
+}
+
+/*
+ * Mali LPAE is always a four-level table, even for the G52's 35-bit VA:
+ * the top level has one entry (pgd_bits = 0), then 512 entries per level.
+ * A 4 KiB leaf lives at level 3; level shifts are 39, 30, 21, 12.
+ */
+static int
+mmuidx(u64 va, int lvl)
+{
+	if(lvl == 0)
+		return 0;
+	return (va >> ((4 - lvl) * 9 + 3)) & 0x1ff;
+}
+
+static u64
+tablepte(u64 pa)
+{
+	return (pa & ~0xfffULL) | 3;	/* TYPE_TABLE */
+}
+
+/*
+ * A normal cached read/write page: TYPE_BLOCK, HAP read+write (Mali uses
+ * the stage-2-like permission bits), attribute index 1 (the 0x8d write
+ * allocate memattr), outer shareable.  Mali does not use the AF bit.
+ */
+static u64
+pagepte(u64 pa)
+{
+	return (pa & ~0xfffULL) | 0x2c5ULL;
+}
+
+static void
+mmumap(Gpu *g, u64 va, u64 pa)
+{
+	g->pgd[0] = tablepte(g->l1pa);
+	g->pt1[mmuidx(va, 1)] = tablepte(g->l2pa);
+	g->pt2[mmuidx(va, 2)] = tablepte(g->l3pa);
+	g->pt3[mmuidx(va, 3)] = pagepte(pa);
+}
+
+/* Wait for the address space to be idle, issue a command, wait again. */
+static int
+mmucmd(Gpu *g, u32 cmd)
+{
+	if(waitbits(g, ASOFF(0, AsStatus), AsStatusActive, 0, 100) < 0)
+		return -1;
+	drw(&g->d, ASOFF(0, AsCommand), cmd);
+	return waitbits(g, ASOFF(0, AsStatus), AsStatusActive, 0, 100);
+}
+
+static void
+mmuclean(Gpu *g)
+{
+	drvdmacache(DrvClean, g->pgdpa, 4096);
+	drvdmacache(DrvClean, g->l1pa, 4096);
+	drvdmacache(DrvClean, g->l2pa, 4096);
+	drvdmacache(DrvClean, g->l3pa, 4096);
+	drvdmacache(DrvClean, g->jobpa, 4096);
+	drvdmacache(DrvClean, g->datapa, 4096);
+}
+
+static int
+mmuinit(Gpu *g)
+{
+	if(g->pgd != nil)
+		return 0;
+
+	g->pgd = dmazero(g, &g->pgdpa);
+	g->pt1 = dmazero(g, &g->l1pa);
+	g->pt2 = dmazero(g, &g->l2pa);
+	g->pt3 = dmazero(g, &g->l3pa);
+	g->job = dmazero(g, &g->jobpa);
+	g->data = dmazero(g, &g->datapa);
+	if(g->pgd == nil || g->pt1 == nil || g->pt2 == nil || g->pt3 == nil ||
+	   g->job == nil || g->data == nil){
+		setwhy(g, "cannot allocate GPU page tables or buffers");
+		return -1;
+	}
+
+	mmumap(g, JobVa, g->jobpa);
+	mmumap(g, DataVa, g->datapa);
+	mmuclean(g);
+	return 0;
+}
+
+static int
+mmuprogram(Gpu *g)
+{
+	u64 transtab, memattr;
+
+	/* PGD | READ_INNER | ADRMODE_TABLE.  The GPU is not coherent, so
+	 * SHARE_OUTER (bit 4) is not set. */
+	transtab = g->pgdpa | 0x7;
+	memattr = 0x008d0088ULL;	/* NC 0x88, WB 0x8d, DEV 0x88 */
+
+	if(mmucmd(g, AsCmdFlushMem) < 0){
+		setwhy(g, "MMU flush before enable failed");
+		return -1;
+	}
+	drw(&g->d, ASOFF(0, AsTranstabLo), (u32)transtab);
+	drw(&g->d, ASOFF(0, AsTranstabHi), (u32)(transtab >> 32));
+	drw(&g->d, ASOFF(0, AsMemattrLo), (u32)memattr);
+	drw(&g->d, ASOFF(0, AsMemattrHi), (u32)(memattr >> 32));
+	drw(&g->d, ASOFF(0, AsTranscfgLo), 0);	/* ADRMODE_LEGACY */
+	drw(&g->d, ASOFF(0, AsTranscfgHi), 0);
+	if(mmucmd(g, AsCmdUpdate) < 0){
+		setwhy(g, "MMU update failed");
+		return -1;
+	}
+	drw(&g->d, MmuIntClear, 0xffffffff);
+	drw(&g->d, MmuIntMask, 0);		/* poll, no IRQ */
+	return 0;
+}
+
+static void
+gpudump(Gpu *g)
+{
+	int i;
+
+	if(g->pgd == nil)
+		return;
+	print("gpufs: AS transtab %#ux/%#ux memattr %#ux/%#ux transcfg %#ux/%#ux status %#ux\n",
+	      drd(&g->d, ASOFF(0, AsTranstabLo)), drd(&g->d, ASOFF(0, AsTranstabHi)),
+	      drd(&g->d, ASOFF(0, AsMemattrLo)), drd(&g->d, ASOFF(0, AsMemattrHi)),
+	      drd(&g->d, ASOFF(0, AsTranscfgLo)), drd(&g->d, ASOFF(0, AsTranscfgHi)),
+	      drd(&g->d, ASOFF(0, AsStatus)));
+	print("gpufs: PTE pgd %#llux l1 %#llux l2 %#llux l3[0] %#llux l3[1] %#llux\n",
+	      g->pgd[0], g->pt1[mmuidx(JobVa, 1)],
+	      g->pt2[mmuidx(JobVa, 2)], g->pt3[0], g->pt3[1]);
+	print("gpufs: job");
+	for(i = 0; i < 14; i++)
+		print(" %#ux", (u32)g->job[i]);
+	print("\n");
+	print("gpufs: JS cfg %#ux headnext %#ux/%#ux head %#ux tail %#ux status %#ux state %#ux fault %#ux addr %#llux\n",
+	      drd(&g->d, JSOFF(JobSlot, JsConfig)),
+	      drd(&g->d, JSOFF(JobSlot, JsHeadLo)), drd(&g->d, JSOFF(JobSlot, JsHeadHi)),
+	      drd(&g->d, JSOFF(JobSlot, 0x00)), drd(&g->d, JSOFF(JobSlot, 0x08)),
+	      drd(&g->d, JSOFF(JobSlot, JsStatus)), drd(&g->d, 0x1010),
+	      drd(&g->d, GpuFaultStatus),
+	      ((u64)drd(&g->d, GpuFaultAddrHi) << 32) | drd(&g->d, GpuFaultAddrLo));
+}
+
+/* Drop stale GPU L2 lines so the job manager sees the CPU-written header. */
+static void
+gpucacheflush(Gpu *g)
+{
+	int i;
+
+	drw(&g->d, GpuCmd, 0x08);	/* CLEAN_INV_CACHES */
+	for(i = 0; i < 100; i++){
+		if(drd(&g->d, GpuIntRawstat) & (1 << 17))
+			break;
+		sleep(1);
+	}
+	drw(&g->d, GpuIntClear, 1 << 17);
+}
+
+/* Submit one job at a GPU VA. */
+static int
+runjob(Gpu *g, int slot, u64 head, u32 cfg, u32 index, u32 type, u64 addr, u64 val, u32 *rawp)
+{
+	u32 raw;
+	int i, done, err;
+
+	done = err = 0;
+	memset(g->job, 0, 4096);
+	g->job[4] = 1 | (type << 1) | (index << 16);
+	if(type == JobTypeWriteValue){
+		g->job[8] = addr;
+		g->job[9] = (u64)addr >> 32;
+		g->job[10] = WriteValueImmediate64;
+		g->job[12] = (u32)val;
+		g->job[13] = (u32)(val >> 32);
+	}
+	drvdmacache(DrvClean, g->jobpa, 4096);
+	gpucacheflush(g);
+
+	drw(&g->d, JobIntClear, 0xffffffff);
+	drw(&g->d, JobIntMask, 0);
+	drw(&g->d, JSOFF(slot, JsHeadLo), (u32)head);
+	drw(&g->d, JSOFF(slot, JsHeadHi), (u32)(head >> 32));
+	drw(&g->d, JSOFF(slot, JsAffinityLo), 1);
+	drw(&g->d, JSOFF(slot, JsAffinityHi), 0);
+	drw(&g->d, JSOFF(slot, JsConfig), cfg);
+	drw(&g->d, JSOFF(slot, JsCommand), 1);
+
+	for(i = 0; i < 1000; i++){
+		raw = drd(&g->d, JobIntRawstat);
+		if(raw & (1 << slot)){
+			done = 1;
+			break;
+		}
+		if(raw & (1 << (slot + 16))){
+			err = 1;
+			break;
+		}
+		sleep(1);
+	}
+	drw(&g->d, JobIntClear, (1 << slot) | (1 << (slot + 16)));
+	if(rawp != nil)
+		*rawp = raw;
+	return done ? 0 : (err ? -1 : -2);
+}
+
+static void
+identitytest(Gpu *g)
+{
+	u32 raw;
+	int r;
+
+	if(mmuinit(g) < 0)
+		return;
+	if(mmucmd(g, AsCmdFlushMem) < 0)
+		return;
+	drw(&g->d, ASOFF(0, AsTranstabLo), 2);	/* LPAE identity */
+	drw(&g->d, ASOFF(0, AsTranstabHi), 0);
+	drw(&g->d, ASOFF(0, AsMemattrLo), 0x008d0088);
+	drw(&g->d, ASOFF(0, AsMemattrHi), 0);
+	drw(&g->d, ASOFF(0, AsTranscfgLo), 0);
+	drw(&g->d, ASOFF(0, AsTranscfgHi), 0);
+	if(mmucmd(g, AsCmdUpdate) < 0)
+		return;
+	drw(&g->d, MmuIntClear, 0xffffffff);
+	drw(&g->d, MmuIntMask, 0);
+
+	r = runjob(g, 1, g->jobpa, 0x83300, 1, 1, 0, 0, &raw);
+	print("gpufs: ident null %d raw %#ux js %#ux\n", r, raw,
+	      drd(&g->d, JSOFF(1, JsStatus)));
+	*(u64 *)g->data = 0;
+	drvdmacache(DrvClean, g->datapa, 4096);
+	r = runjob(g, 1, g->jobpa, 0x83300, 1, JobTypeWriteValue,
+	           g->datapa, 0xcafebabedeadbeefULL, &raw);
+	drvdmacache(DrvInval, g->datapa, 4096);
+	print("gpufs: ident write %d raw %#ux js %#ux value %#llux\n", r, raw,
+	      drd(&g->d, JSOFF(1, JsStatus)), *(u64 *)g->data);
+}
+
+/*
+ * AArch64 4K page tables, as the Bifrost vendor driver uses for the job
+ * manager: three levels from start_level 1, 32 entries in the PGD, leaf
+ * PTEs with AF/SH_IS/ATTRINDX and TYPE_PAGE (0xf07 for cached RW).
+ */
+static u64
+a64pte(u64 pa)
+{
+	return (pa & ~0xfffULL) | 0xe43ULL;	/* NC, SH_OS, AP_UNPRIV */
+}
+
+static int
+mmuprogram_a64(Gpu *g)
+{
+	u64 transcfg;
+
+	memset(g->pgd, 0, 4096);
+	memset(g->pt2, 0, 4096);
+	memset(g->pt3, 0, 4096);
+	g->pgd[(JobVa >> 30) & 0x1f] = tablepte(g->l2pa);
+	g->pt2[(JobVa >> 21) & 0x1ff] = tablepte(g->l3pa);
+	g->pt3[(JobVa >> 12) & 0x1ff] = a64pte(g->jobpa);
+	g->pt3[(DataVa >> 12) & 0x1ff] = a64pte(g->datapa);
+	drvdmacache(DrvClean, g->pgdpa, 4096);
+	drvdmacache(DrvClean, g->l2pa, 4096);
+	drvdmacache(DrvClean, g->l3pa, 4096);
+
+	transcfg = (2ULL << 24) | (1ULL << 30) | 6 | (20ULL << 6);
+	if(mmucmd(g, AsCmdFlushMem) < 0)
+		return -1;
+	drw(&g->d, ASOFF(0, AsTranstabLo), (u32)g->pgdpa);
+	drw(&g->d, ASOFF(0, AsTranstabHi), (u32)(g->pgdpa >> 32));
+	drw(&g->d, ASOFF(0, AsMemattrLo), 0x8f4c);	/* 0 NC, 1 WB */
+	drw(&g->d, ASOFF(0, AsMemattrHi), 0);
+	drw(&g->d, ASOFF(0, AsTranscfgLo), (u32)transcfg);
+	drw(&g->d, ASOFF(0, AsTranscfgHi), (u32)(transcfg >> 32));
+	if(mmucmd(g, AsCmdUpdate) < 0)
+		return -1;
+	drw(&g->d, MmuIntClear, 0xffffffff);
+	drw(&g->d, MmuIntMask, 0);
+	return 0;
+}
+
+static void
+identitymatrix(Gpu *g)
+{
+	static u32 cfgs[] = { 0, 0x800, 0x83300, 0x83700, 0x83b00 };
+	u32 raw;
+	int idx, c, r;
+
+	if(mmuinit(g) < 0)
+		return;
+	if(mmuprogram_a64(g) < 0)
+		return;
+
+	for(idx = 0; idx < 2; idx++){
+		for(c = 0; c < (int)nelem(cfgs); c++){
+			r = runjob(g, 1, JobVa, cfgs[c], idx, 1, 0, 0, &raw);
+			print("gpufs: matrix idx %d cfg %#ux null r %d raw %#ux js %#ux as %#ux addr %#llux\n",
+			      idx, cfgs[c], r, raw,
+			      drd(&g->d, JSOFF(1, JsStatus)),
+			      drd(&g->d, ASOFF(0, 0x1c)),
+			      ((u64)drd(&g->d, ASOFF(0, 0x24)) << 32) |
+			      drd(&g->d, ASOFF(0, 0x20)));
+			if(r == 0){
+				*(u64 *)g->data = 0;
+				drvdmacache(DrvClean, g->datapa, 4096);
+				r = runjob(g, 1, JobVa, cfgs[c], idx,
+				           JobTypeWriteValue, DataVa,
+				           0xcafebabedeadbeefULL, &raw);
+				drvdmacache(DrvInval, g->datapa, 4096);
+				print("gpufs: matrix idx %d cfg %#ux write r %d raw %#ux js %#ux value %#llux\n",
+				      idx, cfgs[c], r, raw,
+				      drd(&g->d, JSOFF(1, JsStatus)),
+				      *(u64 *)g->data);
+			}
+		}
+	}
+
+	*(u64 *)g->data = 0;
+	drvdmacache(DrvClean, g->datapa, 4096);
+	r = runjob(g, 1, JobVa, 0x83700, 1, JobTypeWriteValue, DataVa,
+	           0xcafebabedeadbeefULL, &raw);
+	drvdmacache(DrvInval, g->datapa, 4096);
+	print("gpufs: a64 write r %d raw %#ux js %#ux value %#llux\n",
+	      r, raw, drd(&g->d, JSOFF(1, JsStatus)), *(u64 *)g->data);
+	r = runjob(g, 1, JobVa, 0x83700, 1, 3, 0, 0, &raw);
+	print("gpufs: a64 flush r %d raw %#ux js %#ux\n", r, raw,
+	      drd(&g->d, JSOFF(1, JsStatus)));
+}
+
+/* A NULL job on one slot: no payload, no shader, just the queue. */
+static void
+nulltest(Gpu *g, int slot)
+{
+	u32 raw;
+	int i, done, err;
+
+	if(slot < 0 || slot > 2)
+		return;
+	if(mmuinit(g) < 0 || mmuprogram(g) < 0)
+		return;
+
+	done = err = 0;
+	memset(g->job, 0, 4096);
+	g->job[4] = 1 | (1 << 1) | (1 << 16);	/* NULL, index 1 */
+	drvdmacache(DrvClean, g->jobpa, 4096);
+	gpucacheflush(g);
+
+	drw(&g->d, JobIntClear, 0xffffffff);
+	drw(&g->d, JobIntMask, 0);
+	drw(&g->d, JSOFF(slot, JsHeadLo), (u32)JobVa);
+	drw(&g->d, JSOFF(slot, JsHeadHi), (u32)((u64)JobVa >> 32));
+	drw(&g->d, JSOFF(slot, JsAffinityLo), 1);
+	drw(&g->d, JSOFF(slot, JsAffinityHi), 0);
+	drw(&g->d, JSOFF(slot, JsConfig), 0x83700);
+	drw(&g->d, JSOFF(slot, JsCommand), 1);
+
+	for(i = 0; i < 1000; i++){
+		raw = drd(&g->d, JobIntRawstat);
+		if(raw & (1 << slot)){
+			done = 1;
+			break;
+		}
+		if(raw & (1 << (slot + 16))){
+			err = 1;
+			break;
+		}
+		sleep(1);
+	}
+	drw(&g->d, JobIntClear, (1 << slot) | (1 << (slot + 16)));
+	print("gpufs: null slot %d %s raw %#ux js %#ux head %#ux tail %#ux\n",
+	      slot, done ? "PASS" : (err ? "FAIL" : "TIMEOUT"), raw,
+	      drd(&g->d, JSOFF(slot, JsStatus)),
+	      drd(&g->d, JSOFF(slot, 0x00)), drd(&g->d, JSOFF(slot, 0x08)));
+}
+
+/*
+ * The first job: a WRITE_VALUE header at JobVa, writing 0xcafebabedeadbeef
+ * to DataVa.  No shader, no tiler; this proves the page tables, the job
+ * manager and the completion path before any compiler work.
+ */
+static void
+jobtest(Gpu *g)
+{
+	u32 raw, cfg;
+	int i, done, err;
+
+	done = err = 0;
+	g->jobok = 0;
+	g->jobval = 0;
+	print("gpufs: test mmuinit\n");
+	if(mmuinit(g) < 0)
+		return;
+	print("gpufs: test mmuprogram\n");
+	if(mmuprogram(g) < 0)
+		return;
+	print("gpufs: test submit slot %d\n", JobSlot);
+
+	/* Header: Is64b, Type=WRITE_VALUE.  Payload at word 8. */
+	g->job[4] = 1 | (JobTypeWriteValue << 1) | (1 << 16);
+	g->job[8] = DataVa;
+	g->job[9] = (u64)DataVa >> 32;
+	g->job[10] = WriteValueImmediate64;
+	g->job[12] = 0xdeadbeef;
+	g->job[13] = 0xcafebabe;
+	*(u64 *)g->data = 0;
+	drvdmacache(DrvClean, g->jobpa, 4096);
+	drvdmacache(DrvClean, g->datapa, 4096);
+
+	drw(&g->d, JobIntClear, 0xffffffff);
+	drw(&g->d, JobIntMask, 0);
+	drw(&g->d, JSOFF(JobSlot, JsHeadLo), (u32)JobVa);
+	drw(&g->d, JSOFF(JobSlot, JsHeadHi), (u32)((u64)JobVa >> 32));
+	drw(&g->d, JSOFF(JobSlot, JsAffinityLo), 1);
+	drw(&g->d, JSOFF(JobSlot, JsAffinityHi), 0);
+	cfg = (8 << 16) | (3 << 8) | (3 << 12) | (1 << 10);
+	drw(&g->d, JSOFF(JobSlot, JsConfig), cfg);
+	drw(&g->d, JSOFF(JobSlot, JsCommand), 1);
+	print("gpufs: test poll\n");
+
+	for(i = 0; i < 1000; i++){
+		raw = drd(&g->d, JobIntRawstat);
+		if(raw & (1 << JobSlot)){
+			done = 1;
+			break;
+		}
+		if(raw & (1 << (JobSlot + 16))){
+			err = 1;
+			break;
+		}
+		sleep(1);
+	}
+	drw(&g->d, JobIntClear, (1 << JobSlot) | (1 << (JobSlot + 16)));
+
+	if(!done && !err){
+		snprint(g->joberr, sizeof g->joberr,
+		        "job timeout raw %#ux js %#ux mmu %#ux as %#ux",
+		        raw, drd(&g->d, JSOFF(JobSlot, JsStatus)),
+		        drd(&g->d, MmuIntRawstat),
+		        drd(&g->d, ASOFF(0, AsStatus)));
+		setwhy(g, "%s", g->joberr);
+		gpudump(g);
+		return;
+	}
+	if(err){
+		snprint(g->joberr, sizeof g->joberr,
+		        "job error raw %#ux js %#ux head %#ux tail %#ux mmu %#ux as %#ux",
+		        raw, drd(&g->d, JSOFF(JobSlot, JsStatus)),
+		        drd(&g->d, JSOFF(JobSlot, 0x00)), drd(&g->d, JSOFF(JobSlot, 0x08)),
+		        drd(&g->d, MmuIntRawstat),
+		        drd(&g->d, ASOFF(0, AsStatus)));
+		setwhy(g, "%s", g->joberr);
+		gpudump(g);
+		return;
+	}
+
+	drvdmacache(DrvInval, g->datapa, 4096);
+	g->jobval = *(u64 *)g->data;
+	g->jobok = g->jobval == 0xcafebabedeadbeefULL;
+	if(!g->jobok){
+		snprint(g->joberr, sizeof g->joberr,
+		        "job wrote %#llux", g->jobval);
+		setwhy(g, "%s", g->joberr);
+	}
 }
 
 static void
@@ -424,6 +1026,59 @@ fswrite(Req *r, void *aux)
 		qunlock(&g->lk);
 		return;
 	}
+	if(strcmp(cmd, "matrix") == 0){
+		print("gpufs: ctl matrix\n");
+		if(g->powered || pmuon(g) == 0){
+			if(gpupower(g) == 0)
+				identitymatrix(g);
+			r->ofcall.count = r->ifcall.count;
+			respond(r, nil);
+		}else
+			respond(r, g->why);
+		qunlock(&g->lk);
+		return;
+	}
+	if(strcmp(cmd, "identity") == 0){
+		print("gpufs: ctl identity\n");
+		if(g->powered || pmuon(g) == 0){
+			if(gpupower(g) == 0)
+				identitytest(g);
+			r->ofcall.count = r->ifcall.count;
+			respond(r, nil);
+		}else
+			respond(r, g->why);
+		qunlock(&g->lk);
+		return;
+	}
+	if(strncmp(cmd, "null", 4) == 0){
+		int slot;
+
+		slot = cmd[4] == ' ' ? atoi(cmd + 5) : 1;
+		print("gpufs: ctl null slot %d\n", slot);
+		if(g->powered || pmuon(g) == 0){
+			if(gpupower(g) == 0)
+				nulltest(g, slot);
+			r->ofcall.count = r->ifcall.count;
+			respond(r, nil);
+		}else
+			respond(r, g->why);
+		qunlock(&g->lk);
+		return;
+	}
+	if(strcmp(cmd, "test") == 0){
+		print("gpufs: ctl test power\n");
+		if(g->powered || pmuon(g) == 0){
+			if(gpupower(g) == 0){
+				print("gpufs: ctl test job\n");
+				jobtest(g);
+			}
+			r->ofcall.count = r->ifcall.count;
+			respond(r, nil);
+		}else
+			respond(r, g->why);
+		qunlock(&g->lk);
+		return;
+	}
 	qunlock(&g->lk);
 	respond(r, "unknown command");
 }
@@ -437,7 +1092,7 @@ static DrvFile files[] = {
 static void
 usage(void)
 {
-	fprint(2, "usage: gpufs [-i]\n");
+	fprint(2, "usage: gpufs [-i|-t]\n");
 	exits("usage");
 }
 
@@ -445,12 +1100,16 @@ void
 main(int argc, char **argv)
 {
 	DrvSrv *s;
-	int info;
+	int info, test;
 
 	info = 0;
+	test = 0;
 	ARGBEGIN{
 	case 'i':
 		info = 1;
+		break;
+	case 't':
+		test = 1;
 		break;
 	default:
 		usage();
@@ -473,14 +1132,30 @@ main(int argc, char **argv)
 			softreset(&gpu);
 			irqmask(&gpu);
 			ident(&gpu);
+			if(test){
+				print("gpufs: test power\n");
+				if(gpupower(&gpu) == 0){
+					print("gpufs: test mmu/job\n");
+					jobtest(&gpu);
+				}
+			}
 		}
 	}
 
-	if(info){
+	if(info || test){
 		char buf[1024];
 
 		statustext(&gpu, buf, sizeof buf);
 		print("%s", buf);
+		if(test){
+			if(gpu.jobok)
+				print("HARVEY-ARM64 GPU JOB PASS value 0x%llux\n",
+				      gpu.jobval);
+			else
+				print("HARVEY-ARM64 GPU JOB FAIL %s\n",
+				      gpu.joberr[0] ? gpu.joberr :
+				      (gpu.why[0] ? gpu.why : "not run"));
+		}
 		exits(gpu.responded ? nil : "noprobe");
 	}
 
@@ -490,7 +1165,6 @@ main(int argc, char **argv)
 	else
 		print("HARVEY-ARM64 GPU PROBE FAIL %s\n",
 		      gpu.why[0] ? gpu.why : "no response");
-
 	s = drvsrv("gpu", files, nelem(files));
 	if(s == nil)
 		drvfail("gpufs: cannot build 9P tree");

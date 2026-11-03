@@ -98,11 +98,37 @@ sys/include/drv.h           drvfindreg, the rest of the kit
 sys/src/cmd/drvman/drvman.c "gpu" -> /boot/gpufs -> /srv/gpu
 ```
 
+## GPU MMU and the first job (work in progress)
+
+The MMU work has moved on since the identification driver:
+
+- The page tables are **AArch64 4K**, the format the Bifrost vendor driver
+  uses for the job manager: three levels from `start_level 1`, 32 entries
+  in the PGD, leaf PTEs with `AF`, `SH`, `ATTRINDX`, `AP_UNPRIV` and
+  `TYPE_PAGE`. `AS_TRANSCFG` is `ADRMODE_AARCH64_4K`, with `INA_BITS(20)`
+  for the 35-bit VA and the page-table-walk memory attributes.
+- A leaf PTE without `AP_UNPRIV` produced a permission fault at the job
+  header address; adding it made the walk succeed. That is the first
+  evidence that the GPU is actually walking our table.
+- Job submission is implemented for the write-value, null and cache-flush
+  types on the vertex/tiler slot (JS1), with the AS number in `JS_CONFIG`,
+  the start/end cache flushes, and the per-slot completion bits.
+
+The remaining blocker is the job manager itself. Every job type returns
+`JS_STATUS = 0x58` (`DATA_INVALID_FAULT`) with no MMU fault
+(`AS_FAULTSTATUS = 0`). The header bytes match Mesa's `JOB_HEADER` packer,
+the job index and chain flag were swept, and mapping the job page
+non-cacheable did not change it. The next step is not more guessing: boot
+the reference Linux panfrost stack on the board and capture a known-good
+`JS_CONFIG`, job header and AS setup (or read the same from the vendor
+kbase), then compare. The diagnostic path is `/srv/gpu/ctl`: `null`,
+`test`, `matrix` and `identity` exercise the queue and the table.
+
 ## What is next
 
-1. **GPU MMU.** Two-level tables in the GPU's own format, the 35-bit VA
-   window, `AS_PRESENT` slots, and the `TRANSTAB`/`MEMATTR`/`L2_CONFIG`
-   registers. This is the gate for every job.
+1. **Reference job trace.** Capture a working panfrost job (Linux or the
+   vendor driver) and diff the header, `JS_CONFIG`, and AS registers
+   against `gpufs`. Then make the first NULL / write-value job complete.
 2. **Job submission.** Bifrost job descriptors in the 3 job slots, the
    `JOB_INT` block, and a ring of jobs exchanged with userspace. Panfrost's
    `panfrost_regs.h` and the Bifrost job layout are the reference.
