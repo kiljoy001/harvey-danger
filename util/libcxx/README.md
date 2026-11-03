@@ -131,6 +131,24 @@ RTTI **is** available: libc++ is built with `-frtti`, and
   ```text
   stdio-ok lines=800 bad=0 seen=800
   ```
+
+  The C++20 concurrency primitives work too: `std::latch`, `std::barrier`,
+  `std::counting_semaphore`, `std::jthread`/`stop_token` and
+  `std::atomic<T>::wait`/`notify_*`.  libc++'s `atomic.cpp` provides the
+  wait/notify runtime and `barrier.cpp` the barrier algorithm.  Harvey has
+  no futex syscall, so `apply-llvm-patches.py` makes `atomic.cpp` take
+  libc++'s portable poll-with-backoff platform layer instead of the Linux
+  futex one.
+
+  ```text
+  cxx20 latch=1 barrier=1 sema=1 atomic=1 jthread=1
+  ```
+
+  Sub-second waits are real: `nanosleep`/`usleep` live in APEX over the
+  millisecond sleep syscall, and `pthread_cond_timedwait` uses the kernel's
+  timed semaphore (`tsemacquire`) instead of polling.  A timed-out waiter
+  unlinks its stack node under the condition variable's lock, so a racing
+  signal cannot touch a dead frame.
 - **std::filesystem** — supported.  libc++'s own sources are patched to call
   `__stat_ap`/`__fstat` directly (`apply-llvm-patches.py`), because defining
   real `stat`/`fstat` symbols would capture Plan 9's three-argument `stat`

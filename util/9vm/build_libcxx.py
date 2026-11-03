@@ -47,6 +47,8 @@ TEST_STDIO_CPP = REPO_ROOT / "util" / "libcxx" / "test_stdio.cpp"
 TEST_STDIO_ELF = BUILD / "test_stdio.elf"
 TEST_TIMED_CPP = REPO_ROOT / "util" / "libcxx" / "test_timed.cpp"
 TEST_TIMED_ELF = BUILD / "test_timed.elf"
+TEST_CXX20_CPP = REPO_ROOT / "util" / "libcxx" / "test_cxx20.cpp"
+TEST_CXX20_ELF = BUILD / "test_cxx20.elf"
 
 CXX = "clang++"
 CC = "clang"
@@ -84,6 +86,8 @@ SOURCES = [
     "condition_variable",
     "condition_variable_destructor",
     "call_once",
+    "atomic",
+    "barrier",
     "thread",
     "future",
     "random",
@@ -361,12 +365,14 @@ def main():
     build_test(TEST_ERRNO_CPP, TEST_ERRNO_ELF, "test_errno")
     build_test(TEST_STDIO_CPP, TEST_STDIO_ELF, "test_stdio")
     build_test(TEST_TIMED_CPP, TEST_TIMED_ELF, "test_timed")
+    build_test(TEST_CXX20_CPP, TEST_CXX20_ELF, "test_cxx20")
     if args.run:
         run_test(TEST_STL_ELF, "hello 2 2 42 42")
         run_test(TEST_THREADS_ELF, "threads-ok 7 14")
         run_test(TEST_ERRNO_ELF, "errno-ok main=33 a=11/2 b=22/2")
         run_test(TEST_STDIO_ELF, "stdio-ok lines=800 bad=0 seen=800")
         run_test(TEST_TIMED_ELF, "timed sleep=1 timeout=1 signal=1 future=1")
+        run_test(TEST_CXX20_ELF, "cxx20 latch=1 barrier=1 sema=1 atomic=1 jthread=1")
 
 
 if __name__ == "__main__":

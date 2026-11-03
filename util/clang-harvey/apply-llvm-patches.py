@@ -57,6 +57,18 @@ EDITS = [
         "  if (::fstat(FD, &StatBuf) != 0)",
         "  if (__harvey_fstat(FD, &StatBuf) != 0)",
     ),
+    # libc++/src/atomic.cpp: the Linux branch waits with futexes, which Harvey
+    # does not have.  Fall through to the portable poll-with-backoff layer.
+    (
+        "libcxx/src/atomic.cpp",
+        "#ifdef __linux__\n\n#  include <linux/futex.h>",
+        "#if defined(__linux__) && !defined(HARVEY)\n\n#  include <linux/futex.h>",
+    ),
+    (
+        "libcxx/src/atomic.cpp",
+        "#ifdef __linux__\n\nstatic void\n__libcpp_platform_wait_on_address",
+        "#if defined(__linux__) && !defined(HARVEY)\n\nstatic void\n__libcpp_platform_wait_on_address",
+    ),
     (
         "llvm/lib/Support/Unix/Path.inc",
         "  int StatRet = ::fstat(FD, &Status);",
