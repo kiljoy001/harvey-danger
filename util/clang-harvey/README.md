@@ -406,3 +406,10 @@ directory.
 `-m` above about 4078 MB fails with `KVM_CREATE_VCPU: EEXIST`: the RAM
 memslot then covers the in-kernel local APIC page at `0xFEE00000`.  3 GiB
 is the reliable setting for builds.
+
+The 9vm default of 1024 MB is *not* reliable: roughly one boot in eight
+dies with what looks like memory corruption — an "impossible" failure such
+as `clock_gettime(CLOCK_MONOTONIC) failed` (the shim only fails on a null
+buffer) or a write to the text base at `0x400000` inside `pthread_join`.
+At 3072 MB the same binaries pass every time, so the smoke tests now boot
+with `-m 3072`.  This is an open Harvey/9vm bug, not a compiler issue.

@@ -379,9 +379,13 @@ def build_test(src_var, elf_var, name):
 def run_test(elf, expect):
     if not VM.is_file() or not KERNEL.is_file():
         sys.exit(f"need {VM} and {KERNEL} to run the smoke test")
-    print(f"+ {VM} -boot {elf} {KERNEL}")
+    # 1024 MB (9vm's default) intermittently corrupts memory: about one
+    # boot in eight dies with an impossible failure (clock_gettime()
+    # rejecting a valid buffer, or a write to the text base).  3 GiB is
+    # reliable and is what the builds use.
+    print(f"+ {VM} -m 3072 -boot {elf} {KERNEL}")
     proc = subprocess.run(
-        [str(VM), "-boot", str(elf), str(KERNEL)],
+        [str(VM), "-m", "3072", "-boot", str(elf), str(KERNEL)],
         cwd=REPO_ROOT, text=True, capture_output=True, timeout=20)
     output = proc.stdout + proc.stderr
     for line in output.splitlines():
