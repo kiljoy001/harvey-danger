@@ -30,9 +30,8 @@ function ShelfDockRun(string titleBrand, string osTag) int64 {
         Image *bg = nil, *border = nil, *btn_bg = nil, *btn_active = nil;
         Image *accent = nil, *ink = nil, *muted = nil, *gold = nil, *white = nil;
         Event e;
-        u32 kind, timer;
+        u32 kind;
         int w, h, i, running, redraw, pressed;
-        char timestr[16];
         Point p;
         Rectangle r;
 
@@ -45,7 +44,6 @@ function ShelfDockRun(string titleBrand, string osTag) int64 {
             goto sout;
         }
         einit(Emouse|Ekeyboard);
-        timer = etimer(0, 1000);
 
         bg = allocimage(display, Rect(0, 0, 1, 1), screen->chan, 1, 0x1B2631FF);
         border = allocimage(display, Rect(0, 0, 1, 1), screen->chan, 1, 0x3B5264FF);
@@ -61,7 +59,6 @@ function ShelfDockRun(string titleBrand, string osTag) int64 {
            accent == nil || ink == nil || muted == nil || gold == nil || white == nil)
             goto sout;
 
-        snprint(timestr, sizeof timestr, "--:--");
         running = 1;
         redraw = 1;
         pressed = -1;
@@ -70,6 +67,8 @@ function ShelfDockRun(string titleBrand, string osTag) int64 {
             if(redraw){
                 w = Dx(screen->r);
                 h = Dy(screen->r);
+                int by = (h - 24) / 2;
+                if(by < 2) by = 2;
 
                 // Main bar background and bottom border line
                 draw(screen, screen->r, bg, nil, ZP);
@@ -79,8 +78,8 @@ function ShelfDockRun(string titleBrand, string osTag) int64 {
 
                 // Launcher buttons
                 for(i = 0; btns[i].label != nil; i++){
-                    r = Rect(screen->r.min.x + btns[i].x, screen->r.min.y + 4,
-                             screen->r.min.x + btns[i].x + btns[i].w, screen->r.min.y + 26);
+                    r = Rect(screen->r.min.x + btns[i].x, screen->r.min.y + by,
+                             screen->r.min.x + btns[i].x + btns[i].w, screen->r.min.y + by + 24);
                     Image *fill = (i == pressed) ? btn_active : (i == 0 ? accent : btn_bg);
                     Image *tcol = (i == 0) ? white : (i == pressed ? gold : ink);
 
@@ -91,24 +90,19 @@ function ShelfDockRun(string titleBrand, string osTag) int64 {
                     draw(screen, Rect(r.max.x - 1, r.min.y, r.max.x, r.max.y), border, nil, ZP);
 
                     p = Pt(r.min.x + (btns[i].w - stringwidth(font, btns[i].label)) / 2,
-                           r.min.y + 3);
+                           r.min.y + (24 - font->height) / 2 + 1);
                     string(screen, p, tcol, ZP, font, btns[i].label);
                 }
 
                 // Middle badge
-                p = Pt(screen->r.min.x + 395, screen->r.min.y + 7);
+                p = Pt(screen->r.min.x + (w - stringwidth(font, "Objective-9c 0.4.0")) / 2,
+                       screen->r.min.y + by + (24 - font->height) / 2 + 1);
                 string(screen, p, muted, ZP, font, "Objective-9c 0.4.0");
 
-                // Right-aligned clock
-                Tm *t = localtime(time(nil));
-                if(t != nil)
-                    snprint(timestr, sizeof timestr, "%02d:%02d", t->hour, t->min);
-
-                r = Rect(screen->r.max.x - 72, screen->r.min.y + 4,
-                         screen->r.max.x - 8, screen->r.min.y + 26);
-                draw(screen, r, btn_bg, nil, ZP);
-                p = Pt(r.min.x + (64 - stringwidth(font, timestr)) / 2, r.min.y + 3);
-                string(screen, p, gold, ZP, font, timestr);
+                // Right tag
+                p = Pt(screen->r.max.x - stringwidth(font, "Harvey / 9P2000") - 16,
+                       screen->r.min.y + by + (24 - font->height) / 2 + 1);
+                string(screen, p, gold, ZP, font, "Harvey / 9P2000");
 
                 flushimage(display, 1);
                 redraw = 0;
@@ -120,23 +114,22 @@ function ShelfDockRun(string titleBrand, string osTag) int64 {
                 if(getwindow(display, Refnone) < 0)
                     running = 0;
                 redraw = 1;
-            } else if(kind == timer){
-                redraw = 1;
             } else if(kind == Emouse){
                 if(e.mouse.buttons & 1){
                     int mx = e.mouse.xy.x - screen->r.min.x;
                     int my = e.mouse.xy.y - screen->r.min.y;
+                    int by = (Dy(screen->r) - 24) / 2;
+                    if(by < 2) by = 2;
 
                     for(i = 0; btns[i].label != nil; i++){
                         if(mx >= btns[i].x && mx <= btns[i].x + btns[i].w &&
-                           my >= 4 && my <= 26){
+                           my >= by && my <= by + 24){
                             // Button pressed visual feedback
                             pressed = i;
                             redraw = 1;
                             // Flash button
-                            w = Dx(screen->r);
-                            r = Rect(screen->r.min.x + btns[i].x, screen->r.min.y + 4,
-                                     screen->r.min.x + btns[i].x + btns[i].w, screen->r.min.y + 26);
+                            r = Rect(screen->r.min.x + btns[i].x, screen->r.min.y + by,
+                                     screen->r.min.x + btns[i].x + btns[i].w, screen->r.min.y + by + 24);
                             draw(screen, r, btn_active, nil, ZP);
                             flushimage(display, 1);
                             sleep(90);

@@ -181,18 +181,24 @@ function start_vps_root() int64 {
             close(fd);
         }
 
-        /* A larger first window keeps directory listings and tool output
-           visible; the old 520x40..980x320 shell scrolled entries away. */
-        fd = create("/lib/aspera/start.rc", OWRITE, 0755);
-        if(fd >= 0){
-            char *script =
-                "#!/bin/rc\n"
-                "# Rio startup: large rc window + snarf bridge.\n"
-                "echo 'new -r 16 16 776 568 welcome; exec rc' > /dev/wctl\n"
-                "snarfbridge &\n";
-            write(fd, script, strlen(script));
-            close(fd);
-        }
+        /* If no start.rc was staged, provide default with dock + tour + shell. */
+        d = dirstat("/lib/aspera/start.rc");
+        if(d == nil){
+            fd = create("/lib/aspera/start.rc", OWRITE, 0755);
+            if(fd >= 0){
+                char *script =
+                    "#!/bin/rc\n"
+                    "# Rio startup: Aspera shelf dock + welcome tour + rc shell.\n"
+                    "echo 'new -r 12 12 1012 96 shelf' > /dev/wctl\n"
+                    "echo 'new -r 24 108 504 430 rc -c ''welcome; exec rc''' > /dev/wctl\n"
+                    "echo 'new -r 520 108 1000 430 rc' > /dev/wctl\n"
+                    "aspera-shelf-service &\n"
+                    "snarfbridge &\n";
+                write(fd, script, strlen(script));
+                close(fd);
+            }
+        }else
+            free(d);
 
         /* Bring up the browser link in the background: DHCP, resolver,
            connection server.  net.rc logs to the console and never blocks
