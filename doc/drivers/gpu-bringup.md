@@ -116,10 +116,25 @@ else
 `gpufs` now uses that path. It is a four-level table (`pgd_bits = 0`),
 `AS_TRANSTAB = pgd | READ_INNER | ADRMODE_TABLE` (`pgd | 7`),
 `AS_TRANSCFG = ADRMODE_LEGACY` (0), `AS_MEMATTR = 0x008d0088`, and leaves are
-`pa | 0x2c5`: `TYPE_BLOCK`, `AttrIndx 1` (write-allocate), `SH_OS`,
-`AP[1]` set. That is exactly what `io-pgtable-arm.c` builds for
-`ARM_MALI_LPAE` (Mali uses "block" descriptors at every level and never sets
-`AF`).
+`pa | 0x2c5`: `TYPE_BLOCK`, `AttrIndx 1` (write-allocate), `SH_OS`, and both
+permission bits. Mali uses "block" descriptors at every level and never sets
+`AF`.
+
+Bits [7:6] of a Mali LPAE leaf are **stage-2-like (HAP) permissions**, not
+ARM's `AP[2:1]`. `echo 'leaf <bits>' > /srv/gpu/ctl` sweeps them on hardware
+and the result is unambiguous:
+
+| leaf | HAP | result |
+| --- | --- | --- |
+| `0x205` | 00 | `PERMISSION_FAULT`, READ -- no access |
+| `0x245` | 01 | `PERMISSION_FAULT`, WRITE -- read only |
+| `0x285` | 10 | `PERMISSION_FAULT`, READ -- write only |
+| `0x2c5` | 11 | both allowed |
+
+`0x2c5` is the only value that lets the job manager fetch the descriptor
+*and* write the exception status back. (Linux's `arm_lpae_prot_to_pte`
+produces `0x245` for a writable mapping, i.e. read-only under Mali's
+interpretation; that is why the HAP sweep is worth recording.)
 
 The earlier AArch64 experiment is instructive but wrong for this part: the
 vendor's `AS_TRANSTAB_BASE_SHIFT` is 4, so an AArch64 `TRANSTAB` carries the
@@ -197,6 +212,7 @@ descriptor sweeps.
   and dump the header, `JS_STATUS`, both head/tail pairs, the GPU fault
   block and every address space.
 - `unmap` -- clear the job leaf and submit; proves the MMU is in the path.
+- `leaf <bits>` -- submit with an arbitrary leaf attribute word (HAP sweep).
 - `nc` -- same job with the leaves on `AttrIndx 0`.
 - `pwr` -- apply the G52 `GPU_PWR_OVERRIDE1` quirk and retry.
 - `dump` -- the whole 0x000..0x114 GPU control block.

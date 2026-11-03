@@ -513,6 +513,21 @@ tablepte(u64 pa)
 static u64
 pagepte(u64 pa)
 {
+	/*
+	 * TYPE_BLOCK | AttrIndx 1 (write-allocate) | SH_OS | HAP read/write.
+	 *
+	 * Mali reads bits [7:6] as stage-2-like permissions, not ARM's
+	 * AP[2:1].  Measured on the G52 by submitting a NULL job with each
+	 * value and reading AS_FAULTSTATUS:
+	 *
+	 *   0x205 (00)  permission fault, READ   -- no access
+	 *   0x245 (01)  permission fault, WRITE  -- read only
+	 *   0x285 (10)  permission fault, READ   -- write only
+	 *   0x2c5 (11)  both allowed
+	 *
+	 * 0x2c5 is the only value that lets the job manager fetch the
+	 * descriptor and write the exception status back.
+	 */
 	return (pa & ~0xfffULL) | 0x2c5ULL;
 }
 
@@ -874,6 +889,60 @@ pwrtest(Gpu *g)
 	}
 	print("gpufs: pwr raw %#ux js %#ux asfault %#ux\n", raw,
 	      drd(&g->d, JSOFF(1, JsStatus)), drd(&g->d, ASOFF(0, 0x1c)));
+	drw(&g->d, JobIntClear, 0x70007);
+}
+
+/*
+ * Submit a NULL job with an arbitrary leaf attribute word, so the permission
+ * and cache encodings can be swept on hardware.
+ */
+static void
+leaftest(Gpu *g, u32 bits)
+{
+	u32 raw;
+	int k;
+
+	if(mmuinit(g) < 0)
+		return;
+	softreset(g);
+	if(gpupower(g) < 0 || mmuprogram(g) < 0)
+		return;
+
+	g->pt3[(JobVa >> 12) & 0x1ff] = (g->jobpa & ~0xfffULL) | (u64)bits;
+	g->pt3[(DataVa >> 12) & 0x1ff] = (g->datapa & ~0xfffULL) | (u64)bits;
+	drvdmacache(DrvClean, g->l3pa, 4096);
+	if(mmucmd(g, AsCmdFlushMem) < 0 || mmucmd(g, AsCmdUpdate) < 0)
+		print("gpufs: leaf mmu update failed\n");
+	print("gpufs: leaf %#ux -> pte %#llux\n", bits,
+	      g->pt3[(JobVa >> 12) & 0x1ff]);
+
+	memset(g->job, 0, 4096);
+	g->job[4] = 1 | (1 << 1) | (1 << 16);
+	drvdmacache(DrvClean, g->jobpa, 4096);
+	gpucacheflush(g);
+
+	drw(&g->d, JobIntClear, 0x70007);
+	drw(&g->d, JobIntMask, 0x70007);
+	drw(&g->d, JSOFF(1, JsHeadLo), (u32)JobVa);
+	drw(&g->d, JSOFF(1, JsHeadHi), (u32)((u64)JobVa >> 32));
+	drw(&g->d, JSOFF(1, JsAffinityLo), 1);
+	drw(&g->d, JSOFF(1, JsAffinityHi), 0);
+	drw(&g->d, JSOFF(1, JsConfig), 0x87300);
+	drw(&g->d, JSOFF(1, JsFlushId), drd(&g->d, GpuLatestFlush));
+	drw(&g->d, JSOFF(1, JsCommand), 1);
+
+	raw = 0;
+	for(k = 0; k < 100; k++){
+		raw = drd(&g->d, JobIntRawstat);
+		if(raw & ((1 << 1) | (1 << 17)))
+			break;
+		sleep(1);
+	}
+	print("gpufs: leaf %#ux raw %#ux js %#ux asfault %#ux addr %#llux mmuint %#ux\n",
+	      bits, raw, drd(&g->d, JSOFF(1, JsStatus)),
+	      drd(&g->d, ASOFF(0, 0x1c)),
+	      ((u64)drd(&g->d, ASOFF(0, 0x24)) << 32) | drd(&g->d, ASOFF(0, 0x20)),
+	      drd(&g->d, MmuIntRawstat));
 	drw(&g->d, JobIntClear, 0x70007);
 }
 
@@ -1371,6 +1440,21 @@ fswrite(Req *r, void *aux)
 		print("gpufs: ctl pwr\n");
 		if(g->powered || pmuon(g) == 0){
 			pwrtest(g);
+			r->ofcall.count = r->ifcall.count;
+			respond(r, nil);
+		}else
+			respond(r, g->why);
+		qunlock(&g->lk);
+		return;
+	}
+	if(strncmp(cmd, "leaf", 4) == 0){
+		u32 bits = 0x2c5;
+
+		if(cmd[4] == ' ')
+			bits = strtoul(cmd + 5, nil, 0);
+		print("gpufs: ctl leaf %#ux\n", bits);
+		if(g->powered || pmuon(g) == 0){
+			leaftest(g, bits);
 			r->ofcall.count = r->ifcall.count;
 			respond(r, nil);
 		}else
