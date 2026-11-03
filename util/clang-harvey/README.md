@@ -24,7 +24,7 @@ portability shims the Harvey target needs.
 | native `ld.lld` | **runs on Harvey and links executables** |
 | self-configuring driver | **`clang++ hello.cpp -o hello` works with no flags** |
 | LLVM cross-built with `LLVM_ENABLE_THREADS=ON` | **builds and runs: threaded clang + lld link in the guest** |
-| building LLVM on Harvey | **`test-selfhost.py` compiles `CommandLine.cpp`; `test-selfbuild.py` builds `llvm-tblgen`** |
+| building LLVM on Harvey | **`test-selfhost.py` compiles `CommandLine.cpp`; `test-selfbuild.py` builds `llvm-tblgen`; `test-selfcore.py` builds `LLVMCore`** |
 
 The end-to-end test is `util/clang-harvey/test-native-toolchain.py`. It
 installs the SDK and then the guest runs exactly:
@@ -94,6 +94,37 @@ link.
 The last stage uses the tool it just built: it runs `llvm-tblgen -gen-vt`
 on `ValueTypes.td`, and the resulting `GenVT.inc` is byte-identical to the
 file the host tablegen produced from the same source.
+
+### Building a real library: LLVMCore
+
+`util/clang-harvey/test-selfcore.py` goes one rung further, using the guest
+`llvm-tblgen` from the previous step.  It mirrors the build's generated
+headers into `build/llvm-guest`, runs all 26 tablegen commands there with
+the guest tool, compiles 121 IR/BinaryFormat/Bitstream/TargetParser/Remarks
+translation units against those headers, archives seven libraries, and then
+links a program against `libLLVMCore.a`:
+
+```text
+  hbuild: stage done: 26/26 (0 failed)
+  hbuild: stage done: 121/121 (0 failed)
+  hbuild: stage done: 7/7 (0 failed)
+  == LLVMCore status 0
+  ; ModuleID = 'harvey'
+  source_filename = "harvey"
+  define i32 @answer() {
+  entry:
+    ret i32 42
+  }
+```
+
+The program builds that module with `LLVMContext`, `Module`, `Function` and
+`IRBuilder`, so the library is doing real work, not just linking.  One
+generated file (`RuntimeLibcalls.inc`) differs from the host build only in
+the order of two independent tables; the rest of the generated tree is
+byte-identical.
+
+Run `test-selfbuild.py` first: it produces the guest `bin/llvm-tblgen`.
+`test-selfcore.py --clean` rebuilds the objects from scratch.
 
 The four BLAKE3 assembly objects are reused from the cross build: the
 guest driver's config force-includes `compat.h`, which the assembler cannot
@@ -250,8 +281,12 @@ was missing.  They live in APEX now, not in a shim:
 
 1. More vCPUs.  `9vm` runs one KVM vCPU, so a parallel build is still one
    stream of work; adding vCPUs is a 9vm change.
-2. Build the rest of LLVM on Harvey.  `llvm-tblgen` is the bootstrap tool;
-   the next targets are the generated headers and then the libraries.
+2. More of LLVM: bitcode/assembler reading and `llvm-as`, then the target
+   libraries, on top of the Core that now builds.
+
+`-m` above about 4078 MB fails with `KVM_CREATE_VCPU: EEXIST`: the RAM
+memslot then covers the in-kernel local APIC page at `0xFEE00000`.  3 GiB
+is the reliable setting for builds.
 2. `flockfile`/`funlockfile` for programs that take a stream lock by hand
    (see `util/libcxx/README.md`).
 3. Make `getMainExecutable` more robust. The patch resolves `argv[0]`, so the

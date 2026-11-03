@@ -4,15 +4,23 @@
 The cross build's own command graph is the source of truth for flags and
 file lists.  This script rewrites the tool and every path from the host to
 the guest's /n/host tree, drops the shell-isms (`cmake -E rm ... &&`), and
-writes the commands as three stages:
+writes the commands as stages that hbuild runs in order:
 
-    all compiles  ->  all archives  ->  the link
+    [generated headers] -> compiles -> archives -> link
 
-which is the shape hbuild understands.  Outputs go to build/llvm-guest, so
-the host build tree is left alone.
+Outputs go to build/llvm-guest, so the host build tree is left alone.
+
+By default the only generation stage is the `-gen-vt` check after building
+llvm-tblgen.  With --overlay the generated headers are mirrored into
+build/llvm-guest and *all* llvm-tblgen commands are run there with the
+guest-built tool, before the compiles, so a library can be built against
+guest-generated headers.
 
     util/clang-harvey/make-guest-build.py [build-dir] [target] [source-dir]
+    util/clang-harvey/make-guest-build.py --overlay /tmp/opencode/llvm-thr LLVMCore
 """
+import os
+import re
 import shlex
 import shutil
 import subprocess
@@ -36,8 +44,11 @@ DROP_LIBS = ("-lpthread", "-lm", "-ldl", "-lrt", "-lc", "-lz", "-lstdc++",
              "-lgcc", "-lgcc_s", "--as-needed", "--no-as-needed",
              "-Wl,--as-needed", "-Wl,--no-as-needed")
 
+# Files worth mirroring from the build tree into the guest overlay.
+HEADER_EXTS = {".h", ".inc", ".def", ".td", ".gen", ".hpp", ".modulemap"}
 
-def convert(part, build: Path, src: Path) -> list[str] | None:
+
+def convert(part: str, build: Path, src: Path, overlay: bool) -> list[str] | None:
     args = shlex.split(part)
     if not args:
         return None
@@ -52,18 +63,17 @@ def convert(part, build: Path, src: Path) -> list[str] | None:
     elif tool.endswith("harvey-ar"):
         args[0] = "/n/host/build/clang-harvey/llvm-ar"
     else:
-        # Generated headers were produced by the *host* tablegen; they are
-        # already in the build tree, and the host tool cannot run in the
-        # guest.  Skip anything that is not our compiler or archiver.
         return None
 
+    bg = GUEST if overlay else GB
+
     def to_guest(a: str) -> str:
-        return a.replace(str(build), GB).replace(str(src), GS)
+        return a.replace(str(build), bg).replace(str(src), GS)
 
     def out_path(a: str) -> str:
         a = to_guest(a)
-        if a.startswith(GB + "/"):
-            return GUEST + a[len(GB):]
+        if a.startswith(bg + "/"):
+            return GUEST + a[len(bg):]
         if a.startswith("/"):
             return a
         return GUEST + "/" + a
@@ -106,6 +116,76 @@ def convert(part, build: Path, src: Path) -> list[str] | None:
     return out
 
 
+def gen_commands(text: str, build: Path, src: Path, overlay: bool) -> list[list[str]]:
+    """Rewrite the llvm-tblgen invocations for the guest tool."""
+    cmds = []
+    for line in text.splitlines():
+        if "llvm-tblgen" not in line:
+            continue
+        m = re.match(r"\s*cd\s+(\S+)\s*&&", line)
+        cddir = m.group(1) if m else None
+        for part in line.split(" && "):
+            if "llvm-tblgen" not in part:
+                continue
+            argv = shlex.split(part)
+            if not argv or not argv[0].endswith("llvm-tblgen"):
+                continue
+            if not overlay and "-gen-vt" not in argv:
+                continue
+
+            def tg(a: str) -> str:
+                if overlay:
+                    return a.replace(str(build), GUEST).replace(str(src), GS)
+                return a.replace(str(build), GB).replace(str(src), GS)
+
+            cmd = [GUEST + "/bin/llvm-tblgen"]
+            i = 1
+            while i < len(argv):
+                a = argv[i]
+                if a == "-d":
+                    i += 2
+                    continue
+                if a == "-o":
+                    out = argv[i + 1]
+                    if not out.startswith("/") and cddir:
+                        rel = cddir
+                        if rel.startswith(str(build)):
+                            rel = rel[len(str(build)):].lstrip("/")
+                        out = GUEST + "/" + rel + "/" + out
+                    else:
+                        out = tg(out)
+                    cmd.extend(["-o", out])
+                    i += 2
+                    continue
+                cmd.append(tg(a))
+                i += 1
+            cmds.append(cmd)
+    return cmds
+
+
+def mirror(build: Path, sub: str) -> int:
+    """Copy the header-ish files under build/sub into the guest overlay."""
+    src_dir = build / sub
+    if not src_dir.is_dir():
+        return 0
+    dst_dir = REPO / "build" / "llvm-guest" / sub
+    copy_all = sub == "include" or sub.startswith("include/")
+    n = 0
+    for root, _, files in os.walk(src_dir):
+        rel = Path(root).relative_to(build)
+        (REPO / "build" / "llvm-guest" / rel).mkdir(parents=True, exist_ok=True)
+        for name in files:
+            if not copy_all and Path(name).suffix not in HEADER_EXTS:
+                continue
+            s = Path(root) / name
+            d = REPO / "build" / "llvm-guest" / rel / name
+            if d.is_file() and d.stat().st_size == s.stat().st_size:
+                continue
+            shutil.copyfile(s, d)
+            n += 1
+    return n
+
+
 def host_path(p: str) -> Path:
     if p.startswith("/n/host/"):
         return REPO / p[len("/n/host/"):]
@@ -113,9 +193,11 @@ def host_path(p: str) -> Path:
 
 
 def main():
-    build = Path(sys.argv[1]) if len(sys.argv) > 1 else DEFAULT_BUILD
-    target = sys.argv[2] if len(sys.argv) > 2 else "llvm-tblgen"
-    src = Path(sys.argv[3]) if len(sys.argv) > 3 else DEFAULT_SRC
+    argv = [a for a in sys.argv[1:] if a != "--overlay"]
+    overlay = len(argv) != len(sys.argv) - 1
+    build = Path(argv[0]) if len(argv) > 0 else DEFAULT_BUILD
+    target = argv[1] if len(argv) > 1 else "llvm-tblgen"
+    src = Path(argv[2]) if len(argv) > 2 else DEFAULT_SRC
 
     text = subprocess.run(["ninja", "-C", str(build), "-t", "commands", target],
                           text=True, capture_output=True, check=True).stdout
@@ -128,23 +210,23 @@ def main():
             part = part.strip()
             if part.startswith(":"):
                 part = part[1:].strip()
-            argv = convert(part, build, src)
-            if not argv:
+            argv2 = convert(part, build, src, overlay)
+            if not argv2:
                 continue
             # The guest's clang++.cfg force-includes compat.h, which cannot
             # be assembled.  The cross build already produced these objects
             # for the same target, so reuse them instead of recompiling.
-            if "-c" in argv and any(a.endswith((".S", ".s"))
-                                    for a in argv if not a.startswith("-")):
-                if "-o" in argv:
-                    asm_objs.append(argv[argv.index("-o") + 1])
+            if "-c" in argv2 and any(a.endswith((".S", ".s"))
+                                     for a in argv2 if not a.startswith("-")):
+                if "-o" in argv2:
+                    asm_objs.append(argv2[argv2.index("-o") + 1])
                 continue
-            if "-c" in argv:
+            if "-c" in argv2:
                 # Rebuild only what is missing or older than its source.
                 src_arg = out_arg = None
-                for i, a in enumerate(argv):
-                    if a == "-o" and i + 1 < len(argv):
-                        out_arg = argv[i + 1]
+                for i, a in enumerate(argv2):
+                    if a == "-o" and i + 1 < len(argv2):
+                        out_arg = argv2[i + 1]
                     elif not a.startswith("-") and a.endswith(
                             (".cpp", ".cc", ".c", ".S", ".s")):
                         src_arg = a
@@ -155,49 +237,31 @@ def main():
                     skipped += 1
                     continue
                 stage = 0
-            elif argv[0].endswith("llvm-ar"):
+            elif argv2[0].endswith("llvm-ar"):
                 stage = 1
             else:
                 stage = 2
-            stages[stage].append(argv)
+            stages[stage].append(argv2)
 
-    for argv in stages[0]:
-        for i, a in enumerate(argv[:-1]):
+    for argv2 in stages[0]:
+        for i, a in enumerate(argv2[:-1]):
             if a == "-o":
-                host_path(argv[i + 1]).parent.mkdir(parents=True, exist_ok=True)
-    # A fourth stage: use the tablegen we just built to generate a header,
-    # so the manifest proves the tool works and not only that it links.
-    def tg(a: str) -> str:
-        return a.replace(str(build), GB).replace(str(src), GS)
+                host_path(argv2[i + 1]).parent.mkdir(parents=True, exist_ok=True)
 
-    gen_stage = []
-    for line in text.splitlines():
-        if "-gen-vt" not in line:
-            continue
-        for part in line.split(" && "):
-            if "llvm-tblgen" not in part:
-                continue
-            argv = shlex.split(part)
-            if not argv or not argv[0].endswith("llvm-tblgen"):
-                continue
-            cmd = [GUEST + "/bin/llvm-tblgen"]
-            i = 1
-            while i < len(argv):
-                a = argv[i]
-                if a == "--write-if-changed":
-                    i += 1
-                    continue
-                if a == "-d":
-                    i += 2
-                    continue
-                if a == "-o":
-                    cmd.extend(["-o", GUEST + "/gen/" + argv[i + 1]])
-                    i += 2
-                    continue
-                cmd.append(tg(a))
-                i += 1
-            gen_stage.append(cmd)
-        break
+    gen = gen_commands(text, build, src, overlay)
+
+    # In overlay mode the build-tree headers (generated and configured) are
+    # mirrored so the compiles can include them from the guest tree.
+    mirrored = 0
+    if overlay:
+        subs = set()
+        for m in re.finditer(r"(?:-I|cd\s+)" + re.escape(str(build)) + r"/([^\s]+)",
+                             text):
+            subs.add(m.group(1))
+        for sub in sorted(subs):
+            mirrored += mirror(build, sub)
+        for d in ("include", "lib", "bin", "gen", "tmp"):
+            (REPO / "build" / "llvm-guest" / d).mkdir(parents=True, exist_ok=True)
 
     for out in asm_objs:
         if not out.startswith(GUEST + "/"):
@@ -210,29 +274,31 @@ def main():
             shutil.copyfile(s, d)
         else:
             print(f"warning: no cross-built assembly object {s}")
-    (REPO / "build" / "llvm-guest" / "lib").mkdir(parents=True, exist_ok=True)
-    (REPO / "build" / "llvm-guest" / "bin").mkdir(parents=True, exist_ok=True)
-    (REPO / "build" / "llvm-guest" / "gen").mkdir(parents=True, exist_ok=True)
-    (REPO / "build" / "llvm-guest" / "tmp").mkdir(parents=True, exist_ok=True)
 
-    if gen_stage:
-        stages.append(gen_stage)
+    for d in ("lib", "bin", "gen", "tmp"):
+        (REPO / "build" / "llvm-guest" / d).mkdir(parents=True, exist_ok=True)
+
+    all_stages = ([gen] if overlay else []) + stages
+    if gen and not overlay:
+        all_stages.append(gen)
 
     out = REPO / "build" / "llvm-guest" / f"{target}.build"
     with out.open("w") as f:
-        for n, stage in enumerate(stages):
+        for n, stage in enumerate(all_stages):
             if n:
                 f.write("---\n")
-            for argv in stage:
-                f.write(" ".join(argv) + "\n")
+            for argv2 in stage:
+                f.write(" ".join(argv2) + "\n")
 
     print(f"{out}: {len(stages[0])} compiles, {len(stages[1])} archives, "
-          f"{len(stages[2])} links, {len(gen_stage)} generate "
-          f"({len(asm_objs)} prebuilt assembly objects, {skipped} up to date)")
-    for a in stages[2]:
-        for i, x in enumerate(a[:-1]):
-            if x == "-o":
-                print(f"  output: {a[i + 1]}")
+          f"{len(stages[2])} links, {len(gen)} generate "
+          f"({len(asm_objs)} prebuilt assembly objects, {skipped} up to date, "
+          f"{mirrored} mirrored)")
+    if not overlay:
+        for a in stages[2]:
+            for i, x in enumerate(a[:-1]):
+                if x == "-o":
+                    print(f"  output: {a[i + 1]}")
 
 
 if __name__ == "__main__":
