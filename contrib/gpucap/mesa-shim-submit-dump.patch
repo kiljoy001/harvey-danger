@@ -1,0 +1,62 @@
+--- contrib-staging/mesa-25.0.7/src/panfrost/drm-shim/panfrost_noop.c	2025-05-28 08:20:23.000000000 -0700
++++ mesa-25.0.7/src/panfrost/drm-shim/panfrost_noop.c	2026-11-03 06:32:47.418113489 -0800
+@@ -55,6 +55,50 @@
+    return 0;
+ }
+ 
++/* Print a GPU virtual address range out of the shim's fake BOs. */
++static void
++dump_gpu_range(struct shim_fd *shim_fd, uint64_t gpuva, unsigned len)
++{
++   hash_table_foreach(shim_fd->handles, entry) {
++      struct shim_bo *bo = entry->data;
++      uint64_t off;
++      unsigned i, n;
++
++      if (gpuva < bo->mem_addr || gpuva >= bo->mem_addr + bo->size)
++         continue;
++      if (bo->map == NULL) {
++         fprintf(stderr, "PANSHIM chain gpuva=%#" PRIx64
++                 " in unmapped BO %#x\n", gpuva, bo->size);
++         break;
++      }
++
++      off = gpuva - bo->mem_addr;
++      n = MIN2(len, bo->size - off);
++      fprintf(stderr, "PANSHIM chain gpuva=%#" PRIx64 " offset=%#" PRIx64
++              " len=%u\n", gpuva, off, n);
++      for (i = 0; i + 4 <= n; i += 4) {
++         uint32_t w;
++         memcpy(&w, (uint8_t *)bo->map + off + i, 4);
++         fprintf(stderr, "PANSHIM %04x: %08x\n", i, w);
++      }
++      break;
++   }
++}
++
++static int
++panfrost_ioctl_submit(int fd, unsigned long request, void *arg)
++{
++   struct drm_panfrost_submit *submit = arg;
++   struct shim_fd *shim_fd = drm_shim_fd_lookup(fd);
++
++   fprintf(stderr, "PANSHIM SUBMIT jc=%#" PRIx64 " reqs=%#x in=%u out=%u\n",
++           (uint64_t)submit->jc, submit->requirements,
++           submit->in_sync_count, submit->out_sync);
++   dump_gpu_range(shim_fd, submit->jc, 256);
++
++   return 0;
++}
++
+ static int
+ panfrost_ioctl_get_param(int fd, unsigned long request, void *arg)
+ {
+@@ -145,7 +189,7 @@
+ }
+ 
+ static ioctl_fn_t panfrost_driver_ioctls[] = {
+-   [DRM_PANFROST_SUBMIT] = pan_ioctl_noop,
++   [DRM_PANFROST_SUBMIT] = panfrost_ioctl_submit,
+    [DRM_PANFROST_WAIT_BO] = pan_ioctl_noop,
+    [DRM_PANFROST_CREATE_BO] = panfrost_ioctl_create_bo,
+    [DRM_PANFROST_MMAP_BO] = panfrost_ioctl_mmap_bo,
