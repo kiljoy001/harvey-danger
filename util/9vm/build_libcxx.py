@@ -49,6 +49,8 @@ TEST_TIMED_CPP = REPO_ROOT / "util" / "libcxx" / "test_timed.cpp"
 TEST_TIMED_ELF = BUILD / "test_timed.elf"
 TEST_CXX20_CPP = REPO_ROOT / "util" / "libcxx" / "test_cxx20.cpp"
 TEST_CXX20_ELF = BUILD / "test_cxx20.elf"
+TEST_CHARCONV_CPP = REPO_ROOT / "util" / "libcxx" / "test_charconv.cpp"
+TEST_CHARCONV_ELF = BUILD / "test_charconv.elf"
 
 CXX = "clang++"
 CC = "clang"
@@ -107,6 +109,11 @@ SOURCES = [
     "filesystem/operations",
     # __divti3 and friends for the 128-bit arithmetic in the filesystem clock.
     "filesystem/int128_builtins",
+    "charconv",
+    # Ryu tables behind the floating-point to_chars paths.
+    "ryu/d2fixed",
+    "ryu/d2s",
+    "ryu/f2s",
 ]
 
 CONFIG_SITE = """\
@@ -165,6 +172,18 @@ def prepare():
     shutil.copyfile(REPO_ROOT / "util" / "libcxx" / "sched.h",
                     INCLUDE / "sched.h")
 
+    # from_chars_floating_point.h includes "shared/fp_bits.h".  Upstream
+    # populates libcxx/src/include/shared from the libc project; do the same
+    # so charconv.cpp builds.
+    shared = LIBCXX / "src" / "include" / "shared"
+    libc_shared = LIBCXX.parent / "libc" / "shared"
+    if libc_shared.is_dir():
+        shared.mkdir(parents=True, exist_ok=True)
+        for name in ("libc_common.h", "fp_bits.h", "str_to_float.h",
+                     "str_to_integer.h"):
+            if not (shared / name).exists():
+                shutil.copyfile(libc_shared / name, shared / name)
+
 
 def base_flags(library: bool) -> list[str]:
     flags = [
@@ -182,6 +201,7 @@ def base_flags(library: bool) -> list[str]:
         f"-I{INCLUDE_V1}",
         f"-I{INCLUDE}",
         f"-I{LIBCXX / 'src'}",
+        f"-I{LIBCXX.parent / 'libc'}",
         f"-I{APEX / 'include'}",
         f"-I{APEX / 'amd64' / 'include'}",
         "-include", str(INCLUDE / "compat.h"),
@@ -206,6 +226,7 @@ def c_flags():
         "-O2",
         "-g",
         f"-I{REPO_ROOT / 'util' / 'clang-harvey' / 'target-include'}",
+        f"-I{LIBCXX.parent / 'libc'}",
         f"-I{APEX / 'include'}",
         f"-I{APEX / 'amd64' / 'include'}",
         "-D_SUSV2_SOURCE", "-D_POSIX_SOURCE", "-D_LIMITS_EXTENSION",
@@ -366,6 +387,7 @@ def main():
     build_test(TEST_STDIO_CPP, TEST_STDIO_ELF, "test_stdio")
     build_test(TEST_TIMED_CPP, TEST_TIMED_ELF, "test_timed")
     build_test(TEST_CXX20_CPP, TEST_CXX20_ELF, "test_cxx20")
+    build_test(TEST_CHARCONV_CPP, TEST_CHARCONV_ELF, "test_charconv")
     if args.run:
         run_test(TEST_STL_ELF, "hello 2 2 42 42")
         run_test(TEST_THREADS_ELF, "threads-ok 7 14")
@@ -373,6 +395,9 @@ def main():
         run_test(TEST_STDIO_ELF, "stdio-ok lines=800 bad=0 seen=800")
         run_test(TEST_TIMED_ELF, "timed sleep=1 timeout=1 signal=1 future=1")
         run_test(TEST_CXX20_ELF, "cxx20 latch=1 barrier=1 sema=1 atomic=1 jthread=1")
+        run_test(TEST_CHARCONV_ELF,
+                 "charconv float=3.14159 parsed=3.14159 err=0 int=12345/12345 "
+                 "format=42 harvey 3.14")
 
 
 if __name__ == "__main__":

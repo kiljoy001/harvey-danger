@@ -170,13 +170,20 @@ RTTI **is** available: libc++ is built with `-frtti`, and
   `std::type_info` destructor.
 
 - **`__cxa_demangle`** — stubbed to fail; diagnostics print mangled names.
-- **charconv** — this libc++ snapshot's `src/include/shared/fp_bits.h` is
-  missing, so `charconv.cpp` is skipped. `std::to_string` and the integer
-  paths used by `<string>` still work.
+- **charconv and `<format>`** — `charconv.cpp` is built, including the
+  floating-point paths.  `src/include/shared/` is populated from the libc
+  project at build time (upstream does the same) and the Ryu tables under
+  `src/ryu/` are compiled in.  `std::format` is header-only in this snapshot
+  and builds on float `to_chars`, so it works as well:
+
+  ```text
+  charconv float=3.14159 parsed=3.14159 err=0 int=12345/12345 format=42 harvey 3.14
+  ```
 
 ## Next rungs
 
-1. Floating-point `charconv`.
+1. A real `__cxa_demangle`; the current one is a stub, so diagnostics and
+   backtraces show mangled names.
 2. `std::exception_ptr`/`std::nested_exception` round-trip tests, and
    `-fno-exceptions` builds of the library for size.
 3. `flockfile`/`funlockfile` for programs that manage a stream lock by hand.
