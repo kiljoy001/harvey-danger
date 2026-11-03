@@ -185,8 +185,8 @@ Runtime pieces live in `util/libcxx/compat.{h,cpp}` and
 - No dynamic loading (`dlopen` always fails), no sockets in the file system,
   no filesystem statistics, no resource limits, no message catalogues.
 - `getrlimit(RLIMIT_STACK)` reports 8 MiB; nothing enforces it.
-- Threads are real (`rfork(RFPROC|RFMEM)`); `errno` is still one global and
-  stdio has no locking.
+- Threads are real (`rfork(RFPROC|RFMEM)`) and `errno` is per thread; stdio
+  still has no locking.
 - `realpath()` does not resolve symbolic links.
 
 ## Target support added for the toolchain
@@ -216,7 +216,7 @@ was missing.  They live in APEX now, not in a shim:
 1. A build system in the guest.  `test-selfhost.py` drives compiles directly;
    a full LLVM build wants ninja (and cmake, or a generated build.ninja), which
    have to be cross-built and then run on Harvey.
-2. Per-thread `errno` and locking around stdio (see `util/libcxx/README.md`).
+2. Locking around stdio (see `util/libcxx/README.md`).
 3. Make `getMainExecutable` more robust. The patch resolves `argv[0]`, so the
    driver must be started with a path. A real `/proc/self/exe` equivalent, or
    passing the image path through the environment, would fix bare `clang++`.

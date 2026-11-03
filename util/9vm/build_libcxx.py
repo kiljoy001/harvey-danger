@@ -41,6 +41,8 @@ TEST_STL_CPP = REPO_ROOT / "util" / "libcxx" / "test_stl.cpp"
 TEST_STL_ELF = BUILD / "test_stl.elf"
 TEST_THREADS_CPP = REPO_ROOT / "util" / "libcxx" / "test_threads.cpp"
 TEST_THREADS_ELF = BUILD / "test_threads.elf"
+TEST_ERRNO_CPP = REPO_ROOT / "util" / "libcxx" / "test_errno.cpp"
+TEST_ERRNO_ELF = BUILD / "test_errno.elf"
 
 CXX = "clang++"
 CC = "clang"
@@ -352,9 +354,11 @@ def main():
     build_library()
     build_test(TEST_STL_CPP, TEST_STL_ELF, "test_stl")
     build_test(TEST_THREADS_CPP, TEST_THREADS_ELF, "test_threads")
+    build_test(TEST_ERRNO_CPP, TEST_ERRNO_ELF, "test_errno")
     if args.run:
         run_test(TEST_STL_ELF, "hello 2 2 42 42")
         run_test(TEST_THREADS_ELF, "threads-ok 7 14")
+        run_test(TEST_ERRNO_ELF, "errno-ok main=33 a=11/2 b=22/2")
 
 
 if __name__ == "__main__":

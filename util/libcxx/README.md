@@ -106,8 +106,16 @@ RTTI **is** available: libc++ is built with `-frtti`, and
   `--threads=2/4/8`.  `std::thread`, `std::mutex`, `std::condition_variable`,
   `std::async`/`std::future` and `thread_local` all work.
 
-  Not yet per-thread: `errno` is still a single global, and stdio has no
-  locking.
+  `errno` is per thread: APEX declares it `__thread`, so each rfork thread's
+  TLS block holds its own copy.  `test_errno.cpp` parks two threads with
+  different values, has each perform a failing `open()`, and checks that both
+  the values and the failure stay local:
+
+  ```text
+  errno-ok main=33 a=11/2 b=22/2
+  ```
+
+  Still not thread-safe: stdio has no locking.
 - **std::filesystem** — supported.  libc++'s own sources are patched to call
   `__stat_ap`/`__fstat` directly (`apply-llvm-patches.py`), because defining
   real `stat`/`fstat` symbols would capture Plan 9's three-argument `stat`
@@ -135,9 +143,8 @@ RTTI **is** available: libc++ is built with `-frtti`, and
 
 ## Next rungs
 
-1. Per-thread `errno` and locking around stdio.  Both change the ABI of every
-   object that touches them, so they need a full rebuild of the library and
-   of anything compiled against it.
+1. Locking around stdio.  `errno` is done; a mutex per `FILE` is the next
+   shared-state fix.
 2. Floating-point `charconv`.
 3. `std::exception_ptr`/`std::nested_exception` round-trip tests, and
    `-fno-exceptions` builds of the library for size.
