@@ -993,6 +993,7 @@ gpuclr(Gpu *g, u32 color, u32 cw, u32 ch, int tiled)
 	int i, slot = 0, done, err;
 	u32 tw, th;
 
+	USED(tiled);
 	if(fbinfo(&fi) < 0){
 		print("gpufs: clear: no scanout buffer\n");
 		return;
@@ -1022,47 +1023,39 @@ gpuclr(Gpu *g, u32 color, u32 cw, u32 ch, int tiled)
 
 	/* Framebuffer parameters at 0, 64 bytes. */
 	g->job[0] = 0;				/* pre/post frame: never */
-	/* Sample-locations table at +0x200: (0,0) then 31 x (-128,-128),
-	 * the table Mesa passes even for single-sampled rendering. */
+	/* Sample-locations table at +0x200: (0,0) then 31 x (-128,-128). */
 	for(i = 0; i < 32; i++)
 		g->job[(0x200/4) + i] = i == 0 ? 0 : 0x8080;
-	g->job[4] = (u32)(JobVa + 0x200);
-	g->job[5] = (u32)((JobVa + 0x200) >> 32);
+	g->job[4] = (u32)JobVa + 0x200;
+	g->job[5] = 0;
 	g->job[8] = (fi.width - 1) | ((fi.height - 1) << 16);
 	g->job[9] = 0;				/* bound min 0,0 */
 	g->job[10] = (fi.width - 1) | ((fi.height - 1) << 16);
-	/* log2(1 sample), single pattern, MINUS_180_IN_0_OUT, log2(tile),
+	/* log2(1 sample), single pattern, MINUS_180_IN_0_OUT, log2(256),
 	 * no downsample, rt_count-1, cbuf_alloc >> 10. */
 	g->job[11] = (0 << 0) | (0 << 3) | (2 << 6) | (8 << 9) |
-		     (0 << 13) | (0 << 16) | (0 << 19) | (0x400 >> 10 << 24);
+		     (0 << 13) | (0 << 16) | (0 << 19) | (1 << 24);
 	g->job[12] = 0;				/* no ZS, no CRC */
 	g->job[13] = 0;				/* z clear */
 	g->job[14] = 0;				/* tiler */
 	g->job[15] = 0;
 
-	/* Colour render target at 0x80. */
+	/* Colour render target at 0x80, linear.  The captured Linux FBD
+	 * uses row stride = width*4 and surface stride 0. */
 	rt = g->job + 0x80/4;
 	rt[0] = (1 << 26);			/* internal format R8G8B8A8 */
 	rt[1] = (1 << 0) |			/* write enable */
 		(19 << 3) |			/* writeback R8G8B8A8 */
-		((tiled ? 1 : 2) << 8) |		/* block format */
+		(2 << 8) |			/* block format linear */
 		(0 << 12) |			/* single sample */
 		(0 << 14) |			/* sRGB */
 		(1 << 15) |			/* dithering */
 		(1672 << 16) |			/* swizzle RGBA */
 		(1 << 31);			/* clean tile write */
-	/* Writeback buffer at dword 8: base, row stride, surface stride. */
 	rt[8] = (u32)FbVa;
-	rt[9] = (u32)(FbVa >> 32);
-	if(tiled){
-		/* U-interleaved: 16x16 blocks of 4-byte texels. */
-		rt[10] = (fi.width / 16) * 1024;
-		rt[11] = 0;
-	}else{
-		rt[10] = fi.stride;
-		rt[11] = (u32)(fi.stride * fi.height);
-	}
-	/* Clear colour at dword 12. */
+	rt[9] = 0;
+	rt[10] = (u32)fi.width * 4;
+	rt[11] = 0;				/* surface stride */
 	rt[12] = color;
 	rt[13] = color;
 	rt[14] = color;
@@ -1070,7 +1063,7 @@ gpuclr(Gpu *g, u32 color, u32 cw, u32 ch, int tiled)
 
 	/* Fragment job at 0xc0, payload at 0xe0. */
 	job = g->job + 0xc0/4;
-	fbdesc = JobVa | 1;			/* FBD at JobVa; type=1, no CRC */
+	fbdesc = JobVa | 1;			/* type=1, no CRC, 1 RT */
 	job[4] = 1 | (9 << 1) | (1 << 16);	/* is64b, FRAGMENT, index 1 */
 	job[6] = 0;
 	job[7] = 0;
@@ -1080,7 +1073,7 @@ gpuclr(Gpu *g, u32 color, u32 cw, u32 ch, int tiled)
 	pl[0] = 0;				/* min x, min y */
 	pl[1] = (tw - 1) | ((th - 1) << 16);	/* max x, max y, no tile map */
 	pl[2] = (u32)fbdesc;
-	pl[3] = (u32)(fbdesc >> 32);
+	pl[3] = 0;
 	pl[4] = 0;
 	pl[5] = 0;
 	pl[6] = 0;
@@ -1088,8 +1081,6 @@ gpuclr(Gpu *g, u32 color, u32 cw, u32 ch, int tiled)
 	drvdmacache(DrvClean, g->jobpa, 4096);
 	gpucacheflush(g);
 
-	/* The job header follows the framebuffer descriptor and render
-	 * target: FBD at +0, render target at +0x80, header at +0xc0. */
 	cfg = 0x87300;
 	drw(&g->d, JobIntClear, 0x70007);
 	drw(&g->d, JobIntMask, 0x70007);

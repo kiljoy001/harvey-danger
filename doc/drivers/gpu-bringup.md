@@ -185,12 +185,28 @@ command that builds, from the captured Linux chain:
 - 4 KiB leaves for the whole scanout buffer, under 2 MiB tables.
 
 It submits on JS0 and the job manager now reads it: the status moved from
-`DATA_INVALID_FAULT` to **`CONFIG_FAULT` (0x40)**, with no MMU fault.  So the
-header and payload are accepted and the framebuffer descriptor's
-*configuration* is rejected.  The captured FBD differs in three ways: it has
-the ZS/CRC extension present with `CRC Write Enable`, a non-null
-`Sample Locations` table, and it was an AFBC (or, with `noafbc`, U-interleaved)
-target rather than linear.  The next step is to bisect those three.
+`DATA_INVALID_FAULT` to **`CONFIG_FAULT` (0x40)**, with no MMU fault.
+
+A second capture with `PAN_MESA_DEBUG=trace,linear,nocrc` gives the exact
+**linear** framebuffer descriptor, which is what scanout needs:
+
+```text
+Has ZS CRC Extension: false      CRC Write Enable: false
+Tiler: 0x0                       Effective Tile Size: 256
+Writeback Block Format: Linear
+RGB: Base: 0xa004000  Row Stride: 256  Surface Stride: 0
+Framebuffer tag: 0xa008001       Fragment Job Payload: bounds 0..3
+```
+
+The linear path has no CRC extension, no tiler and no tile-enable map, and
+`Row Stride` is `width * 4` with `Surface Stride` 0.  `gpufs` now builds
+exactly that, and still gets `CONFIG_FAULT`, so the remaining difference is
+in the addresses/tags rather than the descriptor fields: the captured chain
+has its FBD, render target and sample-locations table in separate buffers at
+`0xa008000`, `0xa004000` and `0xa000000`, while `gpufs` packs the FBD and
+render target into one page at `0x10000000` and maps the scanout buffer at
+`0x20000000`.  Bisecting that, and the `JS_CONFIG` variants, is the next
+step.
 
 ### What still fails
 
