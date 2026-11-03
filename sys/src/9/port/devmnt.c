@@ -445,8 +445,16 @@ mntwalk(Chan *c, Chan *nc, char **name, int nname)
 			cclose(nc);
 		wq->clone = nil;
 		if(r->reply.nwqid == 0){
+			/*
+			 * A failed first element is reported as Rwalk with
+			 * zero qids, not as an error (9P2000, Twalk).  Set
+			 * the message here: otherwise the caller inherits
+			 * whatever string an earlier failure left behind,
+			 * and errno comes out as EINVAL or a stale value.
+			 */
 			free(wq);
 			wq = nil;
+			kstrcpy(up->errstr, Enonexist, ERRMAX);
 			goto Return;
 		}
 	}
