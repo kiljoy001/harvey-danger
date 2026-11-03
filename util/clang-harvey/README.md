@@ -25,6 +25,7 @@ portability shims the Harvey target needs.
 | self-configuring driver | **`clang++ hello.cpp -o hello` works with no flags** |
 | LLVM cross-built with `LLVM_ENABLE_THREADS=ON` | **builds and runs: threaded clang + lld link in the guest** |
 | building LLVM on Harvey | **`test-selfhost.py` compiles `CommandLine.cpp`; `test-selfbuild.py` builds `llvm-tblgen`; `test-selfcore.py` builds `LLVMCore`; `test-selfas.py` builds `llvm-as` and `llvm-dis`** |
+| correctness against a reference compiler | **`test-diff.py`: 12 `-O3` Support/IR TUs compile byte-identically to a host clang from the same checkout** |
 
 The end-to-end test is `util/clang-harvey/test-native-toolchain.py`. It
 installs the SDK and then the guest runs exactly:
@@ -311,21 +312,47 @@ was missing.  They live in APEX now, not in a shim:
   channel, so file mappings are materialised into anonymous memory on `mmap`
   and flushed back on `msync`/`munmap`.
 
+## Is it correct?
+
+The smoke tests prove the pieces work.  Two tests go further and compare the
+guest against a known-good copy of the same compiler:
+
+`util/clang-harvey/test-diff.py` builds a reference clang from the same
+checkout, for the host, and compiles the same translation units with both.
+The flags are not guessed: they come from the real ninja graph of the
+Harvey-target build.  Output paths and dependency files are removed, the path
+roots are normalised with `-ffile-prefix-map` (because the guest sees the
+tree as `/n/host/...`), and `-frandom-seed` is pinned because its default is
+derived from the output file name.  The first translation unit is built twice
+on each side as a determinism check.
+
+```text
++ compiling 13 objects with the host reference
++ compiling the same objects in the guest
+  hbuild: batch done: 13/13 (0 failed)
+differential test: 13 objects compile identically on the host reference and
+on Harvey (12 translation units, one built twice on each side)
+```
+
+That covers APInt, APFloat, StringRef, SmallVector, Twine, StringMap, Error,
+CommandLine, MemoryBuffer, Attributes, Module and Instructions at `-O3`: the
+object files are byte-for-byte the same, so the guest compiler's codegen, its
+preprocessor and its target ABI agree with the reference.
+
+The system `clang-22` is a *different revision* and is not a valid oracle for
+this comparison.
+
 ## Next rungs
 
 1. More vCPUs.  `9vm` runs one KVM vCPU, so a parallel build is still one
    stream of work; adding vCPUs is a 9vm change.
-2. More of LLVM: `llvm-dis` and `llvm-config`, then the target libraries
-   and code generator, on top of Core and AsmParser.
+2. More of LLVM: `llvm-config`, then the target libraries and code
+   generator, on top of Core and AsmParser.
+3. Differential *execution*: run the same programs built by both compilers
+   and compare their output, which tests the runtime (libc++, `libm`,
+   unwinding, stdio) rather than codegen.
+4. A native `as`/`objdump` and the rest of the binutils story.
 
 `-m` above about 4078 MB fails with `KVM_CREATE_VCPU: EEXIST`: the RAM
 memslot then covers the in-kernel local APIC page at `0xFEE00000`.  3 GiB
 is the reliable setting for builds.
-2. `flockfile`/`funlockfile` for programs that take a stream lock by hand
-   (see `util/libcxx/README.md`).
-3. Make `getMainExecutable` more robust. The patch resolves `argv[0]`, so the
-   driver must be started with a path. A real `/proc/self/exe` equivalent, or
-   passing the image path through the environment, would fix bare `clang++`.
-4. Add a Harvey toolchain to Clang instead of a config file, so the paths are
-   baked in and `x86_64-unknown-harvey` is a real target.
-5. A native `as`/`objdump` and the rest of the binutils story.
