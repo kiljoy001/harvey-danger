@@ -731,13 +731,20 @@ def userland_signature() -> str:
     for p in (ROOT / "sys/src/cmd").rglob("*"):
         if p.is_file() and p.suffix in (".c", ".h", ".o9", ".y", ".s", ".json"):
             files.append(p)
-    for p in (ROOT / "sys/src/libString").rglob("*"):
-        if p.is_file() and p.suffix in (".c", ".h", ".json"):
-            files.append(p)
+    for lib in ("sys/src/libString", "sys/src/libthread", "sys/src/lib9p",
+                "sys/src/libc"):
+        for p in (ROOT / lib).rglob("*"):
+            if p.is_file() and p.suffix in (".c", ".h", ".json", ".s", ".S"):
+                files.append(p)
     files.sort()
     variant = os.environ.get("ARM64_NO_USBPOWER", "0")
-    return buildcache.signature(["build_userland", "no-usbpower=" + variant],
-                                 files)
+    # These select which programs are built (and with what), so they have
+    # to be part of the cache key or a stale archive is reused.
+    gefs = os.environ.get("ARM64_BUILD_GEFS", "0")
+    ucc = os.environ.get("UCC", "")
+    return buildcache.signature(
+        ["build_userland", "no-usbpower=" + variant, "gefs=" + gefs,
+         "ucc=" + ucc], files)
 
 
 def main() -> None:
