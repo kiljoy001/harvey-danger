@@ -116,13 +116,39 @@ The MMU work has moved on since the identification driver:
 
 The remaining blocker is the job manager itself. Every job type returns
 `JS_STATUS = 0x58` (`DATA_INVALID_FAULT`) with no MMU fault
-(`AS_FAULTSTATUS = 0`). The header bytes match Mesa's `JOB_HEADER` packer,
-the job index and chain flag were swept, and mapping the job page
-non-cacheable did not change it. The next step is not more guessing: boot
-the reference Linux panfrost stack on the board and capture a known-good
-`JS_CONFIG`, job header and AS setup (or read the same from the vendor
-kbase), then compare. The diagnostic path is `/srv/gpu/ctl`: `null`,
-`test`, `matrix` and `identity` exercise the queue and the table.
+(`AS_FAULTSTATUS = 0`).
+
+### Comparison with the G52 Linux path
+
+Reading `drivers/gpu/drm/panfrost` against `gpufs` found three real
+divergences, all now corrected:
+
+| Item | Linux panfrost, G52 | gpufs |
+| --- | --- | --- |
+| Page table | `HW_FEATURE_AARCH64_MMU`; `mmu_cfg_init_aarch64_4k` | AArch64 4K, three levels, leaf `0xf47` (WB) / `0xe43` (NC) |
+| `AS_TRANSTAB` | PGD physical address | same |
+| `AS_MEMATTR` | `mair_to_memattr`, index 1 = 0x8f | `0x8f4c` (0 NC, 1 WB) |
+| `AS_TRANSCFG` | `PTW_MEMATTR_WB | PTW_RA | ADRMODE_AARCH64_4K | INA_BITS(20)` | `0x42000506` |
+| AS enable | `FLUSH_MEM`, registers, `UPDATE` | same |
+| `GPU_JM_CONFIG` | `0xf << JM_IDVS_GROUP_SIZE_SHIFT` for G52 | now written |
+| `JS_CONFIG` | AS, thread priority 8, start/end clean+invalidate, flush reduction, job-chain flag; **no `START_MMU`** | now matches; `START_MMU` removed |
+| `JS_FLUSH_ID_NEXT` | latest flush id, with flush reduction | now written |
+| `JOB_INT_MASK` | all slots (`0x70007`) | now matches |
+| Slot | no `PANFROST_JD_REQ_FS` -> JS1 | JS1 |
+| Affinity | `shader_present` | 1 |
+| Job header | Mesa `JOB_HEADER` (`Is64b`, type, index, next) | matches the packer |
+
+`HW_ISSUE_10649`, which the kernel uses to decide `JS_CONFIG_START_MMU`,
+belongs to T600x; G52 does **not** have it. Setting it was a real mistake
+and is removed.
+
+What remains is not an MMU or register mismatch we can see. The likely
+remaining difference is the **job itself**: Linux normally submits a
+vertex/tiler/fragment chain, and a standalone `NULL` / `WRITE_VALUE` job
+may not be a valid G52 chain. The next real test is a fragment job with a
+compiled shader (the `gpucc` path), or a reference trace from Linux
+panfrost / the vendor kbase of a working chain. The diagnostic path is
+`/srv/gpu/ctl`: `null`, `test`, `matrix` and `identity`.
 
 ## What is next
 

@@ -70,6 +70,8 @@ enum {
 	GpuStackPresentLo = 0xe00,
 	GpuStackPresentHi = 0xe04,
 
+	GpuJmConfig	= 0xf00,
+	GpuLatestFlush	= 0x38,
 	GpuCmdSoftReset = 0x01,
 	GpuIrqResetCompleted = 1<<8,
 	GpuIrqMaskAll	= 0x00030f87,	/* fault, multiple, reset, power,
@@ -118,6 +120,7 @@ enum {
 	JsAffinityHi	= 0x54,
 	JsConfig	= 0x58,
 	JsCommand	= 0x60,
+	JsFlushId	= 0x70,
 	JsStatus	= 0x24,
 
 	JobTypeWriteValue = 2,
@@ -448,6 +451,9 @@ gpupower(Gpu *g)
 		return -1;
 	}
 
+	/* G52 has HW_FEATURE_IDVS_GROUP_SIZE; Linux writes the default. */
+	drw(&g->d, GpuJmConfig, 0xf << 16);
+
 	drw(&g->d, L2PwronLo, l2);
 	if(waitbits(g, L2ReadyLo, l2, l2, 100) < 0){
 		setwhy(g, "L2 power-on timeout (ready %#ux)", drd(&g->d, L2ReadyLo));
@@ -656,12 +662,14 @@ runjob(Gpu *g, int slot, u64 head, u32 cfg, u32 index, u32 type, u64 addr, u64 v
 	drvdmacache(DrvClean, g->jobpa, 4096);
 	gpucacheflush(g);
 
-	drw(&g->d, JobIntClear, 0xffffffff);
-	drw(&g->d, JobIntMask, 0);
+	drw(&g->d, JobIntClear, 0x70007);
+	drw(&g->d, JobIntMask, 0x70007);
+	drw(&g->d, JSOFF(slot, JsFlushId), drd(&g->d, GpuLatestFlush));
 	drw(&g->d, JSOFF(slot, JsHeadLo), (u32)head);
 	drw(&g->d, JSOFF(slot, JsHeadHi), (u32)(head >> 32));
 	drw(&g->d, JSOFF(slot, JsAffinityLo), 1);
 	drw(&g->d, JSOFF(slot, JsAffinityHi), 0);
+	cfg |= (1 << 14);	/* FLUSH_REDUCTION, G52 */
 	drw(&g->d, JSOFF(slot, JsConfig), cfg);
 	drw(&g->d, JSOFF(slot, JsCommand), 1);
 
@@ -762,7 +770,7 @@ mmuprogram_a64(Gpu *g)
 static void
 identitymatrix(Gpu *g)
 {
-	static u32 cfgs[] = { 0, 0x800, 0x83300, 0x83700, 0x83b00 };
+	static u32 cfgs[] = { 0x87300, 0x87b00, 0x83300, 0x83700 };
 	u32 raw;
 	int idx, c, r;
 
@@ -831,7 +839,7 @@ nulltest(Gpu *g, int slot)
 	drw(&g->d, JSOFF(slot, JsHeadHi), (u32)((u64)JobVa >> 32));
 	drw(&g->d, JSOFF(slot, JsAffinityLo), 1);
 	drw(&g->d, JSOFF(slot, JsAffinityHi), 0);
-	drw(&g->d, JSOFF(slot, JsConfig), 0x83700);
+	drw(&g->d, JSOFF(slot, JsConfig), 0x87b00);
 	drw(&g->d, JSOFF(slot, JsCommand), 1);
 
 	for(i = 0; i < 1000; i++){
@@ -892,7 +900,7 @@ jobtest(Gpu *g)
 	drw(&g->d, JSOFF(JobSlot, JsHeadHi), (u32)((u64)JobVa >> 32));
 	drw(&g->d, JSOFF(JobSlot, JsAffinityLo), 1);
 	drw(&g->d, JSOFF(JobSlot, JsAffinityHi), 0);
-	cfg = (8 << 16) | (3 << 8) | (3 << 12) | (1 << 10);
+	cfg = (8 << 16) | (3 << 8) | (3 << 12) | (1 << 14) | (1 << 11);
 	drw(&g->d, JSOFF(JobSlot, JsConfig), cfg);
 	drw(&g->d, JSOFF(JobSlot, JsCommand), 1);
 	print("gpufs: test poll\n");
