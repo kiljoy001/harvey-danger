@@ -24,12 +24,20 @@ EDITS = [
     (
         "llvm/lib/Support/Unix/Process.inc",
         "    if (RetryAfterSignal(-1, ::fstat, StandardFD, &st) < 0) {",
-        "    if (RetryAfterSignal(-1, __harvey_fstat, StandardFD, &st) < 0) {",
+        "#if defined(HARVEY)\n"
+        "    if (RetryAfterSignal(-1, __harvey_fstat, StandardFD, &st) < 0) {\n"
+        "#else\n"
+        "    if (RetryAfterSignal(-1, ::fstat, StandardFD, &st) < 0) {\n"
+        "#endif",
     ),
     (
         "llvm/lib/Support/Unix/Path.inc",
         "  int StatRet = (Follow ? ::stat : ::lstat)(P.begin(), &Status);",
-        "  int StatRet = (Follow ? __harvey_stat : ::lstat)(P.begin(), &Status);",
+        "#if defined(HARVEY)\n"
+        "  int StatRet = (Follow ? __harvey_stat : ::lstat)(P.begin(), &Status);\n"
+        "#else\n"
+        "  int StatRet = (Follow ? ::stat : ::lstat)(P.begin(), &Status);\n"
+        "#endif",
     ),
     # Harvey has no /proc/self/exe and no dyld; the driver is always started
     # with a path, so resolve argv[0].  Without this InstalledDir is empty and
@@ -55,7 +63,11 @@ EDITS = [
     (
         "llvm/lib/Support/Unix/Jobserver.inc",
         "  if (::fstat(FD, &StatBuf) != 0)",
-        "  if (__harvey_fstat(FD, &StatBuf) != 0)",
+        "#if defined(HARVEY)\n"
+        "  if (__harvey_fstat(FD, &StatBuf) != 0)\n"
+        "#else\n"
+        "  if (::fstat(FD, &StatBuf) != 0)\n"
+        "#endif",
     ),
     # libc++/src/atomic.cpp: the Linux branch waits with futexes, which Harvey
     # does not have.  Fall through to the portable poll-with-backoff layer.
@@ -72,7 +84,11 @@ EDITS = [
     (
         "llvm/lib/Support/Unix/Path.inc",
         "  int StatRet = ::fstat(FD, &Status);",
-        "  int StatRet = __harvey_fstat(FD, &Status);",
+        "#if defined(HARVEY)\n"
+        "  int StatRet = __harvey_fstat(FD, &Status);\n"
+        "#else\n"
+        "  int StatRet = ::fstat(FD, &Status);\n"
+        "#endif",
     ),
     # libc++'s filesystem needs fs_stat/fs_fstat because `using ::stat;` would
     # name the macro and `detail::stat(...)` would expand inside the namespace.
