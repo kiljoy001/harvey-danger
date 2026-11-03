@@ -25,7 +25,7 @@ int main(int argc, char **argv) {
     if (chdir(dir) < 0) { perror("chdir"); return 1; }
     setenv("TMPDIR", "/n/host/build/llvm-guest/tmp", 1);
 
-    char *hb[] = { "/n/host/build/llvm-guest/hbuild", "-j", "1",
+    char *hb[] = { "/n/host/build/llvm-guest/hbuild", "-j", "4",
                    "-f", argc > 1 ? argv[1] : "llvm-tblgen.build", 0 };
     fprintf(stderr, "== hbuild %s\n", hb[4]);
     int st = run(hb);

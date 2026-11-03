@@ -94,11 +94,12 @@ The four BLAKE3 assembly objects are reused from the cross build: the
 guest driver's config force-includes `compat.h`, which the assembler cannot
 parse, and they were already compiled for the same target.
 
-The build currently runs with `-j 1`.  Four-way parallelism exposes a
-transport problem: with several simultaneous clients the 9P server starts
-answering `EINVAL`/`ENOENT` for files that exist, and `rename` fails for
-files it handles serially.  `hbuild` supports `-j`; once that is fixed the
-same manifest runs in parallel.
+The build runs with `-j 4`.  The first parallel attempts failed because the
+host 9P server did not record the new fid's path on a *partial* walk: a
+build leaked about four fids per translation unit until the 1024-entry
+table filled, after which every walk failed and the guest saw `EINVAL`.
+With that fixed, fid use stays flat and the whole target builds clean at
+`-j 4`.
 
 ## SDK layout
 
@@ -242,10 +243,10 @@ was missing.  They live in APEX now, not in a shim:
 
 ## Next rungs
 
-1. Greater build parallelism.  `hbuild` and the command manifest exist; the
-   blocker is the 9P transport under several simultaneous clients.
-2. More vCPUs.  `9vm` runs one KVM vCPU, so even a parallel build has little
-   to schedule; adding vCPUs is a 9vm change.
+1. More vCPUs.  `9vm` runs one KVM vCPU, so a parallel build is still one
+   stream of work; adding vCPUs is a 9vm change.
+2. Build the rest of LLVM on Harvey.  `llvm-tblgen` is the bootstrap tool;
+   the next targets are the generated headers and then the libraries.
 2. `flockfile`/`funlockfile` for programs that take a stream lock by hand
    (see `util/libcxx/README.md`).
 3. Make `getMainExecutable` more robust. The patch resolves `argv[0]`, so the
