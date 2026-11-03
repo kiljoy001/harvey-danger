@@ -141,6 +141,14 @@ sysrfork(Ar0 *ar0, ...)
 	p->lastnote = up->lastnote;
 	p->notify = up->notify;
 	p->ureg = up->ureg;
+	/*
+	 * The child gets a copy of the segments at the same virtual
+	 * addresses, so the parent's TLS pointer is still valid in it (and
+	 * for RFMEM it is shared).  Without this the new Proc starts with
+	 * an FS base of zero and the first errno access in the child
+	 * faults.  A new program replaces it in __libc_start_main anyway.
+	 */
+	p->tls = up->tls;
 	p->prepagemem = up->prepagemem;
 	p->dbgreg = 0;
 
