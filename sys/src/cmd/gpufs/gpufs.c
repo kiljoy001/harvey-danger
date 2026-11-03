@@ -1087,7 +1087,10 @@ gpuclr(Gpu *g, u32 color, u32 cw, u32 ch, int tiled, u32 cfgarg)
 	drvdmacache(DrvClean, g->jobpa, 4096);
 	gpucacheflush(g);
 
-	cfg = cfgarg ? cfgarg : 0x87300;
+	/* Linux's post-submit JS0_CONFIG reads back 0x7b00: AS 0,
+	 * pri 8, start/end clean+invalidate, flush reduction and the
+	 * job-chain flag. */
+	cfg = cfgarg ? cfgarg : 0x87b00;
 	drw(&g->d, JobIntClear, 0x70007);
 	drw(&g->d, JobIntMask, 0x70007);
 	drw(&g->d, JSOFF(slot, JsHeadLo), (u32)(JobVa + 0xc0));

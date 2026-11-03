@@ -230,11 +230,28 @@ and the sample-locations pointer).  The one field that differed,
 `z_internal_format = 1` (D24), is fixed.
 
 So `CONFIG_FAULT` is not the FBD contents, the payload or the slot config.
-The next diagnostic is to submit this exact chain from Linux userspace
-(`DRM_IOCTL_PANFROST_SUBMIT` with the same bytes): if that works, the
-descriptor is fine and the difference is in `gpufs`' kernel-side setup — the
-AS registers, which `devmem` could not read because the GPU had already
-runtime-suspended.
+
+`contrib/gpucap/panclr.c` settles it: it submits the same chain from Linux
+userspace through the kernel's own panfrost driver, and it works.
+
+```text
+PANCLR job va 0x2000000 handle 1, rt va 0x2004000 handle 2
+PANCLR submitted
+PANCLR pixel 0xff0000ff  PASS
+```
+
+Note the addresses: `0x2000000` and `0x2004000`, nothing like the captured
+chain's.  The descriptor is correct, and so are the slot, the
+`JS_CONFIG` (Linux reads back `0x7b00`) and the writable configuration
+registers (`JM_CONFIG 0x000f0000`, `SHADER_CONFIG`, `TILER_CONFIG` and
+`L2_MMU_CONFIG` all zero, same as `gpufs`).
+
+That leaves the address-space setup as the only difference.  Linux disables
+the AS after every job (`AS0_TRANSCFG` reads back `1`, `ADRMODE_UNMAPPED`,
+`AS0_TRANSTAB` 0), so the registers cannot be read from an idle GPU.  The
+next step is to capture them *during* a job — fork, submit in a loop, and
+read `AS0_TRANSTAB/MEMATTR/TRANSCFG` from the parent — and to try
+re-issuing `AS_COMMAND_UPDATE` immediately before each submission.
 
 ### What still fails
 
