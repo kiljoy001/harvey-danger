@@ -1091,6 +1091,9 @@ gpuclr(Gpu *g, u32 color, u32 cw, u32 ch, int tiled, u32 cfgarg)
 	 * pri 8, start/end clean+invalidate, flush reduction and the
 	 * job-chain flag. */
 	cfg = cfgarg ? cfgarg : 0x87b00;
+	/* Linux re-enables the address space for every job. */
+	if(mmuprogram(g) < 0)
+		print("gpufs: clear: mmu re-enable failed\n");
 	drw(&g->d, JobIntClear, 0x70007);
 	drw(&g->d, JobIntMask, 0x70007);
 	drw(&g->d, JSOFF(slot, JsHeadLo), (u32)(JobVa + 0xc0));

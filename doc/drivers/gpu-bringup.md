@@ -246,7 +246,18 @@ chain's.  The descriptor is correct, and so are the slot, the
 registers (`JM_CONFIG 0x000f0000`, `SHADER_CONFIG`, `TILER_CONFIG` and
 `L2_MMU_CONFIG` all zero, same as `gpufs`).
 
-That leaves the address-space setup as the only difference.  Linux disables
+That leaves the address-space setup as the only difference.  Two more
+measurements narrow it down:
+
+- re-submitting the *same* job header from Linux (one the GPU has already
+  written its `Exception Status` back into) fails with
+  `DATA_INVALID_FAULT`, so `DATA_INVALID_FAULT` is also what a non-zero
+  exception status produces.  A fresh header is always required.
+- a sampler child started before the submit, reading `AS0_TRANSTAB` through
+  `/dev/mem`, never observes the address space enabled: Linux enables it and
+  disables it again inside a single submit, and even a 4096x4096 clear is
+  faster than the sampling loop.  Either the AS number in `JS_CONFIG` is
+  masked on readback, or the registers cannot be caught this way.  Linux disables
 the AS after every job (`AS0_TRANSCFG` reads back `1`, `ADRMODE_UNMAPPED`,
 `AS0_TRANSTAB` 0), so the registers cannot be read from an idle GPU.  The
 next step is to capture them *during* a job — fork, submit in a loop, and
