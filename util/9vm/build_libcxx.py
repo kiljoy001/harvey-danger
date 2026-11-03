@@ -51,6 +51,12 @@ TEST_CXX20_CPP = REPO_ROOT / "util" / "libcxx" / "test_cxx20.cpp"
 TEST_CXX20_ELF = BUILD / "test_cxx20.elf"
 TEST_CHARCONV_CPP = REPO_ROOT / "util" / "libcxx" / "test_charconv.cpp"
 TEST_CHARCONV_ELF = BUILD / "test_charconv.elf"
+TEST_DEMANGLE_CPP = REPO_ROOT / "util" / "libcxx" / "test_demangle.cpp"
+TEST_DEMANGLE_ELF = BUILD / "test_demangle.elf"
+TEST_PRINT_CPP = REPO_ROOT / "util" / "libcxx" / "test_print.cpp"
+TEST_PRINT_ELF = BUILD / "test_print.elf"
+TEST_FLOCK_CPP = REPO_ROOT / "util" / "libcxx" / "test_flock.cpp"
+TEST_FLOCK_ELF = BUILD / "test_flock.elf"
 
 CXX = "clang++"
 CC = "clang"
@@ -98,6 +104,7 @@ SOURCES = [
     "locale",
     "ios",
     "ios.instantiations",
+    "print",
     "iostream",
     "fstream",
     "strstream",
@@ -187,6 +194,11 @@ def prepare():
                     INCLUDE / "pthread.h")
     copy_if_changed(REPO_ROOT / "util" / "libcxx" / "sched.h",
                     INCLUDE / "sched.h")
+
+    # <cxxabi.h> is part of libc++abi, not libc++, but programs that call
+    # __cxa_demangle include it from the same place as <cstdio>.
+    for name in ("cxxabi.h", "__cxxabi_config.h"):
+        copy_if_changed(LIBCXXABI / "include" / name, INCLUDE / name)
 
     # from_chars_floating_point.h includes "shared/fp_bits.h".  Upstream
     # populates libcxx/src/include/shared from the libc project; do the same
@@ -298,7 +310,8 @@ def build_library():
     # libc++abi's cxa_handlers/cxa_default_handlers would duplicate them.
     for name in ("cxa_exception", "cxa_personality",
                  "cxa_exception_storage", "fallback_malloc",
-                 "stdlib_exception", "cxa_handlers", "cxa_default_handlers"):
+                 "stdlib_exception", "cxa_handlers", "cxa_default_handlers",
+                 "cxa_demangle"):
         src = LIBCXXABI / "src" / f"{name}.cpp"
         obj = OBJDIR / f"cxa_{name}.o"
         run([CXX, *exc_flags, "-c", str(src), "-o", str(obj)])
@@ -404,6 +417,9 @@ def main():
     build_test(TEST_TIMED_CPP, TEST_TIMED_ELF, "test_timed")
     build_test(TEST_CXX20_CPP, TEST_CXX20_ELF, "test_cxx20")
     build_test(TEST_CHARCONV_CPP, TEST_CHARCONV_ELF, "test_charconv")
+    build_test(TEST_DEMANGLE_CPP, TEST_DEMANGLE_ELF, "test_demangle")
+    build_test(TEST_PRINT_CPP, TEST_PRINT_ELF, "test_print")
+    build_test(TEST_FLOCK_CPP, TEST_FLOCK_ELF, "test_flock")
     if args.run:
         run_test(TEST_STL_ELF, "hello 2 2 42 42")
         run_test(TEST_THREADS_ELF, "threads-ok 7 14")
@@ -414,6 +430,9 @@ def main():
         run_test(TEST_CHARCONV_ELF,
                  "charconv float=3.14159 parsed=3.14159 err=0 int=12345/12345 "
                  "format=42 harvey 3.14")
+        run_test(TEST_DEMANGLE_ELF, "demangle status=0 name=foo(int)")
+        run_test(TEST_PRINT_ELF, "print 42 harvey")
+        run_test(TEST_FLOCK_ELF, "flock busy=1")
 
 
 if __name__ == "__main__":

@@ -58,15 +58,6 @@ bad_typeid::~bad_typeid() noexcept {}
 const char *bad_typeid::what() const noexcept { return "std::bad_typeid"; }
 } // namespace std
 
-/* Demangling is only used for diagnostics; returning failure is legal. */
-extern "C" char *__cxa_demangle(const char *mangled, char *buf, size_t *n,
-                                int *status) {
-    (void)mangled; (void)buf; (void)n;
-    if (status)
-        *status = -1;
-    return nullptr;
-}
-
 /*
  * APEX's libcxxabi stub has no __cxa_thread_atexit().  Harvey has no real
  * threads, so register the destructor and run it at process exit.

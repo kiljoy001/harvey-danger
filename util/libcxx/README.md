@@ -132,6 +132,14 @@ RTTI **is** available: libc++ is built with `-frtti`, and
   stdio-ok lines=800 bad=0 seen=800
   ```
 
+  `flockfile`/`ftrylockfile`/`funlockfile` are there for programs that hold
+  a stream lock by hand; nesting is counted per `FILE`, and a thread that
+  does not own the lock gets `-1` from `ftrylockfile`:
+
+  ```text
+  flock busy=1
+  ```
+
   The C++20 concurrency primitives work too: `std::latch`, `std::barrier`,
   `std::counting_semaphore`, `std::jthread`/`stop_token` and
   `std::atomic<T>::wait`/`notify_*`.  libc++'s `atomic.cpp` provides the
@@ -169,7 +177,13 @@ RTTI **is** available: libc++ is built with `-frtti`, and
   `bad_cast`/`bad_typeid` are defined in compat.cpp to avoid a second
   `std::type_info` destructor.
 
-- **`__cxa_demangle`** — stubbed to fail; diagnostics print mangled names.
+- **`__cxa_demangle`** — libc++abi's real demangler (`cxa_demangle.cpp` plus
+  the `demangle/` headers) is compiled in, so `abi::__cxa_demangle` and crash
+  traces produce readable names:
+
+  ```text
+  demangle status=0 name=foo(int)
+  ```
 - **charconv and `<format>`** — `charconv.cpp` is built, including the
   floating-point paths.  `src/include/shared/` is populated from the libc
   project at build time (upstream does the same) and the Ryu tables under
@@ -180,10 +194,12 @@ RTTI **is** available: libc++ is built with `-frtti`, and
   charconv float=3.14159 parsed=3.14159 err=0 int=12345/12345 format=42 harvey 3.14
   ```
 
+  `std::print`/`std::println` come from `print.cpp` (on POSIX it only needs
+  `isatty`): `print 42 harvey`.
+
 ## Next rungs
 
-1. A real `__cxa_demangle`; the current one is a stub, so diagnostics and
-   backtraces show mangled names.
+1. Locale data and facets.  libc++'s `locale.cpp` is built, but Harvey has
+   one C locale; the POSIX `*_l` entry points are stubs.
 2. `std::exception_ptr`/`std::nested_exception` round-trip tests, and
    `-fno-exceptions` builds of the library for size.
-3. `flockfile`/`funlockfile` for programs that manage a stream lock by hand.
