@@ -985,7 +985,7 @@ fbmapgpu(Gpu *g, u64 pa, u64 size)
 }
 
 static void
-gpuclr(Gpu *g, u32 color, u32 cw, u32 ch, int tiled)
+gpuclr(Gpu *g, u32 color, u32 cw, u32 ch, int tiled, u32 cfgarg)
 {
 	Fbinfo fi;
 	u32 *rt, *job, *pl, raw, cfg;
@@ -1081,7 +1081,7 @@ gpuclr(Gpu *g, u32 color, u32 cw, u32 ch, int tiled)
 	drvdmacache(DrvClean, g->jobpa, 4096);
 	gpucacheflush(g);
 
-	cfg = 0x87300;
+	cfg = cfgarg ? cfgarg : 0x87300;
 	drw(&g->d, JobIntClear, 0x70007);
 	drw(&g->d, JobIntMask, 0x70007);
 	drw(&g->d, JSOFF(slot, JsHeadLo), (u32)(JobVa + 0xc0));
@@ -1713,7 +1713,7 @@ fswrite(Req *r, void *aux)
 		return;
 	}
 	if(strncmp(cmd, "clear", 5) == 0){
-		u32 color = 0xff0000ff, cw = 0, ch = 0, tiled = 0;
+		u32 color = 0xff0000ff, cw = 0, ch = 0, tiled = 0, cfgarg = 0;
 		char *q;
 
 		if(cmd[5] == ' '){
@@ -1721,10 +1721,12 @@ fswrite(Req *r, void *aux)
 			cw = strtoul(q, &q, 0);
 			ch = strtoul(q, &q, 0);
 			tiled = strtoul(q, &q, 0);
+			cfgarg = strtoul(q, &q, 0);
 		}
-		print("gpufs: ctl clear %#ux %ud %ud tiled %ud\n", color, cw, ch, tiled);
+		print("gpufs: ctl clear %#ux %ud %ud tiled %ud cfg %#ux\n",
+		      color, cw, ch, tiled, cfgarg);
 		if(g->powered || pmuon(g) == 0){
-			gpuclr(g, color, cw, ch, tiled);
+			gpuclr(g, color, cw, ch, tiled, cfgarg);
 			r->ofcall.count = r->ifcall.count;
 			respond(r, nil);
 		}else

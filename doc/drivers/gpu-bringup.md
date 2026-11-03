@@ -208,6 +208,14 @@ render target into one page at `0x10000000` and maps the scanout buffer at
 `0x20000000`.  Bisecting that, and the `JS_CONFIG` variants, is the next
 step.
 
+Sweeping `JS_CONFIG` over 0x87300, 0x87700, 0x87b00, 0x83300 and 0x83700
+gives `CONFIG_FAULT` in every case, so the slot configuration is not it
+either.  What is left is the memory layout: the captured chain has its
+framebuffer descriptor, render target and sample-locations table at
+`0xa008000`, `0xa004000` and `0xa000000`, while `gpufs` packs the descriptor
+and render target into the job page and maps the scanout buffer at
+`0x20000000`.
+
 ### What still fails
 
 With a valid leaf the same job returns `JS_STATUS = 0x58`
