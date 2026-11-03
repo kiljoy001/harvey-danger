@@ -187,7 +187,14 @@ Getting there exposed two bugs in the supporting code, neither in gefs:
    `ext2srv`, `hubfs` and the other servers can now be started from
    `rc` as well.
 
-2. **The userland cache key ignored build options.**  The archive
+2. **`PACK64` shifted a 32-bit value.**  `PACK64(p, Blksz)` passes an
+   `int`; ucc masks shifts modulo 32, so the arena log's block length
+   was written as `0x400000004000`.  Replaying the log then aborted in
+   `grabrange`.  `PACK64`/`UNPACK64` now shift through an unsigned
+   64-bit temporary.  With that fixed, `gefs -r` gets past the arena
+   headers.
+
+3. **The userland cache key ignored build options.**  The archive
    signature covered the sources but not `ARM64_BUILD_GEFS` or `UCC`,
    so asking for gefs after a plain build silently reused the archive
    without it (and `mkrootfs` then produced a root without it).  The
@@ -195,8 +202,13 @@ Getting there exposed two bugs in the supporting code, neither in gefs:
    `libc` sources.
 
 `/boot/gefs -r user -f /mnt/emmc/part2` (ream the 200 GiB data
-partition) is the next hardware step; it has not been completed because
-the board resets under sustained eMMC I/O (see the board notes).
+partition) is the next hardware step.  It reaches the per-arena log
+replay now but has not been run to completion: the board resets under
+sustained eMMC I/O (see the board notes), and a second build session on
+the same tree keeps republishing `g55k.img`/`g55u.img` without
+`ARM64_BUILD_GEFS=1`, which overwrites the archive under test.  Build
+gefs into a separate `ARM64_KERNEL_OUT` and publish it under distinct
+TFTP names to avoid that race.
 
 The original notes on the port follow.
 
