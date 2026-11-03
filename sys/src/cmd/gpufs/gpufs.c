@@ -815,6 +815,52 @@ identitymatrix(Gpu *g)
 	      drd(&g->d, JSOFF(1, JsStatus)));
 }
 
+/* Two NULL jobs linked by Next: the minimal chain Linux would submit. */
+static void
+chaintest(Gpu *g, u32 cfg)
+{
+	u32 *j2, raw;
+	int i, done, err;
+
+	if(mmuinit(g) < 0 || mmuprogram_a64(g) < 0)
+		return;
+
+	memset(g->job, 0, 4096);
+	g->job[4] = 1 | (1 << 1) | (1 << 16);	/* NULL, index 1 */
+	g->job[6] = JobVa + 0x40;		/* Next */
+	g->job[7] = 0;
+	j2 = (u32 *)((u8 *)g->job + 0x40);
+	j2[4] = 1 | (1 << 1) | (2 << 16);	/* NULL, index 2 */
+	j2[6] = 0;
+	j2[7] = 0;
+	drvdmacache(DrvClean, g->jobpa, 4096);
+	gpucacheflush(g);
+
+	drw(&g->d, JobIntClear, 0x70007);
+	drw(&g->d, JobIntMask, 0x70007);
+	drw(&g->d, JSOFF(1, JsFlushId), drd(&g->d, GpuLatestFlush));
+	drw(&g->d, JSOFF(1, JsHeadLo), (u32)JobVa);
+	drw(&g->d, JSOFF(1, JsHeadHi), (u32)((u64)JobVa >> 32));
+	drw(&g->d, JSOFF(1, JsAffinityLo), 1);
+	drw(&g->d, JSOFF(1, JsAffinityHi), 0);
+	drw(&g->d, JSOFF(1, JsConfig), cfg | (1 << 14));
+	drw(&g->d, JSOFF(1, JsCommand), 1);
+
+	done = err = 0;
+	for(i = 0; i < 1000; i++){
+		raw = drd(&g->d, JobIntRawstat);
+		if(raw & (1 << 1)){ done = 1; break; }
+		if(raw & (1 << 17)){ err = 1; break; }
+		sleep(1);
+	}
+	drw(&g->d, JobIntClear, 0x20002);
+	print("gpufs: chain cfg %#ux %s raw %#ux js %#ux as %#ux addr %#llux\n",
+	      cfg, done ? "PASS" : (err ? "FAIL" : "TIMEOUT"), raw,
+	      drd(&g->d, JSOFF(1, JsStatus)),
+	      drd(&g->d, ASOFF(0, 0x1c)),
+	      ((u64)drd(&g->d, ASOFF(0, 0x24)) << 32) | drd(&g->d, ASOFF(0, 0x20)));
+}
+
 /* A NULL job on one slot: no payload, no shader, just the queue. */
 static void
 nulltest(Gpu *g, int slot)
@@ -1039,6 +1085,20 @@ fswrite(Req *r, void *aux)
 		if(g->powered || pmuon(g) == 0){
 			if(gpupower(g) == 0)
 				identitymatrix(g);
+			r->ofcall.count = r->ifcall.count;
+			respond(r, nil);
+		}else
+			respond(r, g->why);
+		qunlock(&g->lk);
+		return;
+	}
+	if(strcmp(cmd, "chain") == 0){
+		print("gpufs: ctl chain\n");
+		if(g->powered || pmuon(g) == 0){
+			if(gpupower(g) == 0){
+				chaintest(g, 0x87300);
+				chaintest(g, 0x87b00);
+			}
 			r->ofcall.count = r->ifcall.count;
 			respond(r, nil);
 		}else

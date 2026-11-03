@@ -1,0 +1,12 @@
+# Append to mesa/src/panfrost/clc/meson.build after the panfrost_compile
+# executable.  Builds the host shader compiler against Mesa's compiler
+# library; no Gallium, no DRM, no LLVM.
+executable(
+  'gpucc',
+  ['gpucc.c'],
+  link_with : [libpanfrost_compiler],
+  include_directories : [inc_include, inc_src, inc_panfrost],
+  c_args : [c_msvc_compat_args, no_override_init_args],
+  dependencies : [idep_nir, idep_mesautil, libpanfrost_dep],
+  install : false,
+)
