@@ -24,7 +24,7 @@ portability shims the Harvey target needs.
 | native `ld.lld` | **runs on Harvey and links executables** |
 | self-configuring driver | **`clang++ hello.cpp -o hello` works with no flags** |
 | LLVM cross-built with `LLVM_ENABLE_THREADS=ON` | **builds and runs: threaded clang + lld link in the guest** |
-| building LLVM on Harvey | **`test-selfhost.py` compiles `CommandLine.cpp`; `test-selfbuild.py` builds `llvm-tblgen`; `test-selfcore.py` builds `LLVMCore`** |
+| building LLVM on Harvey | **`test-selfhost.py` compiles `CommandLine.cpp`; `test-selfbuild.py` builds `llvm-tblgen`; `test-selfcore.py` builds `LLVMCore`; `test-selfas.py` builds `llvm-as`** |
 
 The end-to-end test is `util/clang-harvey/test-native-toolchain.py`. It
 installs the SDK and then the guest runs exactly:
@@ -125,6 +125,24 @@ byte-identical.
 
 Run `test-selfbuild.py` first: it produces the guest `bin/llvm-tblgen`.
 `test-selfcore.py --clean` rebuilds the objects from scratch.
+
+### A real tool: llvm-as
+
+`util/clang-harvey/test-selfas.py` builds the bitcode assembler on top of
+Core.  It is the largest guest build so far: 26 header-generation commands,
+490 compilation units (AsmParser, BitWriter, MC, Symbolize, Core, Support),
+26 archives and the link.  Then it assembles a module:
+
+```text
+  hbuild: batch done: 490/490 (0 failed)
+  == llvm-as build status 0
+selfas: llvm-as (20808096 bytes) built on Harvey; test.ll -> test.bc
+        (1536 bytes, bitcode magic BC c0 de)
+```
+
+`hbuild` retries a failed command once.  A parallel burst produced a single
+transient 9P output-open failure among those 490 objects, and the retry
+picked it up without hiding real compile errors.
 
 The four BLAKE3 assembly objects are reused from the cross build: the
 guest driver's config force-includes `compat.h`, which the assembler cannot
@@ -281,8 +299,8 @@ was missing.  They live in APEX now, not in a shim:
 
 1. More vCPUs.  `9vm` runs one KVM vCPU, so a parallel build is still one
    stream of work; adding vCPUs is a 9vm change.
-2. More of LLVM: bitcode/assembler reading and `llvm-as`, then the target
-   libraries, on top of the Core that now builds.
+2. More of LLVM: `llvm-dis` and `llvm-config`, then the target libraries
+   and code generator, on top of Core and AsmParser.
 
 `-m` above about 4078 MB fails with `KVM_CREATE_VCPU: EEXIST`: the RAM
 memslot then covers the in-kernel local APIC page at `0xFEE00000`.  3 GiB

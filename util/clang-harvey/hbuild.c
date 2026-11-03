@@ -165,43 +165,43 @@ parse(const char *path)
 }
 
 static int
-runstage(struct stage *st, int jobs, int quiet)
+run_batch(struct stage *st, const int *idx, int n, int jobs, int *failed,
+    int quiet)
 {
-	struct { pid_t pid; int idx; } run[MAXJOBS];
-	int i = 0, running = 0, failed = 0, done = 0;
+	struct { pid_t pid; int slot; } run[MAXJOBS];
+	int next = 0, running = 0, nfailed = 0, done = 0;
 
 	memset(run, 0, sizeof run);
-	while (i < st->n || running > 0) {
-		while (i < st->n && running < jobs) {
+	while (next < n || running > 0) {
+		while (next < n && running < jobs) {
+			int ci = idx[next];
 			pid_t pid = fork();
 			if (pid == 0) {
-				execv(st->cmds[i].argv[0], st->cmds[i].argv);
+				execv(st->cmds[ci].argv[0], st->cmds[ci].argv);
 				fprintf(stderr, "hbuild: %s: %s\n",
-				    st->cmds[i].argv[0], strerror(errno));
+				    st->cmds[ci].argv[0], strerror(errno));
 				_exit(127);
 			}
 			if (pid < 0) {
 				fprintf(stderr, "hbuild: fork: %s\n", strerror(errno));
-				failed++;
-				i++;
+				failed[nfailed++] = ci;
+				next++;
 				continue;
 			}
 			run[running].pid = pid;
-			run[running].idx = i++;
+			run[running].slot = next++;
 			running++;
 		}
 		if (running == 0)
 			break;
 		{
-			int status;
+			int status, k;
 			pid_t pid = waitpid(-1, &status, 0);
-			int k;
 
 			if (pid < 0) {
 				if (errno == EINTR)
 					continue;
-				fprintf(stderr, "hbuild: wait: %s\n", strerror(errno));
-				return failed + 1;
+				break;
 			}
 			for (k = 0; k < running; k++)
 				if (run[k].pid == pid)
@@ -209,18 +209,51 @@ runstage(struct stage *st, int jobs, int quiet)
 			if (k == running)
 				continue;
 			done++;
-			if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) {
-				failed++;
-				fprintf(stderr, "hbuild: FAILED: %s\n",
-				    st->cmds[run[k].idx].argv[0]);
-			}
+			if (!WIFEXITED(status) || WEXITSTATUS(status) != 0)
+				failed[nfailed++] = idx[run[k].slot];
 			run[k] = run[--running];
 		}
 	}
-	if (!quiet && st->n > 0)
-		fprintf(stderr, "hbuild: stage done: %d/%d (%d failed)\n",
-		    done, st->n, failed);
-	return failed;
+	if (!quiet && n > 0)
+		fprintf(stderr, "hbuild: batch done: %d/%d (%d failed)\n",
+		    done, n, nfailed);
+	return nfailed;
+}
+
+/*
+ * Run a stage, retrying failed commands once.  The 9P transport can fail a
+ * large parallel burst transiently (an output open came back EINVAL once in
+ * 490 objects); a retry picks it up without pretending a real compile error
+ * succeeded.
+ */
+static int
+runstage(struct stage *st, int jobs, int quiet)
+{
+	int *idx, *fails, n, nf, round, i, size;
+
+	size = st->n > 0 ? st->n : 1;
+	idx = xrealloc(nil, size * sizeof *idx);
+	fails = xrealloc(nil, size * sizeof *fails);
+	for (i = 0; i < st->n; i++)
+		idx[i] = i;
+	n = st->n;
+
+	for (round = 0; round < 2 && n > 0; round++) {
+		nf = run_batch(st, idx, n, jobs, fails, quiet);
+		if (nf > 0 && round == 0 && !quiet)
+			fprintf(stderr, "hbuild: retrying %d command(s)\n", nf);
+		free(idx);
+		idx = fails;
+		fails = xrealloc(nil, size * sizeof *fails);
+		n = nf;
+	}
+	if (n > 0)
+		for (i = 0; i < n; i++)
+			fprintf(stderr, "hbuild: FAILED: %s\n",
+			    st->cmds[idx[i]].argv[0]);
+	free(idx);
+	free(fails);
+	return n;
 }
 
 int
