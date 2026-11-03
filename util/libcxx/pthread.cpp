@@ -23,6 +23,7 @@
 extern "C" {
 int semacquire(int32_t *, int);
 int32_t semrelease(int32_t *, int32_t);
+int tsemacquire(int32_t *, uint32_t);
 void _exits(char *);
 void *__harvey_tls_alloc(void);
 int rfork(int);
@@ -69,26 +70,43 @@ inline void unlock_word(int32_t *w) {
     semrelease(w, 1);
 }
 
-inline bool cas_ptr(intptr_t *slot, intptr_t oldv, intptr_t newv) {
-    return __sync_bool_compare_and_swap(slot, oldv, newv);
+/*
+ * The waiter list is protected by the condition variable's own lock rather
+ * than by CAS.  A timed waiter that times out has to unlink its stack node
+ * before returning, and a lock makes that safe: a signaler either removes
+ * the node before the waiter does (and releases its semaphore under the
+ * lock) or finds it already gone.  Without that, a signal could touch a
+ * dead stack frame.
+ */
+inline void cond_lock(pthread_cond_t *c) {
+    semacquire(&c->__lock, 1);
+}
+
+inline void cond_unlock(pthread_cond_t *c) {
+    semrelease(&c->__lock, 1);
 }
 
 void cond_push(pthread_cond_t *c, __cond_waiter *w) {
-    intptr_t head;
-    do {
-        head = c->__head;
-        w->next = (__cond_waiter *)head;
-    } while (!cas_ptr(&c->__head, head, (intptr_t)w));
+    w->next = (__cond_waiter *)c->__head;
+    c->__head = (intptr_t)w;
 }
 
 __cond_waiter *cond_pop(pthread_cond_t *c) {
-    intptr_t head;
-    do {
-        head = c->__head;
-        if (head == 0)
-            return nullptr;
-    } while (!cas_ptr(&c->__head, head, (intptr_t)(( __cond_waiter *)head)->next));
-    return (__cond_waiter *)head;
+    __cond_waiter *w = (__cond_waiter *)c->__head;
+    if (w)
+        c->__head = (intptr_t)w->next;
+    return w;
+}
+
+void cond_remove(pthread_cond_t *c, __cond_waiter *w) {
+    __cond_waiter **p = (__cond_waiter **)&c->__head;
+    while (*p) {
+        if (*p == w) {
+            *p = w->next;
+            return;
+        }
+        p = &(*p)->next;
+    }
 }
 
 /* Runs on the thread's own stack: install its TLS, call the body, finish. */
@@ -216,6 +234,8 @@ int pthread_cond_init(pthread_cond_t *c, const void *a) {
     (void)a;
     if (!c) return EINVAL;
     c->__head = 0;
+    c->__lock = 1;
+    c->__pad = 0;
     return 0;
 }
 
@@ -228,7 +248,9 @@ int pthread_cond_wait(pthread_cond_t *c, pthread_mutex_t *m) {
     __cond_waiter w;
     w.sem = 0;
     w.next = nullptr;
+    cond_lock(c);
     cond_push(c, &w);
+    cond_unlock(c);
     pthread_mutex_unlock(m);
     semacquire(&w.sem, 1);
     pthread_mutex_lock(m);
@@ -237,53 +259,70 @@ int pthread_cond_wait(pthread_cond_t *c, pthread_mutex_t *m) {
 
 int pthread_cond_timedwait(pthread_cond_t *c, pthread_mutex_t *m,
                            const struct timespec *ts) {
-    /*
-     * No timed semaphore in this syscall set yet; sleep in short slices and
-     * report ETIMEDOUT once the deadline passes.
-     */
     __cond_waiter w;
+    long long deadline, cur, ms;
+
+    if (!ts)
+        return pthread_cond_wait(c, m);
+
+    struct timespec now;
+    clock_gettime(CLOCK_REALTIME, &now);
+    cur = (long long)now.tv_sec * 1000000000LL + now.tv_nsec;
+    deadline = (long long)ts->tv_sec * 1000000000LL + ts->tv_nsec;
+    ms = (deadline - cur + 999999) / 1000000;   /* round up */
+    if (ms <= 0) {
+        /* Already expired: behave like a timed wait that timed out. */
+        pthread_mutex_unlock(m);
+        pthread_mutex_lock(m);
+        return ETIMEDOUT;
+    }
+    if (ms > 0x7fffffffLL)
+        ms = 0x7fffffffLL;
+
     w.sem = 0;
     w.next = nullptr;
+    cond_lock(c);
     cond_push(c, &w);
+    cond_unlock(c);
     pthread_mutex_unlock(m);
 
-    int rc = 0;
-    if (ts) {
-        struct timespec now;
-        clock_gettime(CLOCK_REALTIME, &now);
-        long long deadline = (long long)ts->tv_sec * 1000000000LL + ts->tv_nsec;
-        for (;;) {
-            if (semacquire(&w.sem, 0) == 1)
-                break;
-            clock_gettime(CLOCK_REALTIME, &now);
-            long long cur = (long long)now.tv_sec * 1000000000LL + now.tv_nsec;
-            if (cur >= deadline) {
-                rc = ETIMEDOUT;
-                /* try once more to avoid losing a concurrent signal */
-                if (semacquire(&w.sem, 0) == 1)
-                    rc = 0;
-                break;
-            }
-            usleep(1000);
-        }
-    } else {
-        semacquire(&w.sem, 1);
+    if (tsemacquire(&w.sem, (uint32_t)ms) == 1) {
+        pthread_mutex_lock(m);
+        return 0;
     }
+
+    /*
+     * Timed out.  Unlink the node under the condition lock so no signal can
+     * reference this stack frame afterwards; then check once more, because a
+     * signal may have popped and released us just before we got the lock.
+     */
+    cond_lock(c);
+    cond_remove(c, &w);
+    cond_unlock(c);
+
+    int rc = ETIMEDOUT;
+    if (semacquire(&w.sem, 0) == 1)
+        rc = 0;
+
     pthread_mutex_lock(m);
     return rc;
 }
 
 int pthread_cond_signal(pthread_cond_t *c) {
+    cond_lock(c);
     __cond_waiter *w = cond_pop(c);
     if (w)
         semrelease(&w->sem, 1);
+    cond_unlock(c);
     return 0;
 }
 
 int pthread_cond_broadcast(pthread_cond_t *c) {
+    cond_lock(c);
     __cond_waiter *w;
     while ((w = cond_pop(c)) != nullptr)
         semrelease(&w->sem, 1);
+    cond_unlock(c);
     return 0;
 }
 

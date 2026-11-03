@@ -37,6 +37,8 @@ typedef struct {
 
 typedef struct {
     intptr_t __head;    /* waiter list */
+    int32_t __lock;     /* protects the list: 1 = free, 0 = held */
+    int32_t __pad;
 } pthread_cond_t;
 
 typedef int pthread_once_t;
@@ -56,7 +58,7 @@ typedef struct {
 } pthread_rwlock_t;
 
 #define PTHREAD_MUTEX_INITIALIZER {1, 0, 0, 0}
-#define PTHREAD_COND_INITIALIZER  {0}
+#define PTHREAD_COND_INITIALIZER  {0, 1, 0}
 #define PTHREAD_ONCE_INIT 0
 #define PTHREAD_MUTEX_NORMAL 0
 #define PTHREAD_MUTEX_RECURSIVE 1

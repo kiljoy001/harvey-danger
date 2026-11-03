@@ -39,13 +39,6 @@ extern "C" int clock_gettime(clockid_t clk, struct timespec *ts) {
     return 0;
 }
 
-extern "C" int nanosleep(const struct timespec *req, struct timespec *rem) {
-    if (req && req->tv_sec > 0)
-        __sleep((unsigned int)req->tv_sec);
-    if (rem) { rem->tv_sec = 0; rem->tv_nsec = 0; }
-    return 0;
-}
-
 /* POSIX names for APEX's __write/__read/... entry points.  See compat.h. */
 /* APEX has no getpagesize(); Harvey maps 4 KiB pages. */
 static void *harvey_aligned_alloc(size_t n, size_t align);
@@ -527,13 +520,6 @@ extern "C" int utimes(const char *path, const struct timeval *tv) {
     ut.actime = tv[0].tv_sec;
     ut.modtime = tv[1].tv_sec;
     return utime(path, &ut);
-}
-
-extern "C" int usleep(unsigned int usec) {
-    unsigned int sec = usec / 1000000u;
-    if (sec)
-        __sleep(sec);
-    return 0;
 }
 
 /* Harvey has no dynamic loader: no shared objects, no symbol lookup. */
