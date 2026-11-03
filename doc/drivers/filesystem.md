@@ -152,8 +152,7 @@ Started, not finished.  In place so far:
   `build_gefs` target that links against libavl, libbio, libauth,
   libsec, libmp and libc.
 
-**Status: gefs compiles and links for ARM64 with ucc, and does not run
-yet.**
+**Status: gefs compiles, links and runs on ARM64.**
 
 The build uses `ucc -m9 -marm64`, which understands Plan 9 C including
 anonymous struct members, so the 9front sources compile unchanged.  TCC
@@ -162,34 +161,42 @@ clang-compiled object, and `util/arm64/gefscompat.c` supplies the four
 libc calls this libc lacks (`tmnow`, `tmnorm`, `tmfmtinstall`,
 `procsetname`).  ucc's own driver emits a three-segment image that this
 kernel's loader rejects, so the objects are linked with ld.lld and the
-big-page script.
+big-page script.  `/boot/gefs` prints its usage line:
 
-Two attempts to run it failed, and neither cause is size:
+```
+/boot/gefs
+usage: /boot/gefs [-SARsc] [-r user] [-m mem] [-n srv] [-a net]... -f dev
+```
 
-- Running `gefs -r` from init (like the other data services) stops the
-  boot dead after `EMMC-ROOT PASS`, with no output.
-- Running it from `rc` does nothing at all -- not even `gefs -Z`
-  printing a usage line.
+Getting there exposed two bugs in the supporting code, neither in gefs:
 
-Investigating that turned up two real bugs, and disconfirmed a third:
+1. **ext2sparse files were unreadable.**  `mkrootfs.py` writes the root
+   with `debugfs`, which preserves runs of zeros as holes in the block
+   map.  `ext2srv`'s `readfile` treated `bmap() == 0` as an I/O error
+   instead of a hole, so any program whose text or data covered a hole
+   died at its first demand load:
 
-1. **Not a size limit.**  A deliberately built 400 KiB test program
-   (`/boot/bigtest`) runs fine from the ext2 root.  The earlier
-   "anything over 300 KiB fails" reading was wrong: `usbpower` is
-   silent because its first call `vbus(1)` fails in rc's namespace
-   before its first `fprint`, and the other "failures" were servers
-   that print nothing.
-2. **lib9p/libthread programs do not start when spawned from a user
-   process.**  `ext2srv -Z` writes nothing to fd 2 even with output
-   redirected, while the same binary started by init works.  `ls -Z`
-   prints its error, so exec and stderr are fine.  That is the real
-   reason no server can be started from rc after boot.
-3. **Starting gefs from init hangs the kernel silently.**  Whether that
-   is the same fork/thread bug or a ucc code-generation issue is not yet
-   known.
+   ```
+   exec ext2srv pid 43 entry 0xba1bd5c nldseg 2 kp 0
+   pexit pid 43 ext2srv "i/o error in demand load accessing /boot/ext2srv: I/O error"
+   ```
 
-Next: instrument the user-process fork/exec path for libthread programs
-(`ext2srv -Z` is the smallest reproducer), then revisit gefs.
+   `rc` (97 KiB of text) happened to sit below the first hole; every
+   lib9p server in the image was above one.  `readfile` now zero-fills
+   holes, which is what ext2 specifies.  That single fix is why gefs,
+   `ext2srv`, `hubfs` and the other servers can now be started from
+   `rc` as well.
+
+2. **The userland cache key ignored build options.**  The archive
+   signature covered the sources but not `ARM64_BUILD_GEFS` or `UCC`,
+   so asking for gefs after a plain build silently reused the archive
+   without it (and `mkrootfs` then produced a root without it).  The
+   signature now includes the options and the `libthread`, `lib9p` and
+   `libc` sources.
+
+`/boot/gefs -r user -f /mnt/emmc/part2` (ream the 200 GiB data
+partition) is the next hardware step; it has not been completed because
+the board resets under sustained eMMC I/O (see the board notes).
 
 The original notes on the port follow.
 

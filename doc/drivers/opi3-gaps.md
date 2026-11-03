@@ -181,6 +181,24 @@ read. The first-class work is:
 - HID report descriptor parsing and interrupt-IN reads;
 - safe pending-read cancellation and endpoint reset.
 
+## Reset behaviour under sustained eMMC I/O
+
+The board sometimes resets (full DDR retrain, not a kernel panic) while
+writing large runs to the eMMC, and the same has been seen while
+copying a large file out of the ext2 data partition.  Reads of the
+200 GiB partition are the least reliable operation.  The Rockchip
+preloader and ATF come back cleanly, so this looks like a supply or
+watchdog event rather than memory corruption; it is still open.
+
+Two operational consequences:
+
+- Write the root filesystem in chunks (`mmc write` of 32 MiB at a time)
+  rather than one 128 MiB write.
+- The bench USB switch does not cut the board's power, so it cannot be
+  used as a remote power cycle.  From a running system, a real reset is
+  `echo reboot > /dev/reboot` (PSCI SYSTEM_RESET), provided the caller
+  passes the `iseve` check.
+
 ## Board revision note
 
 The v1.1 board under test has the 3.3 V Ethernet PHY, the CDW-20U5622 WiFi/BT
