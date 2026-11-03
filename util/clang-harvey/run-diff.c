@@ -1,7 +1,7 @@
 /*
- * Run a manifest of raw compiler commands.  Unlike run-hbuild.c the driver
- * config stays enabled here, because these commands are the guest's own:
- * they rely on the installed clang++.cfg for the target and include paths.
+ * Run a manifest of raw compiler commands with the driver config enabled:
+ * these commands are the guest's own and rely on the installed clang++.cfg
+ * for the target triple and the include paths.
  */
 #include <stdio.h>
 #include <stdlib.h>
