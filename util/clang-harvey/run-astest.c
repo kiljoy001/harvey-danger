@@ -1,5 +1,6 @@
 /*
- * Build llvm-as in the guest, then assemble a small .ll file.
+ * Assemble and disassemble inside the guest: build llvm-as and llvm-dis,
+ * turn test.ll into test.bc, then test.bc back into roundtrip.ll.
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -19,16 +20,29 @@ int main(void) {
     if (chdir("/n/host/build/llvm-guest") < 0) { perror("chdir"); return 1; }
     setenv("TMPDIR", "/n/host/build/llvm-guest/tmp", 1);
 
-    char *build[] = { "/n/host/build/llvm-guest/hbuild", "-j", "4",
-                      "-f", "llvm-as.build", 0 };
+    char *asbuild[] = { "/n/host/build/llvm-guest/hbuild", "-j", "4",
+                        "-f", "llvm-as.build", 0 };
     fprintf(stderr, "== hbuild llvm-as.build\n");
-    int st = run(build);
+    int st = run(asbuild);
     fprintf(stderr, "== llvm-as build status %d\n", st);
     if (st) return 1;
 
     char *as[] = { "/n/host/build/llvm-guest/bin/llvm-as",
                    "test.ll", "-o", "test.bc", 0 };
-    execv(as[0], as);
-    perror("execv llvm-as");
-    return 1;
+    st = run(as);
+    fprintf(stderr, "== llvm-as run status %d\n", st);
+    if (st) return 1;
+
+    char *disbuild[] = { "/n/host/build/llvm-guest/hbuild", "-j", "4",
+                         "-f", "llvm-dis.build", 0 };
+    fprintf(stderr, "== hbuild llvm-dis.build\n");
+    st = run(disbuild);
+    fprintf(stderr, "== llvm-dis build status %d\n", st);
+    if (st) return 1;
+
+    char *dis[] = { "/n/host/build/llvm-guest/bin/llvm-dis",
+                    "test.bc", "-o", "roundtrip.ll", 0 };
+    st = run(dis);
+    fprintf(stderr, "== llvm-dis run status %d\n", st);
+    return st;
 }

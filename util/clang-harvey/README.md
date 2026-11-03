@@ -24,7 +24,7 @@ portability shims the Harvey target needs.
 | native `ld.lld` | **runs on Harvey and links executables** |
 | self-configuring driver | **`clang++ hello.cpp -o hello` works with no flags** |
 | LLVM cross-built with `LLVM_ENABLE_THREADS=ON` | **builds and runs: threaded clang + lld link in the guest** |
-| building LLVM on Harvey | **`test-selfhost.py` compiles `CommandLine.cpp`; `test-selfbuild.py` builds `llvm-tblgen`; `test-selfcore.py` builds `LLVMCore`; `test-selfas.py` builds `llvm-as`** |
+| building LLVM on Harvey | **`test-selfhost.py` compiles `CommandLine.cpp`; `test-selfbuild.py` builds `llvm-tblgen`; `test-selfcore.py` builds `LLVMCore`; `test-selfas.py` builds `llvm-as` and `llvm-dis`** |
 
 The end-to-end test is `util/clang-harvey/test-native-toolchain.py`. It
 installs the SDK and then the guest runs exactly:
@@ -136,8 +136,24 @@ Core.  It is the largest guest build so far: 26 header-generation commands,
 ```text
   hbuild: batch done: 490/490 (0 failed)
   == llvm-as build status 0
-selfas: llvm-as (20808096 bytes) built on Harvey; test.ll -> test.bc
-        (1536 bytes, bitcode magic BC c0 de)
+  == llvm-as run status 0
+  hbuild: batch done: 1/1 (0 failed)      # llvm-dis; the rest was built
+  hbuild: batch done: 8/8 (0 failed)
+  == llvm-dis run status 0
+selfas: llvm-as (20808096 bytes) and llvm-dis (9354704 bytes) built on
+        Harvey; test.ll -> test.bc (1536 bytes) -> roundtrip.ll
+```
+
+The disassembled module comes back intact:
+
+```text
+; ModuleID = 'test.bc'
+source_filename = "test.ll"
+
+define i32 @answer() {
+entry:
+  ret i32 42
+}
 ```
 
 `hbuild` retries a failed command once.  A parallel burst produced a single

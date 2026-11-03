@@ -64,13 +64,17 @@ def main():
 
     run([sys.executable, str(HERE / "make-guest-build.py"), "--overlay",
          str(llvm_build), "llvm-as", str(llvm_src)])
+    run([sys.executable, str(HERE / "make-guest-build.py"), "--overlay",
+         str(llvm_build), "llvm-dis", str(llvm_src)])
 
     (GUEST / "test.ll").write_text(TEST_LL)
     run([str(HERE / "harvey-clang"), str(HERE / "run-astest.c"),
          "-o", str(GUEST / "run-astest.elf")])
 
     bc = GUEST / "test.bc"
+    rt = GUEST / "roundtrip.ll"
     bc.unlink(missing_ok=True)
+    rt.unlink(missing_ok=True)
     print("+", VM, "-m", "3584", "-boot", GUEST / "run-astest.elf", KERNEL)
     proc = subprocess.run(
         [str(VM), "-m", "3584", "-boot", str(GUEST / "run-astest.elf"),
@@ -79,20 +83,31 @@ def main():
     output = proc.stdout + proc.stderr
     for line in output.splitlines():
         if line.strip() and any(w in line for w in
-                                ("== llvm-as", "hbuild:", "error:",
-                                 "panic", "suicide")):
+                                ("== llvm-as", "== llvm-dis", "hbuild:",
+                                 "error:", "panic", "suicide")):
             print("  " + line)
 
     if "== llvm-as build status 0" not in output:
         sys.exit("the guest llvm-as build failed")
+    if "== llvm-as run status 0" not in output:
+        sys.exit("llvm-as failed")
+    if "== llvm-dis build status 0" not in output:
+        sys.exit("the guest llvm-dis build failed")
+    if "== llvm-dis run status 0" not in output:
+        sys.exit("llvm-dis failed")
     if not bc.is_file() or bc.stat().st_size == 0:
         sys.exit("llvm-as produced no bitcode")
     if bc.read_bytes()[:4] != b"BC\xc0\xde":
         sys.exit("test.bc does not start with the bitcode magic")
+    text = rt.read_text()
+    for want in ("define i32 @answer()", "ret i32 42"):
+        if want not in text:
+            sys.exit(f"roundtrip.ll lost {want!r}")
     elf = GUEST / "bin" / "llvm-as"
-    print(f"selfas: {elf.name} ({elf.stat().st_size} bytes) built on Harvey; "
-          f"test.ll -> test.bc ({bc.stat().st_size} bytes, bitcode magic "
-          f"BC c0 de)")
+    diself = GUEST / "bin" / "llvm-dis"
+    print(f"selfas: {elf.name} ({elf.stat().st_size} bytes) and "
+          f"{diself.name} ({diself.stat().st_size} bytes) built on Harvey; "
+          f"test.ll -> test.bc ({bc.stat().st_size} bytes) -> roundtrip.ll")
 
 
 if __name__ == "__main__":
