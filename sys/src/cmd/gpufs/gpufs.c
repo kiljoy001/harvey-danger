@@ -815,6 +815,273 @@ identitymatrix(Gpu *g)
 	      drd(&g->d, JSOFF(1, JsStatus)));
 }
 
+/* Dump the whole GPU control block so it can be compared with Linux. */
+static void
+dumpregs(Gpu *g)
+{
+	int i;
+
+	for(i = 0; i < 0x100; i += 8)
+		print("gpufs: r%03ux %#ux %#ux %#ux %#ux %#ux %#ux %#ux %#ux\n", i,
+		      drd(&g->d, i + 0), drd(&g->d, i + 4), drd(&g->d, i + 8),
+		      drd(&g->d, i + 12), drd(&g->d, i + 16), drd(&g->d, i + 20),
+		      drd(&g->d, i + 24), drd(&g->d, i + 28));
+}
+
+/*
+ * Set the GPU power-manager override bits that the Amlogic quirk applies to
+ * every Mali-G52, then run the NULL job again.
+ */
+static void
+pwrtest(Gpu *g)
+{
+	u32 raw;
+	int k;
+
+	print("gpufs: pwr before key %#ux ovr0 %#ux ovr1 %#ux\n",
+	      drd(&g->d, 0x50), drd(&g->d, 0x54), drd(&g->d, 0x58));
+	if(mmuinit(g) < 0)
+		return;
+	softreset(g);
+	drw(&g->d, 0x50, 0x2968A819);
+	drw(&g->d, 0x58, 0xfff | (0x20 << 16));
+	print("gpufs: pwr after key %#ux ovr0 %#ux ovr1 %#ux\n",
+	      drd(&g->d, 0x50), drd(&g->d, 0x54), drd(&g->d, 0x58));
+	if(gpupower(g) < 0 || mmuprogram(g) < 0)
+		return;
+
+	memset(g->job, 0, 4096);
+	g->job[4] = 1 | (1 << 1) | (1 << 16);
+	drvdmacache(DrvClean, g->jobpa, 4096);
+	gpucacheflush(g);
+
+	drw(&g->d, JobIntClear, 0x70007);
+	drw(&g->d, JobIntMask, 0x70007);
+	drw(&g->d, JSOFF(1, JsHeadLo), (u32)JobVa);
+	drw(&g->d, JSOFF(1, JsHeadHi), (u32)((u64)JobVa >> 32));
+	drw(&g->d, JSOFF(1, JsAffinityLo), 1);
+	drw(&g->d, JSOFF(1, JsAffinityHi), 0);
+	drw(&g->d, JSOFF(1, JsConfig), 0x87300);
+	drw(&g->d, JSOFF(1, JsFlushId), drd(&g->d, GpuLatestFlush));
+	drw(&g->d, JSOFF(1, JsCommand), 1);
+
+	raw = 0;
+	for(k = 0; k < 100; k++){
+		raw = drd(&g->d, JobIntRawstat);
+		if(raw & ((1 << 1) | (1 << 17)))
+			break;
+		sleep(1);
+	}
+	print("gpufs: pwr raw %#ux js %#ux asfault %#ux\n", raw,
+	      drd(&g->d, JSOFF(1, JsStatus)), drd(&g->d, ASOFF(0, 0x1c)));
+	drw(&g->d, JobIntClear, 0x70007);
+}
+
+/*
+ * Same job, but the job and data leaves use AttrIndx 0 (the implementation
+ * defined/non-cacheable attribute) instead of 1 (write-allocate).
+ */
+static void
+nctest(Gpu *g)
+{
+	u32 raw;
+	u64 va;
+	int k;
+
+	if(mmuinit(g) < 0)
+		return;
+	softreset(g);
+	if(gpupower(g) < 0 || mmuprogram(g) < 0)
+		return;
+
+	for(va = JobVa; va <= DataVa; va += 4096){
+		u64 pa = va == JobVa ? g->jobpa : g->datapa;
+		g->pt3[(va >> 12) & 0x1ff] = (pa & ~0xfffULL) | 0x2c1ULL;
+	}
+	drvdmacache(DrvClean, g->l3pa, 4096);
+	if(mmucmd(g, AsCmdFlushMem) < 0 || mmucmd(g, AsCmdUpdate) < 0)
+		print("gpufs: nc mmu update failed\n");
+	print("gpufs: nc l3 %#llux %#llux memattr %#ux\n",
+	      g->pt3[(JobVa >> 12) & 0x1ff], g->pt3[(DataVa >> 12) & 0x1ff],
+	      drd(&g->d, ASOFF(0, AsMemattrLo)));
+
+	memset(g->job, 0, 4096);
+	g->job[4] = 1 | (1 << 1) | (1 << 16);
+	drvdmacache(DrvClean, g->jobpa, 4096);
+	gpucacheflush(g);
+
+	drw(&g->d, JobIntClear, 0x70007);
+	drw(&g->d, JobIntMask, 0x70007);
+	drw(&g->d, JSOFF(1, JsHeadLo), (u32)JobVa);
+	drw(&g->d, JSOFF(1, JsHeadHi), (u32)((u64)JobVa >> 32));
+	drw(&g->d, JSOFF(1, JsAffinityLo), 1);
+	drw(&g->d, JSOFF(1, JsAffinityHi), 0);
+	drw(&g->d, JSOFF(1, JsConfig), 0x87300);
+	drw(&g->d, JSOFF(1, JsFlushId), drd(&g->d, GpuLatestFlush));
+	drw(&g->d, JSOFF(1, JsCommand), 1);
+
+	raw = 0;
+	for(k = 0; k < 100; k++){
+		raw = drd(&g->d, JobIntRawstat);
+		if(raw & ((1 << 1) | (1 << 17)))
+			break;
+		sleep(1);
+	}
+	print("gpufs: nc raw %#ux js %#ux asfault %#ux asaddr %#llux mmuint %#ux\n",
+	      raw, drd(&g->d, JSOFF(1, JsStatus)), drd(&g->d, ASOFF(0, 0x1c)),
+	      ((u64)drd(&g->d, ASOFF(0, 0x24)) << 32) | drd(&g->d, ASOFF(0, 0x20)),
+	      drd(&g->d, MmuIntRawstat));
+	drw(&g->d, JobIntClear, 0x70007);
+}
+
+/*
+ * Submit a NULL job whose page-table entry has been cleared.  A translation
+ * fault proves the job manager fetches the header through our tables; another
+ * DATA_INVALID_FAULT means it never translates the head address at all.
+ */
+static void
+unmaptest(Gpu *g)
+{
+	u32 raw;
+	int k;
+
+	if(mmuinit(g) < 0)
+		return;
+	softreset(g);
+	if(gpupower(g) < 0 || mmuprogram(g) < 0)
+		return;
+
+	/* Drop the leaf for JobVa, keep DataVa mapped. */
+	g->pt3[(JobVa >> 12) & 0x1ff] = 0;
+	drvdmacache(DrvClean, g->l3pa, 4096);
+	if(mmucmd(g, AsCmdFlushMem) < 0)
+		print("gpufs: unmap flush failed\n");
+	print("gpufs: unmap l3 %#llux (cleared)\n",
+	      g->pt3[(JobVa >> 12) & 0x1ff]);
+
+	memset(g->job, 0, 4096);
+	g->job[4] = 1 | (1 << 1) | (1 << 16);
+	drvdmacache(DrvClean, g->jobpa, 4096);
+	gpucacheflush(g);
+
+	drw(&g->d, JobIntClear, 0x70007);
+	drw(&g->d, JobIntMask, 0x70007);
+	drw(&g->d, JSOFF(1, JsHeadLo), (u32)JobVa);
+	drw(&g->d, JSOFF(1, JsHeadHi), (u32)((u64)JobVa >> 32));
+	drw(&g->d, JSOFF(1, JsAffinityLo), 1);
+	drw(&g->d, JSOFF(1, JsAffinityHi), 0);
+	drw(&g->d, JSOFF(1, JsConfig), 0x87300);
+	drw(&g->d, JSOFF(1, JsFlushId), drd(&g->d, GpuLatestFlush));
+	drw(&g->d, JSOFF(1, JsCommand), 1);
+
+	raw = 0;
+	for(k = 0; k < 100; k++){
+		raw = drd(&g->d, JobIntRawstat);
+		if(raw & ((1 << 1) | (1 << 17)))
+			break;
+		sleep(1);
+	}
+	print("gpufs: unmap raw %#ux js %#ux mmuint %#ux mmustat %#ux asfault %#ux asaddr %#llux\n",
+	      raw, drd(&g->d, JSOFF(1, JsStatus)), drd(&g->d, MmuIntRawstat),
+	      drd(&g->d, 0x200c), drd(&g->d, ASOFF(0, 0x1c)),
+	      ((u64)drd(&g->d, ASOFF(0, 0x24)) << 32) | drd(&g->d, ASOFF(0, 0x20)));
+	drw(&g->d, JobIntClear, 0x70007);
+}
+
+/*
+ * Full state dump around one NULL submission.  The GPU writes the exception
+ * status back into the job header on a fault, so reading the header after the
+ * fault says whether the JM ever reached it.
+ */
+static void
+diagtest(Gpu *g, int slot, u32 type, u32 cfg, u32 hdr)
+{
+	u32 raw;
+	int i, a, k;
+
+	if(slot < 0 || slot > 2)
+		slot = 1;
+	if(mmuinit(g) < 0)
+		return;
+
+	/* Soft reset clears JS_STATUS, then power and MMU are reprogrammed. */
+	softreset(g);
+	if(gpupower(g) < 0 || mmuprogram(g) < 0)
+		return;
+
+	print("gpufs: diag jmcfg %#ux jsf %#ux/%#ux/%#ux flush %#ux status %#ux\n",
+	      drd(&g->d, GpuJmConfig), drd(&g->d, 0xc0), drd(&g->d, 0xc4),
+	      drd(&g->d, 0xc8), drd(&g->d, GpuLatestFlush),
+	      drd(&g->d, GpuStatus));
+	print("gpufs: diag jobpa %#llux datapa %#llux pgd %#llux l2 %#llux l3 %#llux\n",
+	      g->jobpa, g->datapa, g->pgd[0], g->pt2[(JobVa >> 21) & 0x1ff],
+	      g->pt3[(JobVa >> 12) & 0x1ff]);
+	print("gpufs: diag as0 transtab %#ux/%#ux memattr %#ux/%#ux transcfg %#ux/%#ux status %#ux\n",
+	      drd(&g->d, ASOFF(0, AsTranstabLo)), drd(&g->d, ASOFF(0, AsTranstabHi)),
+	      drd(&g->d, ASOFF(0, AsMemattrLo)), drd(&g->d, ASOFF(0, AsMemattrHi)),
+	      drd(&g->d, ASOFF(0, AsTranscfgLo)), drd(&g->d, ASOFF(0, AsTranscfgHi)),
+	      drd(&g->d, ASOFF(0, AsStatus)));
+	for(i = 0; i < 3; i++)
+		print("gpufs: diag pre slot %d status %#ux cmdnext %#ux cfg %#ux cfgnext %#ux headnext %#ux/%#ux tail %#ux/%#ux\n",
+		      i, drd(&g->d, JSOFF(i, JsStatus)), drd(&g->d, JSOFF(i, 0x60)),
+		      drd(&g->d, JSOFF(i, 0x18)), drd(&g->d, JSOFF(i, 0x58)),
+		      drd(&g->d, JSOFF(i, 0x40)), drd(&g->d, JSOFF(i, 0x44)),
+		      drd(&g->d, JSOFF(i, 0x08)), drd(&g->d, JSOFF(i, 0x0c)));
+
+	memset(g->job, 0, 4096);
+	g->job[4] = hdr != 0 ? hdr : (1 | (type << 1) | (1 << 16));
+	drvdmacache(DrvClean, g->jobpa, 4096);
+	/* If the clean did not reach RAM, this invalidate drops the only copy
+	 * of the header and the read below returns zeros. */
+	drvdmacache(DrvInval, g->jobpa, 4096);
+	print("gpufs: diag header after clean+inval %#ux %#ux %#ux %#ux %#ux %#ux %#ux %#ux\n",
+	      g->job[0], g->job[1], g->job[2], g->job[3],
+	      g->job[4], g->job[5], g->job[6], g->job[7]);
+	gpucacheflush(g);
+	print("gpufs: diag type %d sent %#ux %#ux %#ux %#ux %#ux %#ux %#ux %#ux\n",
+	      (int)type, g->job[0], g->job[1], g->job[2], g->job[3],
+	      g->job[4], g->job[5], g->job[6], g->job[7]);
+
+	drw(&g->d, JobIntClear, 0x70007);
+	drw(&g->d, JobIntMask, 0x70007);
+	drw(&g->d, JSOFF(slot, JsHeadLo), (u32)JobVa);
+	drw(&g->d, JSOFF(slot, JsHeadHi), (u32)((u64)JobVa >> 32));
+	drw(&g->d, JSOFF(slot, JsAffinityLo), 1);
+	drw(&g->d, JSOFF(slot, JsAffinityHi), 0);
+	drw(&g->d, JSOFF(slot, JsConfig), cfg);
+	drw(&g->d, JSOFF(slot, JsFlushId), drd(&g->d, GpuLatestFlush));
+	drw(&g->d, JSOFF(slot, JsCommand), 1);
+
+	raw = 0;
+	for(k = 0; k < 200; k++){
+		raw = drd(&g->d, JobIntRawstat);
+		if(raw & ((1 << slot) | (1 << (slot + 16))))
+			break;
+		sleep(1);
+	}
+	print("gpufs: diag cfg %#ux slot %d raw %#ux status %#ux cmdnext %#ux cmd %#ux cfg %#ux cfgnext %#ux\n",
+	      cfg, slot, raw, drd(&g->d, JSOFF(slot, JsStatus)),
+	      drd(&g->d, JSOFF(slot, 0x60)), drd(&g->d, JSOFF(slot, 0x20)),
+	      drd(&g->d, JSOFF(slot, 0x18)), drd(&g->d, JSOFF(slot, 0x58)));
+	print("gpufs: diag slot %d head %#ux/%#ux tail %#ux/%#ux headnext %#ux/%#ux\n",
+	      slot, drd(&g->d, JSOFF(slot, 0x00)), drd(&g->d, JSOFF(slot, 0x04)),
+	      drd(&g->d, JSOFF(slot, 0x08)), drd(&g->d, JSOFF(slot, 0x0c)),
+	      drd(&g->d, JSOFF(slot, 0x40)), drd(&g->d, JSOFF(slot, 0x44)));
+	print("gpufs: diag got %#ux %#ux %#ux %#ux %#ux %#ux %#ux %#ux\n",
+	      g->job[0], g->job[1], g->job[2], g->job[3],
+	      g->job[4], g->job[5], g->job[6], g->job[7]);
+	print("gpufs: diag gpuint %#ux stat %#ux fault %#ux addr %#llux mmuint %#ux stat %#ux\n",
+	      drd(&g->d, GpuIntRawstat), drd(&g->d, GpuIntStat),
+	      drd(&g->d, GpuFaultStatus),
+	      ((u64)drd(&g->d, GpuFaultAddrHi) << 32) | drd(&g->d, GpuFaultAddrLo),
+	      drd(&g->d, MmuIntRawstat), drd(&g->d, 0x200c));
+	for(a = 0; a < 8; a++)
+		print("gpufs: diag as %d fault %#ux status %#ux addr %#llux\n", a,
+		      drd(&g->d, ASOFF(a, 0x1c)), drd(&g->d, ASOFF(a, AsStatus)),
+		      ((u64)drd(&g->d, ASOFF(a, 0x24)) << 32) | drd(&g->d, ASOFF(a, 0x20)));
+	drw(&g->d, JobIntClear, (1 << slot) | (1 << (slot + 16)));
+}
+
 /* Two NULL jobs linked by Next: the minimal chain Linux would submit. */
 static void
 chaintest(Gpu *g, u32 cfg)
@@ -1085,6 +1352,90 @@ fswrite(Req *r, void *aux)
 		if(g->powered || pmuon(g) == 0){
 			if(gpupower(g) == 0)
 				identitymatrix(g);
+			r->ofcall.count = r->ifcall.count;
+			respond(r, nil);
+		}else
+			respond(r, g->why);
+		qunlock(&g->lk);
+		return;
+	}
+	if(strcmp(cmd, "dump") == 0){
+		print("gpufs: ctl dump\n");
+		dumpregs(g);
+		r->ofcall.count = r->ifcall.count;
+		respond(r, nil);
+		qunlock(&g->lk);
+		return;
+	}
+	if(strcmp(cmd, "pwr") == 0){
+		print("gpufs: ctl pwr\n");
+		if(g->powered || pmuon(g) == 0){
+			pwrtest(g);
+			r->ofcall.count = r->ifcall.count;
+			respond(r, nil);
+		}else
+			respond(r, g->why);
+		qunlock(&g->lk);
+		return;
+	}
+	if(strcmp(cmd, "nc") == 0){
+		print("gpufs: ctl nc\n");
+		if(g->powered || pmuon(g) == 0){
+			nctest(g);
+			r->ofcall.count = r->ifcall.count;
+			respond(r, nil);
+		}else
+			respond(r, g->why);
+		qunlock(&g->lk);
+		return;
+	}
+	if(strcmp(cmd, "unmap") == 0){
+		print("gpufs: ctl unmap\n");
+		if(g->powered || pmuon(g) == 0){
+			unmaptest(g);
+			r->ofcall.count = r->ifcall.count;
+			respond(r, nil);
+		}else
+			respond(r, g->why);
+		qunlock(&g->lk);
+		return;
+	}
+	if(strncmp(cmd, "diag", 4) == 0){
+		int slot;
+		u32 type, cfg, hdr;
+		char *p;
+
+		slot = 1;
+		type = 1;
+		cfg = 0x87300;
+		hdr = 0;
+		p = cmd;
+		while(*p != 0 && *p != ' ')
+			p++;			/* end of "diag" */
+		if(*p != 0){
+			slot = atoi(p + 1);
+			p++;			/* first digit of slot */
+			while(*p >= '0' && *p <= '9')
+				p++;
+			if(*p == ' '){
+				type = atoi(p + 1);
+				p++;
+				while(*p != 0 && *p != ' ')
+					p++;
+				if(*p == ' '){
+					cfg = strtoul(p + 1, nil, 0);
+					p++;
+					while(*p != 0 && *p != ' ')
+						p++;
+					if(*p == ' ')
+						hdr = strtoul(p + 1, nil, 0);
+				}
+			}
+		}
+		print("gpufs: ctl cmd <%s> slot %d type %d cfg %#ux hdr %#ux\n",
+		      cmd, slot, (int)type, cfg, hdr);
+		if(g->powered || pmuon(g) == 0){
+			diagtest(g, slot, type, cfg, hdr);
 			r->ofcall.count = r->ifcall.count;
 			respond(r, nil);
 		}else

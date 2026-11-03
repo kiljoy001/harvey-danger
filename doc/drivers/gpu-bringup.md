@@ -98,57 +98,109 @@ sys/include/drv.h           drvfindreg, the rest of the kit
 sys/src/cmd/drvman/drvman.c "gpu" -> /boot/gpufs -> /srv/gpu
 ```
 
-## GPU MMU and the first job (work in progress)
+## GPU MMU and the first job
 
-The MMU work has moved on since the identification driver:
+### Which page-table format
 
-- The page tables are **AArch64 4K**, the format the Bifrost vendor driver
-  uses for the job manager: three levels from `start_level 1`, 32 entries
-  in the PGD, leaf PTEs with `AF`, `SH`, `ATTRINDX`, `AP_UNPRIV` and
-  `TYPE_PAGE`. `AS_TRANSCFG` is `ADRMODE_AARCH64_4K`, with `INA_BITS(20)`
-  for the 35-bit VA and the page-table-walk memory attributes.
-- A leaf PTE without `AP_UNPRIV` produced a permission fault at the job
-  header address; adding it made the walk succeed. That is the first
-  evidence that the GPU is actually walking our table.
-- Job submission is implemented for the write-value, null and cache-flush
-  types on the vertex/tiler slot (JS1), with the AS number in `JS_CONFIG`,
-  the start/end cache flushes, and the per-slot completion bits.
+Linux panfrost only uses AArch64 page tables when a GPU carries
+`GPU_QUIRK_FORCE_AARCH64_PGTABLE`. **G52 does not**, so on this board Linux
+runs the **Mali LPAE** format:
 
-The remaining blocker is the job manager itself. Every job type returns
-`JS_STATUS = 0x58` (`DATA_INVALID_FAULT`) with no MMU fault
-(`AS_FAULTSTATUS = 0`).
+```c
+if (pfdev->comp->gpu_quirks & BIT(GPU_QUIRK_FORCE_AARCH64_PGTABLE))
+        fmt = ARM_64_LPAE_S1;
+else
+        fmt = ARM_MALI_LPAE;        /* what G52 gets */
+```
+
+`gpufs` now uses that path. It is a four-level table (`pgd_bits = 0`),
+`AS_TRANSTAB = pgd | READ_INNER | ADRMODE_TABLE` (`pgd | 7`),
+`AS_TRANSCFG = ADRMODE_LEGACY` (0), `AS_MEMATTR = 0x008d0088`, and leaves are
+`pa | 0x2c5`: `TYPE_BLOCK`, `AttrIndx 1` (write-allocate), `SH_OS`,
+`AP[1]` set. That is exactly what `io-pgtable-arm.c` builds for
+`ARM_MALI_LPAE` (Mali uses "block" descriptors at every level and never sets
+`AF`).
+
+The earlier AArch64 experiment is instructive but wrong for this part: the
+vendor's `AS_TRANSTAB_BASE_SHIFT` is 4, so an AArch64 `TRANSTAB` carries the
+table base shifted left by four. `gpufs` wrote it unshifted and the GPU
+never fetched the descriptor. Keep that in mind if AArch64 is revisited.
+
+### The MMU really is in the path
+
+`echo unmap > /srv/gpu/ctl` clears the leaf PTE for the job address and
+submits a NULL job. The result is unambiguous:
+
+```text
+gpufs: unmap raw 0x0 js 0x8 mmuint 0x1        asfault 0x7c1002c3 asaddr 0x10000000
+```
+
+`0x...c3` is `TRANSLATION_FAULT_3`, access type 2 is READ, and the fault
+address is the job VA. So the job manager walks our tables, reads the level-3
+table, and faults on the missing leaf. The head fetch goes through the GPU
+MMU.
+
+### What still fails
+
+With a valid leaf the same job returns `JS_STATUS = 0x58`
+(`DATA_INVALID_FAULT`) and `AS_FAULTSTATUS = 0`, on every combination tried:
+
+| Variable | Values tried |
+| --- | --- |
+| job type | NULL (1), WRITE_VALUE (2), CACHE_FLUSH (3), VERTEX (5), TILER (7), FRAGMENT (9), COMPUTE (4) |
+| slot | JS0, JS1, JS2 (each with a type the slot advertises) |
+| `job_descriptor_size` | 1 (64-bit next) and 0 (32-bit next) |
+| `job_index` | 0, 1, 2, 0xffff |
+| leaf attribute | `AttrIndx 1` (write-allocate) and `AttrIndx 0` (implementation defined) |
+| `JS_CONFIG` | 0x87300, 0x87b00 (chain flag), 0x83300/0x83700 (no flush reduction), 0x87700 (`START_MMU`) |
+| `GPU_PWR_OVERRIDE1` | the Amlogic G52 quirk (`0xfff | 0x20 << 16`, with `PWR_KEY`) |
+
+The descriptor bytes themselves match the vendor's own definition
+(`struct job_descriptor_header` in `mali_kbase_defs.h`) and Mesa's
+`JOB_HEADER` packer field for field, and `AS_FAULTSTATUS` staying zero means
+this is not an MMU fault: the job manager reads the header and rejects it.
 
 ### Comparison with the G52 Linux path
 
-Reading `drivers/gpu/drm/panfrost` against `gpufs` found three real
-divergences, all now corrected:
+Everything outside the descriptor now matches Linux panfrost:
 
 | Item | Linux panfrost, G52 | gpufs |
 | --- | --- | --- |
-| Page table | `HW_FEATURE_AARCH64_MMU`; `mmu_cfg_init_aarch64_4k` | AArch64 4K, three levels, leaf `0xf47` (WB) / `0xe43` (NC) |
-| `AS_TRANSTAB` | PGD physical address | same |
-| `AS_MEMATTR` | `mair_to_memattr`, index 1 = 0x8f | `0x8f4c` (0 NC, 1 WB) |
-| `AS_TRANSCFG` | `PTW_MEMATTR_WB | PTW_RA | ADRMODE_AARCH64_4K | INA_BITS(20)` | `0x42000506` |
+| Page table | `ARM_MALI_LPAE` (no AArch64 quirk on G52) | Mali LPAE |
+| `AS_TRANSTAB` | PGD physical address, `| 7` | same |
+| `AS_MEMATTR` | `0x008d0088` | same |
+| `AS_TRANSCFG` | `ADRMODE_LEGACY` | 0 |
 | AS enable | `FLUSH_MEM`, registers, `UPDATE` | same |
-| `GPU_JM_CONFIG` | `0xf << JM_IDVS_GROUP_SIZE_SHIFT` for G52 | now written |
-| `JS_CONFIG` | AS, thread priority 8, start/end clean+invalidate, flush reduction, job-chain flag; **no `START_MMU`** | now matches; `START_MMU` removed |
-| `JS_FLUSH_ID_NEXT` | latest flush id, with flush reduction | now written |
-| `JOB_INT_MASK` | all slots (`0x70007`) | now matches |
+| `GPU_JM_CONFIG` | `0xf << JM_IDVS_GROUP_SIZE_SHIFT` | same |
+| `JS_CONFIG` | AS, pri 8, start/end clean+invalidate, flush reduction, chain flag; no `START_MMU` | same |
+| `JS_FLUSH_ID_NEXT` | `GPU_LATEST_FLUSH` | same |
+| `JOB_INT_MASK` | all slots (`0x70007`) | same |
 | Slot | no `PANFROST_JD_REQ_FS` -> JS1 | JS1 |
 | Affinity | `shader_present` | 1 |
-| Job header | Mesa `JOB_HEADER` (`Is64b`, type, index, next) | matches the packer |
+| Job header | Mesa `JOB_HEADER` | matches |
 
-`HW_ISSUE_10649`, which the kernel uses to decide `JS_CONFIG_START_MMU`,
-belongs to T600x; G52 does **not** have it. Setting it was a real mistake
-and is removed.
+`HW_ISSUE_10649`, which gates `JS_CONFIG_START_MMU`, is T600x-only; removing
+it was correct.
 
-What remains is not an MMU or register mismatch we can see. The likely
-remaining difference is the **job itself**: Linux normally submits a
-vertex/tiler/fragment chain, and a standalone `NULL` / `WRITE_VALUE` job
-may not be a valid G52 chain. The next real test is a fragment job with a
-compiled shader (the `gpucc` path), or a reference trace from Linux
-panfrost / the vendor kbase of a working chain. The diagnostic path is
-`/srv/gpu/ctl`: `null`, `test`, `matrix` and `identity`.
+The remaining difference has to be something a real chain carries and a
+synthetic job does not. Linux never submits a bare `NULL` or `WRITE_VALUE`
+job on its own: the first job on a slot is a `VERTEX`/`TILER` job with a real
+shader, attribute buffer, tiler context and framebuffer. The next step is
+therefore a real chain (the `gpucc` shaders already compile), not more
+descriptor sweeps.
+
+### Diagnostics
+
+`/srv/gpu/ctl` now has:
+
+- `diag [slot [type [cfg [hdr]]]]` -- soft reset, reprogram, submit one job,
+  and dump the header, `JS_STATUS`, both head/tail pairs, the GPU fault
+  block and every address space.
+- `unmap` -- clear the job leaf and submit; proves the MMU is in the path.
+- `nc` -- same job with the leaves on `AttrIndx 0`.
+- `pwr` -- apply the G52 `GPU_PWR_OVERRIDE1` quirk and retry.
+- `dump` -- the whole 0x000..0x114 GPU control block.
+- `test`, `matrix`, `null`, `chain`, `identity` -- the earlier probes.
 
 ## What is next
 
