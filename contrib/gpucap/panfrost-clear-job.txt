@@ -1,0 +1,211 @@
+Captured on the Orange Pi 3B (RK3566, Mali-G52) by booting the Armbian
+6.18.21 kernel and a Debian arm64 initramfs over TFTP, then running a 64x64
+FBO clear with PAN_MESA_DEBUG=trace.  Mesa 25.0.7, panfrost 1.4.0.
+
+The board reported:
+
+  GL_VERSION  OpenGL ES 3.1 Mesa 25.0.7-2+deb13u1
+  GL_RENDERER Mali-G52 r1 (Panfrost)
+
+and the job below completed (Exception Status 1 == DONE is written by the
+GPU after execution; the submitted field is 0).
+
+---- pandecode.dump.ctx-0.0000 (4472 bytes) ----
+
+Job Header (a009140):
+  Exception Status: 1
+  First Incomplete Task: 0
+  Fault Pointer: 0x0
+  Is 64b: true
+  Type: Fragment
+  Barrier: false
+  Invalidate Cache: false
+  Suppress Prefetch: false
+  Enable Texture Mapper: false
+  Relax Dependency 1: false
+  Relax Dependency 2: false
+  Index: 1
+  Dependency 1: 0
+  Dependency 2: 0
+  Next: 0x0
+
+Parameters:
+  Pre Frame 0: Never
+  Pre Frame 1: Never
+  Post Frame: Never
+  Sample Locations: 0xa000000
+  Frame Shader DCDs: 0x0
+  Width: 64
+  Height: 64
+  Bound Min X: 0
+  Bound Min Y: 0
+  Bound Max X: 63
+  Bound Max Y: 63
+  Sample Count: 1
+  Sample Pattern: Single-sampled
+  Tie-Break Rule: MINUS_180_IN_0_OUT
+  Effective Tile Size: 256
+  X Downsampling Scale: 0
+  Y Downsampling Scale: 0
+  Render Target Count: 1
+  Color Buffer Allocation: 1024
+  S Clear: 0
+  S Write Enable: false
+  S Preload Enable: false
+  S Unload Enable: false
+  Z Internal Format: D24
+  Z Write Enable: false
+  Z Preload Enable: false
+  Z Unload Enable: false
+  Has ZS CRC Extension: true
+  Empty Tile Read Enable: false
+  Empty Tile Write Enable: false
+  CRC Read Enable: false
+  CRC Write Enable: true
+  Z Clear: 0.000000
+  Tiler: 0x0
+
+Sample locations @a000000:
+  (0, 0),
+  (-128, -128), ... (31 entries)
+
+Framebuffer @a009000:
+  Parameters:
+    Pre Frame 0: Never
+    Pre Frame 1: Never
+    Post Frame: Never
+    Sample Locations: 0xa000000
+    Frame Shader DCDs: 0x0
+    Width: 64
+    Height: 64
+    Bound Min X: 0
+    Bound Min Y: 0
+    Bound Max X: 63
+    Bound Max Y: 63
+    Sample Count: 1
+    Sample Pattern: Single-sampled
+    Tie-Break Rule: MINUS_180_IN_0_OUT
+    Effective Tile Size: 256
+    X Downsampling Scale: 0
+    Y Downsampling Scale: 0
+    Render Target Count: 1
+    Color Buffer Allocation: 1024
+    S Clear: 0
+    S Write Enable: false
+    S Preload Enable: false
+    S Unload Enable: false
+    Z Internal Format: D24
+    Z Write Enable: false
+    Z Preload Enable: false
+    Z Unload Enable: false
+    Has ZS CRC Extension: true
+    Empty Tile Read Enable: false
+    Empty Tile Write Enable: false
+    CRC Read Enable: false
+    CRC Write Enable: true
+    Z Clear: 0.000000
+    Tiler: 0x0
+
+ZS CRC Extension:
+  CRC Base: 0xa008100
+  CRC Row Stride: 32
+  ZS Write Format: XXX: INVALID
+  ZS Block Format: No Write
+  ZS MSAA: Single
+  ZS Clean Pixel Write Enable: false
+  CRC Render Target: 0
+  S Write Format: XXX: INVALID
+  S Block Format: No Write
+  S MSAA: Single
+  ZS Writeback Base: 0x0
+  ZS Writeback Row Stride: 0
+  ZS Writeback Surface Stride: 0
+  S Writeback Base: 0x0
+  S Writeback Row Stride: 0
+  S Writeback Surface Stride: 0
+  ZS AFBC Header: 0x0
+  ZS AFBC Row Stride: 0
+  ZS AFBC Body: 0x0
+  CRC Clear Color: 0xc00000ffff0000ff
+
+Color Render Targets @a0090c0:
+  Color Render Target 0:
+    YUV:
+      Swizzle: YUVA
+      Full Range: false
+      Conversion Mode: No Conversion
+      Cr Siting: Co-Sited
+      Unsigned Cr Range: false
+      Plane 0 Base: 0xa004000
+      Plane 1 Base: 0x2000000000004
+      Plane 2 Base: 0xa004100
+      Plane 0 Stride: 0
+      Plane 1 2 Stride: 0
+    AFBC:
+      Header: 0xa004000
+      Row Stride: 4
+      Chunk Size: 0
+      AFBC Split Block Enable: false
+      AFBC Wide Block Enable: false
+      Reverse Issue Order: false
+      YUV Transform Enable: true
+      Body: 0xa004100
+      Body Size: 0
+    Internal Buffer Offset: 0
+    YUV Enable: false
+    Dithered Clear: false
+    Internal Format: R8G8B8A8
+    Write Enable: true
+    Writeback Format: R8G8B8A8
+    Writeback Block Format: AFBC
+    Writeback MSAA: Single
+    sRGB: false
+    Dithering Enable: true
+    Swizzle: 1672 (RGBA)
+    Clean Pixel Write Enable: true
+    RGB:
+      Base: 0xa004100
+      Row Stride: 0
+      Surface Stride: 0
+    Clear:
+      Color 0: 4278190335
+      Color 1: 4278190335
+      Color 2: 4278190335
+      Color 3: 4278190335
+
+Fragment Job Payload:
+  Bound Min X: 0
+  Bound Min Y: 0
+  Bound Max X: 3
+  Bound Max Y: 3
+  Has Tile Enable Map: false
+  Framebuffer: 0xa009003
+  Tile Enable Map: 0x0
+  Tile Enable Map Row Stride: 0
+
+---- end ----
+
+What this tells us
+------------------
+
+* The header is exactly what gpufs builds: Is64b=1, Type=Fragment (9),
+  Index=1, Next=0, dependencies 0.  `Exception Status` is the GPU's
+  writeback of DONE after the job ran.
+* The chain is a **single fragment job on JS0 with Next=0**.  There is no
+  tiler job for a clear: the clear is done by the framebuffer descriptor's
+  per-render-target `Clear` colour (0xFF0000FF here) and `Write Enable`,
+  and the fragment job just walks the tiles.
+* The job payload's bounds are in **tiles**, not pixels: 0..3 for a 64x64
+  image (16x16 tiles), while the FBD's Width/Height/Bound fields are in
+  pixels (0..63).
+* `Framebuffer` is the FBD address with low flags (`0xa009003`), i.e. the
+  same `| 3` shape as gpufs' page-table entries, not a plain pointer.
+* The FBD is 0xc0 bytes of parameters plus the 16-byte colour render target
+  at +0xc0, then the CRC extension.  The fragment job sits 0x140 bytes
+  after the FBD in the same BO.
+
+Consequence for gpufs: the first GPU clear does not need a tiler job or a
+shader.  It needs (a) a fully populated FBD, (b) a fragment job whose
+payload points at it, and (c) both mapped into the address space.  That is
+a much smaller step than the shader chain, and it writes straight into the
+VOP scanout buffer.
