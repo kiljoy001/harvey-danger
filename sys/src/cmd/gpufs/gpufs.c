@@ -128,6 +128,9 @@ enum {
 
 	JobVa		= 0x10000000ULL,
 	DataVa		= 0x10001000ULL,
+	FbVa		= 0x20000000ULL,	/* GPU view of the scanout buffer */
+	TileShift	= 4,			/* 16x16 pixel tiles */
+	FbMaxPages	= 4096,
 };
 
 typedef struct Gpu Gpu;
@@ -153,7 +156,8 @@ struct Gpu {
 	u64	pgdpa, l1pa, l2pa, l3pa;
 	u64	jobpa, datapa;
 	u64	*pgd, *pt1, *pt2, *pt3;
-	u64	*job, *data;
+	u32	*job;			/* job descriptors are u32 words */
+	void	*data;
 	int	jobok;
 	u64	jobval;
 	char	joberr[96];
@@ -893,6 +897,239 @@ pwrtest(Gpu *g)
 }
 
 /*
+ * A GPU clear into the VOP scanout buffer.
+ *
+ * Shape taken from a chain captured from Linux panfrost on this board: one
+ * FRAGMENT job on JS0 with Next=0, and a framebuffer descriptor whose colour
+ * render target carries the clear value.  No tiler job and no shader.
+ */
+typedef struct Fbinfo Fbinfo;
+struct Fbinfo {
+	u64 pa;
+	u64 size;
+	u32 width;
+	u32 height;
+	u32 stride;
+};
+
+static int
+fbinfo(Fbinfo *fi)
+{
+	char buf[128];
+	int fd, n;
+	char *p;
+
+	fi->pa = 0;
+	fi->size = 0;
+	fi->width = fi->height = fi->stride = 0;
+
+	fd = open("/dev/display/phys", OREAD);
+	if(fd < 0)
+		return -1;
+	n = read(fd, buf, sizeof buf - 1);
+	close(fd);
+	if(n <= 0)
+		return -1;
+	buf[n] = 0;
+	fi->pa = strtoull(buf, &p, 0);
+	fi->size = strtoull(p, nil, 0);
+
+	fd = open("/dev/display/ctl", OREAD);
+	if(fd < 0)
+		return -1;
+	n = read(fd, buf, sizeof buf - 1);
+	close(fd);
+	if(n <= 0)
+		return -1;
+	buf[n] = 0;
+	if(strncmp(buf, "vop 1 xrgb8888 ", 15) != 0)
+		return -1;
+	p = buf + 15;
+	fi->width = strtoul(p, &p, 10);
+	fi->height = strtoul(p, &p, 10);
+	fi->stride = strtoul(p, &p, 10);
+	return (fi->pa != 0 && fi->size != 0 && fi->width != 0) ? 0 : -1;
+}
+
+/* Map the scanout buffer at FbVa with 4 KiB leaves under 2 MiB tables. */
+static int
+fbmapgpu(Gpu *g, u64 pa, u64 size)
+{
+	u64 tabs, tabs_pa, off;
+	u32 *l3;
+	int i, j, n, l2;
+
+	n = (size + 2*1024*1024 - 1) / (2*1024*1024);
+	l2 = (FbVa >> 21) & 0x1ff;
+	if(n <= 0 || n > 8 || l2 + n > 512 || size > FbMaxPages*4096)
+		return -1;
+	if(drvdma(&g->d, 4096*n, 4096, &tabs_pa) == nil)
+		return -1;
+	tabs = tabs_pa;
+	for(i = 0; i < n; i++){
+		l3 = (u32 *)((u8 *)drvpa(&g->d, tabs) + i*4096);
+		if(l3 == nil)
+			return -1;
+		memset(l3, 0, 4096);
+		g->pt2[l2 + i] = tablepte(tabs + i*4096);
+		for(j = 0; j < 512; j++){
+			off = (u64)i*2*1024*1024 + (u64)j*4096;
+			if(off >= size)
+				break;
+			l3[j] = pagepte(pa + off);
+		}
+		drvdmacache(DrvClean, tabs + i*4096, 4096);
+	}
+	drvdmacache(DrvClean, g->l2pa, 4096);
+	return 0;
+}
+
+static void
+gpuclr(Gpu *g, u32 color, u32 cw, u32 ch, int tiled)
+{
+	Fbinfo fi;
+	u32 *rt, *job, *pl, raw, cfg;
+	u64 fbdesc;
+	int i, slot = 0, done, err;
+	u32 tw, th;
+
+	if(fbinfo(&fi) < 0){
+		print("gpufs: clear: no scanout buffer\n");
+		return;
+	}
+	if(cw != 0 && ch != 0 && cw <= fi.width && ch <= fi.height){
+		fi.width = cw;
+		fi.height = ch;
+	}
+	print("gpufs: clear pa %#llux size %#llux %ud x %ud stride %ud\n",
+	      fi.pa, fi.size, fi.width, fi.height, fi.stride);
+
+	if(mmuinit(g) < 0)
+		return;
+	softreset(g);
+	if(gpupower(g) < 0 || mmuprogram(g) < 0)
+		return;
+	if(fbmapgpu(g, fi.pa, fi.size) < 0){
+		print("gpufs: clear: cannot map scanout buffer\n");
+		return;
+	}
+	if(mmucmd(g, AsCmdFlushMem) < 0 || mmucmd(g, AsCmdUpdate) < 0){
+		print("gpufs: clear: mmu update failed\n");
+		return;
+	}
+
+	memset(g->job, 0, 4096);
+
+	/* Framebuffer parameters at 0, 64 bytes. */
+	g->job[0] = 0;				/* pre/post frame: never */
+	/* Sample-locations table at +0x200: (0,0) then 31 x (-128,-128),
+	 * the table Mesa passes even for single-sampled rendering. */
+	for(i = 0; i < 32; i++)
+		g->job[(0x200/4) + i] = i == 0 ? 0 : 0x8080;
+	g->job[4] = (u32)(JobVa + 0x200);
+	g->job[5] = (u32)((JobVa + 0x200) >> 32);
+	g->job[8] = (fi.width - 1) | ((fi.height - 1) << 16);
+	g->job[9] = 0;				/* bound min 0,0 */
+	g->job[10] = (fi.width - 1) | ((fi.height - 1) << 16);
+	/* log2(1 sample), single pattern, MINUS_180_IN_0_OUT, log2(tile),
+	 * no downsample, rt_count-1, cbuf_alloc >> 10. */
+	g->job[11] = (0 << 0) | (0 << 3) | (2 << 6) | (8 << 9) |
+		     (0 << 13) | (0 << 16) | (0 << 19) | (0x400 >> 10 << 24);
+	g->job[12] = 0;				/* no ZS, no CRC */
+	g->job[13] = 0;				/* z clear */
+	g->job[14] = 0;				/* tiler */
+	g->job[15] = 0;
+
+	/* Colour render target at 0x80. */
+	rt = g->job + 0x80/4;
+	rt[0] = (1 << 26);			/* internal format R8G8B8A8 */
+	rt[1] = (1 << 0) |			/* write enable */
+		(19 << 3) |			/* writeback R8G8B8A8 */
+		((tiled ? 1 : 2) << 8) |		/* block format */
+		(0 << 12) |			/* single sample */
+		(0 << 14) |			/* sRGB */
+		(1 << 15) |			/* dithering */
+		(1672 << 16) |			/* swizzle RGBA */
+		(1 << 31);			/* clean tile write */
+	/* Writeback buffer at dword 8: base, row stride, surface stride. */
+	rt[8] = (u32)FbVa;
+	rt[9] = (u32)(FbVa >> 32);
+	if(tiled){
+		/* U-interleaved: 16x16 blocks of 4-byte texels. */
+		rt[10] = (fi.width / 16) * 1024;
+		rt[11] = 0;
+	}else{
+		rt[10] = fi.stride;
+		rt[11] = (u32)(fi.stride * fi.height);
+	}
+	/* Clear colour at dword 12. */
+	rt[12] = color;
+	rt[13] = color;
+	rt[14] = color;
+	rt[15] = color;
+
+	/* Fragment job at 0xc0, payload at 0xe0. */
+	job = g->job + 0xc0/4;
+	fbdesc = JobVa | 1;			/* FBD at JobVa; type=1, no CRC */
+	job[4] = 1 | (9 << 1) | (1 << 16);	/* is64b, FRAGMENT, index 1 */
+	job[6] = 0;
+	job[7] = 0;
+	pl = job + 8;
+	tw = (fi.width + (1 << TileShift) - 1) >> TileShift;
+	th = (fi.height + (1 << TileShift) - 1) >> TileShift;
+	pl[0] = 0;				/* min x, min y */
+	pl[1] = (tw - 1) | ((th - 1) << 16);	/* max x, max y, no tile map */
+	pl[2] = (u32)fbdesc;
+	pl[3] = (u32)(fbdesc >> 32);
+	pl[4] = 0;
+	pl[5] = 0;
+	pl[6] = 0;
+
+	drvdmacache(DrvClean, g->jobpa, 4096);
+	gpucacheflush(g);
+
+	/* The job header follows the framebuffer descriptor and render
+	 * target: FBD at +0, render target at +0x80, header at +0xc0. */
+	cfg = 0x87300;
+	drw(&g->d, JobIntClear, 0x70007);
+	drw(&g->d, JobIntMask, 0x70007);
+	drw(&g->d, JSOFF(slot, JsHeadLo), (u32)(JobVa + 0xc0));
+	drw(&g->d, JSOFF(slot, JsHeadHi), (u32)((JobVa + 0xc0) >> 32));
+	drw(&g->d, JSOFF(slot, JsAffinityLo), 1);
+	drw(&g->d, JSOFF(slot, JsAffinityHi), 0);
+	drw(&g->d, JSOFF(slot, JsConfig), cfg);
+	drw(&g->d, JSOFF(slot, JsFlushId), drd(&g->d, GpuLatestFlush));
+	drw(&g->d, JSOFF(slot, JsCommand), 1);
+
+	done = err = 0;
+	raw = 0;
+	for(i = 0; i < 1000; i++){
+		raw = drd(&g->d, JobIntRawstat);
+		if(raw & (1 << slot)){ done = 1; break; }
+		if(raw & (1 << (slot + 16))){ err = 1; break; }
+		sleep(1);
+	}
+	drw(&g->d, JobIntClear, (1 << slot) | (1 << (slot + 16)));
+	print("gpufs: clear tiles %ud x %ud %s raw %#ux js %#ux as %#ux addr %#llux\n",
+	      tw, th, done ? "PASS" : (err ? "FAIL" : "TIMEOUT"), raw,
+	      drd(&g->d, JSOFF(slot, JsStatus)),
+	      drd(&g->d, ASOFF(0, 0x1c)),
+	      ((u64)drd(&g->d, ASOFF(0, 0x24)) << 32) | drd(&g->d, ASOFF(0, 0x20)));
+	if(!done){
+		print("gpufs: fbd");
+		for(i = 0; i < 16; i++)
+			print(" %#ux", g->job[i]);
+		print("\ngpufs: rt");
+		for(i = 0; i < 16; i++)
+			print(" %#ux", rt[i]);
+		print("\ngpufs: job");
+		for(i = 0; i < 16; i++)
+			print(" %#ux", job[i]);
+		print("\n");
+	}
+}
+
+/*
  * Submit a NULL job with an arbitrary leaf attribute word, so the permission
  * and cache encodings can be swept on hardware.
  */
@@ -1477,6 +1714,26 @@ fswrite(Req *r, void *aux)
 		print("gpufs: ctl unmap\n");
 		if(g->powered || pmuon(g) == 0){
 			unmaptest(g);
+			r->ofcall.count = r->ifcall.count;
+			respond(r, nil);
+		}else
+			respond(r, g->why);
+		qunlock(&g->lk);
+		return;
+	}
+	if(strncmp(cmd, "clear", 5) == 0){
+		u32 color = 0xff0000ff, cw = 0, ch = 0, tiled = 0;
+		char *q;
+
+		if(cmd[5] == ' '){
+			color = strtoul(cmd + 6, &q, 0);
+			cw = strtoul(q, &q, 0);
+			ch = strtoul(q, &q, 0);
+			tiled = strtoul(q, &q, 0);
+		}
+		print("gpufs: ctl clear %#ux %ud %ud tiled %ud\n", color, cw, ch, tiled);
+		if(g->powered || pmuon(g) == 0){
+			gpuclr(g, color, cw, ch, tiled);
 			r->ofcall.count = r->ifcall.count;
 			respond(r, nil);
 		}else

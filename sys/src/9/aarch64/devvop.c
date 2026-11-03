@@ -19,6 +19,7 @@ enum {
 	Qctl,
 	Qdata,
 	Qevents,
+	Qphys,
 };
 
 static Dirtab vopdir[] = {
@@ -31,6 +32,7 @@ static Dirtab displaydir[] = {
 	{"ctl", {Qctl, 0, 0}, 0, 0666},
 	{"data", {Qdata, 0, 0}, 0, 0666},
 	{"events", {Qevents, 0, 0}, 0, 0444},
+	{"phys", {Qphys, 0, 0}, 0, 0444},
 };
 
 static QLock voplk;
@@ -139,6 +141,14 @@ vopread(Chan *c, void *a, i32 n, i64 offset)
 		memmove(a, KADDR(vopfb.pa + offset), n);
 		qunlock(&voplk);
 		return n;
+	case Qphys:
+		/* Physical address and size of the scanout buffer, so a
+		 * second engine (the GPU) can render into it. */
+		if(vopfb.size == 0)
+			return 0;
+		snprint(buf, sizeof buf, "0x%llux 0x%llux\n",
+			vopfb.pa, vopfb.size);
+		return readstr(offset, a, n, buf);
 	case Qevents:
 		qlock(&voplk);
 		snprint(buf, sizeof buf, "frame %llu\n", vopfb.seq);

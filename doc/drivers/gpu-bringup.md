@@ -155,6 +155,43 @@ address is the job VA. So the job manager walks our tables, reads the level-3
 table, and faults on the missing leaf. The head fetch goes through the GPU
 MMU.
 
+### The root cause of DATA_INVALID_FAULT
+
+`struct Gpu` declared `u64 *job`, but every job builder indexed it as 32-bit
+dwords.  So the `JOB_HEADER` word 4 (`is64b | type << 1 | index << 16`) was
+written at byte 32 instead of byte 16, and the job manager read a zero type
+field.  That is the whole reason a `NULL` job returned `DATA_INVALID_FAULT`
+with no MMU fault.  With `u32 *job`:
+
+```text
+gpufs: diag cfg 0x87300 slot 0 raw 0x1 status 0x0 ...
+gpufs: diag got 0x0 0x0 0x0 0x0 0x10003 0x0 0x0 0x0
+```
+
+`raw 0x1` is the slot-0 completion bit and `status 0x0` is "no exception".
+NULL jobs now complete on JS0 and JS1.
+
+### GPU clear
+
+`/dev/display/phys` publishes the scanout buffer's physical address and size
+(1920x1080 XRGB8888 at `0x47400000`, 0x7e9000 bytes).  `gpufs` has a `clear`
+command that builds, from the captured Linux chain:
+
+- a framebuffer descriptor at the job page,
+- one `RENDER_TARGET` at +0x80 (writeback base/stride at dwords 8..11, clear
+  colour at 12..15),
+- a `FRAGMENT` job at +0xc0 (`is64b`, type 9, index 1, `Next=0`) whose payload
+  bounds are in 16x16 tiles,
+- 4 KiB leaves for the whole scanout buffer, under 2 MiB tables.
+
+It submits on JS0 and the job manager now reads it: the status moved from
+`DATA_INVALID_FAULT` to **`CONFIG_FAULT` (0x40)**, with no MMU fault.  So the
+header and payload are accepted and the framebuffer descriptor's
+*configuration* is rejected.  The captured FBD differs in three ways: it has
+the ZS/CRC extension present with `CRC Write Enable`, a non-null
+`Sample Locations` table, and it was an AFBC (or, with `noafbc`, U-interleaved)
+target rather than linear.  The next step is to bisect those three.
+
 ### What still fails
 
 With a valid leaf the same job returns `JS_STATUS = 0x58`
