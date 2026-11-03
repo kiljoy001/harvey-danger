@@ -18,20 +18,23 @@ extern int	noneid;
 extern int	nogroupid;
 extern int	admid;
 
+/*
+ * All shifts are done on unsigned 64-bit values.  Writing them against
+ * a 32-bit int (as "PACK64(p, Blksz)" does) is undefined for shift
+ * counts above 31: ucc masks the count modulo 32, so 0x4000 came back
+ * as 0x400000004000 and the arena log failed to replay.
+ */
 #define	UNPACK8(p)	(((uchar*)(p))[0])
-#define	UNPACK16(p)	((((uchar*)(p))[0]<<8)|(((uchar*)(p))[1]))
-#define	UNPACK32(p)	((((uchar*)(p))[0]<<24)|(((uchar*)(p))[1]<<16)|\
-				(((uchar*)(p))[2]<<8)|(((uchar*)(p))[3]))
-#define	UNPACK64(p)	(((u64int)((((uchar*)(p))[0]<<24)|(((uchar*)(p))[1]<<16)|\
-				(((uchar*)(p))[2]<<8)|(((uchar*)(p))[3])))<<32 |\
-			((u64int)((((uchar*)(p))[4]<<24)|(((uchar*)(p))[5]<<16)|\
-				(((uchar*)(p))[6]<<8)|(((uchar*)(p))[7]))))
+#define	UNPACK16(p)	((u16int)(((uchar*)(p))[0]<<8 | ((uchar*)(p))[1]))
+#define	UNPACK32(p)	((u32int)(((uchar*)(p))[0]<<24 | ((uchar*)(p))[1]<<16 | \
+				((uchar*)(p))[2]<<8 | ((uchar*)(p))[3]))
+#define	UNPACK64(p)	(((u64int)UNPACK32(p)<<32) | (u64int)UNPACK32((uchar*)(p)+4))
 
-#define	PACK8(p,v)	do{(p)[0]=(v);}while(0)
-#define	PACK16(p,v)	do{(p)[0]=(v)>>8;(p)[1]=(v);}while(0)
-#define	PACK32(p,v)	do{(p)[0]=(v)>>24;(p)[1]=(v)>>16;(p)[2]=(v)>>8;(p)[3]=(v);}while(0)
-#define	PACK64(p,v)	do{(p)[0]=(v)>>56;(p)[1]=(v)>>48;(p)[2]=(v)>>40;(p)[3]=(v)>>32;\
-			   (p)[4]=(v)>>24;(p)[5]=(v)>>16;(p)[6]=(v)>>8;(p)[7]=(v);}while(0)
+#define	PACK8(p,v)	do{(p)[0]=(uchar)(v);}while(0)
+#define	PACK16(p,v)	do{u16int _v=(u16int)(v);(p)[0]=_v>>8;(p)[1]=_v;}while(0)
+#define	PACK32(p,v)	do{u32int _v=(u32int)(v);(p)[0]=_v>>24;(p)[1]=_v>>16;(p)[2]=_v>>8;(p)[3]=_v;}while(0)
+#define	PACK64(p,v)	do{u64int _v=(u64int)(v);(p)[0]=_v>>56;(p)[1]=_v>>48;(p)[2]=_v>>40;(p)[3]=_v>>32;\
+			   (p)[4]=_v>>24;(p)[5]=_v>>16;(p)[6]=_v>>8;(p)[7]=_v;}while(0)
 
 void*	emalloc(usize, int);
 
