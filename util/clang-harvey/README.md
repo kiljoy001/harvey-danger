@@ -23,7 +23,7 @@ portability shims the Harvey target needs.
 | native `clang` binary | **runs on Harvey and emits object files** |
 | native `ld.lld` | **runs on Harvey and links executables** |
 | self-configuring driver | **`clang++ hello.cpp -o hello` works with no flags** |
-| LLVM cross-built with `LLVM_ENABLE_THREADS=ON` | builds; parallel lld crashes (use `--threads=1`) |
+| LLVM cross-built with `LLVM_ENABLE_THREADS=ON` | **builds and runs: threaded clang + lld link in the guest** |
 
 The end-to-end test is `util/clang-harvey/test-native-toolchain.py`. It
 installs the SDK and then the guest runs exactly:
@@ -162,7 +162,8 @@ Runtime pieces live in `util/libcxx/compat.{h,cpp}` and
 - No dynamic loading (`dlopen` always fails), no sockets in the file system,
   no filesystem statistics, no resource limits, no message catalogues.
 - `getrlimit(RLIMIT_STACK)` reports 8 MiB; nothing enforces it.
-- The pthread layer is a single-threaded shim.
+- Threads are real (`rfork(RFPROC|RFMEM)`); `errno` is still one global and
+  stdio has no locking.
 - `realpath()` does not resolve symbolic links.
 
 ## Target support added for the toolchain

@@ -81,25 +81,33 @@ RTTI **is** available: libc++ is built with `-frtti`, and
 `typeid` work; the reference form of `dynamic_cast` would need exceptions.
 - **Threads** — real.  A pthread is an `rfork(RFPROC|RFMEM)` process, which
   the kernel schedules independently.  `semacquire`/`semrelease` on a word of
-  shared memory provide mutexes and condition variables (Plan 9's futex).
+  shared memory are Plan 9's equivalent of a futex.
 
-  RFMEM shares the data, bss and heap segments but **not** the stack, so the
-  main thread is moved onto a heap-allocated stack before `main` runs, and
-  thread stacks come from the heap too.  The child switches to its stack
-  inside the assembly `rfork` wrapper, before any C code can touch the
-  shared stack.  APEX's allocator is serialised with a semaphore.
+  Three things make it work:
+
+  * RFMEM shares data, bss and heap but **not** the stack, so the main
+    thread is moved onto a heap-allocated stack before `main` runs, and
+    thread stacks are malloc'd.  Anything a thread can name is then shared.
+  * The child leaves the parent's stack inside the assembly `rfork` wrapper,
+    before any C code can touch it.
+  * Each thread gets its own TLS block: `.tdata` is copied, `.tbss` is
+    zeroed, and the thread pointer is published through `#p/<pid>/tls`.
+
+  `mmap` comes from a single arena reserved at startup.  `rfork` copies the
+  segment table, so a mapping created *after* a thread starts would not exist
+  in that thread -- lld hits this, because its thread pool is created before
+  the output file buffer is mapped.  One pre-shared arena keeps every thread
+  looking at the same mappings.  It sits below the kernel's exec area
+  (`NIXCALL`), because `sysexec` builds the argument vector on a temporary
+  stack there.
+
+  LLVM, Clang and lld all build with `LLVM_ENABLE_THREADS=ON`; the resulting
+  toolchain compiles and links in the guest, and lld links correctly with
+  `--threads=2/4/8`.  `std::thread`, `std::mutex`, `std::condition_variable`,
+  `std::async`/`std::future` and `thread_local` all work.
 
   Not yet per-thread: `errno` is still a single global, and stdio has no
   locking.
-
-  The layer is complete enough that LLVM itself cross-builds with
-  `LLVM_ENABLE_THREADS=ON` (pthread_sigmask, CPU affinity, MINSIGSTKSZ are
-  all provided), and `std::thread`, `std::async` and `std::condition_variable`
-  work for ordinary programs.
-
-  One known bug remains: lld built with threads crashes inside
-  `llvm::parallelForEach`.  Linking with `--threads=1` succeeds, so the
-  fault is in our thread pool interaction, not in lld.
 - **std::filesystem** — supported.  libc++'s own sources are patched to call
   `__stat_ap`/`__fstat` directly (`apply-llvm-patches.py`), because defining
   real `stat`/`fstat` symbols would capture Plan 9's three-argument `stat`
@@ -127,17 +135,9 @@ RTTI **is** available: libc++ is built with `-frtti`, and
 
 ## Next rungs
 
-1. Per-thread `errno` and locking around stdio.
+1. Per-thread `errno` and locking around stdio.  Both change the ABI of every
+   object that touches them, so they need a full rebuild of the library and
+   of anything compiled against it.
 2. Floating-point `charconv`.
 3. `std::exception_ptr`/`std::nested_exception` round-trip tests, and
    `-fno-exceptions` builds of the library for size.
-
-
-1. `pthread` / `std::thread` / `mutex` / `condition_variable`.
-2. Real `libc++abi` + `libunwind`, then enable `-fexceptions` and `-frtti`.
-3. `iostream`/locale, `charconv`, and `std::filesystem`.
-4. Boost.Filesystem/Thread/ProgramOptions, then LevelDB.
-5. Emercoin's configure/build, once the dependency ladder is real.
-
-The compiler is still the **cross** path: `ucc` drives host `clang++` with the
-APEX sysroot. A native C++ compiler on Harvey is a separate project.
