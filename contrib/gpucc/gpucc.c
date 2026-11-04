@@ -4,6 +4,7 @@
 #include "panfrost/compiler/bifrost/bifrost_compile.h"
 #include "panfrost/compiler/pan_compiler.h"
 #include "panfrost/lib/pan_shader.h"
+#include "panfrost/compiler/bifrost/bifrost/disassemble.h"
 #include "util/u_dynarray.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -72,7 +73,7 @@ dump(const char *name, nir_shader *nir, struct pan_varying_layout *layout)
    inputs.gpu_id = 0x74021000ull;      /* G52, raw GPU_ID */
    inputs.gpu_variant = 0;
    inputs.varying_layout = layout;
-   inputs.no_idvs = (nir->info.stage == MESA_SHADER_VERTEX);
+   inputs.no_idvs = false;
 
    struct util_dynarray bin;
    util_dynarray_init(&bin, nir);
@@ -90,6 +91,9 @@ dump(const char *name, nir_shader *nir, struct pan_varying_layout *layout)
           name, bin.size, (unsigned)info.stage,
           (unsigned long long)info.tls_size,
           (unsigned long long)info.outputs_written);
+   printf("--- %s ---\n", name);
+   disassemble_bifrost(stdout, bin.data, bin.size, false);
+   printf("--- end %s ---\n", name);
 
    dump_rsd(name, &info, 0xDEADB000ull);
 }
@@ -101,10 +105,14 @@ main(void)
    nir_builder fb = nir_builder_init_simple_shader(MESA_SHADER_FRAGMENT,
                                                    &bifrost_nir_options_v6,
                                                    "gpucc-fs");
-   nir_store_output(&fb, nir_imm_vec4(&fb, 1.0f, 0.0f, 0.0f, 1.0f),
+   /* The Bifrost blend consumes the colour as two fp16 channels per
+    * register (Mesa's capture ends with r0 = 0x00003c00, r1 = 0x3c000000
+    * for opaque red).  An fp32 store feeds the blend halves of two
+    * registers' worth of garbage instead. */
+   nir_store_output(&fb, nir_imm_vec4_16(&fb, 0.25f, 0.5f, 0.75f, 1.0f),
                     nir_imm_int(&fb, 0),
                     .base = 0, .range = 1, .write_mask = 0xf,
-                    .src_type = nir_type_float32,
+                    .src_type = nir_type_float16,
                     .io_semantics.location = FRAG_RESULT_COLOR,
                     .io_semantics.num_slots = 1);
    fb.shader->info.outputs_written |= 1ull << FRAG_RESULT_COLOR;
@@ -119,7 +127,15 @@ main(void)
                                  .base = 0,
                                  .io_semantics.location = VERT_ATTRIB_GENERIC0,
                                  .io_semantics.num_slots = 1);
-   nir_store_output(&vb, pos, nir_imm_int(&vb, 0),
+   /* The tiler path wants the position already in framebuffer pixels;
+    * Mesa does this with uniforms, we bake it for the target size. */
+   nir_def *sx = nir_imm_float(&vb, 32.0f);
+   nir_def *half = nir_imm_float(&vb, 0.5f);
+   nir_def *px = nir_fadd(&vb, nir_fmul(&vb, nir_channel(&vb, pos, 0), sx), sx);
+   nir_def *py = nir_fadd(&vb, nir_fmul(&vb, nir_channel(&vb, pos, 1), sx), sx);
+   nir_def *pz = nir_fadd(&vb, nir_fmul(&vb, nir_channel(&vb, pos, 2), half), half);
+   nir_def *out = nir_vec4(&vb, px, py, pz, nir_channel(&vb, pos, 3));
+   nir_store_output(&vb, out, nir_imm_int(&vb, 0),
                     .base = 0, .range = 1, .write_mask = 0xf,
                     .src_type = nir_type_float32,
                     .io_semantics.location = VARYING_SLOT_POS,

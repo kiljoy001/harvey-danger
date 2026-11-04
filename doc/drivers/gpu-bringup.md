@@ -386,7 +386,44 @@ own *vendor* image for this board still ships mainline panfrost and no
 `libmali`; Orange Pi's official images carry it but are only distributed
 through file-sharing links.
 
-## What is next
+## Our own shaders and descriptors
+
+The `draw` replay now runs with none of Mesa's shader code or shader
+descriptors:
+
+```text
+echo 'draw 0' > /mnt/g/ctl
+gpufs: draw tiler PASS raw 0x2 js 0x0(ok) as 0x0 addr 0x0
+gpufs: draw frag  PASS raw 0x1 js 0x0(ok) as 0x0 addr 0x0
+gpufs: draw pixel 0xffbf8040 0xffbf8040 (row 1 0xffbf8040, row 63 0xffbf8040)
+```
+
+`0xffbf8040` is `(0.25, 0.5, 0.75, 1.0)` written by `gpucc`'s fragment
+shader, over a green clear, at every corner of the 64x64 target.  `draw 5`
+keeps Mesa's chain as the control and renders its red.
+
+Three shader-ABI facts were needed, none of them register-level:
+
+1. **The blend takes packed fp16.**  Mesa's fragment ends with
+   `r0 = 0x00003c00`, `r1 = 0x3c000000` for opaque red -- two fp16 channels
+   per register.  An fp32 store feeds the blend halves of two registers of
+   garbage and nothing lands.  `nir_imm_vec4_16` plus
+   `src_type = nir_type_float16` fixes it.
+2. **`no_idvs` must be false for the tiler path.**  With it set, the vertex
+   ends in `ST_CVT ... @r3` (a register) instead of
+   `ST_CVT.v4 t1, r58, r59, 0x0105e000, @r0` -- the preloaded position
+   address plus the compact varying offset.  With it clear, gpucc emits the
+   same instruction as Mesa, immediate included.
+3. **The tiler wants pixels, not NDC.**  Mesa applies the viewport
+   transform in the vertex shader with uniforms; we bake it (`x*32+32`,
+   `y*32+32`, `z*0.5+0.5` for a 64x64 target).  Without it the triangle
+   collapses to a single pixel.
+
+What is still Mesa's in mode 0 is the *layout* around the shaders: the
+attribute buffer and its descriptors, the varying buffer, the two draw
+descriptors, the tiler context and the heap.  Those come next.
+
+
 
 1. **A real submit interface.**  `clear` is a debug verb.  The display
    service needs a buffered submission path: a shared surface, a job that
