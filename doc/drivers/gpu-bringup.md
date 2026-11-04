@@ -432,8 +432,20 @@ gpufs: draw tiler PASS  gpufs: draw frag PASS
 gpufs: peek 0 n 16: 0xffbf8040 0xffbf8040 0xffbf8040 0xffbf8040
 ```
 
-The 64x64 patch sits at the top-left; the rest of the frame is still
-whatever the CPU compositor put there.
+The 64x64 patch sits at the top-left.  `draw 7` is the full frame: gpucc
+emits a second vertex variant whose baked viewport transform is 960/540
+instead of 32/32, and the descriptor patches set the FBD, tiler context,
+viewport scissor and fragment tile range to 1920x1080.
+
+```text
+gpufs: draw target scanout 0x20000000 stride 7680 full
+gpufs: peek 0        : 0xffbf8040 ...
+gpufs: peek 2073600  : 0xffbf8040 ...
+gpufs: peek 8285696  : 0xffbf8040 ...
+```
+
+First pixels, mid-frame and last pixel are all our fragment shader's
+colour, so the geometry, tiling and shading cover the whole display.
 
 
 

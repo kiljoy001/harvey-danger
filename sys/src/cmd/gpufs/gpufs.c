@@ -1089,19 +1089,29 @@ gpudraw(Gpu *g, int mode)
 	 * 3 our vertex descriptor + Mesa's vertex blob,
 	 * 4 our vertex blob + Mesa's vertex descriptor.
 	 * 6 is 0 with the render target pointed at the scanout buffer. */
-	ours_frag = (mode == 0 || mode == 1 || mode == 6);
-	ours_vblob = (mode == 0 || mode == 2 || mode == 4 || mode == 6);
-	ours_vrsd = (mode == 0 || mode == 2 || mode == 3 || mode == 6);
+	ours_frag = (mode == 0 || mode == 1 || mode == 6 || mode == 7);
+	ours_vblob = (mode == 0 || mode == 2 || mode == 4 || mode == 6 || mode == 7);
+	ours_vrsd = (mode == 0 || mode == 2 || mode == 3 || mode == 6 || mode == 7);
 	if(ours_frag){
 		memmove(pool + 0x3100, shader_frag_bin, sizeof shader_frag_bin);
 		memmove(pool + 0x9240, shader_frag_rsd, sizeof shader_frag_rsd);
 		*(u32 *)(pool + 0x9240) = 0xa003100;
 	}
 	if(ours_vblob){
-		memmove(pool + 0x3000, shader_vert_bin, sizeof shader_vert_bin);
+		if(mode == 7)
+			memmove(pool + 0x3000, shader_vert1920_bin,
+			        sizeof shader_vert1920_bin);
+		else
+			memmove(pool + 0x3000, shader_vert_bin,
+			        sizeof shader_vert_bin);
 	}
 	if(ours_vrsd){
-		memmove(pool + 0x2000, shader_vert_rsd, sizeof shader_vert_rsd);
+		if(mode == 7)
+			memmove(pool + 0x2000, shader_vert1920_rsd,
+			        sizeof shader_vert1920_rsd);
+		else
+			memmove(pool + 0x2000, shader_vert_rsd,
+			        sizeof shader_vert_rsd);
 		*(u32 *)(pool + 0x2000) = 0xa003000;
 	}
 	print("gpufs: draw mode %d (ours: frag %d vblob %d vrsd %d)\n",
@@ -1146,7 +1156,7 @@ gpudraw(Gpu *g, int mode)
 		print("gpufs: draw: mmu update failed\n");
 		return;
 	}
-	if(mode == 6){
+	if(mode == 6 || mode == 7){
 		Fbinfo fi;
 		if(fbinfo(&fi) < 0){
 			print("gpufs: draw: no scanout buffer\n");
@@ -1160,8 +1170,16 @@ gpudraw(Gpu *g, int mode)
 		d[0xA0/4] = (u32)FbVa;
 		d[0xA4/4] = 0;
 		d[0xA8/4] = (u32)fi.stride;
-		print("gpufs: draw target scanout %#llux stride %ud\n",
-		      FbVa, fi.stride);
+		if(mode == 7){
+			u32 wh = 1919 | (1079 << 16);
+			d[8] = wh;			/* FBD width/height */
+			d[10] = wh;			/* bound max */
+			d[0x4CC/4] = wh;		/* tiler context fb size */
+			d[0x5A0/4 + 1] = 119 | (67 << 16);	/* tile max */
+			d[0x13C/4] = wh;		/* viewport scissor max */
+		}
+		print("gpufs: draw target scanout %#llux stride %ud %s\n",
+		      FbVa, fi.stride, mode == 7 ? "full" : "64x64");
 	}
 	drvdmacache(DrvClean, poolpa, 0x1a000);
 	drvdmacache(DrvClean, g->heappa, Heapsize);

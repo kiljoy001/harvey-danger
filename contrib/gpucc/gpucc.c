@@ -98,6 +98,37 @@ dump(const char *name, nir_shader *nir, struct pan_varying_layout *layout)
    dump_rsd(name, &info, 0xDEADB000ull);
 }
 
+static void
+emit_vertex(const char *name, float sx, float sy)
+{
+   nir_builder vb = nir_builder_init_simple_shader(MESA_SHADER_VERTEX,
+                                                   &bifrost_nir_options_v6,
+                                                   "gpucc-vs");
+   nir_def *pos = nir_load_input(&vb, 4, 32, nir_imm_int(&vb, 0),
+                                 .base = 0,
+                                 .io_semantics.location = VERT_ATTRIB_GENERIC0,
+                                 .io_semantics.num_slots = 1);
+   nir_def *xscale = nir_imm_float(&vb, sx);
+   nir_def *yscale = nir_imm_float(&vb, sy);
+   nir_def *half = nir_imm_float(&vb, 0.5f);
+   nir_def *px = nir_fadd(&vb, nir_fmul(&vb, nir_channel(&vb, pos, 0), xscale), xscale);
+   nir_def *py = nir_fadd(&vb, nir_fmul(&vb, nir_channel(&vb, pos, 1), yscale), yscale);
+   nir_def *pz = nir_fadd(&vb, nir_fmul(&vb, nir_channel(&vb, pos, 2), half), half);
+   nir_def *out = nir_vec4(&vb, px, py, pz, nir_channel(&vb, pos, 3));
+   nir_store_output(&vb, out, nir_imm_int(&vb, 0),
+                    .base = 0, .range = 1, .write_mask = 0xf,
+                    .src_type = nir_type_float32,
+                    .io_semantics.location = VARYING_SLOT_POS,
+                    .io_semantics.num_slots = 1);
+   vb.shader->info.outputs_written |= 1ull << VARYING_SLOT_POS;
+   vb.shader->info.inputs_read |= 1ull << VERT_ATTRIB_GENERIC0;
+   nir_validate_shader(vb.shader, name);
+   struct pan_varying_layout layout = {0};
+   pan_varying_collect_formats(&layout, vb.shader, 0x74021000ull, true, false);
+   pan_build_varying_layout_compact(&layout, vb.shader, 0x74021000ull);
+   dump(name, vb.shader, &layout);
+}
+
 int
 main(void)
 {
@@ -119,36 +150,11 @@ main(void)
    nir_validate_shader(fb.shader, "gpucc-fs");
    dump("frag", fb.shader, NULL);
 
-   /* Vertex: the full-screen triangle (-1,-1) (3,-1) (-1,3). */
-   nir_builder vb = nir_builder_init_simple_shader(MESA_SHADER_VERTEX,
-                                                   &bifrost_nir_options_v6,
-                                                   "gpucc-vs");
-   nir_def *pos = nir_load_input(&vb, 4, 32, nir_imm_int(&vb, 0),
-                                 .base = 0,
-                                 .io_semantics.location = VERT_ATTRIB_GENERIC0,
-                                 .io_semantics.num_slots = 1);
-   /* The tiler path wants the position already in framebuffer pixels;
-    * Mesa does this with uniforms, we bake it for the target size. */
-   nir_def *sx = nir_imm_float(&vb, 32.0f);
-   nir_def *half = nir_imm_float(&vb, 0.5f);
-   nir_def *px = nir_fadd(&vb, nir_fmul(&vb, nir_channel(&vb, pos, 0), sx), sx);
-   nir_def *py = nir_fadd(&vb, nir_fmul(&vb, nir_channel(&vb, pos, 1), sx), sx);
-   nir_def *pz = nir_fadd(&vb, nir_fmul(&vb, nir_channel(&vb, pos, 2), half), half);
-   nir_def *out = nir_vec4(&vb, px, py, pz, nir_channel(&vb, pos, 3));
-   nir_store_output(&vb, out, nir_imm_int(&vb, 0),
-                    .base = 0, .range = 1, .write_mask = 0xf,
-                    .src_type = nir_type_float32,
-                    .io_semantics.location = VARYING_SLOT_POS,
-                    .io_semantics.num_slots = 1);
-   vb.shader->info.outputs_written |= 1ull << VARYING_SLOT_POS;
-   /* The compiler derives attribute_count from inputs_read, which
-    * nir_load_input does not set on its own. */
-   vb.shader->info.inputs_read |= 1ull << VERT_ATTRIB_GENERIC0;
-   nir_validate_shader(vb.shader, "gpucc-vs");
-   struct pan_varying_layout layout = {0};
-   pan_varying_collect_formats(&layout, vb.shader, 0x74021000ull, true, false);
-   pan_build_varying_layout_compact(&layout, vb.shader, 0x74021000ull);
-   dump("vert", vb.shader, &layout);
+   /* Full-screen triangle (-1,-1) (3,-1) (-1,3), twice: once for the 64x64
+    * test target and once for the 1920x1080 scanout.  The viewport
+    * transform is baked, so the size is a compile-time constant. */
+   emit_vertex("vert", 32.0f, 32.0f);
+   emit_vertex("vert1920", 960.0f, 540.0f);
 
    return 0;
 }
