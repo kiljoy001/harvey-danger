@@ -30,9 +30,11 @@ LLVM_PROJECT = Path(os.environ.get("LLVM_PROJECT",
 # soft-float quad routines.  There is no prebuilt compiler-rt for
 # aarch64-none-elf on this host, so build the handful of builtins the
 # runtime needs from LLVM's own source.
-BUILTINS = ["addtf3.c", "subtf3.c", "multf3.c", "comparetf2.c",
-            "extenddftf2.c", "fixtfsi.c", "fixunstfsi.c", "floatsitf.c",
-            "floatunsitf.c", "aarch64/fp_mode.c"]
+BUILTINS = ["addtf3.c", "subtf3.c", "multf3.c", "divtf3.c",
+            "comparetf2.c", "extenddftf2.c", "extendsftf2.c",
+            "trunctfdf2.c", "trunctfsf2.c", "fixtfsi.c",
+            "fixunstfsi.c", "floatsitf.c", "floatunsitf.c",
+            "aarch64/fp_mode.c"]
 
 HELLO = r"""
 #include <stdio.h>
