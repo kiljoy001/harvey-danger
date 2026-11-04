@@ -39,6 +39,29 @@ fault diagnostics write to the UART selected by `/chosen/stdout-path` before use
 available; this temporary bootstrap console is not a serial service.
 It does **not** yet offer an interactive shell.
 
+### APEX on ARM64
+
+`util/arm64/build_apex.py` cross-builds the APEX startup layer for ARM64:
+crt0, `__libc_start_main`, the mmap arena and the raw syscall wrappers,
+linked against the ARM64 Plan 9 libc.  `util/arm64/test_apex_boot.py`
+substitutes the resulting binary for the init image in the generated
+userland header and boots it in QEMU virt, so the first EL0 program the
+kernel execs is the APEX one:
+
+```text
+apex-hello argc=1 tls=11
+TLS-OK
+```
+
+That exercises the entry convention (argc/argv/Tos in registers), the heap
+stack switch, the mapping arena, and variant-I TLS end to end: the startup
+builds the block, publishes it through `#p/<pid>/tls`, the kernel loads
+`TPIDR_EL0`, and the program reads its initialised `__thread` variable.
+
+Not ported yet: APEX's stdio and signal layers (the program uses the Plan 9
+libc's `print`/`exits`, `sprintf` is routed through `vsnprint`, and
+`_envsetup` is skipped so the environment starts empty).
+
 ```sh
 python3 util/arm64/test_virt.py
 python3 util/arm64/test_fdt.py
