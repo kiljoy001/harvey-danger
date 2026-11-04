@@ -23,84 +23,57 @@ APEX = ROOT / "apex"
 LIBC = ROOT / "build/arm64-libc/libc.a"
 CC = os.environ.get("ARM64_CC") or shutil.which("clang-23") or "clang"
 LD = os.environ.get("ARM64_LD", "ld.lld")
+LLVM_PROJECT = Path(os.environ.get("LLVM_PROJECT",
+                                  ROOT.parent / "llvm-project"))
+
+# AArch64 long double is binary128, so the compiler emits calls to the
+# soft-float quad routines.  There is no prebuilt compiler-rt for
+# aarch64-none-elf on this host, so build the handful of builtins the
+# runtime needs from LLVM's own source.
+BUILTINS = ["addtf3.c", "subtf3.c", "multf3.c", "comparetf2.c",
+            "extenddftf2.c", "fixtfsi.c", "fixunstfsi.c", "floatsitf.c",
+            "floatunsitf.c", "aarch64/fp_mode.c"]
 
 HELLO = r"""
-/* Plan 9 libc entry points, declared directly to avoid mixing the APEX and
- * Plan 9 header trees in one translation unit. */
-extern long write(int, const void *, unsigned long);
-extern int open(char *, int);
-extern void exits(char *);
-
-static void
-put(char *s)
-{
-	unsigned long n;
-
-	for(n = 0; s[n] != 0; n++)
-		;
-	write(1, s, n);
-}
-
-static void
-putnum(long v)
-{
-	char b[24];
-	int i;
-
-	i = 0;
-	if(v < 0){
-		b[i++] = '-';
-		v = -v;
-	}
-	{
-		char t[24];
-		int j = 0;
-		do {
-			t[j++] = '0' + v % 10;
-			v /= 10;
-		} while(v != 0);
-		while(j > 0)
-			b[i++] = t[--j];
-	}
-	b[i] = 0;
-	put(b);
-}
+#include <stdio.h>
+#include <stdlib.h>
+#include <fcntl.h>
+#include <unistd.h>
 
 __thread long tls_counter = 11;
 
-void
+int
 main(int argc, char **argv)
 {
 	/* The kernel starts the first process with no open descriptors. */
 	open("#c/cons", 0);
 	open("#c/cons", 1);
 	open("#c/cons", 1);
-	put("apex-hello argc=");
-	putnum(argc);
-	put(" tls=");
-	putnum(tls_counter);
-	put("\n");
+	printf("apex-hello argc=%d tls=%ld env=%s\n", argc, tls_counter,
+	    getenv("PATH") == 0 ? "(none)" : "set");
 	if(tls_counter == 11)
-		put("TLS-OK\n");
-	exits(0);
+		printf("TLS-OK\n");
+	return 0;
 }
 """
 
 
-# nan.c pokes at the x86 FPdbleword union, and malloc.c would collide with
-# the Plan 9 libc allocator (which also defines mallocz, so libc.a always
-# pulls it in); the APEX allocator's heap lock comes with the thread port.
-# Everything else in the plan9 directory goes into the archive, so the
-# linker pulls exactly the members something references.
-SKIP = {"nan.c", "malloc.c"}
+# The same set of directories the amd64 Makefile builds.  nan.c pokes at
+# the x86 FPdbleword union and malloc.c shadows the Plan 9 allocator, so
+# both are handled separately.
+DIRS = ["bsd", "crt", "dirent", "gen", "locale", "math", "multibyte",
+        "plan9", "posix", "stdio", "stdlib", "string"]
+SKIP = {"nan.c"}
 
 
 def sources() -> list[Path]:
-    plan9 = APEX / "src/ap/plan9"
-    return [APEX / "src/ap/crt/crt0.c",
-            *sorted(p for p in plan9.glob("*.c") if p.name not in SKIP),
-            APEX / "src/ap/aarch64/startup.c",
-            APEX / "src/ap/aarch64/notetramp.c"]
+    out = []
+    for name in DIRS:
+        for p in sorted((APEX / "src/ap" / name).glob("*.c")):
+            if p.name not in SKIP:
+                out.append(p)
+    out.extend(sorted((APEX / "src/ap/aarch64").glob("*.c")))
+    return out
 
 
 def flags() -> list[str]:
@@ -108,7 +81,7 @@ def flags() -> list[str]:
         "--target=aarch64-none-elf", "-ffreestanding", "-fno-builtin",
         "-fno-stack-protector", "-mstrict-align", "-fcommon", "-nostdlibinc",
         "-O2", "-g", "-D_SUSV2_SOURCE", "-D_POSIX_SOURCE",
-        "-D_LIMITS_EXTENSION", "-DHARVEY", "-D_PLAN9_SOURCE",
+        "-D_LIMITS_EXTENSION", "-D_GNU_SOURCE", "-DHARVEY", "-D_PLAN9_SOURCE",
         "-D_BSD_EXTENSION", "-DIEEE_8087",
         "-I", str(APEX / "include"),
         "-I", str(APEX / "aarch64/include"),
@@ -174,12 +147,22 @@ def main() -> None:
     hello = OUT / "obj/hello.o"
     run([CC, *flags(), "-c", str(OUT / "hello.c"), "-o", str(hello)])
 
+    builtins = OUT / "libbuiltins.a"
+    rtobjs = []
+    builtins_src = LLVM_PROJECT / "compiler-rt/lib/builtins"
+    for name in BUILTINS:
+        obj = OUT / "obj" / ("rt-" + name.replace("/", "-").replace(".c", ".o"))
+        run([CC, *flags(), "-I", str(builtins_src), "-c",
+             str(builtins_src / name), "-o", str(obj)])
+        rtobjs.append(str(obj))
+    run(["llvm-ar", "rcs", str(builtins), *rtobjs])
+
     elf = OUT / "hello.elf"
     # The kernel's ELF loader maps each PT_LOAD at p_align and rejects
     # overlaps, so keep segment alignment at the 4 KiB page size.
     run([LD, "-z", "max-page-size=4096", "-T", str(OUT / "hello.ld"),
          "-e", "_start", "-u", "_start",
-         str(hello), str(libap), str(LIBC), "-o", str(elf)])
+         str(hello), str(libap), str(LIBC), str(builtins), "-o", str(elf)])
     print(f"ARM64 APEX link PASS: {elf} ({elf.stat().st_size} bytes)")
 
 

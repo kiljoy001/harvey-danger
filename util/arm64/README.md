@@ -58,9 +58,10 @@ stack switch, the mapping arena, and variant-I TLS end to end: the startup
 builds the block, publishes it through `#p/<pid>/tls`, the kernel loads
 `TPIDR_EL0`, and the program reads its initialised `__thread` variable.
 
-Not ported yet: APEX's stdio and signal layers (the program uses the Plan 9
-libc's `print`/`exits`, `sprintf` is routed through `vsnprint`, and
-`_envsetup` is skipped so the environment starts empty).
+The whole layer builds: stdio (including quad-precision `%Lf`, with the
+soft-float routines compiled from compiler-rt's builtins), signal, locale,
+math, regex and APEX's locked allocator, which replaces the Plan 9 libc
+one.  `_envsetup` runs, so the environment is populated from `#e`.
 
 ```sh
 python3 util/arm64/test_virt.py
