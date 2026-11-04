@@ -960,6 +960,38 @@ fbinfo(Fbinfo *fi)
 	return (fi->pa != 0 && fi->size != 0 && fi->width != 0) ? 0 : -1;
 }
 
+/* JS_STATUS names, from the kernel's exception table (confirmed in the
+ * shipped panfrost.ko) and the vendor JS_STATUS macros. */
+static char *
+jsname(u32 st)
+{
+	switch(st & 0xff){
+	case 0x00: return "ok";
+	case 0x02: return "interrupted";
+	case 0x03: return "stopped";
+	case 0x04: return "terminated";
+	case 0x40: return "CONFIG_FAULT";
+	case 0x41: return "POWER_FAULT";
+	case 0x42: return "READ_FAULT";
+	case 0x43: return "WRITE_FAULT";
+	case 0x44: return "AFFINITY_FAULT";
+	case 0x48: return "BUS_FAULT";
+	case 0x50: return "INSTR_INVALID_PC";
+	case 0x51: return "INSTR_INVALID_ENC";
+	case 0x52: return "INSTR_TYPE_MISMATCH";
+	case 0x53: return "INSTR_OPERAND_FAULT";
+	case 0x54: return "INSTR_TLS_FAULT";
+	case 0x55: return "INSTR_BARRIER_FAULT";
+	case 0x56: return "INSTR_ALIGN_FAULT";
+	case 0x58: return "DATA_INVALID_FAULT";
+	case 0x59: return "TILE_RANGE_FAULT";
+	case 0x5a: return "ADDR_RANGE_FAULT";
+	case 0x60: return "OUT_OF_MEMORY";
+	case 0x7f: return "UNKNOWN";
+	default: return "?";
+	}
+}
+
 static int mapgpu(Gpu *g, u64 va, u64 pa, u64 size);
 
 /* Submit a job header that is already in GPU memory. */
@@ -1090,14 +1122,14 @@ gpudraw(Gpu *g)
 	drvdmacache(DrvClean, g->heappa, Heapsize);
 
 	r = submitat(g, 1, 0xa009300, 0x87b00, &raw, &stat);
-	print("gpufs: draw tiler %s raw %#ux js %#ux as %#ux addr %#llux\n",
-	      r == 0 ? "PASS" : (r == -1 ? "FAIL" : "TIMEOUT"), raw, stat,
+	print("gpufs: draw tiler %s raw %#ux js %#ux(%s) as %#ux addr %#llux\n",
+	      r == 0 ? "PASS" : (r == -1 ? "FAIL" : "TIMEOUT"), raw, stat, jsname(stat),
 	      drd(&g->d, ASOFF(0, 0x1c)),
 	      ((u64)drd(&g->d, ASOFF(0, 0x24)) << 32) | drd(&g->d, ASOFF(0, 0x20)));
 
 	r = submitat(g, 0, 0xa009580, 0x87b00, &raw, &stat);
-	print("gpufs: draw frag %s raw %#ux js %#ux as %#ux addr %#llux\n",
-	      r == 0 ? "PASS" : (r == -1 ? "FAIL" : "TIMEOUT"), raw, stat,
+	print("gpufs: draw frag %s raw %#ux js %#ux(%s) as %#ux addr %#llux\n",
+	      r == 0 ? "PASS" : (r == -1 ? "FAIL" : "TIMEOUT"), raw, stat, jsname(stat),
 	      drd(&g->d, ASOFF(0, 0x1c)),
 	      ((u64)drd(&g->d, ASOFF(0, 0x24)) << 32) | drd(&g->d, ASOFF(0, 0x20)));
 
@@ -1357,9 +1389,9 @@ gpuclr(Gpu *g, u32 color, u32 cw, u32 ch, int tiled, u32 cfgarg, int local,
 		sleep(1);
 	}
 	drw(&g->d, JobIntClear, (1 << slot) | (1 << (slot + 16)));
-	print("gpufs: clear tiles %ud x %ud stride %ud %s raw %#ux js %#ux as %#ux addr %#llux\n",
+	print("gpufs: clear tiles %ud x %ud stride %ud %s raw %#ux js %#ux(%s) as %#ux addr %#llux\n",
 	      tw, th, rt[10], done ? "PASS" : (err ? "FAIL" : "TIMEOUT"), raw,
-	      drd(&g->d, JSOFF(slot, JsStatus)),
+	      drd(&g->d, JSOFF(slot, JsStatus)), jsname(drd(&g->d, JSOFF(slot, JsStatus))),
 	      drd(&g->d, ASOFF(0, 0x1c)),
 	      ((u64)drd(&g->d, ASOFF(0, 0x24)) << 32) | drd(&g->d, ASOFF(0, 0x20)));
 	if(local){
