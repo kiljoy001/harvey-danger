@@ -106,10 +106,15 @@ python3 util/arm64/test_apex_boot.py --elf build/arm64-run/runner.elf \
     --marker '#include'
 ```
 
-LLVM builds for aarch64 with `harvey-aarch64-toolchain.cmake` and
-`llvm-tblgen` runs; known gap: the ramfs written by the launcher is
-enumeration-visible (stat/readdir) but `open()` on the deeper paths returns
-ENOENT, so tblgen cannot yet read its input tree.
+LLVM builds for aarch64 with `harvey-aarch64-toolchain.cmake`, and
+`util/arm64/test-tblgen.py` runs the result against the real .td tree:
+
+```text
+tblgen: 46644 bytes generated on Harvey/ARM64, identical to the host tool
+```
+
+That is `llvm-tblgen -gen-vt` producing `GenVT.inc` byte-for-byte the same
+as the host build of the same revision.
 
 ```sh
 python3 util/arm64/test_virt.py
