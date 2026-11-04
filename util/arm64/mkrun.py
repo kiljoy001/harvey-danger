@@ -32,6 +32,7 @@ RUNNER = r"""
 #include <errno.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include <sys/wait.h>
 
 /* Plan 9 namespace calls (see sys/include/libc.h). */
 extern int bind(char *, char *, int);
@@ -57,6 +58,10 @@ static const struct datafile files[] = {
 };
 
 static char *args[] = {
+%s
+};
+
+static char *args2[] = {
 %s
 };
 
@@ -152,6 +157,30 @@ main(void)
 		}
 	fprintf(stderr, "runner: wrote %%d files, exec %%s\n", i, args[0]);
 
+	if(args2[0] != 0){
+		int st;
+		pid_t pid = fork();
+
+		if(pid == 0){
+			execv("/runner-image", args);
+			fprintf(stderr, "runner: exec %%s: %%s\n", args[0],
+			    strerror(errno));
+			_exit(127);
+		}
+		if(pid < 0 || waitpid(pid, &st, 0) < 0){
+			fprintf(stderr, "runner: wait: %%s\n", strerror(errno));
+			return 1;
+		}
+		fprintf(stderr, "runner: %%s exited %%d\n", args[0],
+		    WIFEXITED(st) ? WEXITSTATUS(st) : -1);
+		if(WIFEXITED(st) && WEXITSTATUS(st) != 0)
+			return WEXITSTATUS(st);
+		execv(args2[0], args2);
+		fprintf(stderr, "runner: exec %%s: %%s\n", args2[0],
+		    strerror(errno));
+		return 1;
+	}
+
 	execv("/runner-image", args);
 	fprintf(stderr, "runner: exec: %%s\n", strerror(errno));
 	return 1;
@@ -200,6 +229,9 @@ def main() -> None:
                     help="embed files from HOSTDIR under GUESTDIR")
     ap.add_argument("--suffix", default=".td",
                     help="only embed files with this suffix (default .td)")
+    ap.add_argument("--then", action="append", default=[],
+                    help="program to run after the first one succeeds; "
+                         "repeatable, executed in order")
     ap.add_argument("--output", default=str(OUT / "runner.elf"))
     opts, rest = ap.parse_known_args()
     if rest and rest[0] == "--":
@@ -222,12 +254,15 @@ def main() -> None:
     argv = [Path(opts.elf).name] + opts.args
     src = OUT / "runner.c"
     OUT.mkdir(parents=True, exist_ok=True)
+    then = opts.then[0] if opts.then else ""
+    then_args = [then] if then else []
     src.write_text(RUNNER % (
         emit(image),
         emit(bytes(blob)),
         ",\n".join(f'\t{c_string(p)}, {o}, {n}' for p, o, n in table) or
-        "\t{0, 0, 0}",
-        ",\n".join("\t" + c_string(a) for a in argv) + ",\n\t0"))
+        '\t{"", 0, 0}',
+        ",\n".join("\t" + c_string(a) for a in argv) + ",\n\t0",
+        ",\n".join("\t" + c_string(a) for a in then_args) + ",\n\t0"))
 
     # Link with the Plan 9 libc ahead of the APEX archive: APEX's BSD socket
     # layer also defines bind(); the namespace bind() is the one a runner

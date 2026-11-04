@@ -18,8 +18,16 @@ abs(int a)
 	return a;
 }
 
-i32
-labs(i32 a)
+long
+labs(long a)
+{
+	if(a < 0)
+		return -a;
+	return a;
+}
+
+long long
+llabs(long long a)
 {
 	if(a < 0)
 		return -a;
