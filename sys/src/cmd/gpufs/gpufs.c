@@ -133,6 +133,7 @@ enum {
 	FbVa		= 0x20000000ULL,	/* GPU view of the scanout buffer */
 	LocalVa		= 0x02000000ULL,	/* scratch render target for tests */
 	HeapVa		= 0x08000000ULL,	/* tiler heap for the draw diagnostic */
+	SrcVa		= 0x0b000000ULL,	/* blit source surface */
 	Heapsize	= 4*1024*1024,
 	TileShift	= 4,			/* 16x16 pixel tiles */
 	FbMaxPages	= 4096,
@@ -168,6 +169,8 @@ struct Gpu {
 	u64	drawpa;
 	void	*heapbuf;		/* tiler heap for the draw diagnostic */
 	u64	heappa;
+	void	*srcbuf;		/* blit source surface */
+	u64	srcpa;
 	void	*data;
 	int	jobok;
 	u64	jobval;
@@ -1089,16 +1092,27 @@ gpudraw(Gpu *g, int mode)
 	 * 3 our vertex descriptor + Mesa's vertex blob,
 	 * 4 our vertex blob + Mesa's vertex descriptor.
 	 * 6 is 0 with the render target pointed at the scanout buffer. */
-	ours_frag = (mode == 0 || mode == 1 || mode == 6 || mode == 7);
-	ours_vblob = (mode == 0 || mode == 2 || mode == 4 || mode == 6 || mode == 7);
-	ours_vrsd = (mode == 0 || mode == 2 || mode == 3 || mode == 6 || mode == 7);
+	ours_frag = (mode == 0 || mode == 1 || mode == 6 || mode == 7 || mode == 8);
+	ours_vblob = (mode == 0 || mode == 2 || mode == 4 || mode == 6 ||
+	              mode == 7 || mode == 8);
+	ours_vrsd = (mode == 0 || mode == 2 || mode == 3 || mode == 6 ||
+	             mode == 7 || mode == 8);
 	if(ours_frag){
-		memmove(pool + 0x3100, shader_frag_bin, sizeof shader_frag_bin);
-		memmove(pool + 0x9240, shader_frag_rsd, sizeof shader_frag_rsd);
+		if(mode == 8){
+			memmove(pool + 0x3100, shader_blitfrag_bin,
+			        sizeof shader_blitfrag_bin);
+			memmove(pool + 0x9240, shader_blitfrag_rsd,
+			        sizeof shader_blitfrag_rsd);
+		} else {
+			memmove(pool + 0x3100, shader_frag_bin,
+			        sizeof shader_frag_bin);
+			memmove(pool + 0x9240, shader_frag_rsd,
+			        sizeof shader_frag_rsd);
+		}
 		*(u32 *)(pool + 0x9240) = 0xa003100;
 	}
 	if(ours_vblob){
-		if(mode == 7)
+		if(mode == 7 || mode == 8)
 			memmove(pool + 0x3000, shader_vert1920_bin,
 			        sizeof shader_vert1920_bin);
 		else
@@ -1106,7 +1120,7 @@ gpudraw(Gpu *g, int mode)
 			        sizeof shader_vert_bin);
 	}
 	if(ours_vrsd){
-		if(mode == 7)
+		if(mode == 7 || mode == 8)
 			memmove(pool + 0x2000, shader_vert1920_rsd,
 			        sizeof shader_vert1920_rsd);
 		else
@@ -1156,7 +1170,7 @@ gpudraw(Gpu *g, int mode)
 		print("gpufs: draw: mmu update failed\n");
 		return;
 	}
-	if(mode == 6 || mode == 7){
+	if(mode == 6 || mode == 7 || mode == 8){
 		Fbinfo fi;
 		if(fbinfo(&fi) < 0){
 			print("gpufs: draw: no scanout buffer\n");
@@ -1170,7 +1184,7 @@ gpudraw(Gpu *g, int mode)
 		d[0xA0/4] = (u32)FbVa;
 		d[0xA4/4] = 0;
 		d[0xA8/4] = (u32)fi.stride;
-		if(mode == 7){
+		if(mode == 7 || mode == 8){
 			u32 wh = 1919 | (1079 << 16);
 			d[8] = wh;			/* FBD width/height */
 			d[10] = wh;			/* bound max */
@@ -1179,7 +1193,46 @@ gpudraw(Gpu *g, int mode)
 			d[0x13C/4] = wh;		/* viewport scissor max */
 		}
 		print("gpufs: draw target scanout %#llux stride %ud %s\n",
-		      FbVa, fi.stride, mode == 7 ? "full" : "64x64");
+		      FbVa, fi.stride,
+		      (mode == 7 || mode == 8) ? "full" : "64x64");
+	}
+	if(mode == 8){
+		u32 *src;
+		/* Descriptors live in the page that used to hold the test
+		 * render target: surf at 0xa004000, texture at 0xa004100,
+		 * sampler at 0xa004200. */
+		memmove(pool + 0x4000, shader_surf, sizeof shader_surf);
+		memmove(pool + 0x4100, shader_tex, sizeof shader_tex);
+		memmove(pool + 0x4200, shader_samp, sizeof shader_samp);
+
+		if(g->srcbuf == nil){
+			g->srcbuf = drvdma(&g->d, 0x4000, 4096, &g->srcpa);
+			if(g->srcbuf == nil){
+				print("gpufs: draw: no source surface\n");
+				return;
+			}
+		}
+		src = g->srcbuf;
+		for(u32 y = 0; y < 64; y++)
+			for(u32 x = 0; x < 64; x++)
+				src[y * 64 + x] = (x < 32) ?
+					(y < 32 ? 0xffff0000 : 0xff00ff00) :
+					(y < 32 ? 0xff0000ff : 0xffffffff);
+		drvdmacache(DrvClean, g->srcpa, 0x4000);
+		if(mapgpu(g, SrcVa, g->srcpa, 0x4000) < 0){
+			print("gpufs: draw: cannot map the source\n");
+			return;
+		}
+		*(u32 *)(pool + 0x4000) = (u32)SrcVa;	/* surface pointer */
+		*(u32 *)(pool + 0x4004) = 0;
+		*(u32 *)(pool + 0x4110) = 0xa004000;	/* texture surfaces */
+		*(u32 *)(pool + 0x4114) = 0;
+		d[0x380/4 + 8] = 0xa004100;		/* fragment Textures */
+		d[0x380/4 + 9] = 0;
+		d[0x380/4 + 10] = 0xa004200;		/* fragment Samplers */
+		d[0x380/4 + 11] = 0;
+		print("gpufs: draw blit src %#llux tex 0xa004100 samp 0xa004200\n",
+		      SrcVa);
 	}
 	drvdmacache(DrvClean, poolpa, 0x1a000);
 	drvdmacache(DrvClean, g->heappa, Heapsize);

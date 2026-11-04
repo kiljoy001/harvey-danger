@@ -195,6 +195,59 @@ lower_viewport_sysvals(nir_builder *b, nir_instr *instr, void *data)
    return true;
 }
 
+/* A linear RGBA8 2D texture, its surface, and a nearest/clamp sampler.
+ * The pointers are placeholders: gpufs patches them at submit time. */
+static void
+emit_texture(unsigned width, unsigned height)
+{
+   struct mali_texture_packed tex;
+   struct mali_surface_with_stride_packed surf;
+   struct mali_sampler_packed samp;
+
+   memset(&tex, 0, sizeof tex);
+   pan_pack(&tex, TEXTURE, cfg) {
+      cfg.type = 2;
+      cfg.dimension = MALI_TEXTURE_DIMENSION_2D;
+      cfg.format = MALI_RGBA8_UNORM;
+      cfg.width = width;
+      cfg.height = height;
+      cfg.swizzle = 1672;	/* RGBA component swizzle */
+      cfg.texel_ordering = MALI_TEXTURE_LAYOUT_LINEAR;
+      cfg.levels = 1;
+      cfg.sample_count = 1;
+      cfg.surfaces = 0x1000;
+      cfg.array_size = 1;
+      cfg.depth = 1;
+   }
+
+   memset(&surf, 0, sizeof surf);
+   pan_pack(&surf, SURFACE_WITH_STRIDE, cfg) {
+      cfg.pointer = 0x2000;
+      cfg.row_stride = width * 4;
+      cfg.surface_stride = width * 4 * height;
+   }
+
+   memset(&samp, 0, sizeof samp);
+   pan_pack(&samp, SAMPLER, cfg) {
+      cfg.wrap_mode_r = MALI_WRAP_MODE_CLAMP_TO_EDGE;
+      cfg.wrap_mode_s = MALI_WRAP_MODE_CLAMP_TO_EDGE;
+      cfg.wrap_mode_t = MALI_WRAP_MODE_CLAMP_TO_EDGE;
+      cfg.minify_nearest = true;
+      cfg.magnify_nearest = true;
+      cfg.mipmap_mode = MALI_MIPMAP_MODE_NONE;
+      /* ulod is 8.8 fixed point: 0x1fff is 31.996, what Mesa writes. */
+      cfg.minimum_lod = 0;
+      cfg.maximum_lod = 0x1fff;
+   }
+
+   FILE *f;
+   if((f = fopen("tex.bin", "wb")) != NULL){ fwrite(&tex, 1, sizeof tex, f); fclose(f); }
+   if((f = fopen("surf.bin", "wb")) != NULL){ fwrite(&surf, 1, sizeof surf, f); fclose(f); }
+   if((f = fopen("samp.bin", "wb")) != NULL){ fwrite(&samp, 1, sizeof samp, f); fclose(f); }
+   printf("tex %u bytes surf %u bytes samp %u bytes\n",
+          (unsigned)sizeof tex, (unsigned)sizeof surf, (unsigned)sizeof samp);
+}
+
 /* Same callback panvk hands to nir_lower_io. */
 static int
 cc_type_size(const struct glsl_type *type, bool bindless)
@@ -291,13 +344,13 @@ main(int argc, char **argv)
 
    if(argc == 3){
       nir_shader *fsn = spv_shader(argv[1], MESA_SHADER_FRAGMENT);
-      dump("frag", fsn, NULL);
+      dump("blitfrag", fsn, NULL);
 
       nir_shader *vsn = spv_shader(argv[2], MESA_SHADER_VERTEX);
       struct pan_varying_layout vl = {0};
       pan_varying_collect_formats(&vl, vsn, 0x74021000ull, true, false);
       pan_build_varying_layout_compact(&vl, vsn, 0x74021000ull);
-      dump("vert", vsn, &vl);
+      dump("blitvert", vsn, &vl);
       glsl_type_singleton_decref();
       return 0;
    }
@@ -325,6 +378,7 @@ main(int argc, char **argv)
     * transform is baked, so the size is a compile-time constant. */
    emit_vertex("vert", 32.0f, 32.0f);
    emit_vertex("vert1920", 960.0f, 540.0f);
+   emit_texture(64, 64);
 
    glsl_type_singleton_decref();
    return 0;
