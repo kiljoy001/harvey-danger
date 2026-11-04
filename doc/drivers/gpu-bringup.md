@@ -184,8 +184,9 @@ command that builds, from the captured Linux chain:
   bounds are in 16x16 tiles,
 - 4 KiB leaves for the whole scanout buffer, under 2 MiB tables.
 
-It submits on JS0 and the job manager now reads it: the status moved from
-`DATA_INVALID_FAULT` to **`CONFIG_FAULT` (0x40)**, with no MMU fault.
+It submits on JS0 and the job manager accepts it, but the first attempts ended
+in `CONFIG_FAULT` (0x40) with no MMU fault.  Tracing that down took a Linux
+control experiment; the resolution is in the next section.
 
 A second capture with `PAN_MESA_DEBUG=trace,linear,nocrc` gives the exact
 **linear** framebuffer descriptor, which is what scanout needs:
@@ -199,18 +200,10 @@ Framebuffer tag: 0xa008001       Fragment Job Payload: bounds 0..3
 ```
 
 The linear path has no CRC extension, no tiler and no tile-enable map, and
-`Row Stride` is `width * 4` with `Surface Stride` 0.  `gpufs` now builds
-exactly that, and still gets `CONFIG_FAULT`, so the remaining difference is
-in the addresses/tags rather than the descriptor fields: the captured chain
-has its FBD, render target and sample-locations table in separate buffers at
-`0xa008000`, `0xa004000` and `0xa000000`, while `gpufs` packs the FBD and
-render target into one page at `0x10000000` and maps the scanout buffer at
-`0x20000000`.  Bisecting that, and the `JS_CONFIG` variants, is the next
-step.
-
-Sweeping `JS_CONFIG` over 0x87300, 0x87700, 0x87b00, 0x83300 and 0x83700
-gives `CONFIG_FAULT` in every case, so the slot configuration is not it
-either.
+`Row Stride` is `width * 4` with `Surface Stride` 0.  `PAN_MESA_DEBUG=...dump`
+also hexdumps every graphics buffer, which showed that `gpufs` matched the
+captured descriptor byte for byte except for the addresses and one field:
+`z_internal_format`, which is `1` (D24) even with no depth buffer.
 
 Reading the GPU registers from Linux after its successful submit (via
 `devmem` on `/dev/mem`, which reaches the device window) gives:
@@ -222,17 +215,13 @@ Reading the GPU registers from Linux after its successful submit (via
 0xfde61824 0x00000000   JS0_STATUS  = no exception
 ```
 
-which is one of the values `gpufs` already tries.  The descriptor dump from
-`PAN_MESA_DEBUG=...dump` is the decisive part: comparing the raw bytes of
-`memory_a008000` with what `gpufs` writes shows they are **identical** except
-for three addresses (the framebuffer-descriptor tag, the render-target base
-and the sample-locations pointer).  The one field that differed,
-`z_internal_format = 1` (D24), is fixed.
+which is one of the values `gpufs` sweeps, and the writable configuration
+registers (`JM_CONFIG 0x000f0000`, `SHADER_CONFIG`, `TILER_CONFIG` and
+`L2_MMU_CONFIG` all zero) match as well.
 
-So `CONFIG_FAULT` is not the FBD contents, the payload or the slot config.
-
-`contrib/gpucap/panclr.c` settles it: it submits the same chain from Linux
-userspace through the kernel's own panfrost driver, and it works.
+`contrib/gpucap/panclr.c` is the control that settled the descriptor
+question.  It submits the same chain from Linux userspace through the
+kernel's own panfrost driver, at completely different addresses:
 
 ```text
 PANCLR job va 0x2000000 handle 1, rt va 0x2004000 handle 2
@@ -240,96 +229,11 @@ PANCLR submitted
 PANCLR pixel 0xff0000ff  PASS
 ```
 
-Note the addresses: `0x2000000` and `0x2004000`, nothing like the captured
-chain's.  The descriptor is correct, and so are the slot, the
-`JS_CONFIG` (Linux reads back `0x7b00`) and the writable configuration
-registers (`JM_CONFIG 0x000f0000`, `SHADER_CONFIG`, `TILER_CONFIG` and
-`L2_MMU_CONFIG` all zero, same as `gpufs`).
-
-That leaves the address-space setup as the only difference.  Two more
-measurements narrow it down:
-
-- re-submitting the *same* job header from Linux (one the GPU has already
-  written its `Exception Status` back into) fails with
-  `DATA_INVALID_FAULT`, so `DATA_INVALID_FAULT` is also what a non-zero
-  exception status produces.  A fresh header is always required.
-- a sampler child started before the submit, reading `AS0_TRANSTAB` through
-  `/dev/mem`, never observes the address space enabled: Linux enables it and
-  disables it again inside a single submit, and even a 4096x4096 clear is
-  faster than the sampling loop.  Either the AS number in `JS_CONFIG` is
-  masked on readback, or the registers cannot be caught this way.  Linux disables
-the AS after every job (`AS0_TRANSCFG` reads back `1`, `ADRMODE_UNMAPPED`,
-`AS0_TRANSTAB` 0), so the registers cannot be read from an idle GPU.  The
-next step is to capture them *during* a job — fork, submit in a loop, and
-read `AS0_TRANSTAB/MEMATTR/TRANSCFG` from the parent — and to try
-re-issuing `AS_COMMAND_UPDATE` immediately before each submission.
-
-### What still fails
-
-With a valid leaf the same job returns `JS_STATUS = 0x58`
-(`DATA_INVALID_FAULT`) and `AS_FAULTSTATUS = 0`, on every combination tried:
-
-| Variable | Values tried |
-| --- | --- |
-| job type | NULL (1), WRITE_VALUE (2), CACHE_FLUSH (3), VERTEX (5), TILER (7), FRAGMENT (9), COMPUTE (4) |
-| slot | JS0, JS1, JS2 (each with a type the slot advertises) |
-| `job_descriptor_size` | 1 (64-bit next) and 0 (32-bit next) |
-| `job_index` | 0, 1, 2, 0xffff |
-| leaf attribute | `AttrIndx 1` (write-allocate) and `AttrIndx 0` (implementation defined) |
-| `JS_CONFIG` | 0x87300, 0x87b00 (chain flag), 0x83300/0x83700 (no flush reduction), 0x87700 (`START_MMU`) |
-| `GPU_PWR_OVERRIDE1` | the Amlogic G52 quirk (`0xfff | 0x20 << 16`, with `PWR_KEY`) |
-
-The descriptor bytes themselves match the vendor's own definition
-(`struct job_descriptor_header` in `mali_kbase_defs.h`) and Mesa's
-`JOB_HEADER` packer field for field, and `AS_FAULTSTATUS` staying zero means
-this is not an MMU fault: the job manager reads the header and rejects it.
-
-### Comparison with the G52 Linux path
-
-Everything outside the descriptor now matches Linux panfrost:
-
-| Item | Linux panfrost, G52 | gpufs |
-| --- | --- | --- |
-| Page table | `ARM_MALI_LPAE` (no AArch64 quirk on G52) | Mali LPAE |
-| `AS_TRANSTAB` | PGD physical address, `| 7` | same |
-| `AS_MEMATTR` | `0x008d0088` | same |
-| `AS_TRANSCFG` | `ADRMODE_LEGACY` | 0 |
-| AS enable | `FLUSH_MEM`, registers, `UPDATE` | same |
-| `GPU_JM_CONFIG` | `0xf << JM_IDVS_GROUP_SIZE_SHIFT` | same |
-| `JS_CONFIG` | AS, pri 8, start/end clean+invalidate, flush reduction, chain flag; no `START_MMU` | same |
-| `JS_FLUSH_ID_NEXT` | `GPU_LATEST_FLUSH` | same |
-| `JOB_INT_MASK` | all slots (`0x70007`) | same |
-| Slot | no `PANFROST_JD_REQ_FS` -> JS1 | JS1 |
-| Affinity | `shader_present` | 1 |
-| Job header | Mesa `JOB_HEADER` | matches |
-
-`HW_ISSUE_10649`, which gates `JS_CONFIG_START_MMU`, is T600x-only; removing
-it was correct.
-
-The remaining difference has to be something a real chain carries and a
-synthetic job does not. Linux never submits a bare `NULL` or `WRITE_VALUE`
-job on its own: the first job on a slot is a `VERTEX`/`TILER` job with a real
-shader, attribute buffer, tiler context and framebuffer. The next step is
-therefore a real chain (the `gpucc` shaders already compile), not more
-descriptor sweeps.
-
-### Diagnostics
-
-`/srv/gpu/ctl` now has:
-
-- `diag [slot [type [cfg [hdr]]]]` -- soft reset, reprogram, submit one job,
-  and dump the header, `JS_STATUS`, both head/tail pairs, the GPU fault
-  block and every address space.
-- `unmap` -- clear the job leaf and submit; proves the MMU is in the path.
-- `leaf <bits>` -- submit with an arbitrary leaf attribute word (HAP sweep).
-- `nc` -- same job with the leaves on `AttrIndx 0`.
-- `pwr` -- apply the G52 `GPU_PWR_OVERRIDE1` quirk and retry.
-- `dump` -- the whole 0x000..0x114 GPU control block.
-- `test`, `matrix`, `null`, `chain`, `identity` -- the earlier probes.
-- `peek <offset>` -- read 16 bytes of the scanout buffer back through
-  `/dev/display/data`, so a GPU result can be checked without the display.
-- `fill <x> <y> <w> <h> <colour>` -- clipped rectangle fill on the scanout
-  buffer, the first primitive a display service can actually use.
+So the descriptor, the slot, `JS_CONFIG` and the writable configuration were
+all right, and the fault was in `gpufs`' own kernel-side setup.  The
+`/dev/mem` version of the same capture also showed that a *reused* job header
+fails with `DATA_INVALID_FAULT`: the GPU writes its exception status back
+into the header, so a fresh header is required for every submission.
 
 ## The first GPU clear
 
