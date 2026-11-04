@@ -1013,25 +1013,48 @@ fbpeek(u64 off)
 }
 
 static void
-gpuclr(Gpu *g, u32 color, u32 cw, u32 ch, int tiled, u32 cfgarg, int local)
+gpuclr(Gpu *g, u32 color, u32 cw, u32 ch, int tiled, u32 cfgarg, int local,
+       int rx, int ry)
 {
 	Fbinfo fi;
 	u32 *fbd, *rt, *job, *pl, *sl, raw, cfg;
 	u64 fbdesc, fbdva, rtva, slva, hva;
 	int i, slot = 0, done, err;
-	u32 tw, th;
+	u32 tw, th, bminx, bminy, bmaxx, bmaxy;
 
 	USED(tiled);
 	if(fbinfo(&fi) < 0){
 		print("gpufs: clear: no scanout buffer\n");
 		return;
 	}
-	if(cw != 0 && ch != 0 && cw <= fi.width && ch <= fi.height){
+	if(rx < 0 || ry < 0 || (u32)rx >= fi.width || (u32)ry >= fi.height ||
+	   rx + (int)(cw ? cw : fi.width) > (int)fi.width ||
+	   ry + (int)(ch ? ch : fi.height) > (int)fi.height){
+		rx = 0;
+		ry = 0;
+		cw = 0;
+		ch = 0;
+	}
+	if(cw == 0 || ch == 0 || local){
+		cw = cw ? cw : fi.width;
+		ch = ch ? ch : fi.height;
+	}
+	if(local){
 		fi.width = cw;
 		fi.height = ch;
 	}
-	print("gpufs: clear pa %#llux size %#llux %ud x %ud stride %ud\n",
-	      fi.pa, fi.size, fi.width, fi.height, fi.stride);
+	if(local){
+		bminx = 0;
+		bminy = 0;
+	}
+	else{
+		bminx = (u32)rx;
+		bminy = (u32)ry;
+	}
+	bmaxx = bminx + cw - 1;
+	bmaxy = bminy + ch - 1;
+	print("gpufs: clear pa %#llux size %#llux %ud x %ud stride %ud rect %d,%d %ud x %ud\n",
+	      fi.pa, fi.size, fi.width, fi.height, fi.stride, rx, ry, cw, ch);
 
 	if(mmuinit(g) < 0)
 		return;
@@ -1095,8 +1118,8 @@ gpuclr(Gpu *g, u32 color, u32 cw, u32 ch, int tiled, u32 cfgarg, int local)
 	fbd[4] = (u32)slva;
 	fbd[5] = (u32)(slva >> 32);
 	fbd[8] = (fi.width - 1) | ((fi.height - 1) << 16);
-	fbd[9] = 0;				/* bound min 0,0 */
-	fbd[10] = (fi.width - 1) | ((fi.height - 1) << 16);
+	fbd[9] = bminx | (bminy << 16);		/* bound min */
+	fbd[10] = bmaxx | (bmaxy << 16);	/* bound max */
 	/* log2(1 sample), single pattern, MINUS_180_IN_0_OUT, log2(256),
 	 * no downsample, rt_count-1, cbuf_alloc >> 10. */
 	fbd[11] = (0 << 0) | (0 << 3) | (2 << 6) | (8 << 9) |
@@ -1124,7 +1147,7 @@ gpuclr(Gpu *g, u32 color, u32 cw, u32 ch, int tiled, u32 cfgarg, int local)
 	rt[9] = (u32)(rtva >> 32);
 	/* Row stride: the local scratch buffer is tight, the scanout buffer
 	 * is not, so a partial clear must keep the real stride. */
-	rt[10] = local ? (u32)fi.width * 4 : (u32)fi.stride;
+	rt[10] = local ? (u32)cw * 4 : (u32)fi.stride;
 	rt[11] = 0;				/* surface stride */
 	rt[12] = color;
 	rt[13] = color;
@@ -1138,10 +1161,11 @@ gpuclr(Gpu *g, u32 color, u32 cw, u32 ch, int tiled, u32 cfgarg, int local)
 	job[6] = 0;
 	job[7] = 0;
 	pl = job + 8;
-	tw = (fi.width + (1 << TileShift) - 1) >> TileShift;
-	th = (fi.height + (1 << TileShift) - 1) >> TileShift;
-	pl[0] = 0;				/* min x, min y */
-	pl[1] = (tw - 1) | ((th - 1) << 16);	/* max x, max y, no tile map */
+	/* The job walks tiles, so the payload range is in 16x16 tiles. */
+	tw = (bmaxx >> TileShift) - (bminx >> TileShift) + 1;
+	th = (bmaxy >> TileShift) - (bminy >> TileShift) + 1;
+	pl[0] = (bminx >> TileShift) | ((bminy >> TileShift) << 16);
+	pl[1] = ((bmaxx >> TileShift) | ((bmaxy >> TileShift) << 16));
 	pl[2] = (u32)fbdesc;
 	pl[3] = (u32)(fbdesc >> 32);
 	pl[4] = 0;
@@ -1189,8 +1213,8 @@ gpuclr(Gpu *g, u32 color, u32 cw, u32 ch, int tiled, u32 cfgarg, int local)
 		drvdmacache(DrvInval, g->locpa, 65536);
 		print("gpufs: local pixel %#ux %s (also %#ux %#ux, last row %#ux)\n",
 		      lw[0], lw[0] == color ? "PASS" : "FAIL",
-		      lw[1], lw[fi.width],
-		      lw[(fi.height - 1) * fi.width]);
+		      lw[1], lw[cw],
+		      lw[(ch - 1) * cw]);
 	}
 	if(!done){
 		print("gpufs: fbd %#llux", fbdva);
@@ -1821,7 +1845,30 @@ fswrite(Req *r, void *aux)
 		print("gpufs: ctl clear %#ux %ud %ud tiled %ud cfg %#ux local %ud\n",
 		      color, cw, ch, tiled, cfgarg, local);
 		if(g->powered || pmuon(g) == 0){
-			gpuclr(g, color, cw, ch, tiled, cfgarg, local);
+			gpuclr(g, color, cw, ch, tiled, cfgarg, local, 0, 0);
+			r->ofcall.count = r->ifcall.count;
+			respond(r, nil);
+		}else
+			respond(r, g->why);
+		qunlock(&g->lk);
+		return;
+	}
+	if(strncmp(cmd, "fill", 4) == 0){
+		u32 color = 0xff00ff00;
+		int fx = 0, fy = 0;
+		u32 fw = 0, fh = 0;
+		char *q;
+
+		if(cmd[4] == ' '){
+			fx = strtoul(cmd + 5, &q, 0);
+			fy = strtoul(q, &q, 0);
+			fw = strtoul(q, &q, 0);
+			fh = strtoul(q, &q, 0);
+			color = strtoul(q, &q, 0);
+		}
+		print("gpufs: ctl fill %d,%d %ud x %ud %#ux\n", fx, fy, fw, fh, color);
+		if(g->powered || pmuon(g) == 0){
+			gpuclr(g, color, fw, fh, 0, 0, 0, fx, fy);
 			r->ofcall.count = r->ifcall.count;
 			respond(r, nil);
 		}else

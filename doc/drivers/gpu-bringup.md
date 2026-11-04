@@ -326,6 +326,10 @@ descriptor sweeps.
 - `pwr` -- apply the G52 `GPU_PWR_OVERRIDE1` quirk and retry.
 - `dump` -- the whole 0x000..0x114 GPU control block.
 - `test`, `matrix`, `null`, `chain`, `identity` -- the earlier probes.
+- `peek <offset>` -- read 16 bytes of the scanout buffer back through
+  `/dev/display/data`, so a GPU result can be checked without the display.
+- `fill <x> <y> <w> <h> <colour>` -- clipped rectangle fill on the scanout
+  buffer, the first primitive a display service can actually use.
 
 ## The first GPU clear
 
@@ -351,6 +355,18 @@ gpufs: peek 0    : 0xff0000ff ...   (cleared)
 gpufs: peek 2800 : 0xffff0000 ...   (x=700, outside the 640-wide rect)
 gpufs: peek 3080000: 0xff0000ff ... (y=400, x=80, inside)
 ```
+
+An arbitrary rectangle fill uses the same chain with the framebuffer
+descriptor's bound box set to the rectangle and the fragment job's tile
+range limited to the tiles that rectangle touches:
+
+```text
+echo 'fill 100 100 200 150 0xff00ff00' > /mnt/g/ctl
+gpufs: clear tiles 13 x 10 stride 7680 PASS raw 0x1 js 0x0 as 0x0
+```
+
+over a red frame leaves `(150,150)` green, `(400,150)` red and `(150,400)`
+red, so the clip is exact.
 
 The chain is the one Mesa emits for a clear-only frame, and it needs no
 tiler job and no shader: a framebuffer descriptor with per-render-target
