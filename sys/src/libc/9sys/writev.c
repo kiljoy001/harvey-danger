@@ -11,16 +11,19 @@
 #include <libc.h>
 
 static
-i32
+i64
 iowritev(int fd, IOchunk *io, int nio, i64 offset)
 {
 	int i;
-	i32 tot;
+	i64 tot;
+	i32 n;
 	char *buf, *p;
 
 	tot = 0;
 	for(i=0; i<nio; i++)
 		tot += io[i].len;
+	if(tot == 0)
+		return 0;
 	buf = malloc(tot);
 	if(buf == nil)
 		return -1;
@@ -32,19 +35,18 @@ iowritev(int fd, IOchunk *io, int nio, i64 offset)
 		io++;
 	}
 
-	tot = pwrite(fd, buf, tot, offset);
-
+	n = pwrite(fd, buf, tot, offset);
 	free(buf);
-	return tot;
+	return n;
 }
 
-i32
+i64
 writev(int fd, IOchunk *io, int nio)
 {
 	return iowritev(fd, io, nio, -1LL);
 }
 
-i32
+i64
 pwritev(int fd, IOchunk *io, int nio, i64 off)
 {
 	return iowritev(fd, io, nio, off);

@@ -62,8 +62,10 @@ def main() -> None:
         ], check=True)
 
     original = header.read_text()
+    # build_userland.py has emitted the image both as a {0x..} array and as
+    # a concatenated C string literal; match either declaration.
     text, count = re.subn(
-        r"static const u8 arm64initelf\[\d+\] = \{.*?\n\};",
+        r"static const u8 arm64initelf\[\d+\] =.*?\n\t;",
         emit_array(image), original, flags=re.S)
     if count != 1:
         sys.exit("could not replace arm64initelf in the generated userland")

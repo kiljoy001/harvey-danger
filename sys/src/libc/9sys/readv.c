@@ -11,7 +11,7 @@
 #include <libc.h>
 
 static
-i32
+i64
 ioreadv(int fd, IOchunk *io, int nio, i64 offset)
 {
 	int i;
@@ -45,13 +45,13 @@ ioreadv(int fd, IOchunk *io, int nio, i64 offset)
 	return tot;
 }
 
-i32
+i64
 readv(int fd, IOchunk *io, int nio)
 {
 	return ioreadv(fd, io, nio, -1LL);
 }
 
-i32
+i64
 preadv(int fd, IOchunk *io, int nio, i64 off)
 {
 	return ioreadv(fd, io, nio, off);
