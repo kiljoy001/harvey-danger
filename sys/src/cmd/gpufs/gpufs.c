@@ -129,6 +129,7 @@ enum {
 	JobVa		= 0x10000000ULL,
 	DataVa		= 0x10001000ULL,
 	FbVa		= 0x20000000ULL,	/* GPU view of the scanout buffer */
+	LocalVa		= 0x02000000ULL,	/* scratch render target for tests */
 	TileShift	= 4,			/* 16x16 pixel tiles */
 	FbMaxPages	= 4096,
 };
@@ -157,6 +158,8 @@ struct Gpu {
 	u64	jobpa, datapa;
 	u64	*pgd, *pt1, *pt2, *pt3;
 	u32	*job;			/* job descriptors are u32 words */
+	void	*locbuf;		/* scratch render target */
+	u64	locpa;
 	void	*data;
 	int	jobok;
 	u64	jobval;
@@ -518,19 +521,18 @@ static u64
 pagepte(u64 pa)
 {
 	/*
-	 * TYPE_BLOCK | AttrIndx 1 (write-allocate) | SH_OS | HAP read/write.
+	 * ARM_MALI_LPAE leaf as io-pgtable-arm builds it for
+	 * IOMMU_READ|IOMMU_WRITE|IOMMU_CACHE: stage-2-like permissions
+	 * (HAP bits 6:7), stage-1-like attributes.
 	 *
-	 * Mali reads bits [7:6] as stage-2-like permissions, not ARM's
-	 * AP[2:1].  Measured on the G52 by submitting a NULL job with each
-	 * value and reading AS_FAULTSTATUS:
+	 *   TYPE_BLOCK (1) | ATTRIDX_CACHE (1 << 2) | HAP_READ (1 << 6)
+	 *   | HAP_WRITE (1 << 7) | SH_OS (2 << 8)   ==  0x2c5
 	 *
-	 *   0x205 (00)  permission fault, READ   -- no access
-	 *   0x245 (01)  permission fault, WRITE  -- read only
-	 *   0x285 (10)  permission fault, READ   -- write only
-	 *   0x2c5 (11)  both allowed
-	 *
-	 * 0x2c5 is the only value that lets the job manager fetch the
-	 * descriptor and write the exception status back.
+	 * HAP_READ|HAP_WRITE is what lets the GPU fetch the job header and
+	 * write the exception status back into it.  Note that the stage-1
+	 * nG/AP bits are meaningless here: setting AP_RDONLY (bit 7)
+	 * actually clears HAP_WRITE, and the job then faults on its own
+	 * header address.
 	 */
 	return (pa & ~0xfffULL) | 0x2c5ULL;
 }
@@ -951,25 +953,32 @@ fbinfo(Fbinfo *fi)
 	return (fi->pa != 0 && fi->size != 0 && fi->width != 0) ? 0 : -1;
 }
 
-/* Map the scanout buffer at FbVa with 4 KiB leaves under 2 MiB tables. */
+/*
+ * Map a physical range at va with 4 KiB leaves under 2 MiB tables.
+ *
+ * Mali LPAE tables hold 512 *64-bit* descriptors, so the level-3 pages must
+ * be filled as u64.  Filling them as u32 writes half-width, double-spaced
+ * entries: each hardware descriptor then covers 8 KiB of VA pointing at a
+ * page twice as far along in PA, and the table only covers half the range.
+ */
 static int
-fbmapgpu(Gpu *g, u64 pa, u64 size)
+mapgpu(Gpu *g, u64 va, u64 pa, u64 size)
 {
 	u64 tabs, tabs_pa, off;
-	u32 *l3;
+	u64 *l3;
+	void *tabs_cpu;
 	int i, j, n, l2;
 
 	n = (size + 2*1024*1024 - 1) / (2*1024*1024);
-	l2 = (FbVa >> 21) & 0x1ff;
+	l2 = (va >> 21) & 0x1ff;
 	if(n <= 0 || n > 8 || l2 + n > 512 || size > FbMaxPages*4096)
 		return -1;
-	if(drvdma(&g->d, 4096*n, 4096, &tabs_pa) == nil)
+	tabs_cpu = drvdma(&g->d, 4096*n, 4096, &tabs_pa);
+	if(tabs_cpu == nil)
 		return -1;
 	tabs = tabs_pa;
 	for(i = 0; i < n; i++){
-		l3 = (u32 *)((u8 *)drvpa(&g->d, tabs) + i*4096);
-		if(l3 == nil)
-			return -1;
+		l3 = (u64 *)((u8 *)tabs_cpu + i*4096);
 		memset(l3, 0, 4096);
 		g->pt2[l2 + i] = tablepte(tabs + i*4096);
 		for(j = 0; j < 512; j++){
@@ -984,12 +993,31 @@ fbmapgpu(Gpu *g, u64 pa, u64 size)
 	return 0;
 }
 
+/* Read a few words back out of the scanout buffer through /dev/display/data. */
 static void
-gpuclr(Gpu *g, u32 color, u32 cw, u32 ch, int tiled, u32 cfgarg)
+fbpeek(u64 off)
+{
+	u32 v[4];
+	int fd, n;
+
+	v[0] = v[1] = v[2] = v[3] = 0;
+	fd = open("/dev/display/data", OREAD);
+	if(fd < 0){
+		print("gpufs: peek offset %llud: cannot open: %r\n", off);
+		return;
+	}
+	n = pread(fd, v, sizeof v, off);
+	close(fd);
+	print("gpufs: peek %llud n %d: %#ux %#ux %#ux %#ux\n",
+	      off, n, v[0], v[1], v[2], v[3]);
+}
+
+static void
+gpuclr(Gpu *g, u32 color, u32 cw, u32 ch, int tiled, u32 cfgarg, int local)
 {
 	Fbinfo fi;
-	u32 *rt, *job, *pl, raw, cfg;
-	u64 fbdesc;
+	u32 *fbd, *rt, *job, *pl, *sl, raw, cfg;
+	u64 fbdesc, fbdva, rtva, slva, hva;
 	int i, slot = 0, done, err;
 	u32 tw, th;
 
@@ -1010,7 +1038,22 @@ gpuclr(Gpu *g, u32 color, u32 cw, u32 ch, int tiled, u32 cfgarg)
 	softreset(g);
 	if(gpupower(g) < 0 || mmuprogram(g) < 0)
 		return;
-	if(fbmapgpu(g, fi.pa, fi.size) < 0){
+	if(local){
+		if(g->locbuf == nil){
+			g->locbuf = drvdma(&g->d, 65536, 4096, &g->locpa);
+			if(g->locbuf == nil){
+				print("gpufs: clear: no local buffer\n");
+				return;
+			}
+		}
+		memset(g->locbuf, 0xee, 65536);
+		if(mapgpu(g, LocalVa, g->locpa, 65536) < 0){
+			print("gpufs: clear: cannot map local buffer\n");
+			return;
+		}
+		fi.width = cw ? cw : 64;
+		fi.height = ch ? ch : 64;
+	}else if(mapgpu(g, FbVa, fi.pa, fi.size) < 0){
 		print("gpufs: clear: cannot map scanout buffer\n");
 		return;
 	}
@@ -1020,35 +1063,54 @@ gpuclr(Gpu *g, u32 color, u32 cw, u32 ch, int tiled, u32 cfgarg)
 	}
 
 	memset(g->job, 0, 4096);
+	memset(g->data, 0, 4096);
 
-	/* Framebuffer parameters at 0, 64 bytes. */
-	g->job[0] = 0;				/* pre/post frame: never */
-	/* Sample-locations table in its own page at DataVa. */
-	{
-		u32 *sl = g->data;
-		for(i = 0; i < 256; i++)
-			sl[i] = i == 0 ? 0 : 0x8080;
-		drvdmacache(DrvClean, g->datapa, 4096);
+	/*
+	 * Two layouts.  Modes 0 and 1 pack the framebuffer descriptor at the
+	 * start of the job page with the job header at +0xc0.  Mode 2 gives
+	 * the descriptor its own page at DataVa and starts the job at the
+	 * head of the job page, which is how Linux lays the same chain out.
+	 */
+	if(local == 2){
+		fbd = g->data;
+		fbdva = DataVa;
+		slva = DataVa + 0x400;
+		hva = JobVa;
+	}else{
+		fbd = g->job;
+		fbdva = JobVa;
+		slva = DataVa;
+		hva = JobVa + 0xc0;
 	}
-	g->job[4] = (u32)DataVa;
-	g->job[5] = 0;
-	g->job[8] = (fi.width - 1) | ((fi.height - 1) << 16);
-	g->job[9] = 0;				/* bound min 0,0 */
-	g->job[10] = (fi.width - 1) | ((fi.height - 1) << 16);
+	rtva = local ? LocalVa : FbVa;
+
+	/* Sample-locations table: (0,0) then 31 copies of (-128,-128). */
+	sl = (u32 *)((u8 *)g->data + (local == 2 ? 0x400 : 0));
+	for(i = 0; i < 32; i++)
+		sl[i] = i == 0 ? 0 : 0x8080;
+	drvdmacache(DrvClean, g->datapa, 4096);
+
+	/* Framebuffer parameters, 64 bytes. */
+	fbd[0] = 0;				/* pre/post frame: never */
+	fbd[4] = (u32)slva;
+	fbd[5] = (u32)(slva >> 32);
+	fbd[8] = (fi.width - 1) | ((fi.height - 1) << 16);
+	fbd[9] = 0;				/* bound min 0,0 */
+	fbd[10] = (fi.width - 1) | ((fi.height - 1) << 16);
 	/* log2(1 sample), single pattern, MINUS_180_IN_0_OUT, log2(256),
 	 * no downsample, rt_count-1, cbuf_alloc >> 10. */
-	g->job[11] = (0 << 0) | (0 << 3) | (2 << 6) | (8 << 9) |
-		     (0 << 13) | (0 << 16) | (0 << 19) | (1 << 24);
+	fbd[11] = (0 << 0) | (0 << 3) | (2 << 6) | (8 << 9) |
+		  (0 << 13) | (0 << 16) | (0 << 19) | (1 << 24);
 	/* Z internal format is D24 (1) even with no depth buffer; Linux's
 	 * captured FBD has 0x00010000 here.  No ZS enables, no CRC. */
-	g->job[12] = 1 << 16;
-	g->job[13] = 0;				/* z clear */
-	g->job[14] = 0;				/* tiler */
-	g->job[15] = 0;
+	fbd[12] = 1 << 16;
+	fbd[13] = 0;				/* z clear */
+	fbd[14] = 0;				/* tiler */
+	fbd[15] = 0;
 
 	/* Colour render target at 0x80, linear.  The captured Linux FBD
 	 * uses row stride = width*4 and surface stride 0. */
-	rt = g->job + 0x80/4;
+	rt = fbd + 0x80/4;
 	rt[0] = (1 << 26);			/* internal format R8G8B8A8 */
 	rt[1] = (1 << 0) |			/* write enable */
 		(19 << 3) |			/* writeback R8G8B8A8 */
@@ -1058,18 +1120,20 @@ gpuclr(Gpu *g, u32 color, u32 cw, u32 ch, int tiled, u32 cfgarg)
 		(1 << 15) |			/* dithering */
 		(1672 << 16) |			/* swizzle RGBA */
 		(1 << 31);			/* clean tile write */
-	rt[8] = (u32)FbVa;
-	rt[9] = 0;
-	rt[10] = (u32)fi.width * 4;
+	rt[8] = (u32)rtva;
+	rt[9] = (u32)(rtva >> 32);
+	/* Row stride: the local scratch buffer is tight, the scanout buffer
+	 * is not, so a partial clear must keep the real stride. */
+	rt[10] = local ? (u32)fi.width * 4 : (u32)fi.stride;
 	rt[11] = 0;				/* surface stride */
 	rt[12] = color;
 	rt[13] = color;
 	rt[14] = color;
 	rt[15] = color;
 
-	/* Fragment job at 0xc0, payload at 0xe0. */
-	job = g->job + 0xc0/4;
-	fbdesc = JobVa | 1;			/* type=1, no CRC, 1 RT */
+	/* Fragment job: header then payload, 64 bytes. */
+	job = g->job + (local == 2 ? 0 : 0xc0/4);
+	fbdesc = fbdva | 1;			/* type=1, no CRC, 1 RT */
 	job[4] = 1 | (9 << 1) | (1 << 16);	/* is64b, FRAGMENT, index 1 */
 	job[6] = 0;
 	job[7] = 0;
@@ -1079,12 +1143,14 @@ gpuclr(Gpu *g, u32 color, u32 cw, u32 ch, int tiled, u32 cfgarg)
 	pl[0] = 0;				/* min x, min y */
 	pl[1] = (tw - 1) | ((th - 1) << 16);	/* max x, max y, no tile map */
 	pl[2] = (u32)fbdesc;
-	pl[3] = 0;
+	pl[3] = (u32)(fbdesc >> 32);
 	pl[4] = 0;
 	pl[5] = 0;
 	pl[6] = 0;
+	pl[7] = 0;
 
 	drvdmacache(DrvClean, g->jobpa, 4096);
+	drvdmacache(DrvClean, g->datapa, 4096);
 	gpucacheflush(g);
 
 	/* Linux's post-submit JS0_CONFIG reads back 0x7b00: AS 0,
@@ -1096,8 +1162,8 @@ gpuclr(Gpu *g, u32 color, u32 cw, u32 ch, int tiled, u32 cfgarg)
 		print("gpufs: clear: mmu re-enable failed\n");
 	drw(&g->d, JobIntClear, 0x70007);
 	drw(&g->d, JobIntMask, 0x70007);
-	drw(&g->d, JSOFF(slot, JsHeadLo), (u32)(JobVa + 0xc0));
-	drw(&g->d, JSOFF(slot, JsHeadHi), (u32)((JobVa + 0xc0) >> 32));
+	drw(&g->d, JSOFF(slot, JsHeadLo), (u32)hva);
+	drw(&g->d, JSOFF(slot, JsHeadHi), (u32)(hva >> 32));
 	drw(&g->d, JSOFF(slot, JsAffinityLo), 1);
 	drw(&g->d, JSOFF(slot, JsAffinityHi), 0);
 	drw(&g->d, JSOFF(slot, JsConfig), cfg);
@@ -1113,19 +1179,27 @@ gpuclr(Gpu *g, u32 color, u32 cw, u32 ch, int tiled, u32 cfgarg)
 		sleep(1);
 	}
 	drw(&g->d, JobIntClear, (1 << slot) | (1 << (slot + 16)));
-	print("gpufs: clear tiles %ud x %ud %s raw %#ux js %#ux as %#ux addr %#llux\n",
-	      tw, th, done ? "PASS" : (err ? "FAIL" : "TIMEOUT"), raw,
+	print("gpufs: clear tiles %ud x %ud stride %ud %s raw %#ux js %#ux as %#ux addr %#llux\n",
+	      tw, th, rt[10], done ? "PASS" : (err ? "FAIL" : "TIMEOUT"), raw,
 	      drd(&g->d, JSOFF(slot, JsStatus)),
 	      drd(&g->d, ASOFF(0, 0x1c)),
 	      ((u64)drd(&g->d, ASOFF(0, 0x24)) << 32) | drd(&g->d, ASOFF(0, 0x20)));
+	if(local){
+		u32 *lw = g->locbuf;
+		drvdmacache(DrvInval, g->locpa, 65536);
+		print("gpufs: local pixel %#ux %s (also %#ux %#ux, last row %#ux)\n",
+		      lw[0], lw[0] == color ? "PASS" : "FAIL",
+		      lw[1], lw[fi.width],
+		      lw[(fi.height - 1) * fi.width]);
+	}
 	if(!done){
-		print("gpufs: fbd");
+		print("gpufs: fbd %#llux", fbdva);
 		for(i = 0; i < 16; i++)
-			print(" %#ux", g->job[i]);
-		print("\ngpufs: rt");
+			print(" %#ux", fbd[i]);
+		print("\ngpufs: rt %#llux", rtva);
 		for(i = 0; i < 16; i++)
 			print(" %#ux", rt[i]);
-		print("\ngpufs: job");
+		print("\ngpufs: job %#llux", hva);
 		for(i = 0; i < 16; i++)
 			print(" %#ux", job[i]);
 		print("\n");
@@ -1676,6 +1750,14 @@ fswrite(Req *r, void *aux)
 		qunlock(&g->lk);
 		return;
 	}
+	if(strncmp(cmd, "peek", 4) == 0){
+		print("gpufs: ctl peek\n");
+		fbpeek(cmd[4] == ' ' ? strtoull(cmd + 5, nil, 0) : 0);
+		r->ofcall.count = r->ifcall.count;
+		respond(r, nil);
+		qunlock(&g->lk);
+		return;
+	}
 	if(strcmp(cmd, "pwr") == 0){
 		print("gpufs: ctl pwr\n");
 		if(g->powered || pmuon(g) == 0){
@@ -1725,7 +1807,7 @@ fswrite(Req *r, void *aux)
 		return;
 	}
 	if(strncmp(cmd, "clear", 5) == 0){
-		u32 color = 0xff0000ff, cw = 0, ch = 0, tiled = 0, cfgarg = 0;
+		u32 color = 0xff0000ff, cw = 0, ch = 0, tiled = 0, cfgarg = 0, local = 0;
 		char *q;
 
 		if(cmd[5] == ' '){
@@ -1734,11 +1816,12 @@ fswrite(Req *r, void *aux)
 			ch = strtoul(q, &q, 0);
 			tiled = strtoul(q, &q, 0);
 			cfgarg = strtoul(q, &q, 0);
+			local = strtoul(q, &q, 0);
 		}
-		print("gpufs: ctl clear %#ux %ud %ud tiled %ud cfg %#ux\n",
-		      color, cw, ch, tiled, cfgarg);
+		print("gpufs: ctl clear %#ux %ud %ud tiled %ud cfg %#ux local %ud\n",
+		      color, cw, ch, tiled, cfgarg, local);
 		if(g->powered || pmuon(g) == 0){
-			gpuclr(g, color, cw, ch, tiled, cfgarg);
+			gpuclr(g, color, cw, ch, tiled, cfgarg, local);
 			r->ofcall.count = r->ifcall.count;
 			respond(r, nil);
 		}else

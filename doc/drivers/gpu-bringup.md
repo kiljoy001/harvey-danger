@@ -327,26 +327,92 @@ descriptor sweeps.
 - `dump` -- the whole 0x000..0x114 GPU control block.
 - `test`, `matrix`, `null`, `chain`, `identity` -- the earlier probes.
 
+## The first GPU clear
+
+`gpufs` now renders into the live VOP2 scanout buffer.  The command is
+
+```text
+echo 'clear 0xff00ff00' > /mnt/g/ctl
+gpufs: clear pa 0x47400000 size 0x7e9000 1920 x 1080 stride 7680
+gpufs: clear tiles 120 x 68 stride 7680 PASS raw 0x1 js 0x0 as 0x0 addr 0x0
+```
+
+and it is verifiable from the CPU side through `/dev/display/data`
+(`echo 'peek 0' > /mnt/g/ctl`):
+
+```text
+gpufs: peek 4147200 n 16: 0xff00ff00 0xff00ff00 0xff00ff00 0xff00ff00
+```
+
+A 640x480 clear at the origin leaves the rest of the frame alone:
+
+```text
+gpufs: peek 0    : 0xff0000ff ...   (cleared)
+gpufs: peek 2800 : 0xffff0000 ...   (x=700, outside the 640-wide rect)
+gpufs: peek 3080000: 0xff0000ff ... (y=400, x=80, inside)
+```
+
+The chain is the one Mesa emits for a clear-only frame, and it needs no
+tiler job and no shader: a framebuffer descriptor with per-render-target
+clear colours, plus one `FRAGMENT` job whose payload carries the tile
+bounds and points at the descriptor.  `gpufs` builds the descriptor, the
+render target and the sample-locations table in DMA pages, maps the scanout
+buffer into the GPU address space and submits on JS0.
+
+### What actually blocked it
+
+Three separate things, in the order they were found:
+
+1. **`CONFIG_FAULT` (JS_STATUS 0x40).**  The framebuffer and render target
+   were mapped with level-3 page tables filled through a `u32 *`.  Mali
+   LPAE tables hold 512 **64-bit** descriptors, so this wrote half-width,
+   double-spaced entries: each hardware descriptor covered 8 KiB of VA and
+   pointed at a page twice as far along in PA, and only half the table was
+   populated.  A 64x64 clear inside the first megabyte still "completed",
+   but wrote to the wrong physical pages; anything larger hit
+   `AS_FAULTSTATUS` at exactly +1 MiB.  The tables must be filled as `u64`.
+2. **Leaf attributes.**  The Mali MMU uses *stage-2-like* permissions
+   (`HAP`, bits 6:7) with *stage-1-like* attributes, so the correct leaf is
+
+   ```text
+   TYPE_BLOCK | ATTRIDX_CACHE | HAP_READ | HAP_WRITE | SH_OS  ==  0x2c5
+   ```
+
+   `HAP_READ|HAP_WRITE` is what lets the GPU fetch the job header *and*
+   write the exception status back into it.  Copying the ARM stage-1
+   `AP_RDONLY` bit (7) clears `HAP_WRITE` instead, and the job then faults
+   on its own header address (observed as `0x7c0003c8` at `0x10000000`).
+3. **Descriptor contents.**  The only field `gpufs` had wrong versus the
+   captured chain was `z_internal_format`, which is `1` (D24) even with no
+   depth buffer.
+
+`contrib/gpucap/panclr.c` remains the control: it submits the same chain
+through the Linux panfrost driver and gets the same pixels, which is what
+proved the descriptor was right and the faults were driver-side.
+
+### Two layouts, both working
+
+`clear ... 1` packs the descriptor at the start of the job page with the
+header at +0xc0.  `clear ... 2` gives the descriptor its own page and
+starts the job at the base of the job page, which is how Linux lays it out.
+Both complete, so the packing was never the problem.
+
 ## What is next
 
-1. **Reference job trace.** Capture a working panfrost job (Linux or the
-   vendor driver) and diff the header, `JS_CONFIG`, and AS registers
-   against `gpufs`. Then make the first NULL / write-value job complete.
-2. **Job submission.** Bifrost job descriptors in the 3 job slots, the
-   `JOB_INT` block, and a ring of jobs exchanged with userspace. Panfrost's
-   `panfrost_regs.h` and the Bifrost job layout are the reference.
-3. **Shader/tiler power.** `SHADER_PWRON`/`TILER_PWRON`/`L2_PWRON` and the
-   ready bitmaps (`SHADER_READY`, `TILER_READY`, `L2_READY`). The board
-   currently reads one core ready after the CRU bring-up; that is not the
-   same as the power-on handshake.
-4. **A compute interface.** A Plan 9 job ABI (`/gpu/job`, or a `ctl` command
-   with shared buffers) and a Bifrost instruction encoder. There is no Mesa
-   on Plan 9, so graphics is a separate, much larger project; compute is
-   the honest first use.
-5. **DVFS and thermal.** GPU OPPs are in the DTS and the RK809 can set
+1. **A real submit interface.**  `clear` is a debug verb.  The display
+   service needs a buffered submission path: a shared surface, a job that
+   fills/copies it, and a fence to wait on before the CPU path touches the
+   same pixels.  `JS_CONFIG` already asks for end-of-job cache clean and
+   invalidate, so completion means the pixels are in DRAM.
+2. **GPU-backed display surfaces.**  Have `o9display` allocate its
+   composited surface from the same DMA pool the GPU can map, blit with the
+   GPU, and keep the CPU memdraw path as the fallback when submission fails.
+3. **A shader path.**  `contrib/gpucc` already emits Bifrost blobs; the
+   next step is a vertex/tiler chain with a shader, attribute buffer and
+   tiler heap, which is what Mesa's normal draw path carries.
+4. **DVFS and thermal.**  GPU OPPs are in the DTS and the RK809 can set
    `vdd_gpu`; neither is wired to a devfreq/thermal policy.
 
-Do not expect this to run a shader yet. What it does prove is that the
-board's PD_GPU, clock gates, resets and register window are all reachable
-from a userspace 9P driver, and that the GPU is a G52 with the expected
-Bifrost feature set.
+The board's PD_GPU, clock gates, resets, MMU, job manager and scanout path
+are all reachable from a userspace 9P driver, and the GPU now produces
+pixels that the VOP2 scans out.
