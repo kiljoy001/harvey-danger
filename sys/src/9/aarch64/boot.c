@@ -603,6 +603,15 @@ arm64kernelstart(Fdtinfo *info)
 	addbootfile("displaytest", (u8 *)arm64displaytestelf,
 		    sizeof(arm64displaytestelf));
 	addbootfile("rcmain", (u8 *)arm64rcmain, sizeof(arm64rcmain));
+#ifdef ARM64_EMBED_GEFS
+	addbootfile("emmcfs", (u8 *)arm64emmcfs, sizeof(arm64emmcfs));
+	addbootfile("ext2srv", (u8 *)arm64ext2srvelf, sizeof(arm64ext2srvelf));
+	addbootfile("gmacfs", (u8 *)arm64gmacfself, sizeof(arm64gmacfself));
+	addbootfile("provision", (u8 *)arm64provisionelf,
+		    sizeof(arm64provisionelf));
+	addbootfile("bigtest", (u8 *)arm64bigtestelf, sizeof(arm64bigtestelf));
+	addbootfile("gefs", (u8 *)arm64gefs, sizeof(arm64gefs));
+#endif
 	bootarchive();
 	arm64uartputs("HARVEY-ARM64 DEVICE-RESET PASS\n");
 	pageinit();

@@ -403,8 +403,13 @@ struct Kvp {
 };
 
 struct Msg {
-	char	op;
+	/*
+	 * Kvp first: Plan 9 lets a Msg* convert to the anonymous Kvp*
+	 * member, and that conversion is a no-op only when the member is
+	 * at offset 0.  Msg is an in-memory view, never serialised.
+	 */
 	Kvp;
+	char	op;
 };
 
 struct Dlist {

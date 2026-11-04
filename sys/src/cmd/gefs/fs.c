@@ -2039,7 +2039,7 @@ fsopen(Fmsg *m, int id, Amsg **ao)
 	if((f->qpath & Qdump) != 0){
 		filldumpdir(&d);
 	}else{
-		if(!btlookup(t, f->dent, &kv, buf, sizeof(buf)))
+		if(!btlookup(t, DKEY(f->dent), &kv, buf, sizeof(buf)))
 			error(Esrch);
 		kv2dir(&kv, &d);
 	}
