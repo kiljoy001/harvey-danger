@@ -90,6 +90,27 @@ cxx-libcxx harvey arm64 sum=6 tls=7 shared=42 int=1 what=boom
 LIBCXX-ARM64-OK
 ```
 
+### Running ARM tools with arguments
+
+The kernel starts its first user process with no descriptors and no
+arguments.  `util/arm64/mkrun.py` wraps an ARM64 program in a launcher that
+opens the console, unions a ramfs over the read-only boot root, writes the
+embedded program (and optionally a tree of data files) out, and execs it
+with a command line:
+
+```sh
+python3 util/arm64/mkrun.py /tmp/opencode/llvm-arm64/bin/llvm-tblgen \
+    --tree /home/scott/Repo/llvm-project/llvm/include:/td \
+    -- -gen-vt -I /td /td/llvm/Target/ValueTypes.td
+python3 util/arm64/test_apex_boot.py --elf build/arm64-run/runner.elf \
+    --marker '#include'
+```
+
+LLVM builds for aarch64 with `harvey-aarch64-toolchain.cmake` and
+`llvm-tblgen` runs; known gap: the ramfs written by the launcher is
+enumeration-visible (stat/readdir) but `open()` on the deeper paths returns
+ENOENT, so tblgen cannot yet read its input tree.
+
 ```sh
 python3 util/arm64/test_virt.py
 python3 util/arm64/test_fdt.py
