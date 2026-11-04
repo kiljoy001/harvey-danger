@@ -24,6 +24,9 @@ SECTIONS {
   .tbss : { *(.tbss .tbss.*) } :data :tls
   .bss : { *(.bss .bss.* COMMON) } :data
   PROVIDE(end = .);
+  /* Non-zero whenever the script provided the TLS geometry: .tdata can be
+   * empty (all TLS in .tbss), which would make __tls_vaddr zero. */
+  __tls_present = 1;
   __tls_vaddr = ADDR(.tdata);
   __tls_filesz = SIZEOF(.tdata);
   __tls_memsz = SIZEOF(.tdata) + SIZEOF(.tbss);

@@ -552,10 +552,10 @@ extern "C" int dladdr(const void *addr, Dl_info *info) {
  * used.  The link script records the two segments libunwind needs: the
  * text segment (to match the pc) and PT_GNU_EH_FRAME (to find .eh_frame).
  */
-extern char __harvey_text_start[] __attribute__((weak));
-extern char __harvey_text_size[] __attribute__((weak));
-extern char __harvey_eh_frame_hdr[] __attribute__((weak));
-extern char __harvey_eh_frame_hdr_size[] __attribute__((weak));
+extern char __harvey_text_start[];
+extern char __harvey_text_size[];
+extern char __harvey_eh_frame_hdr[];
+extern char __harvey_eh_frame_hdr_size[];
 #endif
 
 extern "C" int dl_iterate_phdr(int (*callback)(struct dl_phdr_info *, size_t, void *),

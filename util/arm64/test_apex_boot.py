@@ -38,6 +38,9 @@ def main() -> None:
     ap.add_argument("--elf", help="program to run as init (default: the "
                                   "APEX hello built by build_apex.py)")
     ap.add_argument("--dump", help="write the whole transcript here")
+    ap.add_argument("--allow-missing", action="store_true",
+                    help="do not fail when the marker never appears; run "
+                         "until the guest exits")
     ap.add_argument("--marker", default=MARKER,
                     help="string that must appear in the boot transcript")
     args = ap.parse_args()
@@ -99,7 +102,7 @@ def main() -> None:
         print("\n".join(lines[:40]))
         print("--- last lines ---")
         print("\n".join(lines[-15:]))
-    if args.marker not in transcript:
+    if args.marker not in transcript and not args.allow_missing:
         raise SystemExit(f"{elf.name} did not reach {args.marker!r}")
     print(f"ARM64 APEX init: {elf.name} ran under QEMU virt")
 

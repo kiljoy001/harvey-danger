@@ -307,7 +307,7 @@ def build_test() -> Path:
     src = OUT / "test.cpp"
     src.write_text(TEST)
     link = OUT / "test.ld"
-    link.write_text(LINK_SCRIPT)
+    link.write_text((ROOT / "util" / "arm64" / "apex.ld").read_text())
     obj = OUT / "obj" / "test.o"
     run([CC, *base_flags(False), "-c", str(src), "-o", str(obj)])
     elf = OUT / "libcxx-test.elf"

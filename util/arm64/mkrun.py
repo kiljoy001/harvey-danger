@@ -143,7 +143,8 @@ main(void)
 	close(fd);
 
 	for(i = 0; i < (int)(sizeof files / sizeof files[0]); i++)
-		if(writefile(files[i].path, blob + files[i].offset,
+		if(files[i].path[0] != 0 &&
+		    writefile(files[i].path, blob + files[i].offset,
 		    files[i].length) < 0){
 			fprintf(stderr, "runner: %%s: %%s\n", files[i].path,
 			    strerror(errno));

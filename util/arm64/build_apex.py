@@ -133,7 +133,7 @@ def main() -> None:
     shutil.rmtree(OUT, ignore_errors=True)
     (OUT / "obj").mkdir(parents=True)
     (OUT / "hello.c").write_text(HELLO)
-    (OUT / "hello.ld").write_text(LINK_SCRIPT)
+    (OUT / "hello.ld").write_text((ROOT / "util" / "arm64" / "apex.ld").read_text())
 
     objects = []
     for index, source in enumerate(sources()):
