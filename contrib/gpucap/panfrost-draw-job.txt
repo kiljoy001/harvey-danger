@@ -1,0 +1,82 @@
+Captured on the Orange Pi 3B (RK3566, Mali-G52) by booting the Armbian
+6.18.21 kernel plus a Debian arm64 initramfs over TFTP and running
+contrib/gpucap/capture_draw.c: a 64x64 RGBA8 FBO, cleared to blue, then one
+full-screen triangle with
+
+  vertex    gl_Position = position;            (attribute 0, vec4)
+  fragment  colour = vec4(1,0,0,1);
+
+  EGL_PLATFORM=surfaceless PAN_MESA_DEBUG=trace,linear,nocrc,dump /capture_draw
+
+  DRAW pixel ff0000ff
+
+so the draw landed.  Mesa 25.0.7, panfrost 1.4.0.
+
+This is the reference for the shader path: unlike a clear, it needs a tiler
+job, shader program descriptors, attribute state, a tiler context and a
+tiler heap.  The dump below is from `PAN_MESA_DEBUG=...dump`, which hexdumps
+every graphics buffer, so the bytes are exact.
+
+---- job chain ----
+
+Job Header (a009300):  Type: Indexed Vertex   Index 1  Next 0x0
+  shader program (vertex)   GPU VA a003000, 4096-byte BO
+  state descriptor          a002000
+  attribute buffers         a009140
+  attributes                a009160
+  attribute data            a008000  (3 x vec4, stride 16, size 48)
+  varying buffers           a0092a0
+  varyings                  a002040
+  thread storage            a009100
+  uniform buffers           a0091c0
+  push uniforms             a0091d0
+  uniform data              a009000+416 (ubuf_0[32]) and a009000+464 (vec4[3])
+  viewport                  0x0
+
+Job Header (a009580):  Type: Fragment   Index 1  Next 0x0
+  shader program (fragment) GPU VA a003100, 3840-byte BO
+  state descriptor          a009240
+  viewport                  a009120
+  thread storage            a009100
+  blend RT 0               (opaque, mask 15, RGBA8)
+  samplers                  a009200
+
+Framebuffer @a009000:
+  Width 64 Height 64   Sample Locations 0xa000000   Render Target Count 1
+  Tiler 0xa0094c0            <- the *tiler context* the fragment job walks
+  Color Render Target 0: Base 0xa004000, Row Stride 256, Linear, RGBA8
+  Clear colours = 0xffff0000
+
+Tiler context @a0094c0:
+  Polygon List 0x3002008000   (tag | 0x2008000)
+  Hierarchy Mask 6   FB 64x64   Heap 0xa009480   Sample Pattern single
+  State word 4 = 1
+
+Tiler heap @a009480:
+  Base 0x2000000  Bottom 0x2008100  Top 0xa000000  Size 128 MiB
+
+Tiler job payload:
+  Invocation (1,1,1) x (1,3,1)   thread group split 2
+  Draw mode Triangles, no indices, 3 vertices, low+high depth cull
+  Primitive Size constant 1.0
+
+Fragment job payload:
+  Bound Min 0,0  Bound Max 3,3 (tiles)  Framebuffer 0xa009001
+
+---- what this means for gpufs ----
+
+The clear needs none of this: no tiler job, no shaders, no heap.  A draw
+needs all of it, and the descriptor set is what the Gallium driver builds
+at draw time.  The pieces to reproduce, in order of risk:
+
+1. SHADER_PROGRAM for each stage from the gpucc blob plus pan_shader_info.
+2. RENDERER_STATE (the "State:" block above) and the fragment blend state.
+3. Attribute buffer / attribute descriptors for attribute 0.
+4. Thread storage (TLS) descriptor; TLS size is 0 for both stages here.
+5. Tiler context + tiler heap + polygon list tag.
+6. TILER job payload (invocation, primitive, primitive size) and the
+   VERTEX/FRAGMENT job chain with Next patched.
+
+The tiler heap is a 128 MiB VA range based at 0x2000000 in this capture,
+but only the first pages are touched; a much smaller heap is fine as long
+as the polygon list tag, base, bottom and top are consistent.
