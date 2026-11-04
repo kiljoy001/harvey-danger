@@ -208,6 +208,7 @@ TEST = r"""
 #include <unistd.h>
 #include <string>
 #include <vector>
+#include <stdexcept>
 #include <thread>
 #include <mutex>
 
@@ -235,6 +236,22 @@ main()
 	step("S3 ");
 	std::vector<int> v{1, 2, 3};
 	step("S4 ");
+
+	int int_ok = 0;
+	try {
+		throw 42;
+	} catch (int v) {
+		int_ok = (v == 42);
+	}
+	step("S5 ");
+	std::string what;
+	try {
+		throw std::runtime_error("boom");
+	} catch (const std::exception &e) {
+		what = e.what();
+	}
+	step("S6 ");
+
 	long shared = 0;
 	std::mutex m;
 	std::thread t([&] {
@@ -242,11 +259,11 @@ main()
 		shared = 42;
 	});
 	t.join();
-	step("S5 ");
-	std::printf("cxx-libcxx %s sum=%d tls=%d shared=%ld\n", s.c_str(),
-	    v[0] + v[1] + v[2], tlsv, shared);
+	step("S7 ");
+	std::printf("cxx-libcxx %s sum=%d tls=%d shared=%ld int=%d what=%s\n",
+	    s.c_str(), v[0] + v[1] + v[2], tlsv, shared, int_ok, what.c_str());
 	if (s == "harvey arm64" && v[0] + v[1] + v[2] == 6 && tlsv == 7 &&
-	    shared == 42)
+	    shared == 42 && int_ok && what == "boom")
 		std::printf("LIBCXX-ARM64-OK\n");
 	return 0;
 }

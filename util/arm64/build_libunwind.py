@@ -46,6 +46,12 @@ def flags(include_compat: bool = True) -> list[str]:
         "-D_GNU_SOURCE", "-DHARVEY",
         "-O2",
         "-g",
+        # aarch64-none-elf does not get asynchronous unwind tables by
+        # default: without them the unwinder cannot leave its own frames
+        # (_Unwind_RaiseException is the first frame), so phase 1 reports
+        # end of stack.
+        "-funwind-tables",
+        "-fno-omit-frame-pointer",
     ]
     if include_compat:
         # compat.h supplies PRIxPTR and the other format macros APEX's

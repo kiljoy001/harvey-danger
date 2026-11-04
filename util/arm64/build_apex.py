@@ -82,7 +82,7 @@ def flags() -> list[str]:
     return [
         "--target=aarch64-none-elf", "-ffreestanding", "-fno-builtin",
         "-fno-stack-protector", "-mstrict-align", "-fcommon", "-nostdlibinc",
-        "-O2", "-g", "-D_SUSV2_SOURCE", "-D_POSIX_SOURCE",
+        "-O2", "-g", "-funwind-tables", "-D_SUSV2_SOURCE", "-D_POSIX_SOURCE",
         "-D_LIMITS_EXTENSION", "-D_GNU_SOURCE", "-DHARVEY", "-D_PLAN9_SOURCE",
         "-D_BSD_EXTENSION", "-DIEEE_8087",
         "-I", str(APEX / "include"),

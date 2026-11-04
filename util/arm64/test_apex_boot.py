@@ -37,6 +37,7 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--elf", help="program to run as init (default: the "
                                   "APEX hello built by build_apex.py)")
+    ap.add_argument("--dump", help="write the whole transcript here")
     ap.add_argument("--marker", default=MARKER,
                     help="string that must appear in the boot transcript")
     args = ap.parse_args()
@@ -81,6 +82,8 @@ def main() -> None:
         from test_virt import boot_until
         transcript = boot_until(command, args.marker)
     finally:
+        if args.dump:
+            Path(args.dump).write_text(transcript)
         header.write_text(original)
         # Make sure the next normal build recompiles the object that
         # embedded our init image.
