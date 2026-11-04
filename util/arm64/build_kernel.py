@@ -185,11 +185,19 @@ def main() -> None:
     sources.append(ROOT / "sys/src/9/port/dev9ring.c")
     sources.append(ROOT / "sys/src/9/port/devvirtio9p.c")
     sources.append(OUT / "systab.c")
+    # boot.c includes the generated userland image header, which is ~170 MB
+    # of initialisers; clang 23 crashes on it when it also has to emit debug
+    # info, so that one translation unit is compiled without -g.
+    def flags_for(source: Path):
+        if source.name == "boot.c":
+            return [flag for flag in flags if flag != "-g"]
+        return flags
+
     def compile_one(source: Path):
         label = source.relative_to(ROOT) if source.is_relative_to(ROOT) else source.name
         obj = OUT / (str(label).replace("/", "_") + ".o")
         try:
-            run = buildcache.run_cached([CC, *flags, "-c", str(source),
+            run = buildcache.run_cached([CC, *flags_for(source), "-c", str(source),
                                          "-o", str(obj)], [obj],
                                         sources=[source])
             return str(label), obj, None, run

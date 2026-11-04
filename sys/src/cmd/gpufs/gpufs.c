@@ -18,6 +18,7 @@
 #include <9p.h>
 #include "drv.h"
 #include "drawreplay.h"
+#include "shaderpack.h"
 
 enum {
 	PmuBase		= 0xfdd90000,
@@ -1042,9 +1043,10 @@ submitat(Gpu *g, int slot, u64 head, u32 cfg, u32 *rawp, u32 *statp)
  * polygon list is what the driver hands over.
  */
 static void
-gpudraw(Gpu *g)
+gpudraw(Gpu *g, int mode)
 {
 	u32 *d, *rt, raw, stat;
+	int ours_frag, ours_vblob, ours_vrsd;
 	u8 *pool;
 	u64 poolpa;
 	int r;
@@ -1078,6 +1080,31 @@ gpudraw(Gpu *g)
 	memmove(pool + 0x3000, draw_003000, sizeof draw_003000);
 	memmove(pool + 0x8000, draw_008000, sizeof draw_008000);
 	memmove(pool + 0x9000, draw_009000, sizeof draw_009000);
+
+	/* Replace Mesa's shaders and shader descriptors with ours.  What is
+	 * left of the replay is the layout around them: the attribute buffer
+	 * and its descriptors, the varying buffer, the draw descriptors, the
+	 * tiler context and the job headers. */
+	/* 0 ours both, 1 ours FS only, 2 ours VS only,
+	 * 3 our vertex descriptor + Mesa's vertex blob,
+	 * 4 our vertex blob + Mesa's vertex descriptor. */
+	ours_frag = (mode == 0 || mode == 1);
+	ours_vblob = (mode == 0 || mode == 2 || mode == 4);
+	ours_vrsd = (mode == 0 || mode == 2 || mode == 3);
+	if(ours_frag){
+		memmove(pool + 0x3100, shader_frag_bin, sizeof shader_frag_bin);
+		memmove(pool + 0x9240, shader_frag_rsd, sizeof shader_frag_rsd);
+		*(u32 *)(pool + 0x9240) = 0xa003100;
+	}
+	if(ours_vblob){
+		memmove(pool + 0x3000, shader_vert_bin, sizeof shader_vert_bin);
+	}
+	if(ours_vrsd){
+		memmove(pool + 0x2000, shader_vert_rsd, sizeof shader_vert_rsd);
+		*(u32 *)(pool + 0x2000) = 0xa003000;
+	}
+	print("gpufs: draw mode %d (ours: frag %d vblob %d vrsd %d)\n",
+	      mode, ours_frag, ours_vblob, ours_vrsd);
 
 	d = (u32 *)(pool + 0x9000);
 
@@ -2062,10 +2089,11 @@ fswrite(Req *r, void *aux)
 		qunlock(&g->lk);
 		return;
 	}
-	if(strcmp(cmd, "draw") == 0){
-		print("gpufs: ctl draw\n");
+	if(strncmp(cmd, "draw", 4) == 0){
+		int mode = cmd[4] == ' ' ? atoi(cmd + 5) : 0;
+		print("gpufs: ctl draw %d\n", mode);
 		if(g->powered || pmuon(g) == 0){
-			gpudraw(g);
+			gpudraw(g, mode);
 			r->ofcall.count = r->ifcall.count;
 			respond(r, nil);
 		}else

@@ -7,6 +7,63 @@
 #include "util/u_dynarray.h"
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
+
+/*
+ * On Bifrost (arch <= 7) the RENDERER_STATE descriptor *is* the shader
+ * program descriptor: the blob pointer, register allocation, preload and
+ * the message pair all live in it, and the job slot picks the stage.  So a
+ * draw needs one packed RENDERER_STATE per stage and nothing else from
+ * Mesa's descriptor set.
+ */
+static void
+dump_rsd(const char *name, const struct pan_shader_info *info,
+         uint64_t shader_placeholder)
+{
+   struct mali_renderer_state_packed rsd;
+
+   memset(&rsd, 0, sizeof rsd);
+   pan_cast_and_pack(&rsd, RENDERER_STATE, cfg) {
+      pan_shader_prepare_rsd(info, shader_placeholder, &cfg);
+
+      if(info->stage == MESA_SHADER_FRAGMENT){
+         /* On Bifrost the blend equation is a separate BLEND descriptor
+          * referenced by the draw, not part of the renderer state.  The
+          * rest is what Gallium would merge in for an opaque draw: with
+          * a zeroed descriptor the depth function decodes as Never and
+          * every fragment is killed. */
+         cfg.multisample_misc.sample_mask = 0xffff;
+         cfg.multisample_misc.depth_function = MALI_FUNC_ALWAYS;
+         cfg.multisample_misc.overdraw_alpha0 = true;
+         cfg.multisample_misc.overdraw_alpha1 = true;
+         cfg.multisample_misc.fixed_function_depth_range_fixed = true;
+         cfg.multisample_misc.shader_depth_range_fixed = true;
+         cfg.multisample_misc.fixed_function_near_discard = true;
+         cfg.multisample_misc.fixed_function_far_discard = true;
+      } else {
+         /* The tiler reads the transformed position out of the varying
+          * buffer, so the shader has to be handed its address. */
+         cfg.preload.vertex.position_result_address_lo = true;
+         cfg.preload.vertex.position_result_address_hi = true;
+      }
+   }
+
+   char path[64];
+   snprintf(path, sizeof path, "%s.rsd", name);
+   FILE *f = fopen(path, "wb");
+   if(f != NULL){
+      fwrite(&rsd, 1, sizeof rsd, f);
+      fclose(f);
+   }
+
+   printf("%s: rsd %u bytes shader %#llx attr %u varying %u ubo %u "
+          "work_regs %u uniform_preload %u\n",
+          name, (unsigned)sizeof rsd,
+          (unsigned long long)shader_placeholder,
+          info->attribute_count, info->varyings.formats.count,
+          info->ubo_count, info->work_reg_count,
+          info->push.count);
+}
 
 static void
 dump(const char *name, nir_shader *nir, struct pan_varying_layout *layout)
@@ -33,6 +90,8 @@ dump(const char *name, nir_shader *nir, struct pan_varying_layout *layout)
           name, bin.size, (unsigned)info.stage,
           (unsigned long long)info.tls_size,
           (unsigned long long)info.outputs_written);
+
+   dump_rsd(name, &info, 0xDEADB000ull);
 }
 
 int
@@ -66,6 +125,9 @@ main(void)
                     .io_semantics.location = VARYING_SLOT_POS,
                     .io_semantics.num_slots = 1);
    vb.shader->info.outputs_written |= 1ull << VARYING_SLOT_POS;
+   /* The compiler derives attribute_count from inputs_read, which
+    * nir_load_input does not set on its own. */
+   vb.shader->info.inputs_read |= 1ull << VERT_ATTRIB_GENERIC0;
    nir_validate_shader(vb.shader, "gpucc-vs");
    struct pan_varying_layout layout = {0};
    pan_varying_collect_formats(&layout, vb.shader, 0x74021000ull, true, false);
