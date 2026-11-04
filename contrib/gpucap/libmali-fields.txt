@@ -1,0 +1,87 @@
+Vendor Mali userspace field names
+=================================
+
+Source
+------
+`libmali-bifrost-g52-g24p0-gbm.so` from the Rockchip libmali mirror
+(https://github.com/JeffyCN/mirrors, branch `libmali`,
+`lib/aarch64-linux-gnu/`).  The mirror's `gpu-chips.txt` maps
+`bifrost-g52: rk3566_rk3568 rk3562 rk3576`, so this is the right family for
+the Orange Pi 3B.
+
+  libmali-bifrost-g52-g24p0-gbm.so       56287608 bytes
+    sha256 bc6be2fd5d8b46bb9d4cb22118a3ff77af1ca46cee1ac12bc78e27f89ba3ea3d
+  libmali-bifrost-g52-g24p0-nocl-dummy-gbm.so  22854672 bytes
+    sha256 96d029f9411ba102c9bdfb2e3191e9d7a1bc03525ba2a6dddc34288eb220514e
+
+Both are stripped aarch64 shared objects, 16 MB of `.text`.  They carry a
+table of debug field names in `.rodata` plus a pointer table in `.data`
+(RELATIVE relocations in `.rela.dyn`) that names the fields of the job
+manager structures.
+
+Tiler context (`.rodata` 0x1125d60, in vendor order)
+----------------------------------------------------
+    polygon_list
+    level_mask_and_sample_pattern
+    frame_buffer_width_height
+    reserved_1
+    heap_descriptor_pointer
+    tile_weight
+    reserved_2
+    private_state
+
+That is the `TILER_CONTEXT` in `contrib/gpucap/panfrost-draw-job.txt`, field
+for field and in the same order:
+
+    offset 0x00  polygon_list                    (64-bit)
+    offset 0x08  level_mask + sample_pattern     (13 + 3 bits)
+    offset 0x0c  fb_width / fb_height            (16 + 16)
+    offset 0x10  reserved_1
+    offset 0x18  heap_descriptor_pointer
+    offset 0x20  tile_weight
+    offset 0x28  reserved_2
+    offset 0x30  private_state
+
+Tiler heap
+----------
+    heap_size
+    heap_pointer
+    low_pointer
+    high_pointer
+
+which is the four 64-bit fields of `TILER_HEAP` we write as
+`size / base / bottom / top` -- the vendor's `low_pointer`/`high_pointer` are
+the ones that advance as the hardware allocates chunks.
+
+Nearby names in the same table, for orientation:
+
+    cdsbp_0, _ssbo0, _ssbo1, _ssbo2, gpu_hd, gpu_td, src_td
+    mem_region, jit_memory_region, base_address, size_in_bytes, used_bytes
+    pages_to_initially_commit, pages_to_grow_on_page_fault, error_flag_address
+    first_tiler_job_address, tiler_job_array_address, tiler_job_address
+
+and the kbase event names (`JOB_CONFIG_FAULT`, `BASE_JD_EVENT_JOB_INVALID`, ...)
+which match the exception table in the kernel module.
+
+What this settles
+-----------------
+* The tiler context layout `gpufs` builds from the capture is the vendor's
+  layout, independently of Mesa.
+* `heap_descriptor_pointer` really is a pointer to the heap descriptor (our
+  FBD "Tiler" field points at the context which points at the heap), and
+  `bottom`/`top` are the heap's low/high pointers.
+* Nothing else in the descriptor set needed correcting: the draw already
+  runs.
+
+REA notes
+---------
+REA (Ghidra 12.1.4) will not import these blobs: 16 MB of `.text` exceeds the
+330 s provider gap, and only the data-only extract is stable:
+
+    llvm-objcopy --only-section=.rodata --only-section=.dynstr \
+        --only-section=.data.rel.ro --only-section=.data in out
+    # REA opens it: 12 segments, 0 procedures, 26373 strings
+
+So the field names above were recovered from the string/pointer tables
+directly; REA is the tool for the small vendor `kbase` module, not for a
+16 MB GLES driver.

@@ -359,6 +359,33 @@ fragment shader, renderer state, blend state and the framebuffer descriptor.
 The replay is scaffolding, not a design: it exists so the descriptor layout
 is validated before `gpufs` starts emitting its own.
 
+## The vendor userspace agrees
+
+The descriptor set was inferred from Mesa's capture.  The vendor Mali
+userspace carries its own field-name table for the same structures, and it
+matches field for field.  `contrib/gpucap/libmali-fields.txt` has the
+details; the short version is the tiler context order
+
+```text
+polygon_list, level_mask_and_sample_pattern, frame_buffer_width_height,
+reserved_1, heap_descriptor_pointer, tile_weight, reserved_2, private_state
+```
+
+which is exactly the `TILER_CONTEXT` the replay writes, and the heap
+
+```text
+heap_size, heap_pointer, low_pointer, high_pointer
+```
+
+which is our `size / base / bottom / top`.  The vendor calls the two that
+move `low_pointer` and `high_pointer`.
+
+The blob is `libmali-bifrost-g52-g24p0-gbm.so` from the Rockchip libmali
+mirror, whose chip table maps `bifrost-g52` to `rk3566_rk3568`.  Armbian's
+own *vendor* image for this board still ships mainline panfrost and no
+`libmali`; Orange Pi's official images carry it but are only distributed
+through file-sharing links.
+
 ## What is next
 
 1. **A real submit interface.**  `clear` is a debug verb.  The display
