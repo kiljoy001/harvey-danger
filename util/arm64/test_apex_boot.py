@@ -69,6 +69,9 @@ def main() -> None:
         transcript = boot_until(command, MARKER)
     finally:
         header.write_text(original)
+        # Make sure the next normal build recompiles the object that
+        # embedded our init image.
+        (OUT / "sys_src_9_aarch64_boot.c.o").unlink(missing_ok=True)
 
     tail = "\n".join(line for line in transcript.splitlines()
                      if line.strip())[-1500:]
