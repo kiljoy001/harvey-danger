@@ -80,10 +80,15 @@ body (rfork, switch to the new stack, branch), and `dl_iterate_phdr`
 synthesises the phdrs libunwind needs from linker symbols, because the
 kernel does not map the ELF header on ARM64.
 
-Known gap: the unwinder finds the FDE and the LSDA (`unw_get_proc_info`
-reports the right range) but `unw_step` fails, so `throw`/`catch` does not
-work yet.  LLVM is built with `-fno-exceptions`, so this does not block the
-compiler ladder.
+The unwinder needed one build fix: `aarch64-none-elf` does not get
+asynchronous unwind tables by default, so libunwind's own frames had no
+FDEs and its first step reported end of stack.  libunwind and the APEX
+layer are now built with `-funwind-tables`, and `throw`/`catch` works:
+
+```text
+cxx-libcxx harvey arm64 sum=6 tls=7 shared=42 int=1 what=boom
+LIBCXX-ARM64-OK
+```
 
 ```sh
 python3 util/arm64/test_virt.py
