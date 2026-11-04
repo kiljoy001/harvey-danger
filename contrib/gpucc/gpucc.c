@@ -5,10 +5,16 @@
 #include "panfrost/compiler/pan_compiler.h"
 #include "panfrost/lib/pan_shader.h"
 #include "panfrost/compiler/bifrost/bifrost/disassemble.h"
+#include "spirv/nir_spirv.h"
+#include "glsl_types.h"
+
 #include "util/u_dynarray.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+/* Set when the SPIR-V shader contains a texture instruction. */
+static bool spv_has_texture;
 
 /*
  * On Bifrost (arch <= 7) the RENDERER_STATE descriptor *is* the shader
@@ -58,12 +64,12 @@ dump_rsd(const char *name, const struct pan_shader_info *info,
    }
 
    printf("%s: rsd %u bytes shader %#llx attr %u varying %u ubo %u "
-          "work_regs %u uniform_preload %u\n",
+          "tex %u samp %u work_regs %u uniform_preload %u\n",
           name, (unsigned)sizeof rsd,
           (unsigned long long)shader_placeholder,
           info->attribute_count, info->varyings.formats.count,
-          info->ubo_count, info->work_reg_count,
-          info->push.count);
+          info->ubo_count, info->texture_count, info->sampler_count,
+          info->work_reg_count, info->push.count);
 }
 
 static void
@@ -79,6 +85,12 @@ dump(const char *name, nir_shader *nir, struct pan_varying_layout *layout)
    util_dynarray_init(&bin, nir);
    struct pan_shader_info info;
    pan_shader_compile(nir, &inputs, &bin, &info);
+   /* The compiler counts textures from API bindings; SPIR-V has none, so
+    * restore what we know about this shader. */
+   if(spv_has_texture && info.stage == MESA_SHADER_FRAGMENT){
+      info.texture_count = 1;
+      info.sampler_count = 1;
+   }
 
    char path[64];
    snprintf(path, sizeof path, "%s.bin", name);
@@ -129,9 +141,167 @@ emit_vertex(const char *name, float sx, float sy)
    dump(name, vb.shader, &layout);
 }
 
-int
-main(void)
+
+/* Bifrost wants a constant texture/sampler index per tex instruction, not
+ * derefs.  We have exactly one texture bound at index 0. */
+static bool
+lower_sampler_derefs(nir_builder *b, nir_instr *instr, void *data)
 {
+   nir_tex_instr *tex;
+   bool changed = false;
+   int i;
+
+   if(instr->type != nir_instr_type_tex)
+      return false;
+   tex = nir_instr_as_tex(instr);
+   for(i = tex->num_srcs - 1; i >= 0; i--){
+      if(tex->src[i].src_type == nir_tex_src_texture_deref ||
+         tex->src[i].src_type == nir_tex_src_sampler_deref){
+         nir_tex_instr_remove_src(tex, i);
+         changed = true;
+      }
+   }
+   tex->texture_index = 0;
+   tex->sampler_index = 0;
+   return changed;
+}
+
+/* The GLSL path leaves gl_Position's viewport transform to the driver as
+ * load_viewport_scale/offset sysvals.  We bake it, like panvk substitutes
+ * its pipeline state, because gpufs has no per-draw uniforms yet. */
+static bool
+lower_viewport_sysvals(nir_builder *b, nir_instr *instr, void *data)
+{
+   const float *v = data;      /* scale x, scale y, offset x, offset y */
+   nir_intrinsic_instr *intr;
+   nir_def *val;
+
+   if(instr->type != nir_instr_type_intrinsic)
+      return false;
+   intr = nir_instr_as_intrinsic(instr);
+   b->cursor = nir_before_instr(instr);
+
+   switch(intr->intrinsic){
+   case nir_intrinsic_load_viewport_scale:
+      val = nir_imm_vec4(b, v[0], v[1], 0.5f, 1.0f);
+      break;
+   case nir_intrinsic_load_viewport_offset:
+      val = nir_imm_vec4(b, v[2], v[3], 0.5f, 0.0f);
+      break;
+   default:
+      return false;
+   }
+   nir_def_replace(&intr->def, val);
+   return true;
+}
+
+/* Same callback panvk hands to nir_lower_io. */
+static int
+cc_type_size(const struct glsl_type *type, bool bindless)
+{
+   return glsl_count_attribute_slots(type, false);
+}
+
+/* SPIR-V -> NIR -> the panfrost lowering pipeline, up to the point where
+ * pan_shader_compile can take over. */
+static nir_shader *
+spv_shader(const char *path, mesa_shader_stage stage)
+{
+   FILE *f = fopen(path, "rb");
+   long size;
+   uint32_t *words;
+   struct spirv_to_nir_options opts = {
+      .environment = NIR_SPIRV_OPENGL,
+      /* mediump -> fp16, which is what the Bifrost blend wants. */
+      .mediump_16bit_alu = true,
+   };
+   nir_shader *nir;
+
+   if(f == NULL){
+      fprintf(stderr, "cannot open %s\n", path);
+      exit(1);
+   }
+   fseek(f, 0, SEEK_END);
+   size = ftell(f);
+   fseek(f, 0, SEEK_SET);
+   words = malloc(size);
+   if(fread(words, 1, size, f) != (size_t)size){
+      fprintf(stderr, "short read on %s\n", path);
+      exit(1);
+   }
+   fclose(f);
+
+   nir = spirv_to_nir(words, size / 4, NULL, 0, stage, "main", &opts,
+                      &bifrost_nir_options_v6);
+   free(words);
+   if(nir == NULL){
+      fprintf(stderr, "%s: spirv_to_nir failed\n", path);
+      exit(1);
+   }
+
+   NIR_PASS(_, nir, nir_lower_system_values);
+   /* SPIR-V leaves variable-based I/O; Bifrost wants load/store intrinsics. */
+   NIR_PASS(_, nir, nir_lower_indirect_derefs_to_if_else_trees,
+            nir_var_shader_in | nir_var_shader_out, UINT32_MAX);
+   NIR_PASS(_, nir, nir_lower_io, nir_var_shader_in | nir_var_shader_out,
+            cc_type_size, nir_lower_io_use_interpolated_input_intrinsics);
+   if(stage == MESA_SHADER_FRAGMENT)
+      NIR_PASS(_, nir, nir_lower_wpos_center);
+   pan_optimize_nir(nir, 0x74021000ull);
+   pan_preprocess_nir(nir, 0x74021000ull);
+   pan_postprocess_nir(nir, 0x74021000ull);
+   /* Lowering gl_Position introduces the viewport sysvals, so they are only
+    * visible after postprocess. */
+   {
+      float vp[4] = { 960.0f, 540.0f, 960.0f, 540.0f };
+      nir_shader_instructions_pass(nir, lower_viewport_sysvals,
+                                   nir_metadata_all, vp);
+   }
+   nir_shader_instructions_pass(nir, lower_sampler_derefs,
+                                nir_metadata_all, NULL);
+   /* spirv_to_nir also leaves the sampler/texture counts at zero: those
+    * come from the API's binding table, and we have exactly one of each. */
+   if(stage == MESA_SHADER_FRAGMENT){
+      nir_foreach_function_impl(impl, nir){
+         nir_foreach_block(block, impl){
+            nir_foreach_instr(instr, block){
+               if(instr->type == nir_instr_type_tex){
+                  nir->info.num_textures = 1;
+                  spv_has_texture = true;
+               }
+            }
+         }
+      }
+   }
+
+   /* spirv_to_nir does not fill inputs_read, which is what the compiler
+    * uses for attribute_count. */
+   if(stage == MESA_SHADER_VERTEX)
+      nir->info.inputs_read |= 1ull << VERT_ATTRIB_GENERIC0;
+
+   if(getenv("GPUCC_DUMP_NIR"))
+      nir_print_shader(nir, stderr);
+   return nir;
+}
+
+int
+main(int argc, char **argv)
+{
+   glsl_type_singleton_init_or_ref();
+
+   if(argc == 3){
+      nir_shader *fsn = spv_shader(argv[1], MESA_SHADER_FRAGMENT);
+      dump("frag", fsn, NULL);
+
+      nir_shader *vsn = spv_shader(argv[2], MESA_SHADER_VERTEX);
+      struct pan_varying_layout vl = {0};
+      pan_varying_collect_formats(&vl, vsn, 0x74021000ull, true, false);
+      pan_build_varying_layout_compact(&vl, vsn, 0x74021000ull);
+      dump("vert", vsn, &vl);
+      glsl_type_singleton_decref();
+      return 0;
+   }
+
    /* Fragment: write opaque red to FRAG_RESULT_COLOR. */
    nir_builder fb = nir_builder_init_simple_shader(MESA_SHADER_FRAGMENT,
                                                    &bifrost_nir_options_v6,
@@ -156,5 +326,6 @@ main(void)
    emit_vertex("vert", 32.0f, 32.0f);
    emit_vertex("vert1920", 960.0f, 540.0f);
 
+   glsl_type_singleton_decref();
    return 0;
 }
