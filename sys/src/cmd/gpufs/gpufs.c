@@ -17,6 +17,7 @@
 #include <thread.h>
 #include <9p.h>
 #include "drv.h"
+#include "drawreplay.h"
 
 enum {
 	PmuBase		= 0xfdd90000,
@@ -130,6 +131,8 @@ enum {
 	DataVa		= 0x10001000ULL,
 	FbVa		= 0x20000000ULL,	/* GPU view of the scanout buffer */
 	LocalVa		= 0x02000000ULL,	/* scratch render target for tests */
+	HeapVa		= 0x08000000ULL,	/* tiler heap for the draw diagnostic */
+	Heapsize	= 4*1024*1024,
 	TileShift	= 4,			/* 16x16 pixel tiles */
 	FbMaxPages	= 4096,
 };
@@ -160,6 +163,10 @@ struct Gpu {
 	u32	*job;			/* job descriptors are u32 words */
 	void	*locbuf;		/* scratch render target */
 	u64	locpa;
+	void	*drawbuf;		/* replay pool for the draw diagnostic */
+	u64	drawpa;
+	void	*heapbuf;		/* tiler heap for the draw diagnostic */
+	u64	heappa;
 	void	*data;
 	int	jobok;
 	u64	jobval;
@@ -951,6 +958,153 @@ fbinfo(Fbinfo *fi)
 	fi->height = strtoul(p, &p, 10);
 	fi->stride = strtoul(p, &p, 10);
 	return (fi->pa != 0 && fi->size != 0 && fi->width != 0) ? 0 : -1;
+}
+
+static int mapgpu(Gpu *g, u64 va, u64 pa, u64 size);
+
+/* Submit a job header that is already in GPU memory. */
+static int
+submitat(Gpu *g, int slot, u64 head, u32 cfg, u32 *rawp, u32 *statp)
+{
+	u32 raw;
+	int i, done, err;
+
+	done = err = 0;
+	raw = 0;
+	gpucacheflush(g);
+	drw(&g->d, JobIntClear, 0x70007);
+	drw(&g->d, JobIntMask, 0x70007);
+	drw(&g->d, JSOFF(slot, JsFlushId), drd(&g->d, GpuLatestFlush));
+	drw(&g->d, JSOFF(slot, JsHeadLo), (u32)head);
+	drw(&g->d, JSOFF(slot, JsHeadHi), (u32)(head >> 32));
+	drw(&g->d, JSOFF(slot, JsAffinityLo), 1);
+	drw(&g->d, JSOFF(slot, JsAffinityHi), 0);
+	drw(&g->d, JSOFF(slot, JsConfig), cfg);
+	drw(&g->d, JSOFF(slot, JsCommand), 1);
+	for(i = 0; i < 2000; i++){
+		raw = drd(&g->d, JobIntRawstat);
+		if(raw & (1 << slot)){ done = 1; break; }
+		if(raw & (1 << (slot + 16))){ err = 1; break; }
+		sleep(1);
+	}
+	if(rawp != nil)
+		*rawp = raw;
+	if(statp != nil)
+		*statp = drd(&g->d, JSOFF(slot, JsStatus));
+	drw(&g->d, JobIntClear, (1 << slot) | (1 << (slot + 16)));
+	return done ? 0 : (err ? -1 : -2);
+}
+
+/*
+ * Replay the captured Mesa draw chain verbatim.
+ *
+ * The pool mirrors the captured virtual layout, so every pointer the
+ * descriptors carry is still valid: the sample table at 0xa000000, the
+ * vertex renderer state at 0xa002000, both shaders at 0xa003000, the render
+ * target at 0xa004000, the attribute buffer at 0xa008000 and the whole
+ * descriptor block (framebuffer, draws, tiler context, both job headers) at
+ * 0xa009000.  The tiler heap gets its own 128 KiB at 0x2000000.
+ *
+ * The heap is GPU-initialised: panfrost creates it PAN_BO_INVISIBLE and
+ * writes nothing into it, so a zeroed buffer with bottom == base and a zero
+ * polygon list is what the driver hands over.
+ */
+static void
+gpudraw(Gpu *g)
+{
+	u32 *d, *rt, raw, stat;
+	u8 *pool;
+	u64 poolpa;
+	int r;
+
+	if(mmuinit(g) < 0)
+		return;
+	softreset(g);
+	if(gpupower(g) < 0 || mmuprogram(g) < 0)
+		return;
+
+	if(g->drawbuf == nil){
+		g->drawbuf = drvdma(&g->d, 0x40000, 4096, &g->drawpa);
+		if(g->drawbuf == nil){
+			print("gpufs: draw: no pool\n");
+			return;
+		}
+	}
+	if(g->heapbuf == nil){
+		g->heapbuf = drvdma(&g->d, Heapsize, 4096, &g->heappa);
+		if(g->heapbuf == nil){
+			print("gpufs: draw: no tiler heap\n");
+			return;
+		}
+	}
+	pool = g->drawbuf;
+	poolpa = g->drawpa;
+	memset(pool, 0, 0x40000);
+
+	memmove(pool + 0x0000, draw_000000, sizeof draw_000000);
+	memmove(pool + 0x2000, draw_002000, sizeof draw_002000);
+	memmove(pool + 0x3000, draw_003000, sizeof draw_003000);
+	memmove(pool + 0x8000, draw_008000, sizeof draw_008000);
+	memmove(pool + 0x9000, draw_009000, sizeof draw_009000);
+
+	d = (u32 *)(pool + 0x9000);
+
+	/* TILER_HEAP at +0x480.  Mesa hands the hardware size/base/bottom/top
+	 * and nothing else; the heap is GPU-initialised. */
+	d[0x480/4 + 0] = 0;
+	d[0x480/4 + 1] = Heapsize;		/* size */
+	d[0x480/4 + 2] = (u32)HeapVa;		/* base */
+	d[0x480/4 + 3] = (u32)((u64)HeapVa >> 32);
+	d[0x480/4 + 4] = (u32)HeapVa;		/* bottom */
+	d[0x480/4 + 5] = (u32)((u64)HeapVa >> 32);
+	d[0x480/4 + 6] = (u32)((u64)HeapVa + Heapsize);	/* top */
+	d[0x480/4 + 7] = (u32)(((u64)HeapVa + Heapsize) >> 32);
+
+	/* Move the framebuffer clear colour off the shader's red, so a red
+	 * pixel can only come from the fragment shader. */
+	d[0xB0/4 + 0] = 0xff00ff00;
+	d[0xB0/4 + 1] = 0xff00ff00;
+	d[0xB0/4 + 2] = 0xff00ff00;
+	d[0xB0/4 + 3] = 0xff00ff00;
+
+	/* TILER_CONTEXT at +0x4c0: the tiler writes polygon_list itself. */
+	d[0x4C0/4 + 0] = 0;
+	d[0x4C0/4 + 1] = 0;
+
+	/* Fresh exception status for both job headers. */
+	d[0x300/4] = 0;
+	d[0x580/4] = 0;
+
+	/* The descriptor region is one contiguous 2 MiB page-table entry. */
+	memset(g->heapbuf, 0, Heapsize);
+	if(mapgpu(g, 0xa000000, poolpa, 0x1a000) < 0 ||
+	   mapgpu(g, HeapVa, g->heappa, Heapsize) < 0){
+		print("gpufs: draw: cannot map the replay pool\n");
+		return;
+	}
+	if(mmucmd(g, AsCmdFlushMem) < 0 || mmucmd(g, AsCmdUpdate) < 0){
+		print("gpufs: draw: mmu update failed\n");
+		return;
+	}
+	drvdmacache(DrvClean, poolpa, 0x1a000);
+	drvdmacache(DrvClean, g->heappa, Heapsize);
+
+	r = submitat(g, 1, 0xa009300, 0x87b00, &raw, &stat);
+	print("gpufs: draw tiler %s raw %#ux js %#ux as %#ux addr %#llux\n",
+	      r == 0 ? "PASS" : (r == -1 ? "FAIL" : "TIMEOUT"), raw, stat,
+	      drd(&g->d, ASOFF(0, 0x1c)),
+	      ((u64)drd(&g->d, ASOFF(0, 0x24)) << 32) | drd(&g->d, ASOFF(0, 0x20)));
+
+	r = submitat(g, 0, 0xa009580, 0x87b00, &raw, &stat);
+	print("gpufs: draw frag %s raw %#ux js %#ux as %#ux addr %#llux\n",
+	      r == 0 ? "PASS" : (r == -1 ? "FAIL" : "TIMEOUT"), raw, stat,
+	      drd(&g->d, ASOFF(0, 0x1c)),
+	      ((u64)drd(&g->d, ASOFF(0, 0x24)) << 32) | drd(&g->d, ASOFF(0, 0x20)));
+
+	drvdmacache(DrvInval, poolpa + 0x4000, 0x4000);
+	rt = (u32 *)(pool + 0x4000);
+	print("gpufs: draw pixel %#ux %#ux (row 1 %#ux, row 63 %#ux)\n",
+	      rt[0], rt[1], rt[64], rt[63 * 64]);
 }
 
 /*
@@ -1869,6 +2023,17 @@ fswrite(Req *r, void *aux)
 		print("gpufs: ctl fill %d,%d %ud x %ud %#ux\n", fx, fy, fw, fh, color);
 		if(g->powered || pmuon(g) == 0){
 			gpuclr(g, color, fw, fh, 0, 0, 0, fx, fy);
+			r->ofcall.count = r->ifcall.count;
+			respond(r, nil);
+		}else
+			respond(r, g->why);
+		qunlock(&g->lk);
+		return;
+	}
+	if(strcmp(cmd, "draw") == 0){
+		print("gpufs: ctl draw\n");
+		if(g->powered || pmuon(g) == 0){
+			gpudraw(g);
 			r->ofcall.count = r->ifcall.count;
 			respond(r, nil);
 		}else

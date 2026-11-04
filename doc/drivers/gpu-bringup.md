@@ -317,6 +317,48 @@ header at +0xc0.  `clear ... 2` gives the descriptor its own page and
 starts the job at the base of the job page, which is how Linux lays it out.
 Both complete, so the packing was never the problem.
 
+## A real shader draw
+
+`/srv/gpu/ctl` has a `draw` verb that replays the captured Mesa draw chain
+(see `contrib/gpucap/panfrost-draw-job.txt`) at the captured virtual
+addresses, with a 64x64 render target:
+
+```text
+echo draw > /mnt/g/ctl
+gpufs: draw tiler PASS raw 0x2 js 0x0 as 0x0 addr 0x0
+gpufs: draw frag  PASS raw 0x1 js 0x0 as 0x0 addr 0x0
+gpufs: draw pixel 0xff0000ff 0xff0000ff (row 1 0xff0000ff, row 63 0xff0000ff)
+```
+
+To make the test unambiguous the framebuffer's clear colour is patched to
+green and the fragment shader writes red, so a red pixel can only come from
+the shader.  It does.
+
+This is a full graphics chain on `gpufs`' own MMU, job manager and
+submission path: a tiler job on JS1 with an attribute buffer, a vertex
+shader, a tiler context and a tiler heap, then a fragment job on JS0 with a
+fragment shader, renderer state, blend state and the framebuffer descriptor.
+
+### What the replay established
+
+- The **descriptor set from the capture is self-contained**.  Placing the
+  sample table at `0xa000000`, the vertex renderer state at `0xa002000`, both
+  shaders at `0xa003000`, the render target at `0xa004000`, the attribute
+  buffer at `0xa008000` and the descriptor block at `0xa009000` works because
+  every pointer inside the descriptors is absolute.
+- The **tiler heap is GPU-initialised**.  Mesa creates it `PAN_BO_INVISIBLE`
+  and writes nothing into it; the driver hands over `size/base/bottom/top`
+  with `bottom == base` and a zero polygon list, and the hardware allocates
+  the first chunk itself.
+- The heap has to be **big enough for a chunk**.  128 KiB fails with
+  `JS_STATUS 0x60` (out of memory) on JS1; 4 MiB works.  The capture's
+  128 MiB is just the VA reservation.
+- Both jobs submit through the same path the clear uses, one on JS1 and one
+  on JS0, with `JS_CONFIG 0x87b00`.
+
+The replay is scaffolding, not a design: it exists so the descriptor layout
+is validated before `gpufs` starts emitting its own.
+
 ## What is next
 
 1. **A real submit interface.**  `clear` is a debug verb.  The display
@@ -327,9 +369,10 @@ Both complete, so the packing was never the problem.
 2. **GPU-backed display surfaces.**  Have `o9display` allocate its
    composited surface from the same DMA pool the GPU can map, blit with the
    GPU, and keep the CPU memdraw path as the fallback when submission fails.
-3. **A shader path.**  `contrib/gpucc` already emits Bifrost blobs; the
-   next step is a vertex/tiler chain with a shader, attribute buffer and
-   tiler heap, which is what Mesa's normal draw path carries.
+3. **Our own descriptors.**  The `draw` replay proves the chain; the next
+   step is to emit the shader program, renderer state and draw descriptors
+   from `contrib/gpucc`'s blobs instead of replaying Mesa's, then swap the
+   fragment shader for a textured one.  That is the compositing primitive.
 4. **DVFS and thermal.**  GPU OPPs are in the DTS and the RK809 can set
    `vdd_gpu`; neither is wired to a devfreq/thermal policy.
 
