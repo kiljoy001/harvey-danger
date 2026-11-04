@@ -423,6 +423,18 @@ What is still Mesa's in mode 0 is the *layout* around the shaders: the
 attribute buffer and its descriptors, the varying buffer, the two draw
 descriptors, the tiler context and the heap.  Those come next.
 
+`draw 6` is the same chain with the render target pointed at the scanout
+buffer (`Row Stride` 7680), so the shader output lands on the display:
+
+```text
+gpufs: draw target scanout 0x20000000 stride 7680
+gpufs: draw tiler PASS  gpufs: draw frag PASS
+gpufs: peek 0 n 16: 0xffbf8040 0xffbf8040 0xffbf8040 0xffbf8040
+```
+
+The 64x64 patch sits at the top-left; the rest of the frame is still
+whatever the CPU compositor put there.
+
 
 
 1. **A real submit interface.**  `clear` is a debug verb.  The display

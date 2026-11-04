@@ -190,7 +190,16 @@ def main() -> None:
     # info, so that one translation unit is compiled without -g.
     def flags_for(source: Path):
         if source.name == "boot.c":
-            return [flag for flag in flags if flag != "-g"]
+            # boot.c includes the generated userland image header (~170 MB
+            # of initialisers).  clang 23 crashes in its optimizer on that
+            # translation unit at -O1 and above, and again when emitting
+            # debug info, so build it at -O0 without -g.
+            out = []
+            for flag in flags:
+                if flag == "-g":
+                    continue
+                out.append("-O0" if flag == "-O2" else flag)
+            return out
         return flags
 
     def compile_one(source: Path):

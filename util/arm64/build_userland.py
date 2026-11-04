@@ -155,11 +155,16 @@ SECTIONS {{
 
 
 def emit_array(lines: list[str], name: str, image: bytes) -> None:
-    lines.append(f"static const u8 {name}[{len(image)}] = {{")
-    for offset in range(0, len(image), 16):
-        chunk = image[offset:offset + 16]
-        lines.append("\t" + ", ".join(f"0x{byte:02x}" for byte in chunk) + ",")
-    lines.extend(("};", ""))
+    # Emit the image as an escaped string literal rather than millions of
+    # byte initialisers: clang 23 crashes in its parser on a translation
+    # unit with this many elements (it started failing once the userland
+    # image passed ~16 MiB).  sizeof() is unchanged because the array size
+    # is explicit.
+    lines.append(f"static const u8 {name}[{len(image)}] =")
+    for offset in range(0, len(image), 32):
+        chunk = image[offset:offset + 32]
+        lines.append("\t\"" + "".join(f"\\x{byte:02x}" for byte in chunk) + "\"")
+    lines.extend(("\t;", ""))
 
 
 def build_elf(out: Path, libc: Path, name: str, source,
@@ -2072,6 +2077,17 @@ main(int argc, char **argv)
     emit_array(lines, "arm64keyroottestelf", keyroottest)
     emit_array(lines, "arm64displaytestelf", displaytest)
     emit_array(lines, "arm64rcmain", rcmain.encode())
+    # The gefs bring-up build embeds the files the re-root path needs
+    # (emmcfs, ext2srv) and gefs itself, so the kernel is self-contained
+    # and does not depend on a second TFTP transfer.
+    if os.environ.get("ARM64_BUILD_GEFS") == "1":
+        emit_array(lines, "arm64emmcfs", emmcfs)
+        emit_array(lines, "arm64ext2srvelf", ext2srv)
+        emit_array(lines, "arm64gmacfself", gmacfs)
+        emit_array(lines, "arm64provisionelf", provision)
+        emit_array(lines, "arm64bigtestelf", bigtest)
+        emit_array(lines, "arm64gefs", gefs)
+        lines.append("#define ARM64_EMBED_GEFS 1")
     args.output.write_text("\n".join(lines))
     programs = {
         "o9drvman": o9drvman,

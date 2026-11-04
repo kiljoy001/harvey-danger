@@ -1087,10 +1087,11 @@ gpudraw(Gpu *g, int mode)
 	 * tiler context and the job headers. */
 	/* 0 ours both, 1 ours FS only, 2 ours VS only,
 	 * 3 our vertex descriptor + Mesa's vertex blob,
-	 * 4 our vertex blob + Mesa's vertex descriptor. */
-	ours_frag = (mode == 0 || mode == 1);
-	ours_vblob = (mode == 0 || mode == 2 || mode == 4);
-	ours_vrsd = (mode == 0 || mode == 2 || mode == 3);
+	 * 4 our vertex blob + Mesa's vertex descriptor.
+	 * 6 is 0 with the render target pointed at the scanout buffer. */
+	ours_frag = (mode == 0 || mode == 1 || mode == 6);
+	ours_vblob = (mode == 0 || mode == 2 || mode == 4 || mode == 6);
+	ours_vrsd = (mode == 0 || mode == 2 || mode == 3 || mode == 6);
 	if(ours_frag){
 		memmove(pool + 0x3100, shader_frag_bin, sizeof shader_frag_bin);
 		memmove(pool + 0x9240, shader_frag_rsd, sizeof shader_frag_rsd);
@@ -1144,6 +1145,23 @@ gpudraw(Gpu *g, int mode)
 	if(mmucmd(g, AsCmdFlushMem) < 0 || mmucmd(g, AsCmdUpdate) < 0){
 		print("gpufs: draw: mmu update failed\n");
 		return;
+	}
+	if(mode == 6){
+		Fbinfo fi;
+		if(fbinfo(&fi) < 0){
+			print("gpufs: draw: no scanout buffer\n");
+			return;
+		}
+		if(mapgpu(g, FbVa, fi.pa, fi.size) < 0){
+			print("gpufs: draw: cannot map the scanout buffer\n");
+			return;
+		}
+		/* Render target base at FBD+0x80+0x20, row stride at +0x28. */
+		d[0xA0/4] = (u32)FbVa;
+		d[0xA4/4] = 0;
+		d[0xA8/4] = (u32)fi.stride;
+		print("gpufs: draw target scanout %#llux stride %ud\n",
+		      FbVa, fi.stride);
 	}
 	drvdmacache(DrvClean, poolpa, 0x1a000);
 	drvdmacache(DrvClean, g->heappa, Heapsize);
