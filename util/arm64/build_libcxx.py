@@ -98,7 +98,7 @@ def prepare() -> None:
 
 def base_flags(library: bool) -> list[str]:
     flags = [
-        "--target=aarch64-none-elf",
+        "--target=aarch64-unknown-linux-elf",
         "-std=c++23",
         "-nostdlibinc",
         "-mstrict-align",
@@ -127,7 +127,7 @@ def base_flags(library: bool) -> list[str]:
 
 def c_flags() -> list[str]:
     return [
-        "--target=aarch64-none-elf", "-std=c11", "-nostdlibinc",
+        "--target=aarch64-unknown-linux-elf", "-std=c11", "-nostdlibinc",
         "-mstrict-align", "-fno-stack-protector", "-O2", "-g",
         f"-I{ROOT / 'util' / 'clang-harvey' / 'target-include'}",
         f"-I{LIBCXX.parent / 'libc'}",
@@ -157,6 +157,7 @@ def build_library() -> None:
     for name, src in (
             ("compat", ROOT / "util" / "libcxx" / "compat.cpp"),
             ("locale_stub", ROOT / "util" / "libcxx" / "locale_stub.cpp"),
+            ("cxa_atexit", ROOT / "util" / "libcxx" / "cxa_atexit.cpp"),
             ("pthread", ROOT / "util" / "libcxx" / "pthread.cpp")):
         obj = OBJDIR / f"{name}.o"
         run([CC, *base_flags(False), "-c", str(src), "-o", str(obj)])

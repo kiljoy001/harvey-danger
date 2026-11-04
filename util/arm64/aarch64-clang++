@@ -1,0 +1,2 @@
+#!/bin/sh
+HARVEY_CXX=1 exec "$(dirname "$0")/aarch64-clang" "$@"

@@ -28,7 +28,7 @@ LLVM_PROJECT = Path(os.environ.get("LLVM_PROJECT",
 
 # AArch64 long double is binary128, so the compiler emits calls to the
 # soft-float quad routines.  There is no prebuilt compiler-rt for
-# aarch64-none-elf on this host, so build the handful of builtins the
+# aarch64-unknown-linux-elf on this host, so build the handful of builtins the
 # runtime needs from LLVM's own source.
 BUILTINS = ["addtf3.c", "subtf3.c", "multf3.c", "divtf3.c",
             "comparetf2.c", "extenddftf2.c", "extendsftf2.c",
@@ -80,7 +80,7 @@ def sources() -> list[Path]:
 
 def flags() -> list[str]:
     return [
-        "--target=aarch64-none-elf", "-ffreestanding", "-fno-builtin",
+        "--target=aarch64-unknown-linux-elf", "-ffreestanding", "-fno-builtin",
         "-fno-stack-protector", "-mstrict-align", "-fcommon", "-nostdlibinc",
         "-O2", "-g", "-funwind-tables", "-D_SUSV2_SOURCE", "-D_POSIX_SOURCE",
         "-D_LIMITS_EXTENSION", "-D_GNU_SOURCE", "-DHARVEY", "-D_PLAN9_SOURCE",

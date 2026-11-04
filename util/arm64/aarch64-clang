@@ -1,0 +1,69 @@
+#!/bin/sh
+# Cross compiler driver for Harvey/ARM64 (APEX userland).
+#
+# HARVEY       checkout root (default: two levels above this script)
+# HARVEY_CXX   1 to link libc++ (set by aarch64-clang++)
+# ARM64_CC     underlying clang (default clang-23, then clang)
+set -e
+selfdir=$(cd "$(dirname "$0")" && pwd)
+HARVEY=${HARVEY:-$(cd "$selfdir/../.." && pwd)}
+HARVEY_CXX=${HARVEY_CXX:-0}
+CC=${ARM64_CC:-$(command -v clang-23 || command -v clang)}
+
+LIBCXX="$HARVEY/build/arm64-libcxx"
+APEXLIB="$HARVEY/build/arm64-apex"
+LIBC="$HARVEY/build/arm64-libc/libc.a"
+
+if [ "$HARVEY_CXX" = 1 ]; then
+	CXXFLAGS="-fexceptions -frtti"
+	# In C++ mode wchar_t is a keyword, so APEX's stddef.h must not
+	# typedef it; in C mode it must.
+	WCHAR="-D_WCHAR_T"
+else
+	CXXFLAGS=""
+	WCHAR=""
+fi
+
+compile_only=0
+asm_only=0
+for arg in "$@"; do
+	case "$arg" in
+		*.s|*.S|*.sx) asm_only=1 ;;
+		-c|-E|-S|-M|-MM|-fsyntax-only|--version|-dumpversion|-dumpmachine|--help|-print-*)
+			compile_only=1 ;;
+	esac
+done
+
+FLAGS="$CXXFLAGS --target=aarch64-unknown-linux-elf -nostdlibinc -mstrict-align -mno-outline-atomics \
+-fno-stack-protector -fno-threadsafe-statics \
+-D_SUSV2_SOURCE -D_POSIX_SOURCE -D_LIMITS_EXTENSION -D_GNU_SOURCE -DHARVEY $WCHAR \
+-I$HARVEY/util/arm64/include \
+-I$HARVEY/util/clang-harvey/target-include \
+-I$LIBCXX/include/c++/v1 -I$LIBCXX/include \
+-I$HARVEY/apex/include -I$HARVEY/apex/aarch64/include"
+
+if [ "$HARVEY_CXX" = 1 ]; then
+	FLAGS="$FLAGS -include $LIBCXX/include/compat.h"
+fi
+
+if [ "$compile_only" = 1 ] || [ "$asm_only" = 1 ]; then
+	exec "$CC" $FLAGS "$@"
+fi
+
+# Drop host libraries; Harvey's libs supply the equivalents.
+ARGS=""
+for arg in "$@"; do
+	case "$arg" in
+		-lpthread|-lm|-ldl|-lrt|-lc|-lz|-lstdc++|-lgcc|-lgcc_s|-latomic|--as-needed|--no-as-needed)
+			continue ;;
+	esac
+	ARGS="$ARGS \"$arg\""
+done
+eval set -- $ARGS
+
+exec "$CC" $FLAGS -fuse-ld=lld -nostdlib -static -no-pie \
+	-T "$selfdir/apex.ld" -Wl,-u,_start \
+	-Wl,-z,max-page-size=4096 -Wl,--eh-frame-hdr \
+	"$@" \
+	"$LIBCXX/lib/libc++.a" "$LIBCXX/lib/libunwind.a" \
+	"$APEXLIB/libap.a" "$LIBC" "$APEXLIB/libbuiltins.a"

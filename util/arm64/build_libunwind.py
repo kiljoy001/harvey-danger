@@ -33,7 +33,8 @@ def run(cmd: list[str]) -> None:
 
 def flags(include_compat: bool = True) -> list[str]:
     out = [
-        "--target=aarch64-none-elf",
+        "--target=aarch64-unknown-linux-elf",
+        "-nostdlibinc",
         "-mstrict-align",
         f"-I{ROOT / 'util' / 'clang-harvey' / 'target-include'}",
         f"-I{ROOT / 'apex' / 'include'}",
@@ -46,7 +47,7 @@ def flags(include_compat: bool = True) -> list[str]:
         "-D_GNU_SOURCE", "-DHARVEY",
         "-O2",
         "-g",
-        # aarch64-none-elf does not get asynchronous unwind tables by
+        # aarch64-unknown-linux-elf does not get asynchronous unwind tables by
         # default: without them the unwinder cannot leave its own frames
         # (_Unwind_RaiseException is the first frame), so phase 1 reports
         # end of stack.
