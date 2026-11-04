@@ -169,8 +169,8 @@ arm64userloadelf(u64 codepage, u64 datapage, const u8 *image, usize n,
 		ARM64USERBASE, image, n, entry);
 }
 
-void
-arm64usertrap(Arm64ureg *r)
+static void
+arm64usertrap1(Arm64ureg *r)
 {
 	u32 ec;
 
@@ -222,6 +222,9 @@ arm64usertrap(Arm64ureg *r)
 			p->insyscall = insyscall;
 			if((ec == 0x21 || ec == 0x25) && insyscall && p->nerrlab != 0)
 				error("invalid address in system call");
+			/* temporary: pc and lr of the fatal fault */
+			print("user fault pid %d %s pc %#p lr %#p far %#p\n",
+			      p->pid, p->text, r->elr, r->x[30], r->far);
 			pexit("user fault", 1);
 		}
 		p->insyscall = insyscall;
@@ -248,6 +251,26 @@ arm64usertrap(Arm64ureg *r)
 	}
 	r->elr = (u64)arm64userresume;
 	r->spsr = 0x3c5;
+}
+
+/*
+ * Every return to EL0 goes through here (syscall, fault and resume).  The
+ * kernel handles user TLS the same way it does on amd64: the process writes
+ * its thread pointer to #p/<pid>/tls, and the value is applied on the way
+ * out.  AArch64 loads it in TPIDR_EL0 rather than the FS base.
+ */
+void
+arm64usertrap(Arm64ureg *r)
+{
+	arm64usertrap1(r);
+#ifdef ARM64_FULL_KERNEL
+	{
+		Proc *p = externup();
+
+		if(p != nil && p->kp == 0)
+			arm64settls(p->tls);
+	}
+#endif
 }
 
 #ifdef ARM64_FULL_KERNEL

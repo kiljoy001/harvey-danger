@@ -6,6 +6,7 @@
 #include "fns.h"
 #include "ureg.h"
 #include "tos.h"
+#include "user.h"
 
 extern void arm64enterureg(Ureg *) __attribute__((noreturn));
 
@@ -139,6 +140,12 @@ sysprocsetup(Proc *p)
 	USED(p);
 }
 
+void
+arm64settls(usize tls)
+{
+	__asm__ volatile("msr tpidr_el0, %0" :: "r"((u64)tls) : "memory");
+}
+
 static void
 forkreturn(void)
 {
@@ -147,6 +154,7 @@ forkreturn(void)
 	p = externup();
 	if(p == nil || p->dbgreg == nil)
 		panic("ARM64 fork: missing child register frame");
+	arm64settls(p->tls);
 	arm64enterureg(p->dbgreg);
 }
 
