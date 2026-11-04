@@ -85,3 +85,44 @@ REA (Ghidra 12.1.4) will not import these blobs: 16 MB of `.text` exceeds the
 So the field names above were recovered from the string/pointer tables
 directly; REA is the tool for the small vendor `kbase` module, not for a
 16 MB GLES driver.
+
+Slicing it for REA
+------------------
+`.text` is 16 MB, which no Ghidra import survives (330 s provider gap).  A
+4 MB slice with `.rodata`/`.data`/`.dynsym` left at their real addresses does
+import, and `contrib/gpucap/mkslice.py` builds one:
+
+    python3 mkslice.py 0x12aa00 0x400000 sA.elf
+
+(Slice 0 imports in ~82 s and analyses 9,175 procedures.  Slice N covers
+`0x12aa00 + N*0x400000`.)
+
+What the slices show
+--------------------
+`glDrawArrays` is a thin wrapper:
+
+    ctx = tpidr_el0[0];                     // cached context
+    *(u32 *)(ctx + 0x48) = 0x90;            // call id
+    if (profiling) { ...; FUN_003ddf80(buf, &record, 0x28); }
+    else FUN_00292a60(ctx, mode, first, count);
+      -> FUN_002f9c00(ctx, mode, first, count, ...)   // draw dispatcher
+
+`FUN_003ddf80` allocates a record with a 16-byte header inside a 0x3ff0-byte
+buffer (`0x3ff0 - used`), growing it through a vtable at
+`ctx->hal[0x18/0x20/0x28]`.  That is a kbase **atom/trace buffer**, not a job
+chain builder: libmali is a kbase *client*.  It builds atoms and submits them
+with ioctls; it never touches `JS_CONFIG`, the MMU or the job slots.  So this
+blob cannot answer register-level questions -- only the descriptor/atom
+layout, which the Mesa capture already gives us.
+
+Tiler heap ownership
+--------------------
+The vendor kbase UAPI has no JM tiler heap manager.  The only kernel reach
+into it is `base_jd_replay_payload.tiler_heap_free`
+(`drivers/gpu/arm/midgard/mali_base_kernel.h`), which the kernel advances
+after replaying a faulted frame.  Everything else is userspace's: the same
+conclusion as Mesa's `jm_emit_tiler_desc`, which hands over
+`size/base/bottom/top` with `bottom == base` and lets the hardware write the
+first chunk and the polygon list.  `gpufs` does exactly that (4 MiB heap,
+zeroed, `polygon_list = 0`) and the draw runs, which is the empirical
+confirmation.
