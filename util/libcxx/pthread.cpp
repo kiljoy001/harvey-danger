@@ -129,6 +129,27 @@ void thread_body(__harvey_thread *t) {
  * means the only shared-stack access is the identical return-address push of
  * the rfork call itself.
  */
+#if defined(__aarch64__)
+extern "C" __attribute__((naked)) int
+thread_spawn(int flags, void *stacktop, void (*fn)(void *), void *arg) {
+    __asm__ volatile(
+        "stp x19, x20, [sp, #-16]!\n\t"
+        "stp x21, x30, [sp, #-16]!\n\t"
+        "mov x19, x1\n\t"
+        "mov x20, x2\n\t"
+        "mov x21, x3\n\t"
+        "bl rfork\n\t"
+        "cbnz w0, 1f\n\t"
+        "mov sp, x19\n\t"
+        "mov x0, x21\n\t"
+        "blr x20\n\t"
+        "brk #0\n\t"
+        "1:\n\t"
+        "ldp x21, x30, [sp], #16\n\t"
+        "ldp x19, x20, [sp], #16\n\t"
+        "ret\n\t");
+}
+#else
 extern "C" __attribute__((naked)) int
 thread_spawn(int flags, void *stacktop, void (*fn)(void *), void *arg) {
     __asm__ volatile(
@@ -152,6 +173,7 @@ thread_spawn(int flags, void *stacktop, void (*fn)(void *), void *arg) {
         "popq %rbx\n\t"
         "retq\n\t");
 }
+#endif
 
 } // namespace
 

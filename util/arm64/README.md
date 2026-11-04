@@ -63,6 +63,28 @@ soft-float routines compiled from compiler-rt's builtins), signal, locale,
 math, regex and APEX's locked allocator, which replaces the Plan 9 libc
 one.  `_envsetup` runs, so the environment is populated from `#e`.
 
+### libc++ on ARM64
+
+`build_libunwind.py` and `build_libcxx.py` build the C++ runtime for ARM64
+- libunwind, libc++ and the libc++abi pieces - against the APEX layer, and
+`build_libcxx.py --test` links a program that uses std::string,
+std::vector, std::thread and a thread-local:
+
+```text
+cxx-libcxx harvey arm64 sum=6 tls=7 shared=42
+LIBCXX-ARM64-OK
+```
+
+Two platform adaptations: `pthread.cpp`'s `thread_spawn` has an aarch64
+body (rfork, switch to the new stack, branch), and `dl_iterate_phdr`
+synthesises the phdrs libunwind needs from linker symbols, because the
+kernel does not map the ELF header on ARM64.
+
+Known gap: the unwinder finds the FDE and the LSDA (`unw_get_proc_info`
+reports the right range) but `unw_step` fails, so `throw`/`catch` does not
+work yet.  LLVM is built with `-fno-exceptions`, so this does not block the
+compiler ladder.
+
 ```sh
 python3 util/arm64/test_virt.py
 python3 util/arm64/test_fdt.py

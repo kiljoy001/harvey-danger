@@ -11,6 +11,7 @@ execs is the APEX startup (crt0 + __libc_start_main + variant-I TLS).
 The original userland header is restored afterwards.
 """
 from pathlib import Path
+import argparse
 import os
 import re
 import subprocess
@@ -33,8 +34,20 @@ def emit_array(image: bytes) -> str:
 
 
 def main() -> None:
-    subprocess.run([sys.executable, str(HERE / "build_apex.py")], check=True)
-    image = APEX.read_bytes()
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--elf", help="program to run as init (default: the "
+                                  "APEX hello built by build_apex.py)")
+    ap.add_argument("--marker", default=MARKER,
+                    help="string that must appear in the boot transcript")
+    args = ap.parse_args()
+
+    if args.elf:
+        elf = Path(args.elf)
+    else:
+        subprocess.run([sys.executable, str(HERE / "build_apex.py")],
+                       check=True)
+        elf = APEX
+    image = elf.read_bytes()
 
     OUT.mkdir(parents=True, exist_ok=True)
     header = OUT / "userland.h"
@@ -66,23 +79,26 @@ def main() -> None:
                    "-kernel", str(OUT / "harvey.img")]
         sys.path.insert(0, str(HERE))
         from test_virt import boot_until
-        transcript = boot_until(command, MARKER)
+        transcript = boot_until(command, args.marker)
     finally:
         header.write_text(original)
         # Make sure the next normal build recompiles the object that
         # embedded our init image.
         (OUT / "sys_src_9_aarch64_boot.c.o").unlink(missing_ok=True)
 
-    tail = "\n".join(line for line in transcript.splitlines()
-                     if line.strip())[-1500:]
-    print(tail)
-    if MARKER not in transcript:
-        raise SystemExit("the APEX init did not run, or its TLS value was "
-                         "wrong")
-    if "apex-hello argc=" not in transcript or "tls=11" not in transcript:
-        raise SystemExit("unexpected APEX init output")
-    print("ARM64 APEX startup: /boot/init ran, printed through APEX and read "
-          "its thread-local variable")
+    lines = [line for line in transcript.splitlines() if line.strip()]
+    if args.marker in transcript:
+        print("\n".join(lines)[-1500:])
+    else:
+        # Show both ends: the beginning says how far the program got, the
+        # end says how it died.
+        print("--- first lines ---")
+        print("\n".join(lines[:40]))
+        print("--- last lines ---")
+        print("\n".join(lines[-15:]))
+    if args.marker not in transcript:
+        raise SystemExit(f"{elf.name} did not reach {args.marker!r}")
+    print(f"ARM64 APEX init: {elf.name} ran under QEMU virt")
 
 
 if __name__ == "__main__":

@@ -545,6 +545,19 @@ extern "C" int dladdr(const void *addr, Dl_info *info) {
  * static and non-PIE, so the program headers' addresses are absolute and
  * there is no load bias.
  */
+#ifdef __aarch64__
+/*
+ * Harvey's ARM64 exec maps the first PT_LOAD from its file offset, so the
+ * ELF header at the image base is not readable and __ehdr_start cannot be
+ * used.  The link script records the two segments libunwind needs: the
+ * text segment (to match the pc) and PT_GNU_EH_FRAME (to find .eh_frame).
+ */
+extern char __harvey_text_start[] __attribute__((weak));
+extern char __harvey_text_size[] __attribute__((weak));
+extern char __harvey_eh_frame_hdr[] __attribute__((weak));
+extern char __harvey_eh_frame_hdr_size[] __attribute__((weak));
+#endif
+
 extern "C" int dl_iterate_phdr(int (*callback)(struct dl_phdr_info *, size_t, void *),
                               void *data) {
     extern char __ehdr_start;
@@ -552,6 +565,27 @@ extern "C" int dl_iterate_phdr(int (*callback)(struct dl_phdr_info *, size_t, vo
     struct dl_phdr_info info;
     uint64_t phoff;
     uint16_t phentsize, phnum;
+
+#ifdef __aarch64__
+    if (__harvey_eh_frame_hdr != 0) {
+        static Elf64_Phdr phdrs[2];
+
+        memset(phdrs, 0, sizeof phdrs);
+        phdrs[0].p_type = PT_LOAD;
+        phdrs[0].p_flags = PF_R | PF_X;
+        phdrs[0].p_vaddr = (uint64_t)(uintptr_t)__harvey_text_start;
+        phdrs[0].p_memsz = (uint64_t)(uintptr_t)__harvey_text_size;
+        phdrs[1].p_type = PT_GNU_EH_FRAME;
+        phdrs[1].p_flags = PF_R;
+        phdrs[1].p_vaddr = (uint64_t)(uintptr_t)__harvey_eh_frame_hdr;
+        phdrs[1].p_memsz = (uint64_t)(uintptr_t)__harvey_eh_frame_hdr_size;
+        memset(&info, 0, sizeof info);
+        info.dlpi_name = "";
+        info.dlpi_phdr = phdrs;
+        info.dlpi_phnum = 2;
+        return callback(&info, sizeof info, data);
+    }
+#endif
 
     if (!(eh[0] == 0x7f && eh[1] == 'E' && eh[2] == 'L' && eh[3] == 'F'))
         return 0;
