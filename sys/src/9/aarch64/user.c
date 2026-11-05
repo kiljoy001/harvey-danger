@@ -223,8 +223,9 @@ arm64usertrap1(Arm64ureg *r)
 			if((ec == 0x21 || ec == 0x25) && insyscall && p->nerrlab != 0)
 				error("invalid address in system call");
 			/* temporary: pc and lr of the fatal fault */
-			print("user fault pid %d %s pc %#p lr %#p far %#p\n",
-			      p->pid, p->text, r->elr, r->x[30], r->far);
+			print("user fault pid %d %s pc %#p lr %#p far %#p sp %#p esr %#llx\n",
+			      p->pid, p->text, r->elr, r->x[30], r->far,
+			      r->sp0, r->esr);
 			pexit("user fault", 1);
 		}
 		p->insyscall = insyscall;
