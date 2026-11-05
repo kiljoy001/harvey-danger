@@ -986,7 +986,12 @@ sysrendezvous(Ar0 *ar0, ...)
 			val = p->rendval;
 			p->rendval = PTR2UINT(va_arg(list, void *));
 
-			while(p->mach != 0)
+			/*
+			 * Another CPU clears mach with a plain store; make the
+			 * wait an atomic load so the compiler cannot hoist it
+			 * out of the loop (it does on aarch64).
+			 */
+			while(__atomic_load_n(&p->mach, __ATOMIC_ACQUIRE) != nil)
 				;
 			ready(p);
 			unlock(&up->rgrp->r.l);

@@ -44,6 +44,9 @@ mfence(void)
 }
 
 Mach *machp(void);
+extern Mach arm64machs[];
+void arm64setmach(Mach *);
+void arm64cpuirqinit(int);
 static inline Proc *
 externup(void)
 {

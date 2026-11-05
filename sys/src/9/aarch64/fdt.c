@@ -28,6 +28,8 @@ struct Fdtnode {
 	u32 compatlen, pathlen, uarttype, gicversion;
 	u32 clas;
 	int memory, uart, gic, timer, virtio;
+	int cpu, psci;
+	u32 method, cpuon;
 	int reservedir, reserve, enabled;
 };
 
@@ -324,6 +326,8 @@ fdtparse(void *blob, usize bytes, Fdtinfo *out)
 	out->uarttype = out->gicversion = 0;
 	out->gicdist = out->giccpu = 0;
 	out->timerirq = 0;
+	out->ncpu = 0;
+	out->psci_method = out->psci_cpuon = 0;
 	out->nmemory = out->nreserve = out->nvirtio = 0;
 	out->ndev = 0;
 	for(; rsv <= soff && soff-rsv >= 16; rsv += 16){
@@ -382,6 +386,8 @@ fdtparse(void *blob, usize bytes, Fdtinfo *out)
 			               s[pos+4] == 'r' && s[pos+5] == 'y' &&
 			               (s[pos+6] == '@' || s[pos+6] == 0);
 			node->uart = node->gic = node->timer = node->virtio = 0;
+			node->cpu = node->psci = 0;
+			node->method = node->cpuon = 0;
 			node->uarttype = node->gicversion = 0;
 			node->enabled = depth == 0 || nodes[depth-1].enabled;
 			node->reservedir = depth == 1 && same((char *)s+pos, "reserved-memory");
@@ -442,6 +448,16 @@ fdtparse(void *blob, usize bytes, Fdtinfo *out)
 			}else if(same((char *)str+off, "device_type") && len >= 7 &&
 			         value[6] == 0 && same((char *)value, "memory"))
 				node->memory = 1;
+			else if(same((char *)str+off, "device_type") && len >= 4 &&
+			         value[3] == 0 && same((char *)value, "cpu"))
+				node->cpu = 1;
+			else if(same((char *)str+off, "method") && len >= 4){
+				if(same((char *)value, "hvc"))
+					node->method = 1;
+				else if(same((char *)value, "smc"))
+					node->method = 2;
+			}else if(same((char *)str+off, "cpu_on") && len == 4)
+				node->cpuon = get4(value);
 			else if(same((char *)str+off, "compatible")){
 				node->compat = value;
 				node->compatlen = len;
@@ -462,6 +478,9 @@ fdtparse(void *blob, usize bytes, Fdtinfo *out)
 				            hascompat(value, len, "arm,gic-v3");
 				node->timer = hascompat(value, len, "arm,armv8-timer");
 				node->virtio = hascompat(value, len, "virtio,mmio");
+				node->psci = hascompat(value, len, "arm,psci-1.0") ||
+				             hascompat(value, len, "arm,psci-0.2") ||
+				             hascompat(value, len, "arm,psci");
 			}else if(same((char *)str+off, "interrupts")){
 				node->intr = value;
 				node->intrlen = len;
@@ -471,6 +490,21 @@ fdtparse(void *blob, usize bytes, Fdtinfo *out)
 			if(depth == 0)
 				return -1;
 			node = &nodes[--depth];
+			if(node->cpu && node->enabled && out->ncpu < Fdtmaxcpu){
+				if(node->reg != nil && node->reglen >= 8)
+					out->cpumpidr[out->ncpu] = get8(node->reg);
+				else if(node->reg != nil && node->reglen >= 4)
+					out->cpumpidr[out->ncpu] = get4(node->reg);
+				else
+					out->cpumpidr[out->ncpu] = out->ncpu;
+				out->ncpu++;
+			}
+			if(node->psci){
+				if(node->method != 0)
+					out->psci_method = node->method;
+				if(node->cpuon != 0)
+					out->psci_cpuon = node->cpuon;
+			}
 			if(node->reserve && node->reg != nil){
 				if(node->parentaddr == 0 || node->parentaddr > 2 ||
 				   node->parentsize == 0 || node->parentsize > 2)

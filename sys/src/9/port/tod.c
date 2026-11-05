@@ -61,17 +61,29 @@ struct {
 
 static void todfix(void);
 
+static Lock todinitlk;
+
 void
 todinit(void)
 {
 	if(tod.init)
 		return;
+	lock(&todinitlk);
+	if(tod.init){
+		unlock(&todinitlk);
+		return;
+	}
 	ilock(&tod.Lock);
 	tod.last = fastticks((u64 *)&tod.hz);
 	iunlock(&tod.Lock);
 	todsetfreq(tod.hz);
+	/*
+	 * Must be set before addclock0link(): tadd() converts times with
+	 * ns2fastticks(), which calls back into todinit() when init is clear.
+	 */
 	tod.init = 1;
 	addclock0link(todfix, 100);
+	unlock(&todinitlk);
 }
 
 /*

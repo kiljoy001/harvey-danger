@@ -15,6 +15,7 @@ enum {
 
 static const u64 Maxidentity = 16ULL * 1024 * 1024 * 1024;
 static u64 kernelroot;
+u64 arm64kernelmair, arm64kerneltcr, arm64kernelsctlr;
 extern u64 arm64dmabase, arm64dmasize;
 
 enum {
@@ -290,8 +291,10 @@ arm64mmuon(u64 rootpa)
 	tcr = (mmfr<<32) | (1ULL<<23) | (25ULL<<16) |
 	      (3ULL<<12) | (1ULL<<10) | (1ULL<<8) | 25;
 	__asm__ volatile("dsb sy" ::: "memory");
-	__asm__ volatile("msr mair_el1, %0" :: "r"((u64)0x04ff) : "memory");
-	__asm__ volatile("msr tcr_el1, %0" :: "r"(tcr) : "memory");
+	arm64kernelmair = 0x04ff;
+	arm64kerneltcr = tcr;
+	__asm__ volatile("msr mair_el1, %0" :: "r"(arm64kernelmair) : "memory");
+	__asm__ volatile("msr tcr_el1, %0" :: "r"(arm64kerneltcr) : "memory");
 	__asm__ volatile("msr ttbr0_el1, %0" :: "r"(rootpa) : "memory");
 	/* Enable FP/SIMD at EL0 and EL1. Variadic callers save the FP
 	 * argument registers in va_start, which traps otherwise. Per-process
@@ -302,7 +305,8 @@ arm64mmuon(u64 rootpa)
 	__asm__ volatile("isb; tlbi vmalle1; dsb sy; isb" ::: "memory");
 	__asm__ volatile("mrs %0, sctlr_el1" : "=r"(sctlr));
 	sctlr |= (1ULL<<12) | (1ULL<<2) | 1;
-	__asm__ volatile("msr sctlr_el1, %0; isb" :: "r"(sctlr) : "memory");
+	arm64kernelsctlr = sctlr;
+	__asm__ volatile("msr sctlr_el1, %0; isb" :: "r"(arm64kernelsctlr) : "memory");
 }
 
 u64

@@ -55,6 +55,8 @@ def main() -> None:
     ap.add_argument("--gdb", action="store_true",
                     help="start QEMU's gdb stub on localhost:1234 so a hang "
                          "can be inspected with gdb")
+    ap.add_argument("--smp", type=int, default=1,
+                    help="number of QEMU vCPUs (the kernel needs SMP for >1)")
     ap.add_argument("--mem", type=int, default=0,
                     help="guest RAM in MiB (default: 512, or enough to "
                          "hold the boot archive)")
@@ -113,7 +115,8 @@ def main() -> None:
         if mem == 0:
             mem = 512
         command = ["qemu-system-aarch64", "-machine", "virt",
-                   "-cpu", "cortex-a57", "-m", f"{mem}M", "-smp", "1",
+                   "-cpu", "cortex-a57", "-m", f"{mem}M", "-smp",
+                   str(args.smp),
                    "-nographic", "-monitor", "none",
                    "-kernel", str(OUT / "harvey.img")]
         if args.archive:

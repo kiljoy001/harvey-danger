@@ -20,6 +20,13 @@
  */
 #define LOCKCYCLES 0
 
+/*
+ * The waiting loops must re-read the lock word.  A plain `while(l->key)`
+ * lets the compiler hoist the load out of the loop (clang does exactly
+ * that on aarch64), turning the wait into an infinite loop.
+ */
+#define LOCKFREE(l) (__atomic_load_n(&(l)->key, __ATOMIC_RELAXED) == 0)
+
 u64 maxlockcycles;
 u64 maxilockcycles;
 usize maxlockpc;
@@ -153,7 +160,7 @@ lock(Lock *l)
 	for(;;){
 		lockstats.inglare++;
 		i = 0;
-		while(l->key){
+		while(!LOCKFREE(l)){
 			if(sys->nmach < 2 && up && up->edf && (up->edf->flags & Admitted)){
 				/*
 				 * Priority inversion, yield on a uniprocessor; on a
@@ -210,7 +217,7 @@ ilock(Lock *l)
 		for(;;){
 			lockstats.inglare++;
 			splx(pl);
-			while(l->key)
+			while(!LOCKFREE(l))
 				;
 			pl = splhi();
 			if(TAS(&l->key) == 0){

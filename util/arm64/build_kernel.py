@@ -168,9 +168,9 @@ def main() -> None:
         flags.extend(("-I", str(path)))
 
     sources = [ARCH / name for name in
-               ("l.S", "user.S", "context.S", "return.S", "main.c", "fdt.c", "timer.c",
+               ("l.S", "user.S", "context.S", "return.S", "smp.S", "main.c", "fdt.c", "timer.c",
                 "phys.c", "mmu.c", "user.c", "context.c", "arch.c",
-                "config.c", "qmalloc.c", "platform.c", "procarch.c", "syscall.c",
+                "config.c", "qmalloc.c", "platform.c", "procarch.c", "syscall.c", "smp.c",
                 "boot.c", "devpnp.c", "vop2.c", "dw_hdmi.c", "devvop.c",
                 "devxhci.c", "rkiommu.c", "etheraarch64.c", "ethergmac.c")]
     core_devices = {

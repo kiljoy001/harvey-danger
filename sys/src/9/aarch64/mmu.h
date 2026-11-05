@@ -12,6 +12,7 @@ int arm64mmuuserdevice(u64, u64, u64);
 void arm64mmuon(u64);
 void arm64mmuswitch(u64);
 u64 arm64mmukernelroot(void);
+void arm64machinit(void);
 int arm64mmuactive(void);
 int arm64mmutranslate(u64, u64 *);
 

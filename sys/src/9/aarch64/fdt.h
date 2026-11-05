@@ -75,6 +75,7 @@ enum {
 	Maxfdtreserve = 32,
 	Maxfdtvirtio = 32,
 	Maxfdtmemory = 16,
+	Fdtmaxcpu = 16,
 	Fdtpl011 = 1,
 	Fdtdwuart = 2,
 };
@@ -87,6 +88,10 @@ struct Fdtinfo {
 	u64 gicdist;
 	u64 giccpu;
 	u32 timerirq;
+	u32 ncpu;
+	u32 psci_method;	/* 1 = HVC, 2 = SMC */
+	u32 psci_cpuon;
+	u64 cpumpidr[Fdtmaxcpu];
 	u32 nmemory;
 	Fdtmemory memory[Maxfdtmemory];
 	u32 nreserve;

@@ -10,10 +10,10 @@
 #include "fns.h"
 #include "mmu.h"
 
-static Mach bootmach;
+Mach arm64machs[MACHMAX];
 static Sys bootsys = {
 	.nmach = 1,
-	.machptr = {&bootmach},
+	.machptr = {&arm64machs[0]},
 	.npgsz = NPGSZ,
 	.pgsz = { PGSZ, BIGPGSZ },
 };
@@ -23,7 +23,23 @@ Active active;
 Mach *
 machp(void)
 {
-	return &bootmach;
+	u64 m;
+
+	__asm__ volatile("mrs %0, tpidr_el1" : "=r"(m));
+	return (Mach *)m;
+}
+
+void
+arm64setmach(Mach *m)
+{
+	__asm__ volatile("msr tpidr_el1, %0" :: "r"((u64)m) : "memory");
+}
+
+/* Used by the early boot code, which does not include the port headers. */
+void
+arm64machinit(void)
+{
+	arm64setmach(&arm64machs[0]);
 }
 
 void
@@ -35,7 +51,8 @@ cycles(u64 *t)
 int
 corecolor(int machno)
 {
-	return machno == 0 ? 0 : -1;
+	USED(machno);
+	return 0;
 }
 
 /* Kernel SIMD use is disabled until FP state save/restore is implemented. */

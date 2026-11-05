@@ -137,9 +137,9 @@ irqnote(u32 irq)
 int
 arm64timerinit(Fdtinfo *info)
 {
-	volatile u32 *dist, *sgi;
+	volatile u32 *dist;
 	u64 freq;
-	u32 mask, reg, shift;
+	u32 mask;
 
 	if(info->gicdist == 0 || info->giccpu == 0 ||
 	   info->timerirq < 16 || info->timerirq >= 32)
@@ -159,10 +159,39 @@ arm64timerinit(Fdtinfo *info)
 
 	__asm__ volatile("msr vbar_el1, %0; isb" :: "r"(arm64vectors) : "memory");
 	if(isgicv3){
-		sgi = (volatile u32 *)(info->giccpu + 0x10000ULL);
 		dist[0x000/4] = 0x37;
-		giccpu[0x014/4] &= ~(1U<<1);
-		while(giccpu[0x014/4] & (1U<<2))
+	}else{
+		dist[0x000/4] = 0;
+		dist[0x180/4] = 0xffffffff;
+		dist[0x280/4] = 0xffffffff;
+		/* QEMU's default GICv2 accepts this PPI through Group 0. */
+		dist[0x080/4] &= ~mask;
+		dist[0x000/4] = 1;
+	}
+	arm64cpuirqinit(0);
+	__asm__ volatile("dsb sy; isb" ::: "memory");
+	__asm__ volatile("msr daifclr, #2" ::: "memory");
+	return 0;
+}
+
+/*
+ * Per-CPU interrupt setup.  GICv2's CPU interface and SGI/PPI banks are
+ * selected by the accessing core, so every core uses the same address.
+ * GICv3 uses a per-CPU redistributor plus the ICC_* system registers.
+ * Each CPU arms its own virtual timer.
+ */
+void
+arm64cpuirqinit(int cpu)
+{
+	volatile u32 *gic, *rd, *sgi;
+	u32 mask, reg, shift;
+
+	mask = 1U << timerirq;
+	if(isgicv3){
+		rd = giccpu + cpu*(0x20000/4);
+		sgi = rd + 0x10000/4;
+		rd[0x014/4] &= ~(1U<<1);
+		while(rd[0x014/4] & (1U<<2))
 			;
 		sgi[0x180/4] = 0xffffffff;
 		sgi[0x280/4] = 0xffffffff;
@@ -176,24 +205,22 @@ arm64timerinit(Fdtinfo *info)
 		__asm__ volatile("msr S3_0_C4_C6_0, %0; isb" :: "r"((u64)0xff) : "memory");
 		__asm__ volatile("msr S3_0_C12_C12_7, %0; isb" :: "r"((u64)1) : "memory");
 	}else{
-		dist[0x000/4] = 0;
-		dist[0x180/4] = 0xffffffff;
-		dist[0x280/4] = 0xffffffff;
-		/* QEMU's default GICv2 accepts this PPI through Group 0. */
-		dist[0x080/4] &= ~mask;
+		/* GICv2 CPU interfaces are banked: every core uses the same
+		 * address and the GIC selects its bank. */
+		gic = giccpu;
+		gic[0x004/4] = 0xff;
+		gic[0x000/4] = 1;
+		/* The IGROUPR0 bank is per-CPU too: put this core's timer PPI
+		 * in group 0, which GICC_CTLR above enables. */
+		gicdist[0x080/4] &= ~mask;
+		gicdist[0x100/4] = mask;
 		reg = 0x400/4 + timerirq/4;
 		shift = (timerirq%4)*8;
-		dist[reg] = (dist[reg] & ~(0xffU<<shift)) | (0x80U<<shift);
-		dist[0x100/4] = mask;
-		giccpu[0x004/4] = 0xff;
-		giccpu[0x000/4] = 1;
-		dist[0x000/4] = 1;
+		gicdist[reg] = (gicdist[reg] & ~(0xffU<<shift)) | (0x80U<<shift);
 	}
 	__asm__ volatile("dsb sy; isb" ::: "memory");
 	__asm__ volatile("msr cntv_tval_el0, %0; msr cntv_ctl_el0, %1; isb"
 	                 :: "r"((u64)period), "r"((u64)1) : "memory");
-	__asm__ volatile("msr daifclr, #2" ::: "memory");
-	return 0;
 }
 
 void
@@ -207,6 +234,9 @@ arm64irq(
 {
 	u32 irq;
 	u64 spsr, iar;
+	volatile u32 *gic;
+
+	gic = giccpu;
 
 #ifndef ARM64_FULL_KERNEL
 	(void)ureg;
@@ -217,7 +247,7 @@ arm64irq(
 		__asm__ volatile("mrs %0, S3_0_C12_C12_0" : "=r"(iar));
 		irq = iar & 0x3ff;
 	}else{
-		irq = giccpu[0x00c/4] & 0x3ff;
+		irq = gic[0x00c/4] & 0x3ff;
 	}
 	lastirq = irq;
 	if(irq == timerirq){
@@ -228,7 +258,7 @@ arm64irq(
 		if(isgicv3)
 			__asm__ volatile("msr S3_0_C12_C12_1, %0; isb" :: "r"((u64)irq) : "memory");
 		else
-			giccpu[0x010/4] = irq;
+			gic[0x010/4] = irq;
 #ifdef ARM64_FULL_KERNEL
 		if(clockready)
 			timerintr(ureg, 0);
@@ -239,7 +269,7 @@ arm64irq(
 		if(isgicv3)
 			__asm__ volatile("msr S3_0_C12_C12_1, %0; isb" :: "r"((u64)irq) : "memory");
 		else
-			giccpu[0x010/4] = irq;
+			gic[0x010/4] = irq;
 	}
 }
 

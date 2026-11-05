@@ -192,6 +192,7 @@ arm64main(usize dtb)
 	u64 blocked;
 #endif
 
+	arm64machinit();
 	__asm__ volatile("msr vbar_el1, %0; isb" :: "r"(arm64vectors) : "memory");
 	if(dtb == 0 || (dtb & 7) != 0)
 		return;

@@ -70,6 +70,7 @@ consoleuartinit(Fdtinfo *info)
 	addclock0link(consoleuartpoll, 10);
 }
 extern void arm64clockready(void);
+extern void arm64smpinit(Fdtinfo *);
 extern void arm64virtio9pconfigure(Fdtinfo *);
 extern void arm64pnpinit(Fdtinfo *);
 extern u64 arm64dmabase, arm64dmasize;
@@ -495,6 +496,15 @@ pnpprobe(Fdtinfo *info)
 	arm64uartputs("HARVEY-ARM64 PNP PASS\n");
 }
 
+static int
+neverready(void *a)
+{
+	USED(a);
+	return 0;
+}
+
+static Rendez smpidle;
+
 static void
 worker(void *arg)
 {
@@ -533,6 +543,13 @@ worker(void *arg)
 		while(userprocessphase != 2)
 			sched();
 		startinitprocess();
+	}else if(id >= 3){
+		print("HARVEY-ARM64 CPU%d-SCHED PASS\n", machp()->machno);
+		while(*(volatile u64 *)&machp()->ticks < 3)
+			sched();
+		print("HARVEY-ARM64 CPU%d-TIMER PASS\n", machp()->machno);
+		for(;;)
+			sleep(&smpidle, neverready, nil);
 	}else{
 		workerphase |= 2;
 	}
@@ -548,6 +565,10 @@ startworker(int id)
 	p->kp = 1;
 	p->noswap = 1;
 	procpriority(p, PriKproc, 0);
+	if(id >= 3 && id - 2 < sys->nmach){
+		p->mp = MACHP(id - 2);
+		p->wired = MACHP(id - 2);
+	}
 	kprocchild(p, worker, (void *)(usize)id);
 	ready(p);
 }
@@ -556,6 +577,7 @@ void
 arm64kernelstart(Fdtinfo *info)
 {
 	u64 freq;
+	int i;
 
 	__asm__ volatile("mrs %0, cntfrq_el0" : "=r"(freq));
 	sys->cyclefreq = freq;
@@ -653,8 +675,11 @@ arm64kernelstart(Fdtinfo *info)
 		arm64uartputs("HARVEY-ARM64 DISPLAY PASS\n");
 #endif
 	arm64clockready();
+	arm64smpinit(info);
 	startworker(1);
 	startworker(2);
+	for(i = 3; i < 3 + sys->nmach - 1; i++)
+		startworker(i);
 	schedinit();
 	panic("ARM64 scheduler returned");
 }
