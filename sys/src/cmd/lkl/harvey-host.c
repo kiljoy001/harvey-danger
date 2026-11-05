@@ -90,8 +90,8 @@ static Lock	thlk;
 static Hthread	threads[Ntid];
 static int	nexttid = 2;
 
-static int hostdebug = 1;	/* thread/timer/console lifecycle */
-static int blocktrace = 1;	/* every sem/mutex wait: noisy, opt-in */
+static int hostdebug = 0;	/* thread/timer/console lifecycle */
+static int blocktrace = 0;	/* every sem/mutex wait: noisy, opt-in */
 static int ndbg;
 
 enum { Dbgmax = 6000 };

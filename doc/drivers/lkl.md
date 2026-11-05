@@ -380,6 +380,37 @@ Harvey timer list or its interaction with the very high rate of
 (`sem_down`/`sem_up` for kernel threads, `setjmp`/`longjmp` for host
 tasks).
 
+## Fat kernel experiment (2026-11-05)
+
+A single "fat" LKL -- MMC, MMC_BLOCK, MMC_SDHCI, MMC_SDHCI_PLTFM, plus
+OF, COMMON_CLK and the dwcmshc glue -- links and starts, but the guest
+stalls in early init: no banner, no `console_init`, while the host stays
+alive (`wd` and `beat` keep ticking).  The lean kernel still boots and
+halts.
+
+Bisect so far:
+
+| MMC | OF+COMMON_CLK | result |
+|-----|---------------|--------|
+| off | off           | boots  |
+| on  | off           | stalls |
+| off | on            | stalls |
+| on  | on            | stalls |
+
+So it is not one driver.  The common factor is a larger kernel image with
+more initcalls before `console_init`; the stall is in the guest, not the
+host, and the timer thread keeps running.  Next diagnostic: sample the
+guest PC at the stall (the `hzclock` `up->pc` reporter used to find the
+idle-loop bug) to name the function, then check `.init` placement in
+`build_lkl.py`'s linker script.
+
+Consequence: the "fat LKL" plan (one instance with every driver, instead
+of one per family) is attractive -- one binary, one DT, shared
+infrastructure, much faster bring-up -- but it is on hold until this is
+understood.  The lean kernel remains the working base, and the 9P
+boundary is unchanged, so the choice can be made later without a
+redesign.
+
 ## M2: what the eMMC driver needs
 
 The probe proves the path up to the controller: claim `mmc@fe310000`, map
