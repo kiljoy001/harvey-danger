@@ -43,6 +43,7 @@ struct Qlist {
 
 enum {
 	Unitsz = sizeof(Header), /* 16 bytes on amd64 */
+	Pagesz = 4096,
 };
 
 #define NUNITS(n) (HOWMANY(n, Unitsz) + 1)
@@ -53,6 +54,7 @@ static Header misclist;
 static Header *rover;
 static unsigned tailsize;
 static unsigned tailnunits;
+static u32 heapchunkunits;
 static Header *tailbase;
 static Header *tailptr;
 static Header checkval;
@@ -665,19 +667,55 @@ mallocinit(void)
 	print("base %#p ptr %#p nunits %u\n", tailbase, tailptr, tailnunits);
 }
 
+/*
+ * Grow the heap from the physical page allocator once the static arena is
+ * exhausted.  The old allocator carved a single 32M array and returned nil
+ * after that, which is far too small for a compiler: a ramfs holding clang
+ * needs over a hundred megabytes of kernel memory for file data.
+ *
+ * Chunks double up to 64M so a large file costs a few large contiguous
+ * allocations instead of thousands of 8K ones.
+ */
 static int
 morecore(u32 nunits)
 {
-	/*
-	 * First (simple) cut.
-	 * Pump it up when you don't really need it.
-	 * Pump it up until you can feel it.
-	 */
+	u64 p, size;
+	u32 n;
+	int color;
+
 	if(nunits < NUNITS(128 * KiB))
 		nunits = NUNITS(128 * KiB);
-	if(nunits > tailnunits)
-		nunits = tailnunits;
-	tailnunits -= nunits;
 
+	if(nunits <= tailnunits){
+		tailnunits -= nunits;
+		return nunits;
+	}
+
+	n = heapchunkunits ? heapchunkunits : NUNITS(128 * KiB);
+	while(n < nunits)
+		n *= 2;
+	for(;;){
+		size = (u64)n * Unitsz;
+		size = (size + Pagesz - 1) & ~(u64)(Pagesz - 1);
+		color = 0;
+		p = physalloc(size, &color, nil);
+		if(p != 0)
+			break;
+		if(n <= nunits)
+			return 0;
+		n /= 2;
+		if(n < nunits)
+			n = nunits;
+	}
+
+	tailbase = (Header *)p;
+	tailptr = tailbase;
+	tailsize = 0;
+	tailnunits = (u32)(size / Unitsz) - nunits;
+	if((u32)(size / Unitsz) > heapchunkunits){
+		heapchunkunits = (u32)(size / Unitsz);
+		if(heapchunkunits > NUNITS(64 * MiB))
+			heapchunkunits = NUNITS(64 * MiB);
+	}
 	return nunits;
 }

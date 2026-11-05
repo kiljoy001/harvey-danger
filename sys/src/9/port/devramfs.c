@@ -16,7 +16,7 @@
 
 #define RAM_MAGIC 0xbedabb1e
 #define Einvalid "Invalid ram file"
-#define NBLOCK 4096
+#define NBLOCK 4096	/* initial block map growth */
 
 struct RamFile {
 	unsigned int magic;
@@ -28,8 +28,14 @@ struct RamFile {
 	int perm;
 	int opencount;
 	int deleteonclose;
-	// A file is up to 4K 8192-byte blocks. That's 32M. Enough.
-	void *blocks[NBLOCK];
+	/*
+	 * Blocks are allocated on demand.  The map starts at NBLOCK slots
+	 * (32M of file) and doubles as needed: a compiler binary is much
+	 * larger than the old fixed 32M ceiling, and a fixed array that big
+	 * would cost every file 256K of pointers.
+	 */
+	void **blocks;
+	u32 nblocks;
 	union {
 		struct RamFile *firstchild;
 	};
@@ -274,8 +280,9 @@ static void delete(struct RamFile *file)
 		}
 	}
 	if(!(file->perm & DMDIR)){
-		for(int i = 0; i < nelem(file->blocks); i++)
+		for(u32 i = 0; i < file->nblocks; i++)
 			free(file->blocks[i]);
+		free(file->blocks);
 	}
 	file->magic = 0;
 	free(file->n);
@@ -310,7 +317,9 @@ ramreadblock(Chan *c, void *buf, i32 n, i64 off)
 		n = 8192 - (off & 0x1fff);
 	}
 
-	if(fb > NBLOCK)
+	/* Directories use off as a cookie; only files have blocks. */
+	if(!(c->qid.type & QTDIR) &&
+	   (u32)fb >= ((struct RamFile *)c->qid.path)->nblocks)
 		return 0;
 
 	qlock(&ramlock);
@@ -380,9 +389,6 @@ ramwriteblock(Chan *c, void *v, i32 n, i64 off)
 		n = 8192 - (off & 0x1fff);
 	}
 
-	if(fb > NBLOCK)
-		return 0;
-
 	qlock(&ramlock);
 	if(waserror()){
 		qunlock(&ramlock);
@@ -390,6 +396,26 @@ ramwriteblock(Chan *c, void *v, i32 n, i64 off)
 	}
 	if(file->magic != RAM_MAGIC)
 		error("ramwriteblock:file->magic != RAM_MAGIC");
+	if((u32)fb >= file->nblocks){
+		u32 want = file->nblocks ? file->nblocks : NBLOCK;
+		void **nb;
+
+		while(want <= (u32)fb){
+			if(want > 0x40000)
+				error("ramwriteblock:file too large");
+			want *= 2;
+		}
+		nb = mallocz(want * sizeof(void *), 1);
+		if(nb == nil)
+			error("ramwriteblock:enomem");
+		if(file->blocks != nil){
+			memmove(nb, file->blocks,
+			    file->nblocks * sizeof(void *));
+			free(file->blocks);
+		}
+		file->blocks = nb;
+		file->nblocks = want;
+	}
 	if(devramdebug)
 		print("ramwrite: v %p n %#x off %#llx\n", v, n, off);
 	if(!file->blocks[fb]){
