@@ -19,12 +19,40 @@ extern int	lkl_start_kernel(const char *fmt, ...);
 extern long	lkl_sys_halt(void);
 extern void	lkl_cleanup(void);
 extern void	lklhost_setout(int);
+extern int	lklhost_mapdev(char*, u64*, u64*);
+extern int	lklhost_iomem(u64, void*, int, int);
 extern int	lkl_printf(const char*, ...);
 
 #define say(s) lkl_printf("%s", s)
 
+static void
+probe(char *node)
+{
+	char path[80], buf[64];
+	u64 base, size;
+	uchar ver[2];
+	int fd;
+
+	snprint(path, sizeof path, "#P/%s/claim", node);
+	if((fd = open(path, OWRITE)) < 0)
+		lkl_printf("probe: claim %s: %r\n", node);
+	else{
+		write(fd, "lkld", 4);
+		close(fd);
+	}
+	if(lklhost_mapdev(node, &base, &size) < 0){
+		lkl_printf("probe: map %s: %r\n", node);
+		return;
+	}
+	lkl_printf("probe: %s reg %#llux size %#llux\n", node, base, size);
+	if(lklhost_iomem(base + 0xfe, ver, 2, 0) == 0)
+		lkl_printf("probe: SDHCI version %x.%x\n", ver[1], ver[0]);
+	else
+		lkl_printf("probe: read version failed\n");
+}
+
 void
-main(void)
+main(int argc, char **argv)
 {
 	int fd;
 	/*
@@ -34,7 +62,17 @@ main(void)
 	 * so a slow reader parks the machine.  Read the log afterwards with
 	 * "cat /dev/lkllog".
 	 */
-	fd = open("/dev/lkllog", OWRITE);
+	{
+		/*
+		 * A path literal in .rodata reaches open() as an empty name on
+		 * this port; a stack copy works, and the same trick is used for
+		 * the #P paths.
+		 */
+		char path[32];
+
+		snprint(path, sizeof path, "%s", "/dev/lkllog");
+		fd = open(path, OWRITE);
+	}
 	if(fd < 0){
 		char eb[160];
 		int m = snprint(eb, sizeof eb, "lklboot: /dev/lkllog: %r; using console\n");
@@ -42,6 +80,8 @@ main(void)
 		fd = 1;
 	}
 	lklhost_setout(fd);
+	if(argc > 1)
+		probe(argv[1]);
 
 	say("lklboot: start\n");
 	if(lkl_init(&lkl_harvey_ops) < 0){

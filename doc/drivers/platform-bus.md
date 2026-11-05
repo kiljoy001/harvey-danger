@@ -79,6 +79,27 @@ family      mmc
 That is the `sdhci-of-dwcmshc` variant: the generic `sdhci` core plus the
 Rockchip glue (clock/reset, DLL, PHY tuning).  It is the first M2 target.
 
+Mapping rule: `segattach` grants the **2 MiB block** that contains the
+device, not the device window.  The window starts at
+`base & (2*MiB - 1)` inside the grant:
+
+```c
+grant = (size + 0x1fffff) & ~0x1fffff;
+m = segattach(0, node, 0, grant);
+m += base & 0x1fffff;
+```
+
+`lklhost_mapdev()` applies this so `lkl_ops->ioremap()` and
+`iomem_access()` can serve the guest driver out of the mapping.
+
+Verified on the board: claim `mmc@fe310000`, map it, and read the SDHCI
+host version register at `0xfe`; it returns `0x0005`.  The probe runs
+before `lkl_init()` so a mapping failure is reported without the kernel.
+
+Known quirk: `open()` with a path literal in `.rodata` fails with
+`empty file name` in this 14 MiB binary, while a stack copy of the same
+string works.  Paths are therefore built into stack buffers (`snprint`).
+
 ## Not done yet
 
 * Family routing (`#P/<family>/<device>/...`) is not implemented; `family`

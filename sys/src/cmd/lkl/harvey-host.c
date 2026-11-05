@@ -691,21 +691,114 @@ htimer_free(void *timer)
 
 /* ---- I/O, MMIO, jmp_buf ---- */
 
+/*
+ * A kernel driver reaches registers through ioremap() + iomem_access().
+ * Map the #P window of the node the service owns with segattach, then serve
+ * both hooks out of the mapping.  The window is device memory, mapped by
+ * the kernel; the guest touches it through these two entry points only.
+ */
+enum { Nmmio = 8 };
+static struct {
+	u64	pa;
+	u64	len;
+	uchar	*va;
+} mmio[Nmmio];
+static int nmmio;
+
+static u64
+pnpnum(char *node, char *file)
+{
+	char path[80], buf[64];
+	int fd, n;
+	u64 v;
+
+	snprint(path, sizeof path, "#P/%s/%s", node, file);
+	if((fd = open(path, OREAD)) < 0)
+		return ~0ULL;
+	n = read(fd, buf, sizeof buf - 1);
+	close(fd);
+	if(n <= 0)
+		return ~0ULL;
+	buf[n] = 0;
+	v = strtoull(buf, nil, 0);
+	return v;
+}
+
+/*
+ * lklhost_mapdev - map a #P node's register window.
+ * Returns 0 and the window's physical base and size.  The service is
+ * expected to have claimed the node first.
+ */
+int
+lklhost_mapdev(char *node, u64 *base, u64 *size)
+{
+	u64 pa, len, grant;
+	void *va;
+
+	if(nmmio >= Nmmio)
+		return -1;
+	pa = pnpnum(node, "reg");
+	len = pnpnum(node, "size");
+	if(pa == ~0ULL || len == ~0ULL || len == 0)
+		return -1;
+	/*
+	 * segattach grants the 2 MiB block that contains the device, not the
+	 * device window; the window starts at pa & (2 MiB - 1) inside it.
+	 */
+	grant = (len + 0x1fffffULL) & ~0x1fffffULL;
+	va = segattach(0, node, 0, grant);
+	if(va == (void*)-1)
+		return -1;
+	va = (uchar*)va + (pa & 0x1fffffULL);
+	mmio[nmmio].pa = pa;
+	mmio[nmmio].len = len;
+	mmio[nmmio].va = va;
+	nmmio++;
+	*base = pa;
+	*size = len;
+	return 0;
+}
+
+static int hiomem_access(const volatile void*, void*, int, int);
+static void *hioremap(long, int);
+
+int
+lklhost_iomem(u64 pa, void *val, int size, int write)
+{
+	void *va;
+
+	if((va = hioremap((long)pa, size)) == nil)
+		return -1;
+	return hiomem_access(va, val, size, write);
+}
+
 static void*
 hioremap(long addr, int size)
 {
-	USED(addr);
+	int i;
+
 	USED(size);
+	for(i = 0; i < nmmio; i++)
+		if((u64)addr >= mmio[i].pa && (u64)addr < mmio[i].pa + mmio[i].len)
+			return mmio[i].va + ((u64)addr - mmio[i].pa);
 	return nil;
 }
 
 static int
 hiomem_access(const volatile void *addr, void *val, int size, int write)
 {
-	USED(addr);
-	USED(val);
-	USED(size);
-	USED(write);
+	int i;
+	uchar *p = (uchar*)addr;
+
+	for(i = 0; i < nmmio; i++){
+		if(p >= mmio[i].va && p + size <= mmio[i].va + mmio[i].len){
+			if(write)
+				memmove((void*)p, val, size);
+			else
+				memmove(val, (void*)p, size);
+			return 0;
+		}
+	}
 	return -1;
 }
 
