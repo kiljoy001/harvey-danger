@@ -152,63 +152,63 @@ Started, not finished.  In place so far:
   `build_gefs` target that links against libavl, libbio, libauth,
   libsec, libmp and libc.
 
-**Status: gefs compiles, links and runs on ARM64.**
+**Status: gefs works on the Orange Pi 3B.**
 
-The build uses `ucc -m9 -marm64`, which understands Plan 9 C including
-anonymous struct members, so the 9front sources compile unchanged.  TCC
-has no `__atomic` builtins, so the atomic accessors come from a
-clang-compiled object, and `util/arm64/gefscompat.c` supplies the four
-libc calls this libc lacks (`tmnow`, `tmnorm`, `tmfmtinstall`,
-`procsetname`).  ucc's own driver emits a three-segment image that this
-kernel's loader rejects, so the objects are linked with ld.lld and the
-big-page script.  `/boot/gefs` prints its usage line:
+The 200 GiB data partition (`eMMC` partition 2) has been reamed with
+gefs and served over 9P on the board.  Verified:
 
+```text
+/boot/gefs -m 64 -r root -f /mnt/emmc/part2    # ream, 8 arenas of 16 KiB blocks
+/boot/gefs -A -m 64 -f /mnt/emmc/part2         # load and serve /srv/gefs
+mkdir /mnt/p
+mount -c /srv/gefs /mnt/p %                    # admin attach
+echo hello > /mnt/p/hello                      # create
+cat /mnt/p/hello                               # "hello"
+cat /boot/bigtest > /mnt/p/big                 # 125 KiB write
+mkdir /mnt/p/d; echo world > /mnt/p/d/w       # directory + child
 ```
-/boot/gefs
-usage: /boot/gefs [-SARsc] [-r user] [-m mem] [-n srv] [-a net]... -f dev
-```
 
-Getting there exposed two bugs in the supporting code, neither in gefs:
+`ls` reports `big 125344 -rw`, `d drw`, `hello 6 -rw`.  The tree
+survives a power cycle and comes back after `loadfs`, so the on-disk
+format and log replay are sound.
 
-1. **ext2sparse files were unreadable.**  `mkrootfs.py` writes the root
-   with `debugfs`, which preserves runs of zeros as holes in the block
-   map.  `ext2srv`'s `readfile` treated `bmap() == 0` as an I/O error
-   instead of a hole, so any program whose text or data covered a hole
-   died at its first demand load:
+Two mount details are Plan 9 semantics, not bugs:
 
-   ```
-   exec ext2srv pid 43 entry 0xba1bd5c nldseg 2 kp 0
-   pexit pid 43 ext2srv "i/o error in demand load accessing /boot/ext2srv: I/O error"
-   ```
+- An unauthenticated attach is only allowed for user `none`, so the
+  server is started with `-A` (noauth).
+- The reamed root is owned by `adm` (uid -1) with mode 0775.  A normal
+  attach as another user cannot create there.  Mounting with the admin
+  spec (`%`) and permissive mode bypasses the permission checks; for a
+  real deployment, create per-user directories (or chown the root) as
+  adm.  `-c` on the mount allows creation.
 
-   `rc` (97 KiB of text) happened to sit below the first hole; every
-   lib9p server in the image was above one.  `readfile` now zero-fills
-   holes, which is what ext2 specifies.  That single fix is why gefs,
-   `ext2srv`, `hubfs` and the other servers can now be started from
-   `rc` as well.
+The build produces a self-contained bring-up kernel with
+`ARM64_BUILD_GEFS=1`: it embeds `emmcfs`, `ext2srv` and `gefs` in the
+kernel archive, so only the kernel and DTB need to be transferred.
+Use a separate `ARM64_KERNEL_OUT` when the tree is shared with another
+build session.
 
-2. **`PACK64` shifted a 32-bit value.**  `PACK64(p, Blksz)` passes an
-   `int`; ucc masks shifts modulo 32, so the arena log's block length
-   was written as `0x400000004000`.  Replaying the log then aborted in
-   `grabrange`.  `PACK64`/`UNPACK64` now shift through an unsigned
-   64-bit temporary.  With that fixed, `gefs -r` gets past the arena
-   headers.
+Bugs this shook out, none of them in gefs proper:
 
-3. **The userland cache key ignored build options.**  The archive
-   signature covered the sources but not `ARM64_BUILD_GEFS` or `UCC`,
-   so asking for gefs after a plain build silently reused the archive
-   without it (and `mkrootfs` then produced a root without it).  The
-   signature now includes the options and the `libthread`, `lib9p` and
-   `libc` sources.
+1. **ext2 holes were unreadable.**  `mkrootfs.py` writes the root with
+   `debugfs`, which preserves zero runs as holes; `ext2srv` treated
+   `bmap() == 0` as an I/O error.  Every large server binary died at its
+   first demand load.  Holes now zero-fill.
+2. **`PACK64` shifted 32-bit values.**  `PACK64(p, Blksz)` is undefined
+   for shift counts above 31; ucc masks the count modulo 32, so the
+   arena log length came back as `0x400000004000` and `grabrange`
+   aborted.  The macros now shift through a 64-bit temporary.
+3. **Anonymous-member pointer conversions.**  Plan 9 lets a `Dent*` be
+   passed as its anonymous `Key*` (adjusting by the member offset); ucc
+   injects the fields but passes the pointer unchanged.  `struct Msg`
+   now puts `Kvp` first so the conversion is a no-op, and the one
+   `Dent*`-as-`Key*` call uses `DKEY()`.
+4. **`DXDIR()` anchored `Xdir` at the wrong field.**  It used
+   `offsetof(Dent, qid)`, but `Xdir` starts with `flag`, so every dent
+   copy was shifted by eight bytes and created files lost their
+   permission bits.  Anchored at `offsetof(Dent, flag)`.
 
-`/boot/gefs -r user -f /mnt/emmc/part2` (ream the 200 GiB data
-partition) is the next hardware step.  It reaches the per-arena log
-replay now but has not been run to completion: the board resets under
-sustained eMMC I/O (see the board notes), and a second build session on
-the same tree keeps republishing `g55k.img`/`g55u.img` without
-`ARM64_BUILD_GEFS=1`, which overwrites the archive under test.  Build
-gefs into a separate `ARM64_KERNEL_OUT` and publish it under distinct
-TFTP names to avoid that race.
+The original notes on the port follow.
 
 The original notes on the port follow.
 
