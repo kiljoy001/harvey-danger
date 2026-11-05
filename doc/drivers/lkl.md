@@ -380,11 +380,35 @@ Harvey timer list or its interaction with the very high rate of
 (`sem_down`/`sem_up` for kernel threads, `setjmp`/`longjmp` for host
 tasks).
 
+## Board race in the initial handoff (2026-11-05)
+
+All four fat/lean configurations boot and halt in QEMU.  On the board the
+same archive is timing dependent:
+
+* run with `lklboot -d` (semaphore and mutex tracing): reaches
+  `lklboot: halted`;
+* run without `-d`: stops after `lklboot: init ok`, before the banner.
+
+So the extra host calls in the trace mask the failure.  Sampling `up->pc`
+from `hzclock()` during the stall shows the only runnable process is the
+boot probe idling in `idleforever()` (syscall 17, `sleep`), with
+`delaysched 0` -- i.e. no other process is ready.  Every LKL host thread
+is blocked on a semaphore, which matches the "guest threads wait on
+semaphores" observation.
+
+Replacing the lazy idle-task `kernel_thread()` with a direct park
+(`lkl_cpu_put()` on the current task, then `sem_down(own sched_sem)`)
+removes a real race in the idle path but does **not** fix the board stall.
+
+Instrumentation warning: `lkl_printf` inside `lkl_cpu_put()` runs while
+`cpu.lock` is held, so the write syscall can hang the handoff itself.
+Use in-memory counters or print outside the lock.
+
 ## Fat kernel experiment (2026-11-05)
 
 A single "fat" LKL -- MMC, MMC_BLOCK, MMC_SDHCI, MMC_SDHCI_PLTFM, plus
 OF, COMMON_CLK and the dwcmshc glue -- links and starts, but the guest
-stalls in early init: no banner, no `console_init`, while the host stays
+stalls in early init: no visible banner, while the host stays
 alive (`wd` and `beat` keep ticking).  The lean kernel still boots and
 halts.
 
@@ -397,12 +421,39 @@ Bisect so far:
 | off | on            | stalls |
 | on  | on            | stalls |
 
-So it is not one driver.  The common factor is a larger kernel image with
-more initcalls before `console_init`; the stall is in the guest, not the
-host, and the timer thread keeps running.  Next diagnostic: sample the
-guest PC at the stall (the `hzclock` `up->pc` reporter used to find the
-idle-loop bug) to name the function, then check `.init` placement in
-`build_lkl.py`'s linker script.
+This does not yet locate the stall before `console_init()`: LKL registers
+its visible console with `core_initcall(lkl_console_init)`, later in
+`kernel_init_freeable()`. Normal driver initcalls also run after
+`console_init()`. Host timer liveness alone does not exclude a failed
+host semaphore handoff.
+
+Follow-up on the same day: all four saved LKL objects booted and halted
+under QEMU `virt`, Cortex-A55, 768 MiB, using the board kernel image and
+the existing final linker script. The full image announced SDHCI and
+disabled unused clocks before reaching `/init` and halting. On the live
+board a fresh MMC-only run created host threads 2 through 6 (guest boot,
+watchdog, timer, init and kthreadd), armed a 10 ms timer, fired it once,
+then stopped making progress. The guest threads were in `semacquire`;
+the watchdog and timer kept sleeping and waking. This narrows the next
+investigation to the initial scheduling handoffs, but does not establish
+the cause or a fix. No linker-layout change has been justified yet.
+
+`lklboot -d` enables bounded host thread, timer and semaphore tracing,
+including the caller addresses to resolve against that exact ELF.
+The repeatable QEMU test uses an external archive instead of replacing
+generated kernel headers:
+
+```
+python3 util/arm64/test_lkl_boot.py --kernel /path/to/harvey.img \
+  --elf build/arm64-lkl/lklboot --out /tmp/lkl-test --debug
+```
+
+Success requires the Linux banner, `lklboot: kernel up`, and
+`lklboot: halted`. The transcript is written to `boot.log` in the output
+directory. `--archive-only` prepares `lkl-test.img` for a board run; this
+archive replaces `/boot/init` with a launcher that starts the probe and
+streams `/dev/lkllog` to the console. It does not exercise actual MMC
+hardware or establish that the board-specific stall is fixed.
 
 Consequence: the "fat LKL" plan (one instance with every driver, instead
 of one per family) is attractive -- one binary, one DT, shared

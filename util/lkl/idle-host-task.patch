@@ -1,49 +1,38 @@
 diff --git a/arch/lkl/kernel/syscalls.c b/arch/lkl/kernel/syscalls.c
-index cd4431ff2..ffd12df08 100644
+index cd4431ff2..883abd405 100644
 --- a/arch/lkl/kernel/syscalls.c
 +++ b/arch/lkl/kernel/syscalls.c
-@@ -138,11 +138,34 @@ long lkl_syscall(long no, long *params)
- }
+@@ -139,11 +139,32 @@ long lkl_syscall(long no, long *params)
  
  static struct task_struct *idle_host_task;
-+static int idle_host_task_started;
-+static int idle_host_task_loop(void *unused);
-+
-+/*
-+ * The guest may enter the idle loop before /init runs, which is well before
-+ * syscalls_init() used to create the idle host task.  arch_cpu_idle() can
-+ * only hand the CPU back to the host through that task; without it the
-+ * guest spins in do_idle() forever and the pending timer IRQ is never run.
-+ * Create it on first demand instead.
-+ */
-+static int idle_host_task_create(void)
-+{
-+	if (idle_host_task_started)
-+		return 0;
-+	if (kernel_thread(idle_host_task_loop, NULL, NULL, CLONE_FLAGS) < 0)
-+		return -1;
-+	idle_host_task_started = 1;
-+	return 0;
-+}
  
++/*
++ * Before /init runs there is no idle host task to switch to.  Release the
++ * CPU and park this task on its own sched_sem instead: that is exactly what
++ * idle_host_task_loop() does, without creating a kernel thread from the
++ * idle path (which raced with syscalls_init() and could leave the guest
++ * holding the CPU forever).
++ */
++static void
++lkl_idle_park(void)
++{
++	struct thread_info *ti = current_thread_info();
++
++	lkl_cpu_put();
++	lkl_ops->sem_down(ti->sched_sem);
++	schedule_tail(ti->prev_sched);
++}
++
  /* called from idle, don't failed, don't block */
  void wakeup_idle_host_task(void)
  {
 -	if (!need_resched() && idle_host_task)
 +	if (need_resched())
 +		return;
-+	if (!idle_host_task_started && idle_host_task_create() < 0)
-+		return;
 +	if (idle_host_task)
  		wake_up_process(idle_host_task);
++	else
++		lkl_idle_park();
  }
  
-@@ -186,7 +209,7 @@ int syscalls_init(void)
- 			return -1;
- 	}
- 
--	if (kernel_thread(idle_host_task_loop, NULL, NULL, CLONE_FLAGS) < 0) {
-+	if (idle_host_task_create() < 0) {
- 		if (lkl_ops->tls_free)
- 			lkl_ops->tls_free(task_key);
- 		return -1;
+ static int idle_host_task_loop(void *unused)
