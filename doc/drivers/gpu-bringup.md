@@ -552,10 +552,11 @@ draw 8  ->  TL 0xffff0000  TR 0xff0000ff  BL 0xff00ff00  BR 0xffffffff
 2. **GPU-backed display surfaces.**  Have `o9display` allocate its
    composited surface from the same DMA pool the GPU can map, blit with the
    GPU, and keep the CPU memdraw path as the fallback when submission fails.
-3. **The rest of the descriptor layout.**  Shaders, renderer state, the
-   texture, its surface and the sampler are ours now; the attribute,
-   varying and draw descriptors are still patched out of the captured
-   block.  Emitting those lets `drawreplay.h` go.
+3. **An arbitrary-rect blit.**  The blit maps the whole screen onto the
+   source surface, which is what a full-frame present needs.  Drawing a
+   surface into a sub-rectangle needs either a uniform buffer (rect origin
+   and size) or a second attribute carrying uv, so one shader can target
+   any rectangle instead of recompiling per size.
 4. **DVFS and thermal.**  GPU OPPs are in the DTS and the RK809 can set
    `vdd_gpu`; neither is wired to a devfreq/thermal policy.
 

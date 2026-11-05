@@ -3,6 +3,7 @@
 #include "nir_builder.h"
 #include "panfrost/compiler/bifrost/bifrost_compile.h"
 #include "panfrost/compiler/pan_compiler.h"
+#include "panfrost/compiler/pan_nir.h"
 #include "panfrost/lib/pan_shader.h"
 #include "panfrost/compiler/bifrost/bifrost/disassemble.h"
 #include "spirv/nir_spirv.h"
