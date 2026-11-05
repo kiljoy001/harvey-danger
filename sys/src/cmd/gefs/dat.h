@@ -58,7 +58,7 @@ typedef struct Xdir	Xdir;
  * -m9 injects the fields but not the name, so compute the address
  * from the first injected field.
  */
-#define DXDIR(d)	((Xdir*)((char*)(d) + offsetof(Dent, qid)))
+#define DXDIR(d)	((Xdir*)((char*)(d) + offsetof(Dent, flag)))
 #define DKEY(d)		((Key*)((char*)(d) + offsetof(Dent, k)))
 #define MKEY(m)		((Key*)((char*)(m) + offsetof(Msg, k)))
 #define KKEY(k)		((Key*)(k))
