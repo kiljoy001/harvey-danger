@@ -399,3 +399,45 @@ exchange through both MMIO transport versions. The boot check also exercises
 the local `#~` request and reply path without a host ring.
 The 32 MiB static kernel heap is a bring-up
 limit; it will need growth and accounting before general use.
+
+## APEX and a native clang
+
+The POSIX surface on ARM64 is APEX (`apex/`) over the Plan 9 libc, plus
+`util/libcxx` and libc++/libunwind/libc++abi.  It is built with
+`util/arm64/build_apex.py`, `build_libcxx.py` and `build_libunwind.py`; the
+result is what a guest program links:
+
+    libc++  libunwind  libc++abi   C++ runtime
+    libap.a                        POSIX/ANSI: stdio, errno, TLS, startup, mmap
+    libc.a                         Plan 9 libc: syscalls, fmt, allocator
+
+`util/arm64/install-sdk.py` lays that stack out as a self-contained tree
+(clang, clang++, ld.lld, resource headers, machine/apEX/libc++ includes,
+archives, `apex.ld`) whose driver configs use the guest root, and can emit it
+as a ustar archive wrapped in an `O9BOOT01` boot archive.  `mkrun.py` loads
+that archive at 0x50000000, unpacks it into a ramfs and runs a program from
+it, so a 360M toolchain reaches the guest without being embedded in the
+kernel image.
+
+Building clang for the guest found a series of platform bugs, all fixed at
+the source rather than worked around:
+
+* `writev()` returned `i32`, so a failed stdout write became +4294967295 and
+  `__stdio_write` retried with a wild pointer.
+* APEX's `setenv()` built `"#e/\0NAME"` and silently failed, so variables
+  never reached `#e`/`/env` and `execve` dropped them.
+* `stat()` decided a file was a character device from `Dir.type`, which is
+  the *device letter* for namespace files, so every ramfs file looked like a
+  device and LLVM rejected its own config files.
+* `ino_t` was 16 bits.  LLVM's FileManager keys files by (st_dev, st_ino),
+  and `dirent.h` collided with `stdint.h`; clang returned the cached
+  `stdint.h` and silently skipped `dirent.h`.
+* ramfs capped a file at 32M and read a directory as if it were a byte
+  stream, so a directory whose entries did not fit one 8K block could not be
+  listed at all (clang saw `__type_traits` as empty).
+* the kernel heap was a static 32M array; it now grows from `physalloc()`.
+* libc had a 32-bit `labs`, no `llabs`, and only part of the libm surface.
+
+The 32 MiB heap limit noted above is gone: `qmalloc.c` draws new chunks from
+the physical allocator, doubling up to 64 MiB, and ramfs block maps grow on
+demand.
