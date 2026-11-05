@@ -227,6 +227,48 @@ inside the object or through `lkl_host_operations`.
 M1 therefore reduces to `harvey-host.c` (the ops table, the two symbols,
 and the arena) plus a link script that keeps the kernel's `.init.*` sections.
 
+## M1 status (2026-11-05)
+
+The Linux kernel boots inside a Harvey process.  `lklboot` runs
+`lkl_init()` + `lkl_start_kernel("mem=128M")` on the board and the kernel
+banner and early boot reach the Harvey console through
+`lkl_operations.print`:
+
+```text
+K: [    0.000000] Linux version 6.12.0+ (scott@pop-os) ... clang 23 ...
+K: [    0.000000] memblock address range: 0x10d39000 - 0x18d39000
+K: [    0.064470] Memory: 127276K/131072K available
+K: [    0.087267] printk: legacy console [lkl_console0] enabled
+K: [    0.358419] clocksource: Switched to clocksource lkl
+```
+
+The host layer is `sys/src/cmd/lkl/harvey-host.c`: semaphores and
+mutexes on QLock/Rendez, host threads on `rfork(RFPROC|RFMEM)` with a
+private stack, timers on a polling thread, page memory from `mallocz`.
+`sys/src/cmd/lkl/tramp.s` switches to the thread stack before calling
+the entry point.
+
+Four things had to be fixed to get this far, each worth remembering:
+
+1. **User binaries must link below `0x40000000`.**  That is the
+   kernel/user boundary (`KPTR` in `sys/src/9/aarch64/mem.h`); a binary
+   linked at `0x40000000` executes into kernel mappings and kills the
+   console.  `build_lkl.py` uses `0x10000000`.
+2. **`getpid()` returns 0 in an `RFMEM` child** (it reads `#c/pid`).
+   Host threads carry their identity at the base of their own stack
+   instead; ids start at 2, and the main thread is 1.
+3. **`conf.nproc` was 64.**  LKL's kernel threads plus the built-in
+   services exhausted the Harvey process table, which floods
+   `resrcwait("no procs")`.  Raised to 256 in `boot.c`.
+4. **The semaphore trace floods the UART.**  It is only enabled while
+   debugging (`hostdebug` in `harvey-host.c`).
+
+Known limit: the kernel reaches the end of early initcalls and then the
+run stops; the console no longer responds.  The next step is to find
+where it blocks — most likely a host-thread scheduling/handoff point
+(the console thread and the LKL CPU owner).  Debug prints for thread
+create/start, timer arm/fire and the kernel console are in place.
+
 ## Supervision
 
 A supervisor (extension of `drvman`) starts instances in dependency order,

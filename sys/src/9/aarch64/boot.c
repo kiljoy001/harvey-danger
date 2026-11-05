@@ -556,7 +556,7 @@ arm64kernelstart(Fdtinfo *info)
 	mallocinit();
 	conf.npage = info->ramsize / PGSZ;
 	conf.upages = arm64physfreepages();
-	conf.nproc = 64;
+	conf.nproc = 256;
 	conf.nimage = 64;
 	eve = "root";
 	procinit0();
