@@ -79,6 +79,45 @@ board code (LKL gets fixed-clock/fixed-regulator shims) or by LKL (Linux
 clk/regulator frameworks, same FDT).  Boot-critical rails stay native; devices
 driven by LKL get their clocks from LKL, one owner per controller.
 
+## Family model (adopted from lux9-kernel)
+
+Lux9's HAL groups hardware into **families** (PCI, USB, I2C) registered in a
+`FamilyRegistry` and routed through a congruent 9P tree (`/dev/family/...`).
+Each family exposes per-device resources (`config`, `bar{N}`) and a `ctl`;
+a channel id identifies an access grant; an exchange page carries zero-copy
+requests and IRQ events; a borrow checker enforces single-writer ownership.
+Its rump driver server plan is the same shape as this one: a `rumpuser`
+backend (clock, threads, locks, block I/O) over a HAL, exposed as 9P,
+storage first.
+
+Harvey adopts the parts that fit a process-per-family design:
+
+- **`#P` as the family router.** `#P/<family>/<device>/...` with `reg`,
+  `size`, `irq`, `irqflags`, `compatible`, `class`, the resources from the
+  contract, and a `ctl` for `claim`, `release`, `reset`, `scan`.
+- **Claim/lease instead of a token game.** One owner per device; shared
+  readers for monitoring; explicit transfer. `#P` records the owner and
+  refuses a second claim. This is the borrow-checker idea reduced to what
+  the boot model needs, and it enforces "one owner per device" in the
+  kernel rather than by convention.
+- **Exchange ring for events (later).** `#P/<dev>/wait` is enough for eMMC;
+  a shared ring for IRQ and completion events is the right step for network
+  and USB families, where per-event reads dominate.
+- **Family manifest and supervisor.** A family registers with the
+  supervisor (name, devices, endpoint); the supervisor mounts and restarts
+  it. The `lkl.devices` file in a BSP is the manifest.
+- **Error translation table.** Linux `errno` to Plan 9 strings, in one
+  place, so a driver failure is legible to the 9P client.
+
+Not adopted: WASM-inside-HAL isolation (a process is a stronger boundary),
+Pebble/CLR tokens (not needed here), and the kernel "diverter" (Harvey has no
+native driver to divert; the server *is* the driver).
+
+Also borrowed from the rump plan: storage first (eMMC only, no SD slot),
+the `rumpuser`-style host mapping (identical to the LKL host ops), the 9P
+POSIX bridge, boot integration, and the functional test list (stat, read,
+write, readdir, seek, rename, write/reboot/read back).
+
 ## Memory
 
 - A single physically contiguous arena is reserved at boot from the top of
