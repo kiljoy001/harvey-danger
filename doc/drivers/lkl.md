@@ -380,6 +380,37 @@ Harvey timer list or its interaction with the very high rate of
 (`sem_down`/`sem_up` for kernel threads, `setjmp`/`longjmp` for host
 tasks).
 
+## M2: what the eMMC driver needs
+
+The probe proves the path up to the controller: claim `mmc@fe310000`, map
+the 2 MiB grant, read the SDHCI version register (`0x0005`).  Driving the
+real `sdhci` core needs three more pieces.
+
+**Kernel config.**  The LKL build has `CONFIG_MMC` unset and `CONFIG_OF`
+unset.  Enable `MMC`, `MMC_BLOCK`, `MMC_SDHCI`, `MMC_SDHCI_PLTFM`
+(and the dwcmshc glue) first.
+
+**Device model.**  `sdhci-of-dwcmshc.c` is an OF driver; with `CONFIG_OF`
+off it cannot bind.  Two viable paths:
+
+1. enable `CONFIG_OF`, hand LKL a trimmed device-tree blob (the eMMC node
+   plus enough clock/reset providers), and let the unmodified driver
+   probe.  This is the most faithful to "Linux drivers as the oracle",
+   but needs the CRU/reset pieces present;
+2. add a small platform shim in LKL that allocates an `sdhci_host`, sets
+   the RK3568 quirks and calls the sdhci core.  The core (command/response,
+   ADMA2, error handling) stays the Linux source; only the Rockchip glue
+   is ours.  The clocks and resets are already configured by U-Boot, so a
+   first bring-up can leave them alone.
+
+**Interrupts and DMA.**  A host thread blocks on `#P/<node>/wait` and
+calls `lkl_trigger_irq(51)`; `lkl_trigger_irq` already exists in
+`arch/lkl/kernel/irq.c`.  DMA comes from `#P/dma`; the arena is below
+4 GiB, which 32-bit ADMA2 requires.
+
+Storage then follows the M3 plan: the block device is served over 9P
+(`lkl_sys_pread/pwrite`), not by a native driver.
+
 ## Supervision
 
 A supervisor (extension of `drvman`) starts instances in dependency order,
