@@ -250,6 +250,77 @@ emit_texture(unsigned width, unsigned height)
           (unsigned)sizeof tex, (unsigned)sizeof surf, (unsigned)sizeof samp);
 }
 
+/* The layout around the shaders: attribute buffer and attribute, varying
+ * buffer and varying, thread storage and viewport.  Packed with the
+ * capture's pointers so the bytes can be diffed against it. */
+static void
+emit_layout(uint64_t attrptr, uint64_t varyptr)
+{
+   struct mali_attribute_buffer_packed abuf;
+   struct mali_attribute_packed attr;
+   struct mali_attribute_buffer_packed vbuf;
+   struct mali_attribute_packed vary;
+   struct mali_local_storage_packed tls;
+   struct mali_viewport_packed vp;
+   FILE *f;
+
+   memset(&abuf, 0, sizeof abuf);
+   pan_pack(&abuf, ATTRIBUTE_BUFFER, cfg) {
+      cfg.type = MALI_ATTRIBUTE_TYPE_1D;
+      cfg.pointer = attrptr;
+      cfg.stride = 16;
+      cfg.size = 48;
+   }
+   memset(&attr, 0, sizeof attr);
+   pan_pack(&attr, ATTRIBUTE, cfg) {
+      cfg.format = MALI_PACK_FMT(RGBA32F, RGBA, L);
+      cfg.offset = 0;
+      cfg.offset_enable = false;
+      cfg.buffer_index = 0;
+   }
+   memset(&vbuf, 0, sizeof vbuf);
+   pan_pack(&vbuf, ATTRIBUTE_BUFFER, cfg) {
+      cfg.type = MALI_ATTRIBUTE_TYPE_1D;
+      cfg.pointer = varyptr;
+      cfg.stride = 16;
+      cfg.size = 48;
+   }
+   memset(&vary, 0, sizeof vary);
+   pan_pack(&vary, ATTRIBUTE, cfg) {
+      cfg.format = MALI_PACK_FMT(RGBA32F, RGBA, L);
+      cfg.offset = 0;
+      cfg.offset_enable = false;
+      cfg.buffer_index = 1;
+   }
+   memset(&tls, 0, sizeof tls);
+   pan_pack(&tls, LOCAL_STORAGE, cfg) {
+      cfg.tls_size = 0;
+      cfg.wls_instances = MALI_LOCAL_STORAGE_NO_WORKGROUP_MEM;
+   }
+   memset(&vp, 0, sizeof vp);
+   pan_pack(&vp, VIEWPORT, cfg) {
+      cfg.minimum_x = -INFINITY;
+      cfg.minimum_y = -INFINITY;
+      cfg.maximum_x = INFINITY;
+      cfg.maximum_y = INFINITY;
+      cfg.minimum_z = 0.0f;
+      cfg.maximum_z = 1.0f;
+      cfg.scissor_maximum_x = 63;
+      cfg.scissor_maximum_y = 63;
+   }
+
+   if((f = fopen("layout_abuf.bin", "wb")) != NULL){ fwrite(&abuf, 1, sizeof abuf, f); fclose(f); }
+   if((f = fopen("layout_attr.bin", "wb")) != NULL){ fwrite(&attr, 1, sizeof attr, f); fclose(f); }
+   if((f = fopen("layout_vbuf.bin", "wb")) != NULL){ fwrite(&vbuf, 1, sizeof vbuf, f); fclose(f); }
+   if((f = fopen("layout_vary.bin", "wb")) != NULL){ fwrite(&vary, 1, sizeof vary, f); fclose(f); }
+   if((f = fopen("layout_tls.bin", "wb")) != NULL){ fwrite(&tls, 1, sizeof tls, f); fclose(f); }
+   if((f = fopen("layout_vp.bin", "wb")) != NULL){ fwrite(&vp, 1, sizeof vp, f); fclose(f); }
+   printf("layout abuf %u attr %u vbuf %u vary %u tls %u vp %u\n",
+          (unsigned)sizeof abuf, (unsigned)sizeof attr,
+          (unsigned)sizeof vbuf, (unsigned)sizeof vary,
+          (unsigned)sizeof tls, (unsigned)sizeof vp);
+}
+
 /* Same callback panvk hands to nir_lower_io. */
 static int
 cc_type_size(const struct glsl_type *type, bool bindless)
@@ -381,6 +452,7 @@ main(int argc, char **argv)
    emit_vertex("vert", 32.0f, 32.0f);
    emit_vertex("vert1920", 960.0f, 540.0f);
    emit_texture(64, 64);
+   emit_layout(0xa008000, 0xa019000);
 
    glsl_type_singleton_decref();
    return 0;

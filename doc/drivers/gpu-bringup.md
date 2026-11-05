@@ -476,6 +476,25 @@ so Mesa writes `0x2ec00022` for RGBA8 UNORM where `gpufs` was writing
 even though the geometry, the MMU and the shaders were all correct.  With
 the packed value the job completes and the texture samples.
 
+## The layout is packed, not copied
+
+`gpucc` also packs the descriptors around the shaders --
+`ATTRIBUTE_BUFFER`, `ATTRIBUTE`, the varying pair, `LOCAL_STORAGE` (TLS) and
+`VIEWPORT` -- and packing them with the capture's pointers reproduces the
+captured bytes exactly for the attribute buffer, attribute, TLS and
+viewport:
+
+```text
+attribute buffer  01 80 00 0a 00000000 00000010 00000030
+attribute         00 00 c0 2f 00000000              (RGBA32F, packed)
+TLS               00000000 0000001f ...
+viewport          000080ff 000080ff 0000807f 0000807f 00000000 0000803f 00000000 003f003f
+```
+
+So the remaining layout is understood rather than reverse-engineered by
+copy: the next step is to place these at fixed offsets, patch the pointers,
+drop the captured block and delete `drawreplay.h`.
+
 ## What is next
 
 1. **A real submit interface.**  `clear` is a debug verb.  The display
