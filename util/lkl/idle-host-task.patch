@@ -1,0 +1,49 @@
+diff --git a/arch/lkl/kernel/syscalls.c b/arch/lkl/kernel/syscalls.c
+index cd4431ff2..ffd12df08 100644
+--- a/arch/lkl/kernel/syscalls.c
++++ b/arch/lkl/kernel/syscalls.c
+@@ -138,11 +138,34 @@ long lkl_syscall(long no, long *params)
+ }
+ 
+ static struct task_struct *idle_host_task;
++static int idle_host_task_started;
++static int idle_host_task_loop(void *unused);
++
++/*
++ * The guest may enter the idle loop before /init runs, which is well before
++ * syscalls_init() used to create the idle host task.  arch_cpu_idle() can
++ * only hand the CPU back to the host through that task; without it the
++ * guest spins in do_idle() forever and the pending timer IRQ is never run.
++ * Create it on first demand instead.
++ */
++static int idle_host_task_create(void)
++{
++	if (idle_host_task_started)
++		return 0;
++	if (kernel_thread(idle_host_task_loop, NULL, NULL, CLONE_FLAGS) < 0)
++		return -1;
++	idle_host_task_started = 1;
++	return 0;
++}
+ 
+ /* called from idle, don't failed, don't block */
+ void wakeup_idle_host_task(void)
+ {
+-	if (!need_resched() && idle_host_task)
++	if (need_resched())
++		return;
++	if (!idle_host_task_started && idle_host_task_create() < 0)
++		return;
++	if (idle_host_task)
+ 		wake_up_process(idle_host_task);
+ }
+ 
+@@ -186,7 +209,7 @@ int syscalls_init(void)
+ 			return -1;
+ 	}
+ 
+-	if (kernel_thread(idle_host_task_loop, NULL, NULL, CLONE_FLAGS) < 0) {
++	if (idle_host_task_create() < 0) {
+ 		if (lkl_ops->tls_free)
+ 			lkl_ops->tls_free(task_key);
+ 		return -1;

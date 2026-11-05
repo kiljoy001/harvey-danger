@@ -297,6 +297,44 @@ Two changes address this:
 cat /dev/lkllog
 ```
 
+## M1 complete (2026-11-05)
+
+The kernel now boots reliably and shuts down cleanly, repeatedly:
+
+```text
+K: [    0.000000] Linux version 6.12.0+ ...
+K: [    0.000000] memblock address range: 0x10d33000 - 0x18d33000
+K: [    0.093829] Memory: 127276K/131072K available
+K: [    0.119574] printk: legacy console [lkl_console0] enabled
+K: [    0.419644] clocksource: Switched to clocksource lkl
+lklboot: kernel up
+lklboot: halted
+```
+
+Three separate faults had to be fixed, each of which presented as "the
+machine went to sleep":
+
+1. **Console output could wedge the kernel.**  `print()` reaches
+   `uartputc()`, which busy-waited on the UART FIFO with IRQs masked.
+   Fixed with a bounded wait; see the console section above.
+2. **No preemption on the ARM64 port.**  `_arm64irq` returned straight
+   to EL0 without checking `up->delaysched`.  Preemption is now checked
+   on the syscall return path.
+3. **LKL's idle host task was created too late.**  `arch_cpu_idle()`
+   hands the CPU back to the host only through `idle_host_task`, which
+   `syscalls_init()` created when the guest executes `/init`.  If the
+   guest entered the idle loop before that -- which it does during early
+   init -- it spun in `do_idle()` forever, holding the CPU, so the
+   pending timer IRQ was never delivered and every host thread stayed
+   asleep.  `wakeup_idle_host_task()` now creates the task on first
+   demand.  Patch: `util/lkl/idle-host-task.patch`.
+
+The third one is the one that looked exactly like a sleep: the clock
+interrupt and `hzclock()` kept running (provable with in-kernel
+counters), a `sleep(1)` watchdog never woke, and `/proc` was not even
+reachable.  Resolving the sampled PC to symbols showed the guest sitting
+in `do_idle`/`arch_cpu_idle`, which named the bug.
+
 ## Missing preemption on the ARM64 port
 
 The remaining stall is not in LKL and not in `sleep()`.  The port has no
