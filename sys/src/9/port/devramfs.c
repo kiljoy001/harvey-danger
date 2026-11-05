@@ -311,10 +311,15 @@ ramreadblock(Chan *c, void *buf, i32 n, i64 off)
 	// first block, last block
 	int fb = off >> 13, fl = (off + n) >> 13, offinblock = off & 0x1fff;
 
-	// adjust read size and offset.
-	// we only read one block for now.
-	if(fl != fb){
+	/*
+	 * Files are read one 8K block at a time.  Directories are not a byte
+	 * stream: their offset is a cookie and the entries are parsed from
+	 * the whole buffer, so leave the request alone.
+	 */
+	if((c->qid.type & QTDIR) == 0 && fl != fb){
 		n = 8192 - (off & 0x1fff);
+		if(n < 0)
+			return 0;
 	}
 
 	/* Directories use off as a cookie; only files have blocks. */
@@ -361,6 +366,15 @@ ramread(Chan *c, void *v, i32 n, i64 off)
 		if(amt <= 0)
 			break;
 		total += amt;
+		/*
+		 * A directory read returns a batch of entries, not a byte
+		 * stream: the next entry often does not fit in what is left
+		 * of the buffer and devdirread then reports a short count.
+		 * Retrying with the remainder makes it raise Eshort instead
+		 * of returning the entries already produced.
+		 */
+		if(c->qid.type & QTDIR)
+			break;
 	}
 	return total;
 }
