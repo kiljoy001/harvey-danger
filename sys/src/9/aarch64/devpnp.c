@@ -18,6 +18,10 @@ enum {
 	Qclass,
 	Qconsole,
 	Qwait,
+	Qfamily,
+	Qclaim,
+	Qowner,
+	Qrelease,
 	Qdma,
 	Qdmabase,
 	Qdmasize,
@@ -40,6 +44,15 @@ enum {
 
 static Fdtdev pnpdev[Maxfdtdev];
 static u32 npnpdev;
+
+/*
+ * One owner per device.  A driver claims its node before touching the
+ * registers, so two families (or a stale process) cannot both program the
+ * same controller.  The owner string is chosen by the driver, typically its
+ * service name.
+ */
+static Lock pnplock;
+static char pnpowner[Maxfdtdev][32];
 static u64 consolebase;
 extern u64 arm64dmabase, arm64dmasize;
 extern u64 arm64teeshmbase, arm64teeshmsize;
@@ -298,6 +311,39 @@ arm64pnpinit(Fdtinfo *info)
 	}
 }
 
+static char*
+pnpfamily(int clas)
+{
+	switch(clas){
+	case Fdtclassuart:	return "serial";
+	case Fdtclassi2c:
+	case Fdtclassspi:
+	case Fdtclassgpio:
+	case Fdtclasspwm:
+	case Fdtclasssaradc:
+	case Fdtclasstsadc:
+	case Fdtclasswdt:
+	case Fdtclassi2s:
+	case Fdtclasscru:
+	case Fdtclassgrf:
+	case Fdtclasspower:	return "soc";
+	case Fdtclassgmac:	return "net";
+	case Fdtclassmmc:	return "mmc";
+	case Fdtclassusb:	return "usb";
+	case Fdtclasspcie:	return "pci";
+	case Fdtclassnpu:
+	case Fdtclassgpu:
+	case Fdtclassvpu:	return "accel";
+	case Fdtclassvop:
+	case Fdtclasshdmi:
+	case Fdtclassdsi:
+	case Fdtclassedp:	return "display";
+	case Fdtclasssfc:	return "storage";
+	case Fdtclassiommu:	return "iommu";
+	}
+	return "misc";
+}
+
 static int
 pnpgen(Chan *c, char *name, Dirtab *tab, int ntab, int s, Dir *dp)
 {
@@ -343,7 +389,7 @@ pnpgen(Chan *c, char *name, Dirtab *tab, int ntab, int s, Dir *dp)
 			return 1;
 		}
 		dev = DEV(c);
-		if(dev < 0 || dev >= (int)npnpdev || s < 0 || s > Qwait-Qreg)
+		if(dev < 0 || dev >= (int)npnpdev || s < 0 || s > Qrelease-Qreg)
 			return -1;
 		q.type = QTFILE;
 		switch(s + Qreg){
@@ -378,6 +424,22 @@ pnpgen(Chan *c, char *name, Dirtab *tab, int ntab, int s, Dir *dp)
 		case Qwait:
 			q.path = QPATH(dev, Qwait);
 			devdir(c, q, "wait", 0, eve, 0444, dp);
+			break;
+		case Qfamily:
+			q.path = QPATH(dev, Qfamily);
+			devdir(c, q, "family", 0, eve, 0444, dp);
+			break;
+		case Qclaim:
+			q.path = QPATH(dev, Qclaim);
+			devdir(c, q, "claim", 0, eve, 0666, dp);
+			break;
+		case Qowner:
+			q.path = QPATH(dev, Qowner);
+			devdir(c, q, "owner", 0, eve, 0444, dp);
+			break;
+		case Qrelease:
+			q.path = QPATH(dev, Qrelease);
+			devdir(c, q, "release", 0, eve, 0666, dp);
 			break;
 		default:
 			return -1;
@@ -498,7 +560,8 @@ pnpopen(Chan *c, int omode)
 		if(m != OREAD)
 			error(Eperm);
 	}else if(t == Qdmaalloc || t == Qdmafree || t == Qdmaclean ||
-	         t == Qdmainval || t == Qdmacivac || t == Qteesmc){
+	         t == Qdmainval || t == Qdmacivac || t == Qteesmc ||
+	         t == Qclaim || t == Qrelease){
 		/* DMA control files and the SMC gate accept reads and writes. */
 	}else if(m != OREAD)
 		error(Eperm);
@@ -535,6 +598,40 @@ pnpwrite(Chan *c, void *a, i32 n, i64 off)
 	USED(off);
 	if(n <= 0)
 		error(Ebadarg);
+	if(TYPE(c) == Qclaim || TYPE(c) == Qrelease){
+		char name[32];
+		int m, dev;
+
+		dev = DEV(c);
+		if(dev < 0 || dev >= (int)npnpdev)
+			error(Ebadarg);
+		m = n < (int)sizeof(name)-1 ? n : (int)sizeof(name)-1;
+		memmove(name, a, m);
+		name[m] = 0;
+		while(m > 0 && (name[m-1] == '\n' || name[m-1] == ' ' ||
+		                name[m-1] == '\t'))
+			name[--m] = 0;
+		if(m == 0)
+			error(Ebadarg);
+		lock(&pnplock);
+		if(TYPE(c) == Qclaim){
+			if(pnpowner[dev][0] != 0 &&
+			   strcmp(pnpowner[dev], name) != 0){
+				unlock(&pnplock);
+				error("device already claimed");
+			}
+			strncpy(pnpowner[dev], name, sizeof pnpowner[dev]-1);
+			pnpowner[dev][sizeof pnpowner[dev]-1] = 0;
+		}else{
+			if(strcmp(pnpowner[dev], name) != 0){
+				unlock(&pnplock);
+				error(Eperm);
+			}
+			pnpowner[dev][0] = 0;
+		}
+		unlock(&pnplock);
+		return n;
+	}
 	if(TYPE(c) == Qteesmc){
 		if(n != sizeof teereq)
 			error(Ebadarg);
@@ -694,6 +791,14 @@ pnpread(Chan *c, void *a, i32 n, i64 off)
 		snprint(buf, sizeof buf, "%d\n", n);
 		break;
 	}
+	case Qfamily:
+		snprint(buf, sizeof buf, "%s\n", pnpfamily(d->clas));
+		break;
+	case Qowner:
+		lock(&pnplock);
+		snprint(buf, sizeof buf, "%s\n", pnpowner[dev]);
+		unlock(&pnplock);
+		break;
 	default:
 		error(Ebadarg);
 	}
