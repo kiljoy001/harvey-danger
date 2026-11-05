@@ -452,10 +452,31 @@ the source rather than worked around:
   its successful `ld.lld` child had failed and never kept the output
   binary.  `arm64kernelstart()` now installs the format verbs, as amd64
   and riscv already did.
+* `jmp_buf` was ten words, the amd64 layout, while the aarch64
+  `setjmp`/`longjmp` save and read up to offset 0xb8 (twenty-four words).
+  LLVM's `CrashRecoveryContext` keeps a `jmp_buf` in a heap object, so
+  every `setjmp` overwrote about a hundred bytes past it; `longjmp` could
+  then restore a heap address as the stack pointer.  Clang and lld crashed
+  at random points.  The header now sizes the buffer per architecture.
+* with 3 GiB of guest RAM the fixed RK3566 device ranges (0xfdd20000 and
+  friends) fell inside the RAM bank and the early MMU build rejected the
+  whole identity map.  Fixed ranges that collide with the RAM firmware
+  reported are now ignored; device-tree ranges still fail hard.
 
 With those fixed, `clang++ hello.cpp -o hello` compiles, links against the
 guest's libc++ and APEX archives, and the resulting static binary runs on the
 ARM64 guest and prints its marker.
+
+`util/arm64/test-selfbuild.py` then goes one step further: it stages the
+LLVM headers, `llvm/tools/llvm-as/llvm-as.cpp` and the prebuilt ARM64 LLVM
+archives into the SDK archive and boots a driver that compiles the TU with
+the guest's own clang, links it with the guest's `ld.lld`, runs the result
+and compares the bitcode byte for byte with a host build of the same
+revision.  On the one-vCPU TCG harness the compile takes about 31 s and the
+link about 1.3 s; the same TU cross-compiles on the host in 1.9 s, so TCG
+costs roughly 16x for this workload.  A Cortex-A55 is much slower than the
+host core and the board has four of them, so board builds should be far
+closer to the host figure.
 
 The 32 MiB heap limit noted above is gone: `qmalloc.c` draws new chunks from
 the physical allocator, doubling up to 64 MiB, and ramfs block maps grow on
