@@ -998,6 +998,16 @@ jsname(u32 st)
 
 static int mapgpu(Gpu *g, u64 va, u64 pa, u64 size);
 
+/* Put the GPU back into a known state after a job faults or hangs. */
+static void
+gpurecover(Gpu *g)
+{
+	print("gpufs: resetting after job failure\n");
+	softreset(g);
+	if(gpupower(g) < 0 || mmuprogram(g) < 0)
+		print("gpufs: reset failed\n");
+}
+
 /* Submit a job header that is already in GPU memory. */
 static int
 submitat(Gpu *g, int slot, u64 head, u32 cfg, u32 *rawp, u32 *statp)
@@ -1028,6 +1038,8 @@ submitat(Gpu *g, int slot, u64 head, u32 cfg, u32 *rawp, u32 *statp)
 	if(statp != nil)
 		*statp = drd(&g->d, JSOFF(slot, JsStatus));
 	drw(&g->d, JobIntClear, (1 << slot) | (1 << (slot + 16)));
+	if(!done)
+		gpurecover(g);
 	return done ? 0 : (err ? -1 : -2);
 }
 
@@ -1505,6 +1517,8 @@ gpuclr(Gpu *g, u32 color, u32 cw, u32 ch, int tiled, u32 cfgarg, int local,
 		sleep(1);
 	}
 	drw(&g->d, JobIntClear, (1 << slot) | (1 << (slot + 16)));
+	if(!done)
+		gpurecover(g);
 	print("gpufs: clear tiles %ud x %ud stride %ud %s raw %#ux js %#ux(%s) as %#ux addr %#llux\n",
 	      tw, th, rt[10], done ? "PASS" : (err ? "FAIL" : "TIMEOUT"), raw,
 	      drd(&g->d, JSOFF(slot, JsStatus)), jsname(drd(&g->d, JSOFF(slot, JsStatus))),
