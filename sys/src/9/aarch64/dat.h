@@ -43,7 +43,9 @@ struct Lock {
 };
 
 struct PFPU {
-	u64 reserved;
+	u64 q[64];	/* q0-q31, two 64-bit halves each */
+	u64 fpcr;
+	u64 fpsr;
 };
 
 struct PMMU {

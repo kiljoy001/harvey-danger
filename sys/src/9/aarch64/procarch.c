@@ -136,8 +136,8 @@ sysexecregs(usize entry, u32 ssize, void *tos)
 void
 sysprocsetup(Proc *p)
 {
-	/* SIMD is disabled until the kernel can save per-process FP state. */
-	USED(p);
+	/* exec starts with the default FP/SIMD state. */
+	memset(&p->FPU, 0, sizeof p->FPU);
 }
 
 void
@@ -171,6 +171,9 @@ sysrforkchild(Proc *child, Proc *parent)
 	child->dbgreg = r;
 	child->sched.sp = (usize)r;
 	child->sched.pc = (usize)forkreturn;
+	/* The child starts with the parent's live FP/SIMD registers. */
+	arm64fpsave(parent);
+	child->FPU = parent->FPU;
 }
 
 void

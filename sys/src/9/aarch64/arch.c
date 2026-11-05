@@ -55,7 +55,38 @@ corecolor(int machno)
 	return 0;
 }
 
-/* Kernel SIMD use is disabled until FP state save/restore is implemented. */
+/*
+ * User FP/SIMD state.  The kernel is compiled with -mgeneral-regs-only,
+ * so q0-q31, FPCR and FPSR belong to the current user process and must be
+ * saved whenever that process leaves a CPU.  Without this a process that
+ * migrates to another CPU inherits the previous occupant's registers.
+ */
+static u64 fpusave[MACHMAX][66] __attribute__((aligned(16)));
+
+void
+arm64fpsave(Proc *p)
+{
+	u64 *s;
+	int m;
+
+	m = machp()->machno;
+	s = fpusave[m];
+	arm64fpstore(s);
+	memmove(&p->FPU, s, sizeof(PFPU));
+}
+
+void
+arm64fprestore(Proc *p)
+{
+	u64 *s;
+	int m;
+
+	m = machp()->machno;
+	s = fpusave[m];
+	memmove(s, &p->FPU, sizeof(PFPU));
+	arm64fpload(s);
+}
+
 void
 procsave(Proc *p)
 {
@@ -63,6 +94,9 @@ procsave(Proc *p)
 
 	cycles(&t);
 	p->pcycles += t;
+	if(p->kp)
+		return;
+	arm64fpsave(p);
 }
 
 void
@@ -72,6 +106,7 @@ procrestore(Proc *p)
 
 	if(p->kp)
 		return;
+	arm64fprestore(p);
 	cycles(&t);
 	p->pcycles -= t;
 }
@@ -115,6 +150,7 @@ mmuprocinit(Proc *p)
 {
 	p->MMU.rootpa = 0;
 	p->MMU.ptpages = nil;
+	memset(&p->FPU, 0, sizeof p->FPU);
 }
 
 void
