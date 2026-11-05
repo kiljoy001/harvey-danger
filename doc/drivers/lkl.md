@@ -297,6 +297,39 @@ Two changes address this:
 cat /dev/lkllog
 ```
 
+## Missing preemption on the ARM64 port
+
+The remaining stall is not in LKL and not in `sleep()`.  The port has no
+preemption point on the interrupt return path: `_arm64irq` restores the
+saved frame and executes `eret` straight back to EL0.  Nothing checks
+`up->delaysched`, so `hzclock()` can raise it forever and no switch
+happens.
+
+Evidence, from in-kernel counters printed in interrupt context:
+
+* `.`/`:` around `timerintr()` -- timer interrupts fire and the handler
+  completes;
+* `*` in `hzclock()` -- the HZ clock runs, so `machp()->ticks` advances;
+* a watchdog host thread that only does `sleep(1)` and print wakes
+  **once** and never again.
+
+So processes are marked Ready and their `tsleep` timers expire, but the
+running user-mode process is never displaced.  LKL's kernel is user-space
+code, so one guest spin loop starves the whole machine.
+
+Preemption is now checked on the **syscall return path**
+(`arm64syscall`), which is where Plan 9 normally does it and where a
+switch is safe.  That covers host-call loops (LKL's `__ndelay()` calls
+`lkl_ops->time()`, i.e. `nsec()`, in a tight loop), but not a pure
+user-mode spin.
+
+Doing it directly in the IRQ vector was tried and rejected: calling
+`sched()` there corrupts the saved register frame, and other processes
+then fault with `pc 0x0`.  A save/restore of the `Ureg` around `sched()`
+did not fix it.  A correct fix needs the IRQ return path restructured so
+the switch happens on a clean frame (or a trap-to-kernel trampoline);
+that is the open item.
+
 ## Remaining stall
 
 With the console fixed, the host stays alive and the clock keeps running

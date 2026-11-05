@@ -36,12 +36,14 @@ arm64syscall(Arm64ureg *raw)
 	Ar0 ar0;
 	char *e;
 	u32 number;
+	usize usp;
 
 	up = externup();
 	if(up == nil)
 		panic("ARM64 syscall without process");
 	unpackregs(&u, raw);
 	number = u.x8;
+	usp = u.sp;
 	up->dbgreg = &u;
 	up->pc = u.pc;
 	up->scallnr = number;
@@ -72,5 +74,13 @@ arm64syscall(Arm64ureg *raw)
 	up->insyscall = 0;
 	up->psstate = nil;
 	up->dbgreg = nil;
+	/*
+	 * Plan 9 preempts on the syscall return path.  Without this the
+	 * port never reschedules a user-mode process that keeps entering
+	 * the kernel (any tight host-call loop, e.g. a guest busy-wait),
+	 * so it starves every other process and every tsleep wakeup.
+	 */
+	if(up->delaysched && up->state == Running)
+		sched();
 	packregs(raw, &u);
 }
