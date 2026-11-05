@@ -250,6 +250,42 @@ emit_texture(unsigned width, unsigned height)
           (unsigned)sizeof tex, (unsigned)sizeof surf, (unsigned)sizeof samp);
 }
 
+/* One draw descriptor.  The pointers are parameters so the bytes can be
+ * diffed against a capture before we start patching them at submit time. */
+static void
+emit_draw(const char *name, uint64_t state, uint64_t attrbufs,
+          uint64_t attrs, uint64_t varbufs, uint64_t varyings,
+          uint64_t viewport, uint64_t tls, uint64_t ubos, uint64_t push,
+          uint64_t textures, uint64_t samplers, uint64_t position)
+{
+   struct mali_draw_packed draw;
+   FILE *f;
+   char path[64];
+
+   memset(&draw, 0, sizeof draw);
+   pan_pack(&draw, DRAW, cfg) {
+      cfg.four_components_per_vertex = true;
+      cfg.draw_descriptor_is_64b = true;
+      cfg.instance_size = 1;
+      cfg.instance_primitive_size = 1;
+      cfg.state = state;
+      cfg.attribute_buffers = attrbufs;
+      cfg.attributes = attrs;
+      cfg.varying_buffers = varbufs;
+      cfg.varyings = varyings;
+      cfg.viewport = viewport;
+      cfg.thread_storage = tls;
+      cfg.uniform_buffers = ubos;
+      cfg.push_uniforms = push;
+      cfg.textures = textures;
+      cfg.samplers = samplers;
+      cfg.position = position;
+   }
+   snprintf(path, sizeof path, "%s.bin", name);
+   if((f = fopen(path, "wb")) != NULL){ fwrite(&draw, 1, sizeof draw, f); fclose(f); }
+   printf("%s: draw %u bytes\n", name, (unsigned)sizeof draw);
+}
+
 /* The layout around the shaders: attribute buffer and attribute, varying
  * buffer and varying, thread storage and viewport.  Packed with the
  * capture's pointers so the bytes can be diffed against it. */
@@ -453,6 +489,11 @@ main(int argc, char **argv)
    emit_vertex("vert1920", 960.0f, 540.0f);
    emit_texture(64, 64);
    emit_layout(0xa008000, 0xa019000);
+   /* With the captured pointers, so the bytes can be compared. */
+   emit_draw("draw_vertex", 0xa002000, 0xa009140, 0xa009160, 0xa0092a0,
+             0xa002040, 0, 0xa009100, 0xa0091c0, 0xa0091d0, 0, 0xa009180, 0);
+   emit_draw("draw_fragment", 0xa009240, 0, 0, 0, 0,
+             0xa009120, 0xa009100, 0xa009220, 0, 0, 0xa009200, 0xa019000);
 
    glsl_type_singleton_decref();
    return 0;

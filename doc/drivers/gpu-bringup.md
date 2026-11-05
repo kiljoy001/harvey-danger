@@ -491,9 +491,16 @@ TLS               00000000 0000001f ...
 viewport          000080ff 000080ff 0000807f 0000807f 00000000 0000803f 00000000 003f003f
 ```
 
-So the remaining layout is understood rather than reverse-engineered by
-copy: the next step is to place these at fixed offsets, patch the pointers,
-drop the captured block and delete `drawreplay.h`.
+The two draw descriptors pack the same way: filling them with the
+capture's pointers gives **zero differing bytes** for both the vertex and
+the fragment draw (128 bytes each, including the `Position` field the
+fragment draw uses for its varying buffer).
+
+So the entire layout around the shaders is now emitted by us and validated
+byte for byte against Mesa's: attribute buffer, attribute, varying buffer,
+varying, TLS, viewport, and both draw descriptors.  What is left is
+placement -- put them at fixed offsets, patch the pointers, drop the
+captured block and delete `drawreplay.h`.
 
 ## What is next
 
