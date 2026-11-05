@@ -498,9 +498,19 @@ fragment draw uses for its varying buffer).
 
 So the entire layout around the shaders is now emitted by us and validated
 byte for byte against Mesa's: attribute buffer, attribute, varying buffer,
-varying, TLS, viewport, and both draw descriptors.  What is left is
-placement -- put them at fixed offsets, patch the pointers, drop the
-captured block and delete `drawreplay.h`.
+varying, TLS, viewport, and both draw descriptors.  `gpufs` places them at
+the captured offsets, which keeps every pointer in them valid, so the draw
+now runs on our bytes:
+
+```text
+draw 7 (full screen)  tiler PASS  frag PASS
+draw 8 (blit)         tiler PASS  frag PASS
+peek TL/TR/BL/BR      0xffff0000 0xff0000ff 0xff00ff00 0xffffffff
+```
+
+What is still Mesa's in the replay block is only the job structure: the two
+job headers and their payloads, the tiler context and the heap descriptor.
+Emitting those deletes `drawreplay.h` entirely.
 
 ## What is next
 

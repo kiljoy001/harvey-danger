@@ -1096,6 +1096,18 @@ gpudraw(Gpu *g, int mode)
 	memmove(pool + 0x8000, draw_008000, sizeof draw_008000);
 	memmove(pool + 0x9000, draw_009000, sizeof draw_009000);
 
+	/* Replace the captured layout with the descriptors we pack ourselves.
+	 * The addresses are the ones the capture uses, so every pointer in
+	 * them is still valid. */
+	memmove(pool + 0x9100, shader_tls, sizeof shader_tls);
+	memmove(pool + 0x9120, shader_vp, sizeof shader_vp);
+	memmove(pool + 0x9140, shader_abuf, sizeof shader_abuf);
+	memmove(pool + 0x9160, shader_attr, sizeof shader_attr);
+	memmove(pool + 0x92a0, shader_vbuf, sizeof shader_vbuf);
+	memmove(pool + 0x2040, shader_vary, sizeof shader_vary);
+	memmove(pool + 0x9380, shader_draw_frag, sizeof shader_draw_frag);
+	memmove(pool + 0x9400, shader_draw_vert, sizeof shader_draw_vert);
+
 	/* Replace Mesa's shaders and shader descriptors with ours.  What is
 	 * left of the replay is the layout around them: the attribute buffer
 	 * and its descriptors, the varying buffer, the draw descriptors, the
