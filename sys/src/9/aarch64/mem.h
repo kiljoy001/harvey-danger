@@ -28,8 +28,20 @@
 #define PGROUND(x) ROUNDUP((x), PGSZ)
 #define BIGPGROUND(x) ROUNDUP((x), BIGPGSZ)
 
-/* The shared process code uses these boundaries for user segments. */
-#define UTZERO (2 * MiB)
+/*
+ * The shared process code uses these boundaries for user segments.
+ *
+ * User text must start above every identity mapping the kernel installs.
+ * This port runs the kernel and the user process in one TTBR0 address
+ * space, with RAM and device registers mapped 1:1, and Maxidentity in
+ * mmu.c rejects anything at or above 16 GiB.  A user segment that lands
+ * in that window replaces the kernel's mapping of those physical pages.
+ * Clang is ~120 MB, so at the old 2 MiB base its data segment reached
+ * 0x08000000 and unmapped the GIC: every timer tick then read a spurious
+ * interrupt ID and re-entered the vector forever.  Keep user text at or
+ * above 16 GiB until the kernel moves to TTBR1.
+ */
+#define UTZERO (16ULL * 1024 * 1024 * 1024)
 #define UTROUND(x) BIGPGROUND(x)
 #define USTKTOP (0x0000007fffe00000ULL)
 #define USTKSIZE (16 * MiB)

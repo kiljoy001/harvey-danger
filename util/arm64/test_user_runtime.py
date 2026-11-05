@@ -35,7 +35,7 @@ def main() -> None:
     script.write_text(
         "ENTRY(_main)\n"
         "SECTIONS {\n"
-        "  . = 0x200000;\n"
+        "  . = 0x400000000;\n"
         "  .text : { *(.text .text.*) }\n"
         "  .rodata : { *(.rodata .rodata.*) }\n"
         "  .data : { *(.data .data.*) }\n"

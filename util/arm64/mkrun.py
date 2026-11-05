@@ -37,6 +37,9 @@ RUNNER = r"""
 /* Plan 9 namespace calls (see sys/include/libc.h). */
 extern int bind(char *, char *, int);
 extern int mkdir(const char *, unsigned);
+/* APEX wait4; libc's waitpid (all that sys/wait.h exposes here) takes no
+ * arguments and reaps any child, so it cannot report a specific status. */
+extern int wait4(int, int *, int, void *);
 enum { MREPL = 0, MCREATE = 4 };
 
 static const unsigned char image[] = {
@@ -342,9 +345,10 @@ main(void)
 	fprintf(stderr, "runner: wrote %%d files, exec %%s\n", i, args[0]);
 
 	if(args2[0] != 0){
-		int st;
-		pid_t pid = fork();
+		int st, tfd;
+		pid_t pid, got;
 
+		pid = fork();
 		if(pid == 0){
 			execv(exec_path[0] != 0 ? exec_path :
 			    (untar_name[0] != 0 ? "/initramfs/runner-image" :
@@ -353,14 +357,32 @@ main(void)
 			    strerror(errno));
 			_exit(127);
 		}
-		if(pid < 0 || waitpid(pid, &st, 0) < 0){
-			fprintf(stderr, "runner: wait: %%s\n", strerror(errno));
+		if(pid < 0){
+			fprintf(stderr, "runner: fork: %%s\n", strerror(errno));
 			return 1;
 		}
-		fprintf(stderr, "runner: %%s exited %%d\n", args[0],
-		    WIFEXITED(st) ? WEXITSTATUS(st) : -1);
-		if(WIFEXITED(st) && WEXITSTATUS(st) != 0)
-			return WEXITSTATUS(st);
+		/* APEX wait4, not the Plan 9 libc waitpid: this runner links
+		 * libc.a first (for bind/mkdir), and libc's waitpid takes no
+		 * arguments and reaps any child, so it cannot report status. */
+		st = 0;
+		got = wait4(pid, &st, 0, 0);
+		if(got < 0){
+			fprintf(stderr, "runner: wait4: %%s\n", strerror(errno));
+			return 1;
+		}
+		fprintf(stderr, "runner: wait4 got %%d for %%d\n", got, pid);
+		if(WIFSIGNALED(st))
+			fprintf(stderr, "runner: %%s killed by signal %%d (status %%#x)\n",
+			    args[0], WTERMSIG(st), st);
+		else
+			fprintf(stderr, "runner: %%s exited %%d (status %%#x)\n",
+			    args[0], WEXITSTATUS(st), st);
+		tfd = open(args2[0], O_RDONLY);
+		fprintf(stderr, "runner: next %%s open %%d\n", args2[0], tfd);
+		if(tfd >= 0)
+			close(tfd);
+		if(!WIFEXITED(st) || WEXITSTATUS(st) != 0)
+			return WIFEXITED(st) ? WEXITSTATUS(st) : 1;
 		execv(args2[0], args2);
 		fprintf(stderr, "runner: exec %%s: %%s\n", args2[0],
 		    strerror(errno));

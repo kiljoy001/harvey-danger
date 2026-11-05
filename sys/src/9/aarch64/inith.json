@@ -16,7 +16,7 @@
 		"Oflags": [
 			"-e_main",
 			"-static",
-			"-Ttext=0x200000"
+			"-Ttext=0x400000000"
 		],
 		"Post": [
 			"elf2c init.h init"

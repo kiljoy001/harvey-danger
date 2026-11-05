@@ -101,7 +101,9 @@ PHDRS {
 SECTIONS {
   /* Map the ELF header itself: __libc_start_main reads the program headers
    * through __ehdr_start to find PT_TLS. */
-  . = 0x200000 + SIZEOF_HEADERS;
+  /* Above the kernel identity map; see UTZERO in
+   * sys/src/9/aarch64/mem.h. */
+  . = 0x400000000 + SIZEOF_HEADERS;
   .text : { *(.text .text.*) *(.rodata .rodata.*) } :text
   . = ALIGN(0x200000);
   .data : { *(.data .data.*) *(.data.rel.ro*) } :data

@@ -570,6 +570,14 @@ arm64kernelstart(Fdtinfo *info)
 	procinit0();
 	psinit(conf.nproc);
 	initimage();
+	/*
+	 * Install %q and the arch-specific verbs.  sysawait() uses %q to
+	 * quote the exit message it writes into the Plan 9 wait record;
+	 * without this, every child's status comes back as the literal
+	 * "%q%" and APEX's waitstatus() reports exit 1 for all processes.
+	 * amd64 and riscv call this from main(); arm64 never did.
+	 */
+	fmtinit();
 	printinit();
 	timersinit();
 	arm64virtio9pconfigure(info);

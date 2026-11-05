@@ -15,7 +15,9 @@ PHDRS {
   eh_frame_hdr PT_GNU_EH_FRAME FLAGS(4);
 }
 SECTIONS {
-  . = 0x200000 + SIZEOF_HEADERS;
+  /* Must match UTZERO in sys/src/9/aarch64/mem.h: above the kernel's
+   * identity-mapped RAM and device registers (16 GiB). */
+  . = 0x400000000 + SIZEOF_HEADERS;
   .text : { *(.text .text.*) *(.rodata .rodata.*) } :text
   .eh_frame_hdr : { *(.eh_frame_hdr) } :text :eh_frame_hdr
   . = ALIGN(0x200000);

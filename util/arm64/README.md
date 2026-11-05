@@ -336,8 +336,10 @@ device interrupt routing still needs work. The early allocator hands out
 zeroed 4 KiB pages; the full build also
 has a free-list allocator for process pages and page tables.
 The identity map remains writable and executable in EL1, while its entries are
-inaccessible to EL0. Separate user roots and a complete general-register trap
-frame are in place. The lower-EL synchronous trap path can now dispatch a
+inaccessible to EL0. Because user and kernel share TTBR0, user text starts
+above the identity-mapped window (`UTZERO` is 16 GiB, matching `Maxidentity`
+in `mmu.c`) and must stay there until the kernel moves to TTBR1. Separate user
+roots and a complete general-register trap frame are in place. The lower-EL synchronous trap path can now dispatch a
 scheduled process's register-based syscall through the generated syscall
 table. Error unwinding and return-value propagation are exercised by the boot
 probe, but notes and the complete production syscall-exit path remain. The
@@ -437,6 +439,23 @@ the source rather than worked around:
   listed at all (clang saw `__type_traits` as empty).
 * the kernel heap was a static 32M array; it now grows from `physalloc()`.
 * libc had a 32-bit `labs`, no `llabs`, and only part of the libm surface.
+* user text started at 2 MiB in the same TTBR0 address space as the kernel
+  identity map.  Clang is about 120 MB, so its data segment crossed
+  0x08000000 and replaced the kernel's GIC mapping; every timer tick then
+  read a spurious interrupt ID, the timer was never acknowledged, and the
+  CPU stayed in the exception vector forever.  User text now starts at
+  16 GiB, above every identity mapping.
+* the ARM64 kernel never called `fmtinit()`, so the `%q` format verb was
+  never installed.  `sysawait()` wrote the literal `%q%` where the exit
+  message belonged, APEX's `waitstatus()` could not parse it, and every
+  child was reported as exiting with status 1.  Clang consequently thought
+  its successful `ld.lld` child had failed and never kept the output
+  binary.  `arm64kernelstart()` now installs the format verbs, as amd64
+  and riscv already did.
+
+With those fixed, `clang++ hello.cpp -o hello` compiles, links against the
+guest's libc++ and APEX archives, and the resulting static binary runs on the
+ARM64 guest and prints its marker.
 
 The 32 MiB heap limit noted above is gone: `qmalloc.c` draws new chunks from
 the physical allocator, doubling up to 64 MiB, and ramfs block maps grow on

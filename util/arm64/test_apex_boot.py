@@ -52,6 +52,9 @@ def main() -> None:
     ap.add_argument("--timeout", type=float, default=0,
                     help="seconds of silence to allow before stopping "
                          "(default: 8, or an hour when an archive is used)")
+    ap.add_argument("--gdb", action="store_true",
+                    help="start QEMU's gdb stub on localhost:1234 so a hang "
+                         "can be inspected with gdb")
     ap.add_argument("--mem", type=int, default=0,
                     help="guest RAM in MiB (default: 512, or enough to "
                          "hold the boot archive)")
@@ -116,6 +119,8 @@ def main() -> None:
         if args.archive:
             command += ["-device",
                         f"loader,file={args.archive},addr=0x50000000"]
+        if args.gdb:
+            command.append("-s")
         sys.path.insert(0, str(HERE))
         from test_virt import boot_until
         idle = args.timeout or (3600 if args.archive else 8)
