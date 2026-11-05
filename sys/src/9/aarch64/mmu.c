@@ -146,7 +146,7 @@ arm64mmubuild(Fdtinfo *info)
 {
 	u64 rootpa, l2pa, ramend, pa, start, end;
 	u64 *root, *l2;
-	u32 i, j, k, regions;
+	u32 i, j, k, regions, fixedstart;
 	Fdtvirtio device[Maxfdtvirtio+20+2*Maxfdtdev];
 
 	if(info->rambase == 0 || info->ramsize == 0 ||
@@ -213,7 +213,11 @@ arm64mmubuild(Fdtinfo *info)
 		if(d->base2 != 0 && d->size2 != 0)
 			device[regions++] = (Fdtvirtio){d->base2, d->size2};
 	}
-	/* PMU CRU and power-domain/status blocks are not represented by a class. */
+	/*
+	 * The remaining blocks are Rockchip SoC ranges that the device tree
+	 * does not classify.  They are not present on other machines.
+	 */
+	fixedstart = regions;
 	device[regions++] = (Fdtvirtio){0xfdd20000ULL, Pagesz};
 	device[regions++] = (Fdtvirtio){0xfdd90000ULL, Pagesz};
 	/* USB/DWC3 transport and the PHY/GRF/GPIO blocks it programs. */
@@ -239,9 +243,20 @@ arm64mmubuild(Fdtinfo *info)
 	for(k = 0; k < regions; k++){
 		pa = device[k].base;
 		if(pa == 0 || device[k].size == 0 ||
-		   pa >= Maxidentity || device[k].size > Maxidentity-pa ||
-		   (pa < ramend && pa+device[k].size > info->rambase))
+		   pa >= Maxidentity || device[k].size > Maxidentity-pa)
 			return 0;
+		if(pa < ramend && pa+device[k].size > info->rambase){
+			/*
+			 * A device range cannot overlap RAM.  The fixed SoC
+			 * ranges are only meaningful on Rockchip parts; on a
+			 * machine whose RAM reaches that high (QEMU virt with
+			 * 3 GiB) they simply do not exist, so drop them
+			 * instead of rejecting the whole identity map.
+			 */
+			if(k >= fixedstart)
+				continue;
+			return 0;
+		}
 		start = pa & ~(u64)(L2blocksz-1);
 		end = (pa+device[k].size+L2blocksz-1) & ~(u64)(L2blocksz-1);
 		if(end > Maxidentity)
