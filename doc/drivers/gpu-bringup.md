@@ -447,7 +447,36 @@ gpufs: peek 8285696  : 0xffbf8040 ...
 First pixels, mid-frame and last pixel are all our fragment shader's
 colour, so the geometry, tiling and shading cover the whole display.
 
+## The blit
 
+`gpucc` emits the texture side of the descriptor set too: a 64x64 linear
+RGBA8 `TEXTURE` pointing at a `SURFACE_WITH_STRIDE`, plus a nearest/clamp
+`SAMPLER`.  `draw 8` binds them to the fragment draw and blits a 16 KiB
+source surface (four coloured quadrants) across the whole scanout with a
+GLSL sampling shader compiled through SPIR-V.
+
+```text
+gpufs: draw blit src 0xb000000 tex 0xa004100 samp 0xa004200
+gpufs: draw tiler PASS   gpufs: draw frag PASS
+peek TL 0xffff0000   peek TR 0xff0000ff
+peek BL 0xff00ff00   peek BR 0xffffffff
+```
+
+That is the four quadrants of the 64x64 source scaled to 1920x1080.
+
+The blocker was one field: the `TEXTURE` descriptor's `Format` is packed,
+not the raw enum,
+
+```text
+MALI_PACK_FMT(fmt, swizzle, srgb) = component_order | (format << 12) | (srgb << 20)
+```
+
+so Mesa writes `0x2ec00022` for RGBA8 UNORM where `gpufs` was writing
+`0x0002ec22`.  The hardware rejected that with `DATA_INVALID_FAULT` (0x58)
+even though the geometry, the MMU and the shaders were all correct.  With
+the packed value the job completes and the texture samples.
+
+## What is next
 
 1. **A real submit interface.**  `clear` is a debug verb.  The display
    service needs a buffered submission path: a shared surface, a job that
@@ -457,10 +486,10 @@ colour, so the geometry, tiling and shading cover the whole display.
 2. **GPU-backed display surfaces.**  Have `o9display` allocate its
    composited surface from the same DMA pool the GPU can map, blit with the
    GPU, and keep the CPU memdraw path as the fallback when submission fails.
-3. **Our own descriptors.**  The `draw` replay proves the chain; the next
-   step is to emit the shader program, renderer state and draw descriptors
-   from `contrib/gpucc`'s blobs instead of replaying Mesa's, then swap the
-   fragment shader for a textured one.  That is the compositing primitive.
+3. **The rest of the descriptor layout.**  Shaders, renderer state, the
+   texture, its surface and the sampler are ours now; the attribute,
+   varying and draw descriptors are still patched out of the captured
+   block.  Emitting those lets `drawreplay.h` go.
 4. **DVFS and thermal.**  GPU OPPs are in the DTS and the RK809 can set
    `vdd_gpu`; neither is wired to a devfreq/thermal policy.
 
