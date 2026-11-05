@@ -266,6 +266,44 @@ kmesgputs(char *str, int n)
 }
 
 /*
+ * LKL host log.  Same shape as kmesg, but user-writable: producers append
+ * here instead of writing to the console.  Console output on this port
+ * busy-waits on the UART FIFO inside print() with IRQs masked, so a slow
+ * reader can park the whole machine; this file never touches the UART.
+ */
+struct {
+	Lock lk;
+	char buf[1024*1024];
+	u32 n;
+	u32 dropped;
+} lkllog;
+
+static void
+lkllogputs(char *str, int n)
+{
+	u32 nn, d;
+
+	ilock(&lkllog.lk);
+	if(n > sizeof lkllog.buf){
+		d = n - sizeof lkllog.buf;
+		str += d;
+		n -= d;
+	}
+	nn = lkllog.n;
+	if(nn + n >= sizeof lkllog.buf){
+		d = nn + n - sizeof lkllog.buf;
+		if(d)
+			memmove(lkllog.buf, lkllog.buf + d, sizeof lkllog.buf - d);
+		nn -= d;
+		lkllog.dropped += d;
+	}
+	memmove(lkllog.buf + nn, str, n);
+	nn += n;
+	lkllog.n = nn;
+	iunlock(&lkllog.lk);
+}
+
+/*
  *   Print a string on the console.  Convert \n to \r\n for serial
  *   line consoles.  Locking of the queues is left up to the screen
  *   or uart code.  Multi-line messages to serial consoles may get
@@ -671,6 +709,7 @@ enum {
 	Qzero,
 	Qsyscall,
 	Qdebug,
+	Qlkllog,
 };
 
 enum {
@@ -687,6 +726,7 @@ static Dirtab consdir[] = {
 	{"hostdomain", {Qhostdomain}, DOMLEN, 0664},
 	{"hostowner", {Qhostowner}, 0, 0664},
 	{"kmesg", {Qkmesg}, 0, 0440},
+	{"lkllog", {Qlkllog}, 0, 0666},
 	{"kprint", {Qkprint, 0, QTEXCL}, 0, DMEXCL | 0440},
 	{"null", {Qnull}, 0, 0666},
 	{"osversion", {Qosversion}, 0, 0444},
@@ -788,6 +828,15 @@ consopen(Chan *c, int omode)
 
 	case Qkprint:
 		error(Egreg);
+
+	case Qlkllog:
+		if(omode & OTRUNC){
+			ilock(&lkllog.lk);
+			lkllog.n = 0;
+			lkllog.dropped = 0;
+			iunlock(&lkllog.lk);
+		}
+		break;
 	}
 	return c;
 }
@@ -896,6 +945,16 @@ consread(Chan *c, void *buf, i32 n, i64 off)
 			readnum(0, tmp + NUMSIZE * i, NUMSIZE, l, NUMSIZE);
 		}
 		memmove(buf, tmp + k, n);
+		return n;
+
+	case Qlkllog:
+		if(off >= lkllog.n)
+			n = 0;
+		else {
+			if(off + n > lkllog.n)
+				n = lkllog.n - off;
+			memmove(buf, lkllog.buf + off, n);
+		}
 		return n;
 
 	case Qkmesg:
@@ -1076,6 +1135,23 @@ conswrite(Chan *c, void *va, i32 n, i64 off)
 				bp = sizeof buf;
 			memmove(buf, a, bp);
 			putstrn0(buf, bp, 1);
+			a += bp;
+			l -= bp;
+		}
+		break;
+
+	case Qlkllog:
+		/*
+		 * Copy out of user memory before taking the lock: the append
+		 * runs with interrupts off and must not fault.
+		 */
+		l = n;
+		while(l > 0){
+			bp = l;
+			if(bp > sizeof buf)
+				bp = sizeof buf;
+			memmove(buf, a, bp);
+			lkllogputs(buf, bp);
 			a += bp;
 			l -= bp;
 		}

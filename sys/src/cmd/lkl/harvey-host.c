@@ -18,17 +18,21 @@ enum {
 	Nreap		= 64,
 };
 
+/*
+ * Semaphores and mutexes are the kernel's semacquire/semrelease counters,
+ * not libc QLock/Rendez.  The counter lives in the shared segment, so the
+ * kernel's per-segment wait list gives us a cross-process primitive with a
+ * single syscall on the fast path and no shared user-space rendezvous.
+ */
 typedef struct Sem Sem;
 struct Sem {
-	QLock	l;
-	Rendez	r;
-	int	count;
+	i32	count;
 };
 
 typedef struct Mut Mut;
 struct Mut {
-	QLock	l;
-	Rendez	r;
+	Lock	lk;		/* protects owner/count, never held while blocking */
+	i32	sem;		/* the permit */
 	int	owner;
 	int	count;
 	int	recursive;
@@ -36,8 +40,7 @@ struct Mut {
 
 typedef struct Timer Timer;
 struct Timer {
-	QLock	l;
-	Rendez	r;
+	Lock	lk;
 	vlong	deadline;
 	int	armed;
 	int	stop;
@@ -87,15 +90,62 @@ static Lock	thlk;
 static Hthread	threads[Ntid];
 static int	nexttid = 2;
 
-static int hostdebug = 1;
+static int hostdebug = 1;	/* thread/timer/console lifecycle */
+static int blocktrace = 1;	/* every sem/mutex wait: noisy, opt-in */
+static int ndbg;
+
+enum { Dbgmax = 6000 };
+
+/*
+ * All host diagnostics go through one fd.  The console write path is not
+ * safe to hammer from many host threads at once: a writer that blocks
+ * inside the driver takes the console down with it.  lklboot points this at
+ * a file so the console stays usable while the kernel runs.
+ */
+int lklhost_out = 2;
+
+void
+lklhost_setout(int fd)
+{
+	lklhost_out = fd;
+}
 
 static void
 say(char *s, int n)
 {
-	write(2, s, n);
+	int r;
+
+	if(lklhost_out < 0)
+		return;
+	while(n > 0){
+		r = write(lklhost_out, s, n);
+		if(r <= 0)
+			return;
+		s += r;
+		n -= r;
+	}
 }
 
-#define HDBG(...) do{ if(hostdebug) print(__VA_ARGS__); }while(0)
+static void
+hdbg(char *fmt, ...)
+{
+	char buf[512];
+	va_list ap;
+	int n;
+
+	va_start(ap, fmt);
+	n = vsnprint(buf, sizeof buf, fmt, ap);
+	va_end(ap);
+	if(n > 0)
+		say(buf, n);
+}
+
+#define HDBG(...) do{ if(hostdebug && ndbg++ < Dbgmax) hdbg(__VA_ARGS__); }while(0)
+#define BDBG(...) do{ if(blocktrace && ndbg++ < Dbgmax) hdbg(__VA_ARGS__); }while(0)
+#define RA() ((void*)__builtin_return_address(0))
+
+static int curtid(void);
+static void tls_cleanup(int);
 
 int
 lkl_printf(const char *fmt, ...)
@@ -150,17 +200,17 @@ hsem_alloc(int count)
 {
 	Sem *s;
 
-	HDBG("host: sem_alloc %d\n", count);
 	if((s = mallocz(sizeof *s, 1)) == nil)
 		return nil;
-	s->r.l = &s->l;
 	s->count = count;
+	BDBG("sem_alloc %p count %d from %p\n", s, count, RA());
 	return (struct lkl_sem*)s;
 }
 
 static void
 hsem_free(struct lkl_sem *sem)
 {
+	BDBG("sem_free %p from %p\n", sem, RA());
 	free(sem);
 }
 
@@ -169,10 +219,8 @@ hsem_up(struct lkl_sem *sem)
 {
 	Sem *s = (Sem*)sem;
 
-	qlock(&s->l);
-	s->count++;
-	rwakeup(&s->r);
-	qunlock(&s->l);
+	BDBG("T%d up %p c%d from %p\n", curtid(), s, s->count, RA());
+	semrelease(&s->count, 1);
 }
 
 static void
@@ -180,11 +228,11 @@ hsem_down(struct lkl_sem *sem)
 {
 	Sem *s = (Sem*)sem;
 
-	qlock(&s->l);
-	while(s->count == 0)
-		rsleep(&s->r);
-	s->count--;
-	qunlock(&s->l);
+	BDBG("T%d down %p c%d from %p\n", curtid(), s, s->count, RA());
+	/* semacquire returns < 0 if a note interrupted the wait */
+	while(semacquire(&s->count, 1) < 0)
+		;
+	BDBG("T%d got %p\n", curtid(), s);
 }
 
 /* ---- mutexes ---- */
@@ -194,11 +242,10 @@ hmut_alloc(int recursive)
 {
 	Mut *m;
 
-	HDBG("host: mutex_alloc %d\n", recursive);
 	if((m = mallocz(sizeof *m, 1)) == nil)
 		return nil;
-	m->r.l = &m->l;
 	m->recursive = recursive;
+	m->sem = 1;
 	return (struct lkl_mutex*)m;
 }
 
@@ -212,19 +259,25 @@ static void
 hmut_lock(struct lkl_mutex *mutex)
 {
 	Mut *m = (Mut*)mutex;
-	int pid = getpid();
+	int tid = curtid();
 
-	qlock(&m->l);
-	if(m->recursive && m->owner == pid){
-		m->count++;
-		qunlock(&m->l);
-		return;
+	if(m->recursive){
+		lock(&m->lk);
+		if(m->owner == tid){
+			m->count++;
+			unlock(&m->lk);
+			return;
+		}
+		unlock(&m->lk);
 	}
-	while(m->owner != 0)
-		rsleep(&m->r);
-	m->owner = pid;
+	BDBG("T%d mlock %p c%d from %p\n", tid, m, m->sem, RA());
+	while(semacquire(&m->sem, 1) < 0)
+		;
+	BDBG("T%d mlok %p\n", tid, m);
+	lock(&m->lk);
+	m->owner = tid;
 	m->count = 1;
-	qunlock(&m->l);
+	unlock(&m->lk);
 }
 
 static void
@@ -232,17 +285,29 @@ hmut_unlock(struct lkl_mutex *mutex)
 {
 	Mut *m = (Mut*)mutex;
 
-	qlock(&m->l);
-	if(--m->count == 0){
-		m->owner = 0;
-		rwakeup(&m->r);
+	lock(&m->lk);
+	if(--m->count > 0){
+		unlock(&m->lk);
+		return;
 	}
-	qunlock(&m->l);
+	m->owner = 0;
+	unlock(&m->lk);
+	BDBG("T%d munlk %p\n", curtid(), m);
+	semrelease(&m->sem, 1);
 }
 
 /* ---- threads ---- */
 
 extern void harvey_thread_tramp(void *sp, void *arg, void (*f)(void*));
+
+void
+hthread_entry(void *arg, void (*f)(void*))
+{
+	HDBG("thread %d enter\n", curtid());
+	f(arg);
+	tls_cleanup(curtid());
+	_exits(nil);
+}
 
 static int
 curtid(void)
@@ -289,7 +354,6 @@ hthread_create(void (*f)(void*), void *arg)
 	Sthdr *h;
 	int pid, id, i;
 
-	HDBG("host: thread_create %p\n", f);
 	if((raw = mallocz(2*Threadstack, 1)) == nil)
 		return 0;
 	st = (uchar*)(((uintptr)raw + Threadstack - 1) & ~(uintptr)(Threadstack-1));
@@ -305,10 +369,8 @@ hthread_create(void (*f)(void*), void *arg)
 		h = (Sthdr*)st;
 		h->magic = Stackmagic;
 		h->id = id;
-		HDBG("host: thread start %d\n", id);
 		harvey_thread_tramp((void*)(st + Threadstack - 16), arg, f);
-		tls_cleanup(id);
-		_exits(nil);
+		_exits("tramp returned");
 	}
 	lock(&thlk);
 	for(i = 0; i < Ntid; i++)
@@ -319,6 +381,7 @@ hthread_create(void (*f)(void*), void *arg)
 			break;
 		}
 	unlock(&thlk);
+	HDBG("thread %d pid %d f %p from %p\n", id, pid, f, RA());
 	return (lkl_thread_t)id;
 }
 
@@ -363,6 +426,11 @@ static int
 hthread_join(lkl_thread_t tid)
 {
 	int i, pid, want;
+
+	/* thread_join(self) is not a deadlock in the LKL host ABI; the POSIX
+	 * host returns an error and the kernel shutdown path ignores it. */
+	if(tid == (lkl_thread_t)curtid())
+		return -1;
 
 	lock(&thlk);
 	want = -1;
@@ -523,45 +591,70 @@ static void
 htimer_thread(void *x)
 {
 	Timer *t = x;
-	vlong d, ms;
+	vlong d, lastbeat = 0;
 
 	for(;;){
-		qlock(&t->l);
-		while(!t->armed && !t->stop)
-			rsleep(&t->r);
+		sleep(1);
+		if(nsec() - lastbeat > 500*1000*1000){
+			lastbeat = nsec();
+			HDBG("beat\n");
+		}
+		lock(&t->lk);
 		if(t->stop){
-			qunlock(&t->l);
+			unlock(&t->lk);
 			break;
 		}
-		d = t->deadline - nsec();
-		if(d <= 0){
-			t->armed = 0;
-			qunlock(&t->l);
-			HDBG("host: timer fire\n");
-			t->fn();
+		if(!t->armed){
+			unlock(&t->lk);
 			continue;
 		}
-		qunlock(&t->l);
-		ms = (d + 999999) / 1000000;
-		if(ms > 5)
-			ms = 5;		/* notice a re-arm within 5 ms */
-		if(ms < 1)
-			ms = 1;
-		sleep(ms);
+		d = t->deadline - nsec();
+		if(d > 0){
+			unlock(&t->lk);
+			continue;
+		}
+		t->armed = 0;
+		unlock(&t->lk);
+		HDBG("fire\n");
+		t->fn();
+		HDBG("fired\n");
 	}
 	_exits(nil);
 }
+
+/*
+ * Independent liveness probe: sleeps and prints, touching no LKL state.
+ * If this stops, sleep() itself has stopped for the whole group.
+ */
+static void
+hwatchdog(void *arg)
+{
+	vlong last = 0;
+
+	USED(arg);
+	for(;;){
+		sleep(1);
+		if(nsec() - last > 500*1000*1000){
+			last = nsec();
+			HDBG("wd\n");
+		}
+	}
+}
+
+static int wdstarted;
 
 static void*
 htimer_alloc(void (*fn)(void))
 {
 	Timer *t;
 
-	HDBG("host: timer_alloc\n");
 	if((t = mallocz(sizeof *t, 1)) == nil)
 		return nil;
-	t->r.l = &t->l;
 	t->fn = fn;
+	if(!wdstarted){
+		wdstarted = 1;
+		hthread_create(hwatchdog, nil);
+	}
 	t->tid = hthread_create(htimer_thread, t);
 	if(t->tid == 0){
 		free(t);
@@ -575,12 +668,11 @@ htimer_set_oneshot(void *timer, unsigned long delta)
 {
 	Timer *t = timer;
 
-	HDBG("host: timer arm %lud\n", delta);
-	qlock(&t->l);
+	HDBG("arm %lud\n", delta);
+	lock(&t->lk);
 	t->deadline = nsec() + delta;
 	t->armed = 1;
-	rwakeup(&t->r);
-	qunlock(&t->l);
+	unlock(&t->lk);
 	return 0;
 }
 
@@ -589,11 +681,10 @@ htimer_free(void *timer)
 {
 	Timer *t = timer;
 
-	qlock(&t->l);
+	lock(&t->lk);
 	t->stop = 1;
 	t->armed = 0;
-	rwakeup(&t->r);
-	qunlock(&t->l);
+	unlock(&t->lk);
 	hthread_join(t->tid);
 	free(t);
 }

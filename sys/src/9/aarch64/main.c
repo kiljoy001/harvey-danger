@@ -36,17 +36,30 @@ static void
 uartputc(int c)
 {
 	volatile u32 *uart;
+	int n;
 
 	if(uartbase == 0)
 		return;
 	uart = (volatile u32 *)uartbase;
+	/*
+	 * Never wait forever for FIFO room.  print() runs under ilock (IRQs
+	 * masked), so an unbounded wait here stops the clock and parks every
+	 * process if the console reader stalls.  Dropping output is much
+	 * better than hanging the machine.
+	 */
 	if(uarttype == Fdtdwuart){
 		/* DW UART: USR.TFNF reports room in the transmit FIFO. */
-		while((uart[0x7c/4] & (1<<1)) == 0)
-			;
+		for(n = 0; n < 1000000; n++)
+			if(uart[0x7c/4] & (1<<1))
+				break;
+		if(n == 1000000)
+			return;
 	}else if(uarttype == Fdtpl011){
-		while(uart[Uartfr] & Uarttxff)
-			;
+		for(n = 0; n < 1000000; n++)
+			if((uart[Uartfr] & Uarttxff) == 0)
+				break;
+		if(n == 1000000)
+			return;
 	}else
 		return;
 	uart[Uartdr] = c;

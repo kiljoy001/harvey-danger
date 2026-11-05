@@ -269,6 +269,46 @@ where it blocks — most likely a host-thread scheduling/handoff point
 (the console thread and the LKL CPU owner).  Debug prints for thread
 create/start, timer arm/fire and the kernel console are in place.
 
+## Console output, and why it is not on the hot path
+
+The ARM64 port sets `consuartputs = uartwrite`, which ends in `uartputc()`
+busy-waiting on the UART transmit FIFO.  `print()` reaches it through
+`putstrn()`, which takes an `ilock` -- so the wait happens with interrupts
+masked.  A console reader that stalls (a slow or desynchronised serial
+session is enough) therefore stops the clock interrupt, which stops both
+preemption and every `tsleep` wakeup: the machine looks asleep, with the
+shell and every LKL thread parked.
+
+Two changes address this:
+
+* `uartputc()` now gives the FIFO a bounded number of polls and drops the
+  character rather than waiting forever.  Losing console output is much
+  better than losing the machine.
+* `/dev/lkllog` is a synthetic file backed by a 1 MiB ring buffer.  Host
+  diagnostics are written there instead of to `cons`; the ring append only
+  takes a short `ilock` around a `memmove` and never touches the UART.
+  `cat /dev/lkllog` reads it at the reader's own pace.  The pattern is the
+  same as `/dev/kmesg`, but user-writable.
+
+`lklboot` should be run as
+
+```text
+/boot/lklboot > /dev/lkllog &
+cat /dev/lkllog
+```
+
+## Remaining stall
+
+With the console fixed, the host stays alive and the clock keeps running
+(`timerintr` and `hzclock` both provably complete), but a host thread that
+calls `sleep()` stops waking.  The last trace line is the init task being
+handed the CPU, after which the watchdog thread (which only does
+`sleep(1)` and print) never runs again.  The fault is therefore in the
+Harvey timer list or its interaction with the very high rate of
+`tsleep`/`timeradd` calls that LKL generates, not in LKL's own sleep path
+(`sem_down`/`sem_up` for kernel threads, `setjmp`/`longjmp` for host
+tasks).
+
 ## Supervision
 
 A supervisor (extension of `drvman`) starts instances in dependency order,
