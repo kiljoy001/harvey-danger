@@ -512,6 +512,36 @@ What is still Mesa's in the replay block is only the job structure: the two
 job headers and their payloads, the tiler context and the heap descriptor.
 Emitting those deletes `drawreplay.h` entirely.
 
+## The captured block is gone
+
+`gpucc` now packs the whole chain and `gpufs` places it at fixed addresses:
+the sample position table (all six patterns, 256 bytes each), the
+full-screen triangle, the framebuffer descriptor and its render target, the
+attribute/varying/TLS/viewport/draw descriptors, the indexed vertex job
+with both embedded draws, the fragment job, the tiler context and the heap
+descriptor.  `drawreplay.h` is deleted.
+
+One descriptor was missing for a while and cost a day: **the fragment state
+is the renderer state `followed by one blend descriptor`** (Mesa allocates
+it with `pan_pool_alloc_desc_aggregate(RENDERER_STATE, PAN_DESC_ARRAY(rt_count,
+BLEND))`).  With the blend descriptor zeroed, every fragment job still
+reports PASS, the tiler still bins geometry, the varying buffer still holds
+the right vertex positions -- and nothing is ever written to the render
+target.  The fix is to emit the 16-byte `BLEND` descriptor after the RSD:
+
+```text
+blend 00000200 f0122122 00000019 000ed000     (RGBA8, f16, opaque replace)
+```
+
+`enable` (bit 9) is set, the equation is `src*1 + src*0` for both rgb and
+alpha with colour mask 0xf, `internal.mode` is `OPAQUE`, and
+`conversion.memory_format` is `0xed000` for RGBA8 linear.  With it:
+
+```text
+draw 7  ->  0xffbf8040 at the sampled pixel
+draw 8  ->  TL 0xffff0000  TR 0xff0000ff  BL 0xff00ff00  BR 0xffffffff
+```
+
 ## What is next
 
 1. **A real submit interface.**  `clear` is a debug verb.  The display

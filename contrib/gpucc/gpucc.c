@@ -250,20 +250,208 @@ emit_texture(unsigned width, unsigned height)
           (unsigned)sizeof tex, (unsigned)sizeof surf, (unsigned)sizeof samp);
 }
 
-/* One draw descriptor.  The pointers are parameters so the bytes can be
- * diffed against a capture before we start patching them at submit time. */
+/* Unpack a framebuffer descriptor so its fields can be read back, used to
+ * check the emitter against the capture. */
 static void
-emit_draw(const char *name, uint64_t state, uint64_t attrbufs,
+dump_fb(const char *path)
+{
+   unsigned char buf[0x100];
+   FILE *f = fopen(path, "rb");
+   if(f == NULL){ printf("no %s\n", path); return; }
+   if(fread(buf, 1, sizeof buf, f) != sizeof buf){ }
+   fclose(f);
+
+   pan_unpack((struct mali_framebuffer_parameters_packed *)buf,
+             FRAMEBUFFER_PARAMETERS, p);
+   printf("params: frames %d/%d/%d sample_locations %#lx dcds %#lx\n",
+          p.pre_frame_0, p.pre_frame_1, p.post_frame,
+          (unsigned long)p.sample_locations, (unsigned long)p.frame_shader_dcds);
+   printf("  width %u height %u bound_min %u,%u bound_max %u,%u\n",
+          p.width, p.height, p.bound_min_x, p.bound_min_y,
+          p.bound_max_x, p.bound_max_y);
+   printf("  samples %u pattern %d tiebreak %d tilesize %u xdown %u ydown %u\n",
+          p.sample_count, p.sample_pattern, p.tie_break_rule,
+          p.effective_tile_size, p.x_downsampling_scale,
+          p.y_downsampling_scale);
+   printf("  rt_count %u cballoc %u s_clear %u z_ifmt %d tiler %#lx\n",
+          p.render_target_count, p.color_buffer_allocation, p.s_clear,
+          p.z_internal_format, (unsigned long)p.tiler);
+
+   pan_unpack((struct mali_render_target_packed *)(buf + pan_size(FRAMEBUFFER)),
+             RENDER_TARGET, rt);
+   printf("rt: internal %d write_enable %d writeback %d block %d msaa %d\n",
+          rt.rgb.internal_format, rt.rgb.write_enable,
+          rt.rgb.writeback_format, rt.rgb.writeback_block_format,
+          rt.rgb.writeback_msaa);
+   printf("  srgb %d dither %d swizzle %#x clean %d\n",
+          rt.rgb.srgb, rt.rgb.dithering_enable, rt.rgb.swizzle,
+          rt.rgb.clean_tile_write_enable);
+   printf("  base %#lx stride %lu clear %08x %08x %08x %08x\n",
+          (unsigned long)rt.rgb.writeback_buffer.base,
+          (unsigned long)rt.rgb.writeback_buffer.row_stride,
+          (unsigned)rt.rgb.clear.color_0, (unsigned)rt.rgb.clear.color_1,
+          (unsigned)rt.rgb.clear.color_2, (unsigned)rt.rgb.clear.color_3);
+}
+
+/* The sample position table the hardware reads through the framebuffer
+ * descriptor.  Each pattern gets 256 bytes: 32 (x,y) pairs in 8:8 fixed
+ * point, then the origin, then padding.  The positions are the standard
+ * GL/Vulkan sample locations. */
+#define SAMP16(x, y) ((uint16_t)(((x) + 8) * 16)), ((uint16_t)(((y) + 8) * 16))
+#define SAMP4(x, y)  SAMP16((x) * 4, (y) * 4)
+#define SAMP8(x, y)  SAMP16((x) * 2, (y) * 2)
+
+static void
+put_sample(uint16_t *out, unsigned pattern, unsigned index, unsigned x,
+           unsigned y)
+{
+   out[pattern * 128 + index * 2 + 0] = x;
+   out[pattern * 128 + index * 2 + 1] = y;
+}
+
+static void
+put_origin(uint16_t *out, unsigned pattern, unsigned x, unsigned y)
+{
+   out[pattern * 128 + 64 + 0] = x;
+   out[pattern * 128 + 64 + 1] = y;
+}
+
+static void
+emit_test_data(void)
+{
+   static uint16_t samples[6 * 128];
+   float verts[12] = {
+      -1.0f, -1.0f, 0.0f, 1.0f,
+       3.0f, -1.0f, 0.0f, 1.0f,
+      -1.0f,  3.0f, 0.0f, 1.0f,
+   };
+   FILE *f;
+
+   memset(samples, 0, sizeof samples);
+
+   /* Single sampled. */
+   put_sample(samples, 0, 0, SAMP4(0, 0));
+   put_origin(samples, 0, SAMP4(0, 0));
+
+   /* Ordered 4x grid. */
+   put_sample(samples, 1, 0, SAMP4(-1, -1));
+   put_sample(samples, 1, 1, SAMP4( 1, -1));
+   put_sample(samples, 1, 2, SAMP4(-1,  1));
+   put_sample(samples, 1, 3, SAMP4( 1,  1));
+   put_origin(samples, 1, SAMP4(0, 0));
+
+   /* Rotated 4x grid. */
+   put_sample(samples, 2, 0, SAMP8(-1, -3));
+   put_sample(samples, 2, 1, SAMP8( 3, -1));
+   put_sample(samples, 2, 2, SAMP8(-3,  1));
+   put_sample(samples, 2, 3, SAMP8( 1,  3));
+   put_origin(samples, 2, SAMP8(0, 0));
+
+   /* D3D 8x grid. */
+   put_sample(samples, 3, 0, SAMP16( 1, -3));
+   put_sample(samples, 3, 1, SAMP16(-1,  3));
+   put_sample(samples, 3, 2, SAMP16( 5,  1));
+   put_sample(samples, 3, 3, SAMP16(-3, -5));
+   put_sample(samples, 3, 4, SAMP16(-5,  5));
+   put_sample(samples, 3, 5, SAMP16(-7, -1));
+   put_sample(samples, 3, 6, SAMP16( 3,  7));
+   put_sample(samples, 3, 7, SAMP16( 7, -7));
+   put_origin(samples, 3, SAMP16(0, 0));
+
+   /* D3D 16x grid. */
+   put_sample(samples, 4,  0, SAMP16( 1,  1));
+   put_sample(samples, 4,  1, SAMP16(-1, -3));
+   put_sample(samples, 4,  2, SAMP16(-3,  2));
+   put_sample(samples, 4,  3, SAMP16( 4, -1));
+   put_sample(samples, 4,  4, SAMP16(-5, -2));
+   put_sample(samples, 4,  5, SAMP16( 2,  5));
+   put_sample(samples, 4,  6, SAMP16( 5,  3));
+   put_sample(samples, 4,  7, SAMP16( 3, -5));
+   put_sample(samples, 4,  8, SAMP16(-2,  6));
+   put_sample(samples, 4,  9, SAMP16( 0, -7));
+   put_sample(samples, 4, 10, SAMP16(-4, -6));
+   put_sample(samples, 4, 11, SAMP16(-6,  4));
+   put_sample(samples, 4, 12, SAMP16(-8,  0));
+   put_sample(samples, 4, 13, SAMP16( 7, -4));
+   put_sample(samples, 4, 14, SAMP16( 6,  7));
+   put_sample(samples, 4, 15, SAMP16(-7, -8));
+   put_origin(samples, 4, SAMP16(0, 0));
+
+   /* Rotated 2x grid. */
+   put_sample(samples, 5, 0, SAMP4( 1,  1));
+   put_sample(samples, 5, 1, SAMP4(-1, -1));
+   put_origin(samples, 5, SAMP4(0, 0));
+
+   if((f = fopen("samples.bin", "wb")) != NULL){
+      fwrite(samples, 1, sizeof samples, f);
+      fclose(f);
+   }
+   if((f = fopen("verts.bin", "wb")) != NULL){
+      fwrite(verts, 1, sizeof verts, f);
+      fclose(f);
+   }
+   printf("test data samples %u verts %u\n", (unsigned)sizeof samples,
+          (unsigned)sizeof verts);
+}
+
+/* The framebuffer descriptor: 128 bytes of parameters, then one
+ * 64-byte render target. */
+static void
+emit_framebuffer(uint64_t rtbase, uint64_t tiler, uint64_t samples)
+{
+   struct mali_framebuffer_packed fbd;
+   struct mali_render_target_packed rt;
+   FILE *f;
+
+   memset(&fbd, 0, sizeof fbd);
+   pan_section_pack(&fbd, FRAMEBUFFER, PARAMETERS, p) {
+      p.sample_locations = samples;
+      p.width = 64;
+      p.height = 64;
+      p.bound_max_x = 63;
+      p.bound_max_y = 63;
+      p.sample_count = 1;
+      p.tie_break_rule = MALI_TIE_BREAK_RULE_MINUS_180_IN_0_OUT;
+      p.effective_tile_size = 256;
+      p.render_target_count = 1;
+      p.color_buffer_allocation = 1024;
+      p.z_internal_format = MALI_Z_INTERNAL_FORMAT_D24;
+      p.tiler = tiler;
+   }
+   pan_section_pack(&fbd, FRAMEBUFFER, PADDING, pad) { }
+
+   memset(&rt, 0, sizeof rt);
+   pan_cast_and_pack(&rt, RGB_RENDER_TARGET, cfg) {
+      cfg.internal_format = MALI_COLOR_BUFFER_INTERNAL_FORMAT_R8G8B8A8;
+      cfg.write_enable = true;
+      cfg.writeback_format = MALI_COLOR_FORMAT_R8G8B8A8;
+      cfg.writeback_block_format = MALI_BLOCK_FORMAT_LINEAR;
+      cfg.dithering_enable = true;
+      cfg.swizzle = 0x688;
+      cfg.clean_tile_write_enable = true;
+      cfg.writeback_buffer.base = rtbase;
+      cfg.writeback_buffer.row_stride = 64 * 4;
+      cfg.clear.color_0 = 0xffff0000;
+      cfg.clear.color_1 = 0xffff0000;
+      cfg.clear.color_2 = 0xffff0000;
+      cfg.clear.color_3 = 0xffff0000;
+   }
+
+   if((f = fopen("fb_params.bin", "wb")) != NULL){ fwrite(&fbd, 1, sizeof fbd, f); fclose(f); }
+   if((f = fopen("fb_rt.bin", "wb")) != NULL){ fwrite(&rt, 1, sizeof rt, f); fclose(f); }
+   printf("fb params %u rt %u\n", (unsigned)sizeof fbd, (unsigned)sizeof rt);
+}
+
+/* Pack one draw descriptor into dst.  The pointers are parameters so the
+ * bytes can be diffed against a capture before we start patching them at
+ * submit time. */
+static void
+pack_draw(void *dst, uint64_t state, uint64_t attrbufs,
           uint64_t attrs, uint64_t varbufs, uint64_t varyings,
           uint64_t viewport, uint64_t tls, uint64_t ubos, uint64_t push,
           uint64_t textures, uint64_t samplers, uint64_t position)
 {
-   struct mali_draw_packed draw;
-   FILE *f;
-   char path[64];
-
-   memset(&draw, 0, sizeof draw);
-   pan_pack(&draw, DRAW, cfg) {
+   pan_cast_and_pack(dst, DRAW, cfg) {
       cfg.four_components_per_vertex = true;
       cfg.draw_descriptor_is_64b = true;
       cfg.instance_size = 1;
@@ -281,6 +469,147 @@ emit_draw(const char *name, uint64_t state, uint64_t attrbufs,
       cfg.samplers = samplers;
       cfg.position = position;
    }
+}
+
+/* The blend descriptor that follows the fragment renderer state.  Mesa
+ * allocates the fragment state as RENDERER_STATE followed by one BLEND per
+ * render target; without it the hardware has no write enable for the tile
+ * and the fragment shader's output is dropped.  With blending disabled the
+ * equation is a plain replace. */
+static void
+emit_blend(void)
+{
+   struct mali_blend_packed blend;
+   FILE *f;
+
+   memset(&blend, 0, sizeof blend);
+   pan_pack(&blend, BLEND, cfg) {
+      cfg.enable = true;
+      cfg.round_to_fb_precision = false;
+      cfg.equation.rgb.a = MALI_BLEND_OPERAND_A_SRC;
+      cfg.equation.rgb.b = MALI_BLEND_OPERAND_B_SRC;
+      cfg.equation.rgb.c = MALI_BLEND_OPERAND_C_ZERO;
+      cfg.equation.alpha.a = MALI_BLEND_OPERAND_A_SRC;
+      cfg.equation.alpha.b = MALI_BLEND_OPERAND_B_SRC;
+      cfg.equation.alpha.c = MALI_BLEND_OPERAND_C_ZERO;
+      cfg.equation.color_mask = 0xf;
+      cfg.internal.mode = MALI_BLEND_MODE_OPAQUE;
+      cfg.internal.fixed_function.num_comps = 4;
+      cfg.internal.fixed_function.rt = 0;
+      /* RGBA8 linear, the encoding pan_dithered_format_from_pipe_format
+       * returns for PIPE_FORMAT_R8G8B8A8_UNORM. */
+      cfg.internal.fixed_function.conversion.memory_format = 0xed000;
+      /* The fragment shader writes packed f16, so the blend reads f16. */
+      cfg.internal.fixed_function.conversion.register_format =
+         MALI_REGISTER_FILE_FORMAT_F16;
+   }
+
+   if((f = fopen("blend.bin", "wb")) != NULL){
+      fwrite(&blend, 1, sizeof blend, f);
+      fclose(f);
+   }
+   printf("blend %u bytes\n", (unsigned)sizeof blend);
+}
+
+/* The job chain: an indexed vertex job carrying both draws, the fragment
+ * job that points at the framebuffer, and the tiler context and heap. */
+static void
+emit_jobs(uint64_t fbd, uint64_t tilerctx, uint64_t heap,
+          const void *fragdraw, const void *vertdraw)
+{
+   struct mali_indexed_vertex_job_packed ivj;
+   struct mali_fragment_job_packed fj;
+   struct mali_tiler_context_packed tc;
+   struct mali_tiler_heap_packed th;
+   FILE *f;
+
+   memset(&ivj, 0, sizeof ivj);
+
+   pan_section_pack(&ivj, INDEXED_VERTEX_JOB, HEADER, h) {
+      h.is_64b = true;
+      h.type = MALI_JOB_TYPE_INDEXED_VERTEX;
+      h.index = 1;
+   }
+
+   /* 1x1x1 vertices in a 1x3x1 group grid; the shift fields are the bit
+    * boundaries of the packed invocation count, so the last one is 32. */
+   pan_section_pack(&ivj, INDEXED_VERTEX_JOB, INVOCATION, inv) {
+      inv.invocations = 2;
+      inv.workgroups_z_shift = 32;
+      inv.thread_group_split = 2;
+   }
+
+   pan_section_pack(&ivj, INDEXED_VERTEX_JOB, PRIMITIVE, prim) {
+      prim.draw_mode = MALI_DRAW_MODE_TRIANGLES;
+      prim.first_provoking_vertex = false;
+      prim.job_task_split = 6;
+      prim.index_count = 3;
+   }
+
+   pan_section_pack(&ivj, INDEXED_VERTEX_JOB, PRIMITIVE_SIZE, ps) {
+      ps.fixed_sized = 1.0f;
+   }
+
+   pan_section_pack(&ivj, INDEXED_VERTEX_JOB, TILER, tp) {
+      tp.address = tilerctx;
+   }
+
+   /* The two draws live inside the job. */
+   memcpy(pan_section_ptr(&ivj, INDEXED_VERTEX_JOB, FRAGMENT_DRAW),
+          fragdraw, pan_size(DRAW));
+   memcpy(pan_section_ptr(&ivj, INDEXED_VERTEX_JOB, VERTEX_DRAW),
+          vertdraw, pan_size(DRAW));
+
+   memset(&fj, 0, sizeof fj);
+   pan_section_pack(&fj, FRAGMENT_JOB, HEADER, h) {
+      h.is_64b = true;
+      h.type = MALI_JOB_TYPE_FRAGMENT;
+      h.index = 1;
+   }
+   pan_section_pack(&fj, FRAGMENT_JOB, PAYLOAD, p) {
+      p.bound_max_x = 3;
+      p.bound_max_y = 3;
+      p.framebuffer = fbd;
+   }
+
+   memset(&tc, 0, sizeof tc);
+   pan_pack(&tc, TILER_CONTEXT, cfg) {
+      cfg.hierarchy_mask = 6;
+      cfg.fb_width = 64;
+      cfg.fb_height = 64;
+      cfg.heap = heap;
+   }
+
+   memset(&th, 0, sizeof th);
+   pan_pack(&th, TILER_HEAP, cfg) {
+      cfg.size = 0x08000000;
+      cfg.base = 0x2000000;
+      cfg.bottom = 0x2000000;
+      cfg.top = 0xa000000;
+   }
+
+   if((f = fopen("job_ivj.bin", "wb")) != NULL){ fwrite(&ivj, 1, sizeof ivj, f); fclose(f); }
+   if((f = fopen("job_frag.bin", "wb")) != NULL){ fwrite(&fj, 1, sizeof fj, f); fclose(f); }
+   if((f = fopen("job_tc.bin", "wb")) != NULL){ fwrite(&tc, 1, sizeof tc, f); fclose(f); }
+   if((f = fopen("job_th.bin", "wb")) != NULL){ fwrite(&th, 1, sizeof th, f); fclose(f); }
+   printf("jobs ivj %u frag %u tc %u th %u\n", (unsigned)sizeof ivj,
+          (unsigned)sizeof fj, (unsigned)sizeof tc, (unsigned)sizeof th);
+}
+
+/* One draw descriptor, written to a file for the capture comparison. */
+static void
+emit_draw(const char *name, uint64_t state, uint64_t attrbufs,
+          uint64_t attrs, uint64_t varbufs, uint64_t varyings,
+          uint64_t viewport, uint64_t tls, uint64_t ubos, uint64_t push,
+          uint64_t textures, uint64_t samplers, uint64_t position)
+{
+   struct mali_draw_packed draw;
+   FILE *f;
+   char path[64];
+
+   memset(&draw, 0, sizeof draw);
+   pack_draw(&draw, state, attrbufs, attrs, varbufs, varyings, viewport,
+             tls, ubos, push, textures, samplers, position);
    snprintf(path, sizeof path, "%s.bin", name);
    if((f = fopen(path, "wb")) != NULL){ fwrite(&draw, 1, sizeof draw, f); fclose(f); }
    printf("%s: draw %u bytes\n", name, (unsigned)sizeof draw);
@@ -451,6 +780,11 @@ main(int argc, char **argv)
 {
    glsl_type_singleton_init_or_ref();
 
+   if(argc == 3 && strcmp(argv[1], "dumpfb") == 0){
+      dump_fb(argv[2]);
+      glsl_type_singleton_decref();
+      return 0;
+   }
    if(argc == 3){
       nir_shader *fsn = spv_shader(argv[1], MESA_SHADER_FRAGMENT);
       dump("blitfrag", fsn, NULL);
@@ -489,11 +823,26 @@ main(int argc, char **argv)
    emit_vertex("vert1920", 960.0f, 540.0f);
    emit_texture(64, 64);
    emit_layout(0xa008000, 0xa019000);
+   emit_framebuffer(0xa004000, 0xa0094c0, 0xa000000);
+   emit_blend();
+   emit_test_data();
    /* With the captured pointers, so the bytes can be compared. */
    emit_draw("draw_vertex", 0xa002000, 0xa009140, 0xa009160, 0xa0092a0,
              0xa002040, 0, 0xa009100, 0xa0091c0, 0xa0091d0, 0, 0xa009180, 0);
    emit_draw("draw_fragment", 0xa009240, 0, 0, 0, 0,
              0xa009120, 0xa009100, 0xa009220, 0, 0, 0xa009200, 0xa019000);
+
+   {
+      struct mali_draw_packed fd, vd;
+      memset(&fd, 0, sizeof fd);
+      memset(&vd, 0, sizeof vd);
+      pack_draw(&fd, 0xa009240, 0, 0, 0, 0, 0xa009120, 0xa009100,
+                0xa009220, 0, 0, 0xa009200, 0xa019000);
+      pack_draw(&vd, 0xa002000, 0xa009140, 0xa009160, 0xa0092a0,
+                0xa002040, 0, 0xa009100, 0xa0091c0, 0xa0091d0, 0,
+                0xa009180, 0);
+      emit_jobs(0xa009001, 0xa0094c0, 0xa009480, &fd, &vd);
+   }
 
    glsl_type_singleton_decref();
    return 0;

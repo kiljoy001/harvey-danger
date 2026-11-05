@@ -17,7 +17,6 @@
 #include <thread.h>
 #include <9p.h>
 #include "drv.h"
-#include "drawreplay.h"
 #include "shaderpack.h"
 
 enum {
@@ -1044,24 +1043,25 @@ submitat(Gpu *g, int slot, u64 head, u32 cfg, u32 *rawp, u32 *statp)
 }
 
 /*
- * Replay the captured Mesa draw chain verbatim.
+ * Render a frame with descriptors we build ourselves.
  *
- * The pool mirrors the captured virtual layout, so every pointer the
- * descriptors carry is still valid: the sample table at 0xa000000, the
- * vertex renderer state at 0xa002000, both shaders at 0xa003000, the render
- * target at 0xa004000, the attribute buffer at 0xa008000 and the whole
- * descriptor block (framebuffer, draws, tiler context, both job headers) at
- * 0xa009000.  The tiler heap gets its own 128 KiB at 0x2000000.
+ * Everything the hardware walks is placed at a fixed virtual address, so the
+ * pointers the descriptors carry can be baked at compile time: the sample
+ * position table at 0xa000000, the vertex data at 0xa008000, the framebuffer
+ * descriptor and its render target at 0xa009000, the attribute, varying, TLS,
+ * viewport and draw descriptors around them, and the indexed vertex job and
+ * fragment job at 0xa009300 and 0xa009580.  gpucc packs all of them from the
+ * same tables Mesa uses.  The tiler heap gets its own 4 MiB at 0x08000000.
  *
  * The heap is GPU-initialised: panfrost creates it PAN_BO_INVISIBLE and
  * writes nothing into it, so a zeroed buffer with bottom == base and a zero
  * polygon list is what the driver hands over.
  */
+
 static void
 gpudraw(Gpu *g, int mode)
 {
 	u32 *d, *rt, raw, stat;
-	int ours_frag, ours_vblob, ours_vrsd;
 	u8 *pool;
 	u64 poolpa;
 	int r;
@@ -1090,70 +1090,60 @@ gpudraw(Gpu *g, int mode)
 	poolpa = g->drawpa;
 	memset(pool, 0, 0x40000);
 
-	memmove(pool + 0x0000, draw_000000, sizeof draw_000000);
-	memmove(pool + 0x2000, draw_002000, sizeof draw_002000);
-	memmove(pool + 0x3000, draw_003000, sizeof draw_003000);
-	memmove(pool + 0x8000, draw_008000, sizeof draw_008000);
-	memmove(pool + 0x9000, draw_009000, sizeof draw_009000);
+	/* The 1x sample position and the full-screen triangle. */
+	memmove(pool + 0x0000, shader_samples, sizeof shader_samples);
+	memmove(pool + 0x8000, shader_verts, sizeof shader_verts);
 
-	/* Replace the captured layout with the descriptors we pack ourselves.
-	 * The addresses are the ones the capture uses, so every pointer in
-	 * them is still valid. */
+	/* Framebuffer descriptor followed by its one render target. */
+	memmove(pool + 0x9000, shader_fb, sizeof shader_fb);
+	memmove(pool + 0x9080, shader_fb_rt, sizeof shader_fb_rt);
+
+	/* Layout: TLS, viewport, the attribute and varying pairs, the
+	 * varying data buffer and both draw descriptors. */
 	memmove(pool + 0x9100, shader_tls, sizeof shader_tls);
 	memmove(pool + 0x9120, shader_vp, sizeof shader_vp);
 	memmove(pool + 0x9140, shader_abuf, sizeof shader_abuf);
 	memmove(pool + 0x9160, shader_attr, sizeof shader_attr);
 	memmove(pool + 0x92a0, shader_vbuf, sizeof shader_vbuf);
 	memmove(pool + 0x2040, shader_vary, sizeof shader_vary);
+	/* The fragment state is the renderer state followed by one blend
+	 * descriptor, which is what enables writes to the render target. */
+	memmove(pool + 0x9280, shader_blend, sizeof shader_blend);
 	memmove(pool + 0x9380, shader_draw_frag, sizeof shader_draw_frag);
 	memmove(pool + 0x9400, shader_draw_vert, sizeof shader_draw_vert);
 
-	/* Replace Mesa's shaders and shader descriptors with ours.  What is
-	 * left of the replay is the layout around them: the attribute buffer
-	 * and its descriptors, the varying buffer, the draw descriptors, the
-	 * tiler context and the job headers. */
-	/* 0 ours both, 1 ours FS only, 2 ours VS only,
-	 * 3 our vertex descriptor + Mesa's vertex blob,
-	 * 4 our vertex blob + Mesa's vertex descriptor.
-	 * 6 is 0 with the render target pointed at the scanout buffer. */
-	ours_frag = (mode == 0 || mode == 1 || mode == 6 || mode == 7 || mode == 8);
-	ours_vblob = (mode == 0 || mode == 2 || mode == 4 || mode == 6 ||
-	              mode == 7 || mode == 8);
-	ours_vrsd = (mode == 0 || mode == 2 || mode == 3 || mode == 6 ||
-	             mode == 7 || mode == 8);
-	if(ours_frag){
-		if(mode == 8){
-			memmove(pool + 0x3100, shader_blitfrag_bin,
-			        sizeof shader_blitfrag_bin);
-			memmove(pool + 0x9240, shader_blitfrag_rsd,
-			        sizeof shader_blitfrag_rsd);
-		} else {
-			memmove(pool + 0x3100, shader_frag_bin,
-			        sizeof shader_frag_bin);
-			memmove(pool + 0x9240, shader_frag_rsd,
-			        sizeof shader_frag_rsd);
-		}
-		*(u32 *)(pool + 0x9240) = 0xa003100;
+	/* The job chain, the tiler context and the heap descriptor. */
+	memmove(pool + 0x9300, shader_job_ivj, sizeof shader_job_ivj);
+	memmove(pool + 0x9480, shader_job_th, sizeof shader_job_th);
+	memmove(pool + 0x94c0, shader_job_tc, sizeof shader_job_tc);
+	memmove(pool + 0x9580, shader_job_frag, sizeof shader_job_frag);
+
+	if(mode == 8){
+		memmove(pool + 0x3100, shader_blitfrag_bin,
+		        sizeof shader_blitfrag_bin);
+		memmove(pool + 0x9240, shader_blitfrag_rsd,
+		        sizeof shader_blitfrag_rsd);
+	} else {
+		memmove(pool + 0x3100, shader_frag_bin,
+		        sizeof shader_frag_bin);
+		memmove(pool + 0x9240, shader_frag_rsd,
+		        sizeof shader_frag_rsd);
 	}
-	if(ours_vblob){
-		if(mode == 7 || mode == 8)
-			memmove(pool + 0x3000, shader_vert1920_bin,
-			        sizeof shader_vert1920_bin);
-		else
-			memmove(pool + 0x3000, shader_vert_bin,
-			        sizeof shader_vert_bin);
+	*(u32 *)(pool + 0x9240) = 0xa003100;
+
+	if(mode == 7 || mode == 8){
+		memmove(pool + 0x3000, shader_vert1920_bin,
+		        sizeof shader_vert1920_bin);
+		memmove(pool + 0x2000, shader_vert1920_rsd,
+		        sizeof shader_vert1920_rsd);
+	} else {
+		memmove(pool + 0x3000, shader_vert_bin,
+		        sizeof shader_vert_bin);
+		memmove(pool + 0x2000, shader_vert_rsd,
+		        sizeof shader_vert_rsd);
 	}
-	if(ours_vrsd){
-		if(mode == 7 || mode == 8)
-			memmove(pool + 0x2000, shader_vert1920_rsd,
-			        sizeof shader_vert1920_rsd);
-		else
-			memmove(pool + 0x2000, shader_vert_rsd,
-			        sizeof shader_vert_rsd);
-		*(u32 *)(pool + 0x2000) = 0xa003000;
-	}
-	print("gpufs: draw mode %d (ours: frag %d vblob %d vrsd %d)\n",
-	      mode, ours_frag, ours_vblob, ours_vrsd);
+	*(u32 *)(pool + 0x2000) = 0xa003000;
+	print("gpufs: draw mode %d\n", mode);
 
 	d = (u32 *)(pool + 0x9000);
 
@@ -2105,6 +2095,29 @@ fswrite(Req *r, void *aux)
 	if(strncmp(cmd, "peek", 4) == 0){
 		print("gpufs: ctl peek\n");
 		fbpeek(cmd[4] == ' ' ? strtoull(cmd + 5, nil, 0) : 0);
+		r->ofcall.count = r->ifcall.count;
+		respond(r, nil);
+		qunlock(&g->lk);
+		return;
+	}
+	if(strncmp(cmd, "pool", 4) == 0){
+		/* Dump words of the draw pool, for checking what the driver
+		 * actually put in GPU memory. */
+		u32 off;
+		int i, n;
+		if(g->drawbuf == nil){
+			print("gpufs: pool: no pool\n");
+		}else{
+			off = cmd[4] == ' ' ? strtoul(cmd + 5, nil, 0) : 0;
+			n = 4;
+			for(i = 0; i < n; i++)
+				print("pool %#ux: %#ux %#ux %#ux %#ux\n",
+				      off + i * 16,
+				      ((u32 *)(g->drawbuf + off))[i * 4 + 0],
+				      ((u32 *)(g->drawbuf + off))[i * 4 + 1],
+				      ((u32 *)(g->drawbuf + off))[i * 4 + 2],
+				      ((u32 *)(g->drawbuf + off))[i * 4 + 3]);
+		}
 		r->ofcall.count = r->ifcall.count;
 		respond(r, nil);
 		qunlock(&g->lk);
