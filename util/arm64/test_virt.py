@@ -14,14 +14,22 @@ ROOT = Path(__file__).resolve().parents[2]
 IMAGE = ROOT / "build/arm64/harvey-virt.img"
 
 
-def boot_until(command: list[str], marker: str) -> str:
+def boot_until(command: list[str], marker: str, idle: float = 8,
+               limit: int = 1024 * 1024, total: float = 0) -> str:
     guest = subprocess.Popen(command, stdout=subprocess.PIPE,
                              stderr=subprocess.STDOUT)
     output = bytearray()
-    deadline = time.monotonic() + 8
+    start = time.monotonic()
+    deadline = start + idle
     try:
-        while marker.encode() not in output and len(output) < 1024 * 1024:
+        while marker.encode() not in output and len(output) < limit:
+            if total and time.monotonic() - start > total:
+                break
             remaining = deadline - time.monotonic()
+            if total:
+                left = total - (time.monotonic() - start)
+                if left < remaining:
+                    remaining = left
             if remaining <= 0 or not select.select([guest.stdout], [], [], remaining)[0]:
                 break
             chunk = os.read(guest.stdout.fileno(), 4096)

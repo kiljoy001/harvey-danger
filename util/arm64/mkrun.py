@@ -65,6 +65,18 @@ static char *args2[] = {
 %s
 };
 
+/* When --in-tree names a program already in the tree, no image is written. */
+static const int have_image = %d;
+static const char exec_path[] = %s;
+
+/* Optional tar tree (see --untar) to unpack before running. */
+static const char untar_name[] = %s;
+static const char untar_dest[] = %s;
+
+static const char *envs[] = {
+%s
+};
+
 static int
 mkdirs(char *path)
 {
@@ -78,6 +90,143 @@ mkdirs(char *path)
 			return -1;
 		*p = '/';
 	}
+	return 0;
+}
+
+static unsigned long
+otoul(const char *field, int len)
+{
+	unsigned long v = 0;
+	int i;
+
+	for(i = 0; i < len && field[i] >= '0' && field[i] <= '7'; i++)
+		v = v * 8 + (field[i] - '0');
+	return v;
+}
+
+/*
+ * Unpack a ustar archive into dest.  Only the fields the SDK needs are
+ * interpreted: name, prefix, size and typeflag.  Malformed headers are
+ * reported rather than guessed at.
+ */
+static int
+untar(const char *name, const char *dest)
+{
+	char hdr[512], path[512], buf[16384];
+	unsigned long size, left;
+	int fd, out, n, nfiles = 0;
+
+	fd = open(name, O_RDONLY);
+	if(fd < 0){
+		fprintf(stderr, "runner: %%s: %%s\n", name, strerror(errno));
+		return -1;
+	}
+	for(;;){
+		for(n = 0; n < 512; ){
+			int m = read(fd, hdr + n, 512 - n);
+
+			if(m <= 0)
+				goto done;
+			n += m;
+		}
+		if(hdr[0] == 0)
+			break;		/* end of archive */
+		if(strncmp(hdr+257, "ustar", 5) != 0){
+			fprintf(stderr, "runner: %%s: bad tar header\n", name);
+			close(fd);
+			return -1;
+		}
+		size = otoul(hdr + 124, 12);
+		if(hdr[345] != 0){
+			if(snprintf(path, sizeof path, "%%s/%%s/%%s", dest,
+			    hdr + 345, hdr) >= (int)sizeof path){
+				fprintf(stderr, "runner: %%s: name too long\n", name);
+				close(fd);
+				return -1;
+			}
+		}else if(snprintf(path, sizeof path, "%%s/%%s", dest, hdr) >=
+		    (int)sizeof path){
+			fprintf(stderr, "runner: %%s: name too long\n", name);
+			close(fd);
+			return -1;
+		}
+		nfiles++;
+		if((nfiles & 63) == 0)
+			fprintf(stderr, "runner: untar %%d %%s\n", nfiles, path);
+		if(hdr[156] == '5'){
+			if(mkdirs(path) < 0){
+				fprintf(stderr, "runner: mkdirs %%s: %%s\n", path,
+				    strerror(errno));
+				close(fd);
+				return -1;
+			}
+			if(mkdir(path, 0777) < 0 && errno != EEXIST){
+				fprintf(stderr, "runner: %%s: %%s\n", path,
+				    strerror(errno));
+				close(fd);
+				return -1;
+			}
+		}else if(hdr[156] == '0' || hdr[156] == 0){
+			if(mkdirs(path) < 0){
+				fprintf(stderr, "runner: mkdirs %%s: %%s\n", path,
+				    strerror(errno));
+				close(fd);
+				return -1;
+			}
+			out = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0777);
+			if(out < 0){
+				fprintf(stderr, "runner: create %%s: %%s\n", path,
+				    strerror(errno));
+				close(fd);
+				return -1;
+			}
+			left = size;
+			while(left > 0){
+				unsigned long want = left < sizeof buf ?
+				    left : sizeof buf;
+				int m = read(fd, buf, want);
+
+				if(m <= 0){
+					fprintf(stderr, "runner: %%s: short\n",
+					    name);
+					close(fd);
+					close(out);
+					return -1;
+				}
+				errno = 0;
+				{
+					int w = write(out, buf, m);
+
+					if(w != m){
+						fprintf(stderr,
+						    "runner: write %%s: got %%d want %%d/%%d errno %%d %%s\n",
+						    path, w, m, left, errno,
+						    strerror(errno));
+						close(fd);
+						close(out);
+						return -1;
+					}
+				}
+				left -= m;
+			}
+			close(out);
+			left = size %% 512;
+			if(left != 0)
+				read(fd, buf, 512 - left);
+			continue;
+		}
+		/* Skip the body of anything we do not create (links, etc). */
+		left = size + ((512 - size %% 512) %% 512);
+		while(left > 0){
+			int m = read(fd, buf, left < sizeof buf ? left : sizeof buf);
+
+			if(m <= 0)
+				goto done;
+			left -= m;
+		}
+	}
+done:
+	close(fd);
 	return 0;
 }
 
@@ -121,31 +270,54 @@ main(void)
 
 	/*
 	 * The boot filesystem is read-only.  Replacing the root with a ramfs
-	 * gives us somewhere to write; the console is already open.
+	 * gives us somewhere to write; the console is already open.  When a
+	 * tar tree is supplied we keep / visible (the archive is a boot file)
+	 * and mount the ramfs over /initramfs instead.
 	 */
-	if(bind("#@", "/", MREPL | MCREATE) < 0)
-		fprintf(stderr, "runner: bind: %%s\n", strerror(errno));
-
-	fd = open("/runner-image", O_WRONLY | O_CREAT | O_TRUNC, 0777);
-	if(fd < 0){
-		fprintf(stderr, "runner: create: %%s\n", strerror(errno));
-		return 1;
+	if(untar_name[0] != 0){
+		/*
+		 * The tar tree wants /dev/null, /dev/cons and friends.
+		 * Plan 9's getenv() reads /env, so the environment device has
+		 * to be there too; APEX's setenv() and execve() write #e.
+		 */
+		bind("#c", "/dev", MREPL);
+		bind("#e", "/env", MREPL);
+		if(bind("#@", "/initramfs", MREPL | MCREATE) < 0)
+			fprintf(stderr, "runner: bind: %%s\n", strerror(errno));
+		if(untar(untar_name, untar_dest) < 0)
+			return 1;
+	}else{
+		if(bind("#@", "/", MREPL | MCREATE) < 0)
+			fprintf(stderr, "runner: bind: %%s\n", strerror(errno));
+		mkdir("/env", 0777);
+		bind("#e", "/env", MREPL | MCREATE);
+		mkdir("/dev", 0777);
+		bind("#c", "/dev", MREPL | MCREATE);
 	}
-	{
-		unsigned long off = 0;
 
-		while(off < sizeof image){
-			long n = write(fd, image + off, sizeof image - off);
-
-			if(n <= 0){
-				fprintf(stderr, "runner: write: %%s\n",
-				    strerror(errno));
-				return 1;
-			}
-			off += n;
+	if(have_image){
+		fd = open(untar_name[0] != 0 ? "/initramfs/runner-image" :
+		    "/runner-image", O_WRONLY | O_CREAT | O_TRUNC, 0777);
+		if(fd < 0){
+			fprintf(stderr, "runner: create: %%s\n", strerror(errno));
+			return 1;
 		}
+		{
+			unsigned long off = 0;
+
+			while(off < sizeof image){
+				long n = write(fd, image + off, sizeof image - off);
+
+				if(n <= 0){
+					fprintf(stderr, "runner: write: %%s\n",
+					    strerror(errno));
+					return 1;
+				}
+				off += n;
+			}
+		}
+		close(fd);
 	}
-	close(fd);
 
 	for(i = 0; i < (int)(sizeof files / sizeof files[0]); i++)
 		if(files[i].path[0] != 0 &&
@@ -155,6 +327,18 @@ main(void)
 			    strerror(errno));
 			return 1;
 		}
+	for(i = 0; envs[i] != 0; i++){
+		char name[128];
+		const char *eq = strchr(envs[i], '=');
+		size_t n;
+
+		if(eq == 0 || (n = eq - envs[i]) >= sizeof name)
+			continue;
+		memcpy(name, envs[i], n);
+		name[n] = 0;
+		setenv(name, eq + 1, 1);
+	}
+
 	fprintf(stderr, "runner: wrote %%d files, exec %%s\n", i, args[0]);
 
 	if(args2[0] != 0){
@@ -162,7 +346,9 @@ main(void)
 		pid_t pid = fork();
 
 		if(pid == 0){
-			execv("/runner-image", args);
+			execv(exec_path[0] != 0 ? exec_path :
+			    (untar_name[0] != 0 ? "/initramfs/runner-image" :
+			    "/runner-image"), args);
 			fprintf(stderr, "runner: exec %%s: %%s\n", args[0],
 			    strerror(errno));
 			_exit(127);
@@ -181,7 +367,9 @@ main(void)
 		return 1;
 	}
 
-	execv("/runner-image", args);
+	execv(exec_path[0] != 0 ? exec_path :
+	    (untar_name[0] != 0 ? "/initramfs/runner-image" :
+	    "/runner-image"), args);
 	fprintf(stderr, "runner: exec: %%s\n", strerror(errno));
 	return 1;
 }
@@ -208,6 +396,12 @@ def c_string(s: str) -> str:
     return '"' + "".join(out) + '"'
 
 
+def argv_init(items: list[str]) -> str:
+    if not items:
+        return "\t0"
+    return ",\n".join("\t" + c_string(a) for a in items) + ",\n\t0"
+
+
 def collect_tree(host: Path, guest: str, suffixes: tuple[str, ...]):
     """Collect files from host under guest, preserving relative paths."""
     files = []
@@ -229,6 +423,17 @@ def main() -> None:
                     help="embed files from HOSTDIR under GUESTDIR")
     ap.add_argument("--suffix", default=".td",
                     help="only embed files with this suffix (default .td)")
+    ap.add_argument("--env", action="append", default=[],
+                    metavar="NAME=VALUE",
+                    help="variable to put in the guest environment")
+    ap.add_argument("--in-tree", default="",
+                    metavar="PATH",
+                    help="run PATH from the unpacked tree instead of "
+                         "writing the embedded image (argv[0] becomes PATH)")
+    ap.add_argument("--untar", default="",
+                    metavar="BOOTFILE:DEST",
+                    help="unpack the ustar archive at BOOTFILE (a boot "
+                         "file, e.g. /boot/sdk.tar) into DEST before running")
     ap.add_argument("--then", action="append", default=[],
                     help="program to run after the first one succeeds; "
                          "repeatable, executed in order")
@@ -252,17 +457,26 @@ def main() -> None:
         blob.extend(contents)
 
     argv = [Path(opts.elf).name] + opts.args
+    if opts.in_tree:
+        argv[0] = opts.in_tree
     src = OUT / "runner.c"
     OUT.mkdir(parents=True, exist_ok=True)
     then = opts.then[0] if opts.then else ""
     then_args = [then] if then else []
+    untar_name, untar_dest = "", ""
+    if opts.untar:
+        untar_name, untar_dest = opts.untar.split(":", 1)
     src.write_text(RUNNER % (
         emit(image),
         emit(bytes(blob)),
         ",\n".join(f'\t{c_string(p)}, {o}, {n}' for p, o, n in table) or
         '\t{"", 0, 0}',
-        ",\n".join("\t" + c_string(a) for a in argv) + ",\n\t0",
-        ",\n".join("\t" + c_string(a) for a in then_args) + ",\n\t0"))
+        argv_init(argv),
+        argv_init(then_args),
+        1 if not opts.in_tree else 0, c_string(opts.in_tree),
+        c_string(untar_name), c_string(untar_dest),
+        (",\n".join("\t" + c_string(e) for e in opts.env) + ",\n\t0")
+        if opts.env else "\t0"))
 
     # Link with the Plan 9 libc ahead of the APEX archive: APEX's BSD socket
     # layer also defines bind(); the namespace bind() is the one a runner

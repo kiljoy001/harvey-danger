@@ -43,6 +43,18 @@ def main() -> None:
                          "until the guest exits")
     ap.add_argument("--marker", default=MARKER,
                     help="string that must appear in the boot transcript")
+    ap.add_argument("--archive",
+                    help="file to load as the boot archive at 0x50000000 "
+                         "(the kernel exposes it under /boot)")
+    ap.add_argument("--deadline", type=float, default=0,
+                    help="overall wall-clock limit in seconds (default: "
+                         "none, but a panic/reboot loop never goes idle)")
+    ap.add_argument("--timeout", type=float, default=0,
+                    help="seconds of silence to allow before stopping "
+                         "(default: 8, or an hour when an archive is used)")
+    ap.add_argument("--mem", type=int, default=0,
+                    help="guest RAM in MiB (default: 512, or enough to "
+                         "hold the boot archive)")
     args = ap.parse_args()
 
     if args.elf:
@@ -61,7 +73,14 @@ def main() -> None:
             "--output", str(header), "--archive", str(OUT / "userland.img"),
         ], check=True)
 
+    # A previous run that was killed mid-boot leaves the substituted image
+    # in place.  Keep a pristine copy so the next run restores it instead of
+    # treating the substitution as the original.
+    backup = header.with_suffix(".h.orig")
+    if backup.is_file():
+        header.write_text(backup.read_text())
     original = header.read_text()
+    backup.write_text(original)
     # build_userland.py has emitted the image both as a {0x..} array and as
     # a concatenated C string literal; match either declaration.
     text, count = re.subn(
@@ -74,22 +93,40 @@ def main() -> None:
     # With ARM64_REUSE_USERLAND=1 build_kernel cannot see that the header
     # changed, so drop the object that includes it.
     (OUT / "sys_src_9_aarch64_boot.c.o").unlink(missing_ok=True)
+    transcript = ""
     try:
         env = dict(os.environ, ARM64_REUSE_USERLAND="1")
         subprocess.run([sys.executable, str(HERE / "build_kernel.py")],
                        check=True, env=env)
 
+        mem = args.mem
+        if mem == 0 and args.archive:
+            # The archive sits at 0x50000000 and grows upwards; the virt
+            # RAM base is 0x40000000, so the guest needs 256 MiB plus the
+            # archive itself.
+            size = Path(args.archive).stat().st_size
+            mem = 256 + (size >> 20) + 256
+            mem = ((mem + 255) // 256) * 256
+        if mem == 0:
+            mem = 512
         command = ["qemu-system-aarch64", "-machine", "virt",
-                   "-cpu", "cortex-a57", "-m", "512M", "-smp", "1",
+                   "-cpu", "cortex-a57", "-m", f"{mem}M", "-smp", "1",
                    "-nographic", "-monitor", "none",
                    "-kernel", str(OUT / "harvey.img")]
+        if args.archive:
+            command += ["-device",
+                        f"loader,file={args.archive},addr=0x50000000"]
         sys.path.insert(0, str(HERE))
         from test_virt import boot_until
-        transcript = boot_until(command, args.marker)
+        idle = args.timeout or (3600 if args.archive else 8)
+        transcript = boot_until(command, args.marker, idle=idle,
+                                limit=8 * 1024 * 1024,
+                                total=args.deadline)
     finally:
         if args.dump:
             Path(args.dump).write_text(transcript)
         header.write_text(original)
+        backup.unlink(missing_ok=True)
         # Make sure the next normal build recompiles the object that
         # embedded our init image.
         (OUT / "sys_src_9_aarch64_boot.c.o").unlink(missing_ok=True)

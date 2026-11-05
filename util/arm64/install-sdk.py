@@ -17,7 +17,10 @@ from pathlib import Path
 import argparse
 import os
 import shutil
+import struct
 import sys
+import tarfile
+import io
 
 ROOT = Path(__file__).resolve().parents[2]
 HERE = Path(__file__).resolve().parent
@@ -31,6 +34,7 @@ CONFIG = """\
 -mno-outline-atomics
 -fno-stack-protector
 -D_SUSV2_SOURCE -D_POSIX_SOURCE -D_LIMITS_EXTENSION -D_GNU_SOURCE -DHARVEY
+-I{root}/include
 -I{root}/include/machine
 -I{root}/include/target
 -I{root}/include/c++
@@ -69,8 +73,19 @@ def main() -> None:
     ap.add_argument("--llvm", default="/tmp/opencode/llvm-arm64-full",
                     help="build tree with bin/clang-22 and bin/lld")
     ap.add_argument("--out", default=str(ROOT / "build" / "arm64-sdk"))
-    ap.add_argument("--root", default="/sdk",
+    ap.add_argument("--root", default="/initramfs/sdk",
                     help="where the tree will live in the guest")
+    ap.add_argument("--no-cxx-alias", action="store_true",
+                    help="omit the clang++ copy (invoke clang -x c++ "
+                         "instead; saves a second copy of the binary)")
+    ap.add_argument("--with-ar", action="store_true",
+                    help="also ship llvm-ar and llvm-ranlib")
+    ap.add_argument("--tar", default="",
+                    help="also write a ustar archive of the tree (as "
+                         "sdk/...)")
+    ap.add_argument("--boot-archive", default="",
+                    help="write an O9BOOT01 boot archive holding that tar "
+                         "as /boot/sdk.tar")
     args = ap.parse_args()
 
     llvm = Path(args.llvm)
@@ -85,10 +100,17 @@ def main() -> None:
     (out / "bin").mkdir(parents=True)
     (out / "lib").mkdir()
     (out / "include").mkdir()
+    (out / "tmp").mkdir()
 
-    for name, src in (("clang", clang), ("clang++", clang), ("ld.lld", lld),
-                      ("llvm-ar", llvm / "bin" / "llvm-ar"),
-                      ("llvm-ranlib", llvm / "bin" / "llvm-ar")):
+    tools = [("clang", clang), ("ld.lld", lld)]
+    if not args.no_cxx_alias:
+        tools.append(("clang++", clang))
+    if args.with_ar:
+        # llvm-ar is another copy of a large static binary; only the
+        # compilers are needed to prove a compile on a small guest.
+        tools += [("llvm-ar", llvm / "bin" / "llvm-ar"),
+                  ("llvm-ranlib", llvm / "bin" / "llvm-ar")]
+    for name, src in tools:
         if src.is_file():
             shutil.copyfile(src, out / "bin" / name)
             os.chmod(out / "bin" / name, 0o755)
@@ -114,7 +136,10 @@ def main() -> None:
     if not libcxx.is_dir():
         sys.exit("missing build/arm64-libcxx; run build_libcxx.py first")
     copy_tree(libcxx / "c++", out / "include" / "c++")
-    shutil.copyfile(libcxx / "compat.h", out / "include" / "compat.h")
+    for name in ("compat.h", "pthread.h", "sched.h", "cxxabi.h",
+                 "__cxxabi_config.h"):
+        if (libcxx / name).is_file():
+            shutil.copyfile(libcxx / name, out / "include" / name)
 
     for name in ("libc++.a", "libunwind.a"):
         shutil.copyfile(ROOT / "build" / "arm64-libcxx" / "lib" / name,
@@ -133,6 +158,34 @@ def main() -> None:
         root=root, extra="-fexceptions -frtti -D_WCHAR_T\n"
                          f"-include {root}/include/compat.h") +
         LINK.format(root=root))
+    blob = None
+    if args.tar or args.boot_archive:
+        buf = io.BytesIO()
+        with tarfile.open(fileobj=buf, mode="w",
+                          format=tarfile.USTAR_FORMAT) as tar:
+            for path in sorted(out.rglob("*")):
+                rel = "sdk/" + path.relative_to(out).as_posix()
+                if path.is_dir():
+                    info = tarfile.TarInfo(rel)
+                    info.type = tarfile.DIRTYPE
+                    info.mode = 0o755
+                    tar.addfile(info)
+                elif path.is_file():
+                    info = tar.gettarinfo(str(path), arcname=rel)
+                    with open(path, "rb") as handle:
+                        tar.addfile(info, handle)
+        blob = buf.getvalue()
+        if args.tar:
+            Path(args.tar).write_bytes(blob)
+            print(f"ARM64 SDK tar: {args.tar} ({len(blob)} bytes)")
+        if args.boot_archive:
+            name = b"sdk.tar"
+            total = 24 + 48 + len(blob)
+            header = struct.pack("<8sIIII", b"O9BOOT01", 1, 1, total, 0)
+            entry = struct.pack("<32sIIII", name, 24 + 48, len(blob),
+                                0o555, 0)
+            Path(args.boot_archive).write_bytes(header + entry + blob)
+
     print(f"ARM64 SDK: {out} (guest root {root})")
 
 
