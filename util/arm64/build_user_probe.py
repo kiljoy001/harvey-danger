@@ -84,19 +84,33 @@ uartputs(char *s)
 		uartputc(*s++);
 }
 
+/*
+ * "Done" is the boot harness handshake, not a syscall: svc #3 with x0==57
+ * makes arm64usertrap() resume the kernel at arm64processresume(), which
+ * releases the boot worker.
+ *
+ * The loop afterwards must never run, and must never be a bare spin: this
+ * process runs at PriNormal, and an EL0 spin keeps the CPU from
+ * lower-priority work.  Sleep is syscall 17, with the number in x8.
+ */
+static void
+idleforever(void)
+{
+	for(;;)
+		__asm__ volatile("mov x8, #17; mov x0, #1000; svc #0"
+		    : : : "x0", "x8", "memory");
+}
+
 void
 main(int argc, char **argv)
 {
 	if(argc != 1 || argv != (char **)0x4000002000ULL || argv[0] != nil ||
-	   _tos != (Tos *)0x4000002e00ULL || nsec() == 0){
+	   _tos != (Tos *)0x4000002e00ULL || nsec() == 0)
 		uartputs("HARVEY-ARM64 LIBC-USER FAIL\n");
-		__asm__ volatile("mov x0, #58; svc #3");
-	}else{
+	else
 		uartputs("HARVEY-ARM64 LIBC-USER PASS\n");
-		__asm__ volatile("mov x0, #57; svc #3");
-	}
-	for(;;)
-		;
+	__asm__ volatile("mov x0, #57; svc #3");
+	idleforever();
 }
 ''')
     script = out / "probe.ld"

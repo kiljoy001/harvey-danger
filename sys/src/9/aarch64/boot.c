@@ -206,10 +206,18 @@ static Fdtinfo *bootinfo;
 void
 arm64processresume(void)
 {
+	Proc *up = externup();
+
 	userprocessphase = 2;
 	arm64uartputs("HARVEY-ARM64 USER-PROCESS PASS\n");
-	for(;;)
-		sched();
+	/*
+	 * The probe is finished.  It has no parent, so a clean exit would be
+	 * taken for init shutting the machine down; die as a kernel process
+	 * instead.  Looping here kept a PriNormal process permanently ready,
+	 * which starved every lower-priority process in the system.
+	 */
+	up->kp = 1;
+	pexit("user probe done", 0);
 }
 
 static void
