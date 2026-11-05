@@ -7,6 +7,7 @@
 #include "panfrost/compiler/bifrost/bifrost/disassemble.h"
 #include "spirv/nir_spirv.h"
 #include "glsl_types.h"
+#include "panfrost/lib/pan_format.h"
 
 #include "util/u_dynarray.h"
 #include <stdio.h>
@@ -208,7 +209,8 @@ emit_texture(unsigned width, unsigned height)
    pan_pack(&tex, TEXTURE, cfg) {
       cfg.type = 2;
       cfg.dimension = MALI_TEXTURE_DIMENSION_2D;
-      cfg.format = MALI_RGBA8_UNORM;
+      /* The Format field is packed: format << 12 | component order. */
+      cfg.format = MALI_PACK_FMT(RGBA8_UNORM, RGBA, L);
       cfg.width = width;
       cfg.height = height;
       cfg.swizzle = 1672;	/* RGBA component swizzle */
