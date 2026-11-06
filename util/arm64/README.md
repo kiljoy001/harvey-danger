@@ -133,8 +133,16 @@ was current now.  `schedinit` finishes with the Proc first; `psalloc`/
 current Proc's page tables and `mmuswitch` consumes `newtlb` for Procs that
 were not running.  Page-table release is deferred to a user-return boundary
 so a timer interrupt inside a syscall cannot unmap the kernel's in-flight
-user buffer.  A separate Page/segment COW race in `fixfault` still appears
-when several RFMEM threads fault the same image pages across CPUs.
+user buffer.
+
+The per-CPU HZ timers used to be heap allocations immediately below the
+init process's kernel stack; a stack underflow corrupted `tmode`/`tf`/`tt`
+and `timerintr()` paniced.  They now live in a static BSS array, and every
+kernel stack has an unused 8 KiB gap below its base.  A 150 s GICv3 boot
+reaches `RC START` with `IPI PASS` and no timer panic.  A separate
+Page/segment COW race in `fixfault` still appears when several RFMEM
+threads fault the same image pages across CPUs, and an unpinned full
+self-build still dies in that path.
 
 User FP/SIMD state is now part of the context switch.  The kernel is built
 with `-mgeneral-regs-only`, so `procsave`/`procrestore` use `fpu.S` to save
