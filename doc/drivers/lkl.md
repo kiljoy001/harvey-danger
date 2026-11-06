@@ -394,15 +394,40 @@ bisecting:
 * `timer_free` could free the `Timer` while the timer thread was still
   using it.  The thread now owns the object and frees it on exit.
 
-## Remaining guest deadlock
+## Root cause: a Harvey kernel timer wakeup is lost
 
-The nanosleep payload (`lklboot -t`) still hangs after `getpid`
-returns, and a dump shows the CPU permit owned by a task whose host
-thread is parked inside `__switch_to` (`cpu.owner=2`, thread 2 in state
-`d` on its `sched_sem`).  All other threads are parked, the timer thread
-has fired and has no armed timer.  This is a lost handoff in LKL's
-scheduler, independent of the two fixes above, and it is now a
-deterministic reproduction that runs in QEMU in seconds.
+The nanosleep payload (`lklboot -t`) hangs after `getpid` returns, and
+it is not an LKL scheduler defect at all.  Three independent results pin
+it down:
+
+* The LKL guest kernel is fine: `tools/lkl/tests/boot` passes all 35
+  tests (including `nanosleep` and 20 concurrent syscall threads) when
+  built natively on x86_64 with liblkl's host ops.
+* The host layer is fine: `lklboot -s` passes clock, preemption,
+  block/wake, 20k semaphore, 80k mutex and `jmp_buf` checks.
+* A plain `defconfig` build (no MMC/OF fat options) hangs identically,
+  so the configuration is not involved.
+
+The kernel side is the smoking gun.  Attaching lldb to QEMU at the
+freeze shows the Harvey kernel in `idlehands`:
+
+```text
+idlehands <- sched <- schedinit <- arm64kernelstart <- arm64main
+```
+
+Every process is asleep.  The host timer thread's `sleep(1)` -- a 1ms
+`tsleep` -- is supposed to wake it constantly so it can fire the LKL
+clockevent, but its "beat" counter stops at the freeze: the `tsleep`
+timer is lost.  With the timer thread parked forever, no clockevent is
+ever delivered, no guest task runs, and the `semacquire`-blocked LKL
+host threads are never posted.  The whole machine idles.
+
+This is the same Harvey timer corruption the SMP session has been
+chasing (`timerintr` re-arm, `Proc.Timer` recycling, the `TIMERBAD`
+diagnostic in `portclock.c`), now with a deterministic reproduction:
+boot `lklboot -t` under QEMU.  `lklboot -s` (host only) does not
+trigger it because it does not churn `tsleep` the way LKL does.
+
 
 ## Remaining stall
 
