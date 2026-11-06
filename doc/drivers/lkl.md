@@ -418,37 +418,42 @@ Instrumentation notes:
 
 ## Diagnosis: the guest goes idle and never wakes (2026-11-05)
 
-The board-only stall reproduces with the watchdog dumping only when the
-handoff state is frozen, so the observation cannot mask the bug.  A
-stalling run shows:
+The board-only stall is a genuine idle, not a busy loop and not a stuck
+CPU handoff.  With the handoff ring and only `-d` output (so nothing can
+perturb a quiet run), a stalling run shows:
 
 ```
-own=0 st: 1D<sem> 2D<sem>@threads_init c0 3R 4X ... 5..10D<sched_sem> c0
+own=0 st: 1D<sem> 2D<sched_sem>@threads_init c0 3R 4X ... 5..10D<sched_sem> c0
 tr: 2G2/1 212/1 2g2/1 2O5/1 ... 5O2/1 2p2/0 2P0/0 4G4/1 4p4/0 4P0/0 ...
 ```
 
-**Correction to an earlier reading:** `own=0` with every task parked is
-*normal idle*, not a stuck CPU handoff.  Thread 2 (the boot task) does
-`put`/release (`2p2/0`, `2P0/0`) and immediately parks on its own
-`sched_sem` (allocated by `threads_init`), which is what
-`lkl_idle_park()` does.  Another thread then repeatedly takes and
-releases the CPU (`4G4/1 4p4/0 4P0/0`), which is consistent with the
-timer thread running `t->fn()`.
+Thread 2 (the boot task) runs, does `put`/release and parks on its own
+`sched_sem`; another thread then repeatedly takes and releases the CPU
+(the timer thread running `t->fn()`).  The CPU is free, every Linux task
+is parked, and the timer callback runs -- but no task becomes runnable.
 
-So the guest is genuinely idle: the CPU is free, every Linux task is
-parked, and the timer callback is running, yet no task becomes runnable.
-The missing wakeup is in the guest timer/IRQ delivery, not in the CPU
-semaphore.
+Ruled out by quiet-run retests (each still stalls intermittently):
 
-`hmut_unlock()` did have a real defect -- it cleared `owner` and dropped
-the meta-lock before posting the permit -- and publishing the permit
-first is correct (it narrows the window), but it is **not** the cause.
+* 512 KiB host thread stacks (so it is not a `curtid()` stack-mask
+  collision);
+* `lkl_idle_park()` vs the lazy `kernel_thread()` in `arch_cpu_idle()`;
+* publishing the mutex permit before dropping the meta-lock (kept: it is
+  correct, but not the cause);
+* the `Proc`/`Timer` recycling fix in `port.c` (other session);
+* creating the idle host task before the `cpu_startup_entry()` loop
+  (`lkl_idle_start()`; kept, but not sufficient).
 
-Next: instrument the timer path -- whether `lkl_cpu_try_run_irq()` gets
-the CPU and `run_irqs()` actually invokes the clockevent handler, and
-whether a task is made runnable afterwards.  The `-d` trace masks the
-bug, so the frozen-state watchdog and the handoff ring are the tools to
-use.
+Working hypothesis: an IRQ delivered from the **host timer thread** runs
+the clockevent handler and wakes tasks, but that thread is not a Linux
+task, so it cannot `schedule()`.  The idle task is parked on its
+`sched_sem`, and only `__switch_to()` posts that semaphore.  With no task
+in a position to schedule, the newly runnable task never gets its host
+thread woken.
+
+Next design step: make the timer-IRQ path arrange a schedule in a task
+context -- for example, have `lkl_trigger_irq()` wake the idle task (or
+the idle host task) on its `sched_sem` when `need_resched()`, so the
+idle task returns to `do_idle()` and calls `schedule_idle()`.
 
 ## Fat kernel experiment (2026-11-05)
 
