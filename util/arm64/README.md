@@ -124,7 +124,17 @@ directly when it builds a thread's TLS block.  A thread's stack was freed by
 the join now leaves it to process teardown.  Periodic timers are re-armed
 before their handler runs: the old post-handler `tadd()` could touch a
 `Proc.Timer` after the handler had woken a process that exited and recycled
-its Proc on another CPU.
+its Proc on another CPU.  The heavy build also exposed two scheduling races:
+`schedinit` wrote `up->mach`/`updatecpu(up)` after `ready()`/`psrelease()` had
+made the Proc visible to another CPU, and a per-CPU `mmuflush` flag left by a
+migrated process made `hzclock` release the page tables of whatever process
+was current now.  `schedinit` finishes with the Proc first; `psalloc`/
+`psrelease` carry arena/alignment/reuse guards; `hzclock` releases only the
+current Proc's page tables and `mmuswitch` consumes `newtlb` for Procs that
+were not running.  Page-table release is deferred to a user-return boundary
+so a timer interrupt inside a syscall cannot unmap the kernel's in-flight
+user buffer.  A separate Page/segment COW race in `fixfault` still appears
+when several RFMEM threads fault the same image pages across CPUs.
 
 User FP/SIMD state is now part of the context switch.  The kernel is built
 with `-mgeneral-regs-only`, so `procsave`/`procrestore` use `fpu.S` to save
@@ -133,29 +143,35 @@ different CPU inherits the previous occupant's registers.  An eight-process
 register stress test failed with another child's value before the change
 and passes after it.
 
-Status: 1, 2 and 4 vCPU boots pass, and `test-selfbuild.py --smp 4` compiles,
-links and runs the guest `llvm-as` with byte-identical bitcode.
-`test-selfbuild-tblgen.py --smp 4 --jobs 4` compiles several TableGen TUs at
-once through `TGEN_JOBS`; a limit-8 run took 80 s instead of the 8x26 s a
-sequential run needs.  Four concurrent clang++ processes do not fit in the
-3 GiB QEMU guest, though: a full `--jobs 4` run stopped at 55/77 with
-`kickpager(): no physical memory`, and TCG contention made it slower than
-the sequential build.  The default remains `--jobs 1`; parallel builds need
-more guest RAM (or the board's second memory bank) first.  Cross-CPU
-page-table shootdown still uses the existing `procflushseg()`/`hzclock`
-polling path, not SGIs, and an EL0 code replacement invalidates the I-cache
-only on the core that performs it.
+Status: 1, 2 and 4 vCPU boots pass.  The full 77-TU `llvm-tblgen`
+self-build compiles, links and matches the host byte for byte
+(`TGEN VT-MATCH 46644 bytes`) on one vCPU and on a 4-vCPU kernel with user
+work pinned to CPU0.  The unpinned 4-vCPU build passes the 20-TU gate after
+the Proc-reuse/stale-mmuflush fixes but still hits a Page/segment COW race
+in `fixfault` under heavy thread churn, so the default SMP build remains
+pinned or uniprocessor.  `test-selfbuild.py --smp 4` compiles, links and
+runs the guest `llvm-as` with byte-identical bitcode.
+
+`test-selfbuild-tblgen.py --jobs N` compiles several TableGen TUs at once
+through `TGEN_JOBS`; `--jobs > 1` raises the guest to 6 GiB because the old
+3 GiB run hit `kickpager(): no physical memory`.  The exact-size allocator
+lowers the per-clang heap, but the default remains `--jobs 1` until the
+larger parallel run is measured.  Cross-CPU page-table shootdown still uses
+the `procflushseg()`/`hzclock` polling path (now per-Proc safe), not SGIs,
+and an EL0 code replacement invalidates the I-cache only on the core that
+performs it.
 
 ### Heap and large allocations
 
 APEX `malloc` keeps allocations >= 1 MiB at their exact size on a large
-free list instead of rounding to the next power of two, and extends the
-block at the top of the heap in place on `realloc` (`libc` now provides
-`sbrkbrk()`).  The old power-of-two buckets retained every old size class;
-one guest `clang` reached 1.4-1.6 GB of segments for a TU whose host build
-peaks near 100 MB.  The heap is shared by `rfork(RFMEM)` threads, so it is
-not shrunk; parallel builds still need RAM, and on the board that means the
-second memory bank first.
+free list instead of rounding to the next power of two.  The old
+power-of-two buckets retained every old size class; one guest `clang`
+reached 1.4-1.6 GB of segments for a TU whose host build peaks near
+100 MB.  An in-place top-of-heap growth was tried and dropped: it moved
+the break on every growing realloc, and `ibrk()`'s `mmuflush` only covers
+the calling thread while `rfork(RFMEM)` threads share the BSS segment with
+separate page tables.  The heap is not shrunk; parallel builds still need
+RAM, and on the board that means the second memory bank first.
 
 `Proc.Timer` is zeroed when a `Proc` is allocated and detached in `pexit()`,
 so a recycled Proc cannot inherit a stale timer-list pointer.
