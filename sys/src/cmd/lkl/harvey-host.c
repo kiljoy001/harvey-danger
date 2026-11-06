@@ -164,6 +164,7 @@ struct Tstate {
 	int	op;
 	void	*p;
 	int	v;
+	uvlong	stamp;
 };
 static Tstate	 tstate[Ntid];
 
@@ -214,6 +215,7 @@ semra(void *p)
 		tstate[_t].op = (o); \
 		tstate[_t].p = (void*)(uintptr)(ptr); \
 		tstate[_t].v = (val); \
+		tstate[_t].stamp = nsec(); \
 	} \
 }while(0)
 
@@ -719,7 +721,6 @@ htimer_thread(void *x)
 	vlong d, lastbeat = 0;
 
 	for(;;){
-		sleep(1);
 		if(nsec() - lastbeat > 500*1000*1000){
 			lastbeat = nsec();
 			HDBG("beat\n");
@@ -727,21 +728,34 @@ htimer_thread(void *x)
 		lock(&t->lk);
 		if(t->stop){
 			unlock(&t->lk);
-			break;
+			/* the timer thread owns t from here */
+			free(t);
+			_exits(nil);
 		}
 		if(!t->armed){
 			unlock(&t->lk);
+			/* Idle: still notice a new arming quickly. */
+			sleep(1);
 			continue;
 		}
 		d = t->deadline - nsec();
 		if(d > 0){
 			unlock(&t->lk);
+			/* Sleep until the deadline (kill(1) ticks) instead of
+			 * sampling once a second: the guest must see its
+			 * clockevent at the requested time. */
+			if(d > 1000000)
+				sleep((d + 999999) / 1000000);
+			else
+				sleep(1);
 			continue;
 		}
 		t->armed = 0;
 		unlock(&t->lk);
 		HDBG("fire\n");
+		TS(curtid(), 'F', t, 0);
 		t->fn();
+		TS(curtid(), 'f', t, 0);
 		HDBG("fired\n");
 	}
 	_exits(nil);
@@ -766,14 +780,16 @@ hwatchdog(void *arg)
 			continue;
 		USED(k);
 
-		hdbg("own=%d st:", g_owner);
+		hdbg("own=%d cpusem=%p st:", g_owner, cpusem);
 		for(i = 0; i < Ntid; i++){
 			if(tstate[i].op == 0)
 				continue;
 			hdbg(" %d%c%p/%d", i, tstate[i].op,
 			     tstate[i].p, tstate[i].v);
 			if(semkind(tstate[i].p) == 's')
-				hdbg("c%d", ((Sem*)tstate[i].p)->count);
+				hdbg("c%d@%p", ((Sem*)tstate[i].p)->count,
+				     semra(tstate[i].p));
+			hdbg("/%lud", (ulong)((nsec()-tstate[i].stamp)/1000000));
 		}
 		hdbg("\ntr:");
 		h = trhead;
@@ -811,11 +827,27 @@ static int
 htimer_set_oneshot(void *timer, unsigned long delta)
 {
 	Timer *t = timer;
+	vlong now;
+	uvlong far;
 
 	HDBG("arm %lud\n", delta);
+	now = nsec();
+	if(now < 0)
+		now = 0;
 	lock(&t->lk);
-	t->deadline = nsec() + delta;
-	t->armed = 1;
+	/*
+	 * LKL stops the tick by programming KTIME_MAX (NO_HZ_IDLE).  A signed
+	 * now + delta overflows into the past, so the timer would fire
+	 * immediately, forever.  Treat anything past the representable
+	 * deadline as "no event scheduled".
+	 */
+	far = (uvlong)~0ULL >> 1;	/* INT64_MAX */
+	if((uvlong)delta > far - (uvlong)now)
+		t->armed = 0;
+	else{
+		t->deadline = now + (vlong)delta;
+		t->armed = 1;
+	}
 	unlock(&t->lk);
 	return 0;
 }
@@ -829,8 +861,14 @@ htimer_free(void *timer)
 	t->stop = 1;
 	t->armed = 0;
 	unlock(&t->lk);
+	/*
+	 * The timer thread owns the Timer from here and frees it just before
+	 * exiting.  A shutdown invoked from the callback itself (self-join)
+	 * must not free memory the thread is about to touch.
+	 */
+	if((lkl_thread_t)curtid() == t->tid)
+		return;
 	hthread_join(t->tid);
-	free(t);
 }
 
 /* ---- I/O, MMIO, jmp_buf ---- */
@@ -949,13 +987,20 @@ hiomem_access(const volatile void *addr, void *val, int size, int write)
 static void
 hjmp_set(struct lkl_jmp_buf *jb, void (*f)(void))
 {
-	if(setjmp(*(jmp_buf*)jb) == 0)
+	int r;
+
+	TS(curtid(), 'J', jb, 0);
+	r = setjmp(*(jmp_buf*)jb);
+	TS(curtid(), 'j', jb, r);
+	if(r == 0)
 		f();
+	TS(curtid(), 'k', jb, r);
 }
 
 static void
 hjmp_longjmp(struct lkl_jmp_buf *jb, int val)
 {
+	TS(curtid(), 'L', jb, val);
 	longjmp(*(jmp_buf*)jb, val);
 }
 
@@ -991,6 +1036,197 @@ hmunmap(void *addr, unsigned long size)
 	USED(size);
 	free(addr);
 	return 0;
+}
+
+/* ---- host-layer self-test ------------------------------------------- */
+
+/*
+ * Deterministic check of the primitives LKL's scheduler is built on:
+ * a semaphore ping-pong between host threads and a contended mutex.
+ * If either of these loses a wakeup or a lock, every guest handoff is
+ * suspect, so run this before blaming the kernel.
+ */
+typedef struct Bounce Bounce;
+struct Bounce {
+	struct lkl_sem	*wait;
+	struct lkl_sem	*post;
+	struct lkl_sem	*done;
+	int		n;
+};
+
+static void
+sembounce(void *x)
+{
+	Bounce *b = x;
+	int i;
+
+	for(i = 0; i < b->n; i++){
+		hsem_down(b->wait);
+		hsem_up(b->post);
+	}
+	hsem_up(b->done);
+}
+
+typedef struct Mstress Mstress;
+struct Mstress {
+	struct lkl_mutex	*m;
+	struct lkl_sem		*done;
+	int			*counter;
+	int			n;
+};
+
+static void
+mutstress(void *x)
+{
+	Mstress *s = x;
+	int i;
+
+	for(i = 0; i < s->n; i++){
+		hmut_lock(s->m);
+		(*s->counter)++;
+		hmut_unlock(s->m);
+	}
+	hsem_up(s->done);
+}
+
+typedef struct Waiter Waiter;
+struct Waiter {
+	struct lkl_sem	*sem;
+	vlong		delay;
+};
+
+/* Post after a delay, so the other side is already blocked. */
+static void
+latepost(void *x)
+{
+	Waiter *w = x;
+	vlong t0 = nsec();
+
+	lkl_printf("hostselftest: latepost delay=%lld\n", w->delay);
+	while(nsec() - t0 < w->delay)
+		;
+	hsem_up(w->sem);
+}
+
+/*
+ * Can a spinning host thread be preempted?  LKL's idle loop runs in user
+ * mode without issuing a syscall, so if the host cannot preempt it, every
+ * other thread (notably the timer) starves.  The spinner is bounded so a
+ * failure is reported instead of hanging the test.
+ */
+static void
+spinthread(void *x)
+{
+	volatile int i;
+
+	for(i = 0; i < 300000000; i++)
+		;
+	hsem_up((struct lkl_sem*)x);
+}
+
+void
+lklhost_selftest(void)
+{
+	static Bounce b;
+	static Mstress ms;
+	static Waiter w;
+	static int counter;
+	struct lkl_sem *a, *c, *done;
+	struct lkl_mutex *m;
+	vlong t0, dt;
+	int i, n = 20000;
+
+	t0 = nsec();
+	sleep(1000);
+	dt = (nsec() - t0) / 1000000;
+	lkl_printf("hostselftest: clock sleep(1000) %lldms %s\n",
+		   dt, dt > 900 && dt < 3000 ? "PASS" : "FAIL");
+
+	/*
+	 * Preemption: while the spinner runs, the main thread must still be
+	 * able to run a 10ms sleep.  If creation returns only after the
+	 * spinner finishes, the host does not preempt user code.
+	 */
+	a = hsem_alloc(0);
+	if(a == nil){
+		lkl_printf("hostselftest: sem_alloc failed\n");
+		return;
+	}
+	t0 = nsec();
+	if(hthread_create(spinthread, a) == 0)
+		lkl_printf("hostselftest: spinner create failed\n");
+	sleep(10);
+	dt = (nsec() - t0) / 1000000;
+	hsem_down(a);
+	/* One 100ms scheduling quantum is the expected delay. */
+	lkl_printf("hostselftest: preempt sleep-returns %lldms %s\n",
+		   dt, dt < 500 ? "PASS" : "FAIL");
+	hsem_free(a);
+
+	/* Block first, post later: exercises a real wakeup. */
+	a = hsem_alloc(0);
+	if(a == nil){
+		lkl_printf("hostselftest: sem_alloc failed\n");
+		return;
+	}
+	w.sem = a;
+	w.delay = 100*1000*1000;
+	if(hthread_create(latepost, &w) == 0)
+		lkl_printf("hostselftest: latepost create failed\n");
+	lkl_printf("hostselftest: block/wake count before=%d\n", ((Sem*)a)->count);
+	t0 = nsec();
+	hsem_down(a);
+	dt = (nsec() - t0) / 1000000;
+	lkl_printf("hostselftest: block/wake count after=%d\n", ((Sem*)a)->count);
+	lkl_printf("hostselftest: block/wake %lldms %s\n",
+		   dt, dt < 10000 ? "PASS" : "FAIL");
+	hsem_free(a);
+
+	a = hsem_alloc(0);
+	c = hsem_alloc(0);
+	done = hsem_alloc(0);
+	if(a == nil || c == nil || done == nil){
+		lkl_printf("hostselftest: sem_alloc failed\n");
+		return;
+	}
+	b.wait = a;
+	b.post = c;
+	b.done = done;
+	b.n = n;
+	if(hthread_create(sembounce, &b) == 0)
+		lkl_printf("hostselftest: thread_create failed\n");
+	t0 = nsec();
+	for(i = 0; i < n; i++){
+		hsem_up(a);
+		hsem_down(c);
+	}
+	hsem_down(done);
+	dt = (nsec() - t0) / 1000000;
+	lkl_printf("hostselftest: sem bounce %d in %lldms %s\n",
+		   n, dt, dt < 60000 ? "PASS" : "FAIL");
+	hsem_free(a);
+	hsem_free(c);
+	hsem_free(done);
+
+	m = hmut_alloc(0);
+	done = hsem_alloc(0);
+	if(m == nil || done == nil){
+		lkl_printf("hostselftest: mutex alloc failed\n");
+		return;
+	}
+	ms.m = m;
+	ms.done = done;
+	ms.counter = &counter;
+	ms.n = n;
+	for(i = 0; i < 4; i++)
+		if(hthread_create(mutstress, &ms) == 0)
+			lkl_printf("hostselftest: mutex thread_create failed\n");
+	for(i = 0; i < 4; i++)
+		hsem_down(done);
+	lkl_printf("hostselftest: mutex %d/%d %s\n", counter, 4*n,
+		   counter == 4*n ? "PASS" : "FAIL");
+	hsem_free(done);
+	hmut_free(m);
 }
 
 struct lkl_host_operations lkl_harvey_ops = {

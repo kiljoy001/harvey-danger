@@ -11,6 +11,7 @@
 #include <u.h>
 #include <libc.h>
 #include <lkl/asm/host_ops.h>
+#include <lkl/asm/unistd.h>
 
 extern struct lkl_host_operations lkl_harvey_ops;
 
@@ -20,11 +21,97 @@ extern long	lkl_sys_halt(void);
 extern void	lkl_cleanup(void);
 extern void	lklhost_setout(int);
 extern void	lklhost_debug(int);
+extern void	lklhost_selftest(void);
 extern int	lklhost_mapdev(char*, u64*, u64*);
 extern int	lklhost_iomem(u64, void*, int, int);
 extern int	lkl_printf(const char*, ...);
 
 #define say(s) lkl_printf("%s", s)
+
+/*
+ * The self-test is the payload of LKL's own tests/boot (getpid, nanosleep),
+ * run against our host layer instead of liblkl's.  A nanosleep only works
+ * if the host arms the clockevent and the idle path can stop and restart
+ * the tick, which is exactly the part that was broken.
+ */
+typedef struct Lkltimespec Lkltimespec;
+struct Lkltimespec {
+	long long	sec;
+	long long	nsec;
+};
+
+extern long	lkl_syscall(long, long*);
+
+static long
+lklsleep(long long sec, long long nsec)
+{
+	Lkltimespec ts;
+	long p[6];
+
+	ts.sec = sec;
+	ts.nsec = nsec;
+	/*
+	 * aarch64 is 64-bit, so the plain nanosleep takes the 64-bit
+	 * timespec; the *_time64 numbering exists only for 32-bit hosts.
+	 */
+	p[0] = (long)&ts;
+	p[1] = 0;
+	p[2] = 0;
+	p[3] = 0;
+	p[4] = 0;
+	p[5] = 0;
+	return lkl_syscall(__lkl__NR_nanosleep, p);
+}
+
+static int
+selftest(void)
+{
+	vlong t0, t1, d;
+	long r, pid;
+	int i, bad;
+	long p[6];
+
+	bad = 0;
+	memset(p, 0, sizeof p);
+	pid = lkl_syscall(__lkl__NR_getpid, p);
+	lkl_printf("selftest: getpid %ld\n", pid);
+	if(pid <= 0)
+		bad++;
+
+	for(i = 0; i < 3; i++){
+		t0 = nsec();
+		r = lklsleep(0, 87*1000*1000);
+		t1 = nsec();
+		d = (t1 - t0) / 1000000;
+		lkl_printf("selftest: nanosleep %d ret=%ld %lldms\n", i, r, d);
+		if(r < 0 || d < 60 || d > 1500)
+			bad++;
+	}
+	/*
+	 * Long enough for NO_HZ_IDLE to stop the tick: the guest programs
+	 * KTIME_MAX, the delta a naive host cannot represent.  This is the
+	 * case that used to turn into a permanent IRQ storm.
+	 */
+	t0 = nsec();
+	r = lklsleep(1, 200*1000*1000);
+	t1 = nsec();
+	d = (t1 - t0) / 1000000;
+	lkl_printf("selftest: idle sleep ret=%ld %lldms\n", r, d);
+	if(r < 0 || d < 1100 || d > 4000)
+		bad++;
+
+	/* The tick has to come back afterwards. */
+	t0 = nsec();
+	r = lklsleep(0, 50*1000*1000);
+	t1 = nsec();
+	d = (t1 - t0) / 1000000;
+	lkl_printf("selftest: resume sleep ret=%ld %lldms\n", r, d);
+	if(r < 0 || d < 30 || d > 1500)
+		bad++;
+
+	lkl_printf("selftest: %s\n", bad ? "FAIL" : "PASS");
+	return bad;
+}
 
 static void
 probe(char *node)
@@ -55,14 +142,22 @@ probe(char *node)
 void
 main(int argc, char **argv)
 {
-	int fd;
+	int fd, hosttest, kerneltest;
 
+	hosttest = 0;
+	kerneltest = 0;
 	ARGBEGIN{
 	case 'd':
 		lklhost_debug(1);
 		break;
+	case 's':
+		hosttest = 1;
+		break;
+	case 't':
+		kerneltest = 1;
+		break;
 	default:
-		fprint(2, "usage: lklboot [-d] [platform-node]\n");
+		fprint(2, "usage: lklboot [-d] [-s] [-t] [platform-node]\n");
 		exits("usage");
 	}ARGEND
 	/*
@@ -90,6 +185,12 @@ main(int argc, char **argv)
 		fd = 1;
 	}
 	lklhost_setout(fd);
+	if(hosttest){
+		say("hostselftest: start\n");
+		lklhost_selftest();
+		say("hostselftest: done\n");
+		exits(nil);
+	}
 	if(argc > 0)
 		probe(argv[0]);
 
@@ -104,6 +205,8 @@ main(int argc, char **argv)
 		exits("start");
 	}
 	say("lklboot: kernel up\n");
+	if(kerneltest)
+		selftest();
 
 	/*
 	 * lkl_sys_halt() runs the reboot syscall and unwinds the kernel: it

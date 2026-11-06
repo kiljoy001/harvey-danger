@@ -74,60 +74,47 @@ index 4afab4817..f821b23cf 100644
  
  	if (!cpu.lock || !cpu.sem || !cpu.shutdown_sem) {
 diff --git a/arch/lkl/kernel/syscalls.c b/arch/lkl/kernel/syscalls.c
-index cd4431ff2..8e9854995 100644
+index cd4431ff2..6862c7422 100644
 --- a/arch/lkl/kernel/syscalls.c
 +++ b/arch/lkl/kernel/syscalls.c
-@@ -138,12 +138,48 @@ long lkl_syscall(long no, long *params)
+@@ -1,4 +1,5 @@
+ #include <linux/stat.h>
++#include <linux/init.h>
+ #include <linux/irq.h>
+ #include <linux/sched.h>
+ #include <linux/interrupt.h>
+@@ -138,8 +139,29 @@ long lkl_syscall(long no, long *params)
  }
  
  static struct task_struct *idle_host_task;
 +static int idle_host_task_started;
 +static int idle_host_task_loop(void *unused);
-+
-+/*
-+ * Create the idle host task once the scheduler is up.  arch_cpu_idle() can
-+ * only hand the CPU back to the host through this task; before /init there
-+ * is nothing else that can release the CPU and still schedule, so the guest
-+ * would sit in do_idle() forever.  cpu_startup_entry() calls this before
-+ * entering the loop, where kernel_thread() is safe.
-+ */
-+void lkl_idle_start(void)
+ 
+-/* called from idle, don't failed, don't block */
++/* Create from init, not swapper: the idle task is not a valid fork parent. */
++static void lkl_idle_start(void)
 +{
 +	if (idle_host_task_started)
 +		return;
-+	if (kernel_thread(idle_host_task_loop, NULL, NULL, CLONE_FLAGS) < 0)
++	/* Init still has to exec /init; the helper must not join its group. */
++	if (kernel_thread(idle_host_task_loop, NULL, NULL,
++			  CLONE_FS | CLONE_FILES) < 0)
 +		return;
 +	idle_host_task_started = 1;
 +}
 +
-+/*
-+ * Fallback if the guest idles before lkl_idle_start(): release the CPU and
-+ * park this task on its own sched_sem.
-+ */
-+static void
-+lkl_idle_park(void)
++static int __init idle_host_task_init(void)
 +{
-+	struct thread_info *ti = current_thread_info();
-+
-+	lkl_cpu_put();
-+	lkl_ops->sem_down(ti->sched_sem);
-+	schedule_tail(ti->prev_sched);
++	lkl_idle_start();
++	return idle_host_task_started ? 0 : -ENOMEM;
 +}
- 
- /* called from idle, don't failed, don't block */
++early_initcall(idle_host_task_init);
++
++/* Called from idle: wake the helper that hands the CPU back. */
  void wakeup_idle_host_task(void)
  {
--	if (!need_resched() && idle_host_task)
-+	if (need_resched())
-+		return;
-+	if (idle_host_task)
- 		wake_up_process(idle_host_task);
-+	else
-+		lkl_idle_park();
- }
- 
- static int idle_host_task_loop(void *unused)
-@@ -186,7 +222,8 @@ int syscalls_init(void)
+ 	if (!need_resched() && idle_host_task)
+@@ -186,7 +208,8 @@ int syscalls_init(void)
  			return -1;
  	}
  
@@ -137,24 +124,3 @@ index cd4431ff2..8e9854995 100644
  		if (lkl_ops->tls_free)
  			lkl_ops->tls_free(task_key);
  		return -1;
-diff --git a/kernel/sched/idle.c b/kernel/sched/idle.c
-index d2f096bb2..4df468a10 100644
---- a/kernel/sched/idle.c
-+++ b/kernel/sched/idle.c
-@@ -415,8 +415,16 @@ void play_idle_precise(u64 duration_ns, u64 latency_ns)
- }
- EXPORT_SYMBOL_GPL(play_idle_precise);
- 
-+#ifdef CONFIG_LKL
-+extern void lkl_idle_start(void);
-+#endif
-+
- void cpu_startup_entry(enum cpuhp_state state)
- {
-+#ifdef CONFIG_LKL
-+	/* Nothing can hand the CPU back to the host until this exists. */
-+	lkl_idle_start();
-+#endif
- 	current->flags |= PF_IDLE;
- 	arch_cpu_idle_prepare();
- 	cpuhp_online_idle(state);
