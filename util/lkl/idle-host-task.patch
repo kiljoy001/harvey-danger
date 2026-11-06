@@ -1,3 +1,40 @@
+diff --git a/arch/lkl/kernel/cpu.c b/arch/lkl/kernel/cpu.c
+index 4afab4817..11f3263bc 100644
+--- a/arch/lkl/kernel/cpu.c
++++ b/arch/lkl/kernel/cpu.c
+@@ -8,6 +8,8 @@
+ #include <asm/syscalls.h>
+ #include <linux/cpu.h>
+ 
++extern void lklhost_note(int, void*, int);
++
+ /*
+  * This structure is used to get access to the "LKL CPU" that allows us to run
+  * Linux code. Because we have to deal with various synchronization requirements
+@@ -72,6 +74,7 @@ static int __cpu_try_get_lock(int n)
+ 
+ 	cpu.owner = self;
+ 	cpu.count++;
++	lklhost_note('G', (void *)self, cpu.count);
+ 
+ 	return 1;
+ }
+@@ -90,6 +93,7 @@ void lkl_cpu_change_owner(lkl_thread_t owner)
+ 		lkl_bug("bad count while changing owner\n");
+ 	cpu.owner = owner;
+ 	lkl_ops->mutex_unlock(cpu.lock);
++	lklhost_note('O', (void *)owner, cpu.count);
+ }
+ 
+ int lkl_cpu_get(void)
+@@ -147,6 +151,7 @@ void lkl_cpu_put(void)
+ 	cpu.owner = 0;
+ 
+ 	lkl_ops->mutex_unlock(cpu.lock);
++	lklhost_note('P', NULL, 0);
+ }
+ 
+ int lkl_cpu_try_run_irq(int irq)
 diff --git a/arch/lkl/kernel/syscalls.c b/arch/lkl/kernel/syscalls.c
 index cd4431ff2..883abd405 100644
 --- a/arch/lkl/kernel/syscalls.c

@@ -380,29 +380,41 @@ Harvey timer list or its interaction with the very high rate of
 (`sem_down`/`sem_up` for kernel threads, `setjmp`/`longjmp` for host
 tasks).
 
+
 ## Board race in the initial handoff (2026-11-05)
 
 All four fat/lean configurations boot and halt in QEMU.  On the board the
 same archive is timing dependent:
 
-* run with `lklboot -d` (semaphore and mutex tracing): reaches
-  `lklboot: halted`;
-* run without `-d`: stops after `lklboot: init ok`, before the banner.
+* with `lklboot -d`: reaches `lklboot: halted`;
+* without `-d`: stops after `lklboot: init ok`, before the banner.
 
-So the extra host calls in the trace mask the failure.  Sampling `up->pc`
-from `hzclock()` during the stall shows the only runnable process is the
-boot probe idling in `idleforever()` (syscall 17, `sleep`), with
-`delaysched 0` -- i.e. no other process is ready.  Every LKL host thread
-is blocked on a semaphore, which matches the "guest threads wait on
-semaphores" observation.
+So the tracing syscalls mask it.  An in-memory liveness watchdog in the
+host layer (one `sleep(1)` and one line per second, no host calls on the
+hot path) dumps per-thread state and reports:
 
-Replacing the lazy idle-task `kernel_thread()` with a direct park
-(`lkl_cpu_put()` on the current task, then `sem_down(own sched_sem)`)
-removes a real race in the idle path but does **not** fix the board stall.
+```
+own=0 st: 1D<sem>... 2D<sem>@lkl_cpu_init c0 3R 4P ...
+          5..10 D<sched_sem> c0
+```
 
-Instrumentation warning: `lkl_printf` inside `lkl_cpu_put()` runs while
-`cpu.lock` is held, so the write syscall can hang the handoff itself.
-Use in-memory counters or print outside the lock.
+That is: **the CPU is free (`own=0`) and the boot task (thread 2) is
+blocked in `hsem_down(cpu.sem)` with the semaphore count at 0.**  The
+other kernel threads are parked on their sched_sems (normal) and the
+watchdog runs, so the host is alive.  Nobody can post a permit: a lost
+wakeup on `cpu.sem`.
+
+Making `lkl_cpu_put()` post a permit unconditionally did not recover it,
+so the loss is upstream of the release accounting -- most likely in
+`lkl_cpu_get()`'s loop (ownership check, `cpu.sleepers++`, then
+`sem_down`) or in the host `semacquire`/`semrelease` path.
+
+Instrumentation notes:
+
+* do not call `lkl_printf` inside `lkl_cpu_put()`: it runs with
+  `cpu.lock` held and the write syscall can hang the handoff;
+* the probe's `idleforever()` (syscall 17 = `sleep`) is what runs when the
+  system is otherwise idle, so seeing it in `hzclock` samples is expected.
 
 ## Fat kernel experiment (2026-11-05)
 
