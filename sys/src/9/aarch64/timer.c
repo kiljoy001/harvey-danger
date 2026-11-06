@@ -33,6 +33,8 @@ arm64clockready(void)
 
 static int isgicv3;
 
+enum { TlbSGI = 0 };	/* software-generated interrupt used for TLB shootdown */
+
 #ifdef ARM64_FULL_KERNEL
 /*
  * Device interrupts.  A driver opens a wait file for its device; the
@@ -200,7 +202,9 @@ arm64cpuirqinit(int cpu)
 		reg = 0x400/4 + timerirq/4;
 		shift = (timerirq%4)*8;
 		sgi[reg] = (sgi[reg] & ~(0xffU<<shift)) | (0x80U<<shift);
-		sgi[0x100/4] = mask;
+		sgi[0x100/4] = mask | (1U<<TlbSGI);
+		sgi[0x080/4] |= 1U<<TlbSGI;	/* group 1 */
+		sgi[0x400/4] &= ~0xffU;		/* SGI0 highest priority */
 		__asm__ volatile("msr S3_0_C12_C12_5, %0; isb" :: "r"((u64)7) : "memory");
 		__asm__ volatile("msr S3_0_C4_C6_0, %0; isb" :: "r"((u64)0xff) : "memory");
 		__asm__ volatile("msr S3_0_C12_C12_7, %0; isb" :: "r"((u64)1) : "memory");
@@ -212,8 +216,9 @@ arm64cpuirqinit(int cpu)
 		gic[0x000/4] = 1;
 		/* The IGROUPR0 bank is per-CPU too: put this core's timer PPI
 		 * in group 0, which GICC_CTLR above enables. */
-		gicdist[0x080/4] &= ~mask;
-		gicdist[0x100/4] = mask;
+		gicdist[0x080/4] &= ~(mask | (1U<<TlbSGI));
+		gicdist[0x100/4] = mask | (1U<<TlbSGI);
+		gicdist[0x400/4] &= ~0xffU;
 		reg = 0x400/4 + timerirq/4;
 		shift = (timerirq%4)*8;
 		gicdist[reg] = (gicdist[reg] & ~(0xffU<<shift)) | (0x80U<<shift);
@@ -222,6 +227,101 @@ arm64cpuirqinit(int cpu)
 	__asm__ volatile("msr cntv_tval_el0, %0; msr cntv_ctl_el0, %1; isb"
 	                 :: "r"((u64)period), "r"((u64)1) : "memory");
 }
+
+/*
+ * Broadcast SGI 0 to every other CPU.  GICv2 uses the target-list-other
+ * filter; GICv3 uses IRM.  The handler flushes the local TLB and, when the
+ * interrupted context is user mode, releases the page tables now; inside a
+ * syscall it defers to the user-return boundary.
+ */
+static volatile u32 ipiseen[MACHMAX];
+
+void
+arm64ipi(void)
+{
+	if(isgicv3)
+		__asm__ volatile("msr S3_0_C12_C11_5, %0; isb"
+		    :: "r"((1ULL<<40) | (TlbSGI<<24)) : "memory");
+	else{
+		gicdist[0xF00/4] = (1U<<24) | TlbSGI;	/* all but self */
+		__asm__ volatile("dsb sy" ::: "memory");
+	}
+}
+
+static void
+arm64tlbirq(Ureg *u)
+{
+	/*
+	 * Only invalidate translations here.  Releasing page tables from an
+	 * arbitrary interrupt is unsafe: the interrupted context may be in the
+	 * middle of a kernel stack frame, and the release takes the physical
+	 * allocator and kernel heap locks.  The Proc's newtlb is consumed at
+	 * the next user-mode clock tick, context switch, or user return, where
+	 * the address space is not in flight.
+	 */
+	USED(u);
+	ipiseen[machp()->machno]++;
+	mmuflushtlb();
+	machp()->mmuflush = 0;
+	coherence();
+}
+
+/*
+ * Boot probe: broadcast a TLB SGI and check that every online CPU took it.
+ * This validates the GIC SGI setup independently of segment churn.
+ */
+int
+arm64ipiprobe(void)
+{
+	u32 seen[MACHMAX];
+	int i, n, ok;
+
+	for(i = 0; i < sys->nmach; i++)
+		seen[i] = ipiseen[i];
+	arm64ipi();
+	for(n = 0; n < 2000; n++){
+		ok = 1;
+		for(i = 0; i < sys->nmach; i++)
+			if(i != machp()->machno && ipiseen[i] == seen[i])
+				ok = 0;
+		if(ok)
+			return 0;
+		microdelay(1000);
+	}
+	print("ARM64 ipi fail: gicv3 %d gicdist %#p giccpu %#p ctlr %#x igroupr %#x isen %#x lastirq %ud\n",
+	    isgicv3, gicdist, giccpu, gicdist[0x000/4], gicdist[0x080/4],
+	    gicdist[0x100/4], lastirq);
+	for(i = 0; i < sys->nmach; i++)
+		if(i != machp()->machno)
+			print("ARM64 ipi cpu%d seen %ud (was %ud)\n",
+			    i, ipiseen[i], seen[i]);
+	return -1;
+}
+
+#ifdef ARM64_FULL_KERNEL
+/*
+ * Return-to-user scheduling for interrupts.  hzsched() already marks the
+ * interrupted process when another one should run, but until now only the
+ * syscall path acted on it.  A guest that spins in user mode without
+ * issuing a syscall (LKL's idle loop) therefore never yielded and starved
+ * every other process, including the timer thread that has to wake it.
+ */
+static void
+irqreturn(Ureg *ureg, int clock)
+{
+	Proc *up = externup();
+
+	if(ureg == nil || (ureg->psr & 15) != 0)
+		return;
+	if(up == nil || up->state != Running)
+		return;
+	if(clock){
+		if(up->delaysched)
+			sched();
+	}else
+		preempted();
+}
+#endif
 
 void
 arm64irq(
@@ -250,6 +350,15 @@ arm64irq(
 		irq = gic[0x00c/4] & 0x3ff;
 	}
 	lastirq = irq;
+	if(irq < 16){
+		if(irq == TlbSGI)
+			arm64tlbirq(ureg);
+		if(isgicv3)
+			__asm__ volatile("msr S3_0_C12_C12_1, %0; isb" :: "r"((u64)irq) : "memory");
+		else
+			gic[0x010/4] = irq;
+		return;
+	}
 	if(irq == timerirq){
 		arm64ticks++;
 		if((spsr&15) == 0)
@@ -262,6 +371,7 @@ arm64irq(
 #ifdef ARM64_FULL_KERNEL
 		if(clockready)
 			timerintr(ureg, 0);
+		irqreturn(ureg, 1);
 #endif
 	}else{
 		irqnote(irq);
@@ -270,6 +380,9 @@ arm64irq(
 			__asm__ volatile("msr S3_0_C12_C12_1, %0; isb" :: "r"((u64)irq) : "memory");
 		else
 			gic[0x010/4] = irq;
+#ifdef ARM64_FULL_KERNEL
+		irqreturn(ureg, 0);
+#endif
 	}
 }
 

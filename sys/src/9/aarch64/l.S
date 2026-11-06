@@ -65,7 +65,7 @@ _startcode:
 
 	.section .bss.stack, "aw", %nobits
 	.balign 16
-	.skip 16384
+	.skip 32768
 _boot_stack_top:
 
 	.section .text.vectors, "ax"
@@ -99,7 +99,8 @@ _arm64fault:
 	b	_arm64fault
 
 _arm64irq:
-	sub	sp, sp, #288
+	/* 288 bytes of Ureg plus the interrupted SP_EL0 at 288. */
+	sub	sp, sp, #304
 	stp	x0, x1, [sp, #0]
 	stp	x2, x3, [sp, #16]
 	stp	x4, x5, [sp, #32]
@@ -116,19 +117,23 @@ _arm64irq:
 	stp	x26, x27, [sp, #208]
 	stp	x28, x29, [sp, #224]
 	str	x30, [sp, #240]
-	add	x9, sp, #288
+	add	x9, sp, #304
 	str	x9, [sp, #248]
 	str	xzr, [sp, #256]
 	mrs	x9, spsr_el1
 	str	x9, [sp, #264]
 	mrs	x9, elr_el1
 	str	x9, [sp, #272]
+	mrs	x9, sp_el0
+	str	x9, [sp, #288]
 	mov	x0, sp
 	bl	arm64irq
 	ldr	x9, [sp, #272]
 	msr	elr_el1, x9
 	ldr	x9, [sp, #264]
 	msr	spsr_el1, x9
+	ldr	x9, [sp, #288]
+	msr	sp_el0, x9
 	ldp	x0, x1, [sp, #0]
 	ldp	x2, x3, [sp, #16]
 	ldp	x4, x5, [sp, #32]
@@ -145,7 +150,7 @@ _arm64irq:
 	ldp	x26, x27, [sp, #208]
 	ldp	x28, x29, [sp, #224]
 	ldr	x30, [sp, #240]
-	add	sp, sp, #288
+	add	sp, sp, #304
 	eret
 
 _arm64usersync:
