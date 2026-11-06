@@ -1,17 +1,18 @@
 diff --git a/arch/lkl/kernel/cpu.c b/arch/lkl/kernel/cpu.c
-index 4afab4817..460aafe65 100644
+index 4afab4817..f821b23cf 100644
 --- a/arch/lkl/kernel/cpu.c
 +++ b/arch/lkl/kernel/cpu.c
-@@ -8,6 +8,8 @@
+@@ -8,6 +8,9 @@
  #include <asm/syscalls.h>
  #include <linux/cpu.h>
  
 +extern void lklhost_note(int, void*, int);
++extern void lklhost_cpusem(void*);
 +
  /*
   * This structure is used to get access to the "LKL CPU" that allows us to run
   * Linux code. Because we have to deal with various synchronization requirements
-@@ -72,6 +74,7 @@ static int __cpu_try_get_lock(int n)
+@@ -72,6 +75,7 @@ static int __cpu_try_get_lock(int n)
  
  	cpu.owner = self;
  	cpu.count++;
@@ -19,7 +20,7 @@ index 4afab4817..460aafe65 100644
  
  	return 1;
  }
-@@ -90,6 +93,7 @@ void lkl_cpu_change_owner(lkl_thread_t owner)
+@@ -90,6 +94,7 @@ void lkl_cpu_change_owner(lkl_thread_t owner)
  		lkl_bug("bad count while changing owner\n");
  	cpu.owner = owner;
  	lkl_ops->mutex_unlock(cpu.lock);
@@ -27,7 +28,7 @@ index 4afab4817..460aafe65 100644
  }
  
  int lkl_cpu_get(void)
-@@ -97,15 +101,20 @@ int lkl_cpu_get(void)
+@@ -97,15 +102,20 @@ int lkl_cpu_get(void)
  	int ret;
  
  	ret = __cpu_try_get_lock(1);
@@ -48,7 +49,7 @@ index 4afab4817..460aafe65 100644
  
  	return ret;
  }
-@@ -113,6 +122,7 @@ int lkl_cpu_get(void)
+@@ -113,6 +123,7 @@ int lkl_cpu_get(void)
  void lkl_cpu_put(void)
  {
  	lkl_ops->mutex_lock(cpu.lock);
@@ -56,7 +57,7 @@ index 4afab4817..460aafe65 100644
  
  	if (!cpu.count || !cpu.owner ||
  	    !lkl_ops->thread_equal(cpu.owner, lkl_ops->thread_self()))
-@@ -147,6 +157,7 @@ void lkl_cpu_put(void)
+@@ -147,6 +158,7 @@ void lkl_cpu_put(void)
  	cpu.owner = 0;
  
  	lkl_ops->mutex_unlock(cpu.lock);
@@ -64,6 +65,14 @@ index 4afab4817..460aafe65 100644
  }
  
  int lkl_cpu_try_run_irq(int irq)
+@@ -213,6 +225,7 @@ int lkl_cpu_init(void)
+ {
+ 	cpu.lock = lkl_ops->mutex_alloc(0);
+ 	cpu.sem = lkl_ops->sem_alloc(0);
++	lklhost_cpusem(cpu.sem);
+ 	cpu.shutdown_sem = lkl_ops->sem_alloc(0);
+ 
+ 	if (!cpu.lock || !cpu.sem || !cpu.shutdown_sem) {
 diff --git a/arch/lkl/kernel/syscalls.c b/arch/lkl/kernel/syscalls.c
 index cd4431ff2..883abd405 100644
 --- a/arch/lkl/kernel/syscalls.c
