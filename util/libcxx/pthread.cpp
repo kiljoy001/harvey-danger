@@ -484,7 +484,13 @@ int pthread_join(pthread_t t, void **ret) {
     if (ret)
         *ret = t->ret;
     if (!t->detached) {
-        free(t->stack);
+        /*
+         * The thread releases t->done from thread_body() and only then
+         * calls _exits(), still on t->stack.  Freeing the stack here lets
+         * the joiner reuse it under the exiting thread -- a use-after-free
+         * that SMP makes immediate.  Threads are pooled and the whole heap
+         * goes away with the process, so leave the stack for exit.
+         */
         free(t);
     }
     return 0;
