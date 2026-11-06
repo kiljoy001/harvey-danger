@@ -162,6 +162,8 @@ def main() -> None:
         flags.append("-DARM64_RK3566_NPU_PROBE")
     if os.environ.get("ARM64_NO_DISPLAY") == "1":
         flags.append("-DARM64_NO_DISPLAY")
+    if os.environ.get("ARM64_PIN_USER") == "1":
+        flags.append("-DARM64_PIN_USER")
     for path in (OUT, ARCH, ROOT / "sys/src/9/port", ROOT / "sys/src/9/ip",
                  ROOT / "aarch64/include", ROOT / "sys/include",
                  ROOT / "sys/src/libc/9syscall"):

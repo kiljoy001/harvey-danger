@@ -262,6 +262,12 @@ startuserprocess(void)
 	kstrdup(&p->text, "*arm64-user-probe*");
 	p->noswap = 1;
 	procpriority(p, PriNormal, 0);
+#ifdef ARM64_PIN_USER
+	if(sys->nmach > 1){
+		p->mp = MACHP(0);
+		p->wired = MACHP(0);
+	}
+#endif
 	kprocchild(p, userprocess, nil);
 	ready(p);
 }
@@ -357,6 +363,12 @@ startinitprocess(void)
 	tos->cyclefreq = sys->cyclefreq;
 	kunmap(stackva);
 	procpriority(p, PriNormal, 0);
+#ifdef ARM64_PIN_USER
+	if(sys->nmach > 1){
+		p->mp = MACHP(0);
+		p->wired = MACHP(0);
+	}
+#endif
 	kprocchild(p, initprocess, nil);
 	ready(p);
 }

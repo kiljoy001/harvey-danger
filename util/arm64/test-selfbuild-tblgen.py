@@ -91,6 +91,8 @@ def main() -> None:
     ap.add_argument("--limit", type=int, default=0,
                     help="compile only the first N sources (smoke test)")
     ap.add_argument("--keep", action="store_true")
+    ap.add_argument("--stage-only", action="store_true",
+                    help="build the SDK overlay/runner and stop before QEMU")
     args = ap.parse_args()
 
     sdk_tar = Path(args.sdk_tar)
@@ -185,6 +187,9 @@ def main() -> None:
               "--tree", f"{etc}:/initramfs/etc",
               "--suffix", "", "--output", str(runner)]
     run(mkrun)
+    if args.stage_only:
+        print(f"stage ready: {stage}")
+        return
 
     marker = "TGEN-LIMIT-DONE" if args.limit else "TGEN-DONE"
     dump = Path(args.dump)

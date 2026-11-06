@@ -146,19 +146,33 @@ and passes after it.
 Status: 1, 2 and 4 vCPU boots pass.  The full 77-TU `llvm-tblgen`
 self-build compiles, links and matches the host byte for byte
 (`TGEN VT-MATCH 46644 bytes`) on one vCPU and on a 4-vCPU kernel with user
-work pinned to CPU0.  The unpinned 4-vCPU build passes the 20-TU gate after
-the Proc-reuse/stale-mmuflush fixes but still hits a Page/segment COW race
-in `fixfault` under heavy thread churn, so the default SMP build remains
-pinned or uniprocessor.  `test-selfbuild.py --smp 4` compiles, links and
-runs the guest `llvm-as` with byte-identical bitcode.
+work pinned to CPU0.  The unpinned 4-vCPU build passes the 20-TU gate but a
+full run still fails in the fault path: `fixfault()` is entered with a
+Segment pointer that has already been recycled, and `segppn()` then
+dereferences the stale object.  The remaining work is the Segment
+reference/lifetime race, so the default SMP build stays pinned or
+uniprocessor; `build_kernel.py` accepts `ARM64_PIN_USER=1` to pin the init
+process (and therefore the user tree) to CPU0 on a 4-core board.
+`test-selfbuild.py --smp 4` compiles, links and runs the guest `llvm-as`
+with byte-identical bitcode.
+
+The heap tail accounting in `qmalloc` was wrong: after installing a new
+physical chunk, `morecore()` added only the requested units to `tailsize`
+and kept the previous chunk's residue, so a later allocation could walk
+past the new chunk.  `tailsize` now tracks the current chunk, `mallocinit`
+seeds it from the static 32 MiB arena, and `qmallocalign` asks for the
+alignment residue in the same request.  `physalloc`/`physfree` now take a
+cross-CPU `Lock` (the old `splhi()` only masked the local CPU), and kernel
+stacks are 32 KiB.
 
 `test-selfbuild-tblgen.py --jobs N` compiles several TableGen TUs at once
-through `TGEN_JOBS`; `--jobs > 1` raises the guest to 6 GiB because the old
-3 GiB run hit `kickpager(): no physical memory`.  The exact-size allocator
-lowers the per-clang heap, but the default remains `--jobs 1` until the
-larger parallel run is measured.  Cross-CPU page-table shootdown still uses
-the `procflushseg()`/`hzclock` polling path (now per-Proc safe), not SGIs,
-and an EL0 code replacement invalidates the I-cache only on the core that
+through `TGEN_JOBS`.  `--mem` is explicit now; when omitted, `--jobs > 1`
+still defaults to 6 GiB, and a lower value is honoured with a warning.
+Cross-CPU page-table shootdown uses SGI 0 (`GICD_SGIR` on GICv2,
+`ICC_SGI1R_EL1` on GICv3): `procflushseg()` broadcasts it and the boot probe
+reports `IPI PASS`.  The SGI handler only invalidates translations; page
+table release stays at the next user tick, context switch or user return.
+An EL0 code replacement still invalidates the I-cache only on the core that
 performs it.
 
 ### Heap and large allocations
@@ -412,8 +426,12 @@ durable fix is in the board's U-Boot PHY setup and boot script, keeping these
 MDIO commands out of the common kernel.
 
 The APEX SDK self-build is delivered as two TFTP files.  The first is an
-Image whose `/boot/init` is the tblgen runner; the second is a 343 MiB
-`O9BOOT01` archive holding `/boot/sdk.tar`.  The kernel reads the archive at
+Image whose `/boot/init` is the tblgen runner; the second is an `O9BOOT01`
+archive holding `/boot/sdk.tar` (the base SDK plus the `sdk/l` TableGen
+overlay, about 390 MiB).  Build the overlay with
+`test-selfbuild-tblgen.py --stage-only --boot <archive>`; the plain
+`install-sdk.py --boot-archive` output has no `tg.list` and the runner will
+report `TGEN no manifest`.  The kernel reads the archive at
 the fixed address `0x50000000` (up to 768 MiB), reserves it, and exposes its
 files under `/boot`; the runner unpacks `sdk.tar` into `/initramfs` before
 compiling.  Load the archive before `booti`:
