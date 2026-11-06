@@ -170,7 +170,7 @@ mmuswitch(Proc *p)
 	 * mmuflush(), so discard its stale page tables here before the next
 	 * entry into user space.
 	 */
-	if(p->newtlb){
+	if(p->newtlb && !p->insyscall){
 		arm64mmurelease(p);
 		p->newtlb = 0;
 	}

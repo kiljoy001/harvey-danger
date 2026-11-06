@@ -170,7 +170,7 @@ hzclock(Ureg *ur)
 	 * still carries a stale flag.  The migrated Proc's new CPU handles its
 	 * own newtlb on the next clock.
 	 */
-	if(up != nil && up->newtlb){
+	if(up != nil && up->newtlb && ur != nil && (ur->psr & 15) == 0){
 		mmuflush();
 		up->newtlb = 0;
 	}else if(machp()->mmuflush)

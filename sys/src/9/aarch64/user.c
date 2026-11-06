@@ -268,8 +268,13 @@ arm64usertrap(Arm64ureg *r)
 	{
 		Proc *p = externup();
 
-		if(p != nil && p->kp == 0)
+		if(p != nil && p->kp == 0){
 			arm64settls(p->tls);
+			if(p->newtlb){
+				mmuflush();
+				p->newtlb = 0;
+			}
+		}
 	}
 #endif
 }
