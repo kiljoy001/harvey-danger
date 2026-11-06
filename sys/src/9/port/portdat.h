@@ -752,6 +752,7 @@ struct Proc {
 	QLock seglock; /* locked whenever seg[] changes */
 	int pid;
 	int index;     /* index (slot) in proc array */
+	u32 freemagic; /* psalloc/psrelease reuse guard */
 	int ref;       /* indirect reference */
 	int noteid;    /* Equivalent of note group */
 	Proc *pidhash; /* next proc in pid hash */

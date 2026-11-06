@@ -13,6 +13,8 @@
 #include "dat.h"
 #include "fns.h"
 
+enum { FreeMagic = 0x50726f63 };	/* 'Proc' */
+
 int
 nprocs(void)
 {
@@ -89,6 +91,17 @@ psdecref(Proc *p)
 void
 psrelease(Proc *p)
 {
+	if(p->freemagic == FreeMagic)
+		panic("psrelease: Proc %#p pid %d already free", p, p->pid);
+	if(p->state != Dead)
+		panic("psrelease: Proc %#p pid %d state %d not dead",
+		    p, p->pid, p->state);
+	if(p < procalloc.arena ||
+	   p >= procalloc.arena + conf.nproc ||
+	   ((usize)p - (usize)procalloc.arena) % sizeof(Proc) != 0)
+		panic("psrelease: bad Proc %#p pid %d arena %#p",
+		    p, p->pid, procalloc.arena);
+	p->freemagic = FreeMagic;
 	p->qnext = procalloc.free;
 	procalloc.free = p;
 	procalloc.nproc--;
@@ -108,6 +121,15 @@ psalloc(void)
 		resrcwait("no procs");
 		lock(&procalloc.l);
 	}
+	if(p < procalloc.arena ||
+	   p >= procalloc.arena + conf.nproc ||
+	   ((usize)p - (usize)procalloc.arena) % sizeof(Proc) != 0)
+		panic("psalloc: bad free %#p (free list %#p arena %#p)",
+		    p, procalloc.free, procalloc.arena);
+	if(p->freemagic != FreeMagic)
+		panic("psalloc: Proc %#p not free (pid %d state %d magic %#x)",
+		    p, p->pid, p->state, p->freemagic);
+	p->freemagic = 0;
 	procalloc.free = p->qnext;
 	procalloc.nproc++;
 	unlock(&procalloc.l);
@@ -130,7 +152,9 @@ psinit(int nproc)
 	for(i = 0; i < nproc - 1; i++, p++){
 		p->qnext = p + 1;
 		p->index = i;
+		p->freemagic = FreeMagic;
 	}
 	p->qnext = 0;
 	p->index = i;
+	p->freemagic = FreeMagic;
 }

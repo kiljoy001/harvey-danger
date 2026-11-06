@@ -164,6 +164,16 @@ mmuswitch(Proc *p)
 {
 	u64 root;
 
+	/*
+	 * procflushseg() marks every process that had a freed segment with
+	 * newtlb.  A process that was not running never reached hzclock's
+	 * mmuflush(), so discard its stale page tables here before the next
+	 * entry into user space.
+	 */
+	if(p->newtlb){
+		arm64mmurelease(p);
+		p->newtlb = 0;
+	}
 	root = p->MMU.rootpa;
 	if(root == 0)
 		root = arm64mmukernelroot();

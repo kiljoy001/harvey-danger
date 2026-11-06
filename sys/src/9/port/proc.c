@@ -133,6 +133,13 @@ schedinit(void) /* never returns */
 			edfrecord(up);
 		coherence();
 		machp()->proc = 0;
+		/*
+		 * Finish with the Proc before it becomes visible to another CPU:
+		 * ready() queues it and psrelease() returns it to the free list,
+		 * after which the next psalloc() may hand it to a new process.
+		 */
+		updatecpu(up);
+		up->mach = nil;
 		switch(up->state){
 		case Running:
 			ready(up);
@@ -157,8 +164,6 @@ schedinit(void) /* never returns */
 			unlock(&procalloc.l);
 			break;
 		}
-		up->mach = nil;
-		updatecpu(up);
 		machp()->externup = nil;
 	}
 	sched();
@@ -813,6 +818,7 @@ newproc(void)
 	kstrdup(&p->args, "");
 	p->nargs = 0;
 	p->setargs = 0;
+	memset(&p->Timer, 0, sizeof p->Timer);
 	memset(p->seg, 0, sizeof p->seg);
 	p->pid = incref(&pidalloc);
 	pshash(p);
@@ -1257,8 +1263,13 @@ pexit(char *exitstr, int freemem)
 	up->syscalltrace = nil;
 	up->alarm = 0;
 
-	if(up->Timer.tt)
-		timerdel(&up->Timer);
+	/*
+	 * The Proc and its Timer are recycled from a free list.  Detach the
+	 * timer unconditionally and clear its fields so the next owner cannot
+	 * inherit a stale list pointer.
+	 */
+	timerdel(&up->Timer);
+	memset(&up->Timer, 0, sizeof up->Timer);
 	if(up->trace)
 		proctrace(up, SDead, 0);
 

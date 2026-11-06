@@ -162,11 +162,20 @@ hzclock(Ureg *ur)
 	if(machp()->proc)
 		machp()->proc->pc = pc;
 
-	if(machp()->mmuflush){
-		if(up)
-			mmuflush();
-		machp()->mmuflush = 0;
-	}
+	/*
+	 * procflushseg() marks newtlb on every Proc that had the segment.
+	 * A running Proc may have migrated since the per-CPU mmuflush flag
+	 * was set; only release the page tables of the Proc actually current
+	 * here, and never mmurelease() a different Proc just because this CPU
+	 * still carries a stale flag.  The migrated Proc's new CPU handles its
+	 * own newtlb on the next clock.
+	 */
+	if(up != nil && up->newtlb){
+		mmuflush();
+		up->newtlb = 0;
+	}else if(machp()->mmuflush)
+		mmuflushtlb();
+	machp()->mmuflush = 0;
 
 	accounttime();
 	kmapinval();
@@ -198,7 +207,8 @@ timerintr(Ureg *u, i64 j)
 	Timer *t;
 	Timers *tt;
 	i64 when, now;
-	int callhzclock;
+	int callhzclock, periodic;
+	void (*tf)(Ureg *, Timer *);
 
 	intrcount[machp()->machno]++;
 	callhzclock = 0;
@@ -224,14 +234,23 @@ timerintr(Ureg *u, i64 j)
 		assert(t->tt == tt);
 		t->tt = nil;
 		fcallcount[machp()->machno]++;
+		/*
+		 * Capture the handler and re-arm a periodic timer before
+		 * dropping the list lock.  The handler can wake a process that
+		 * exits and recycles its Proc (and embedded Timer) on another
+		 * CPU; the old post-handler tadd() then read freed memory and
+		 * sometimes re-linked a garbage Timer.
+		 */
+		tf = t->tf;
+		periodic = t->tmode == Tperiodic;
+		if(periodic)
+			tadd(tt, t);
 		iunlock(&tt->l);
-		if(t->tf)
-			(*t->tf)(u, t);
+		if(tf != nil)
+			(*tf)(u, t);
 		else
 			callhzclock++;
 		ilock(&tt->l);
-		if(t->tmode == Tperiodic)
-			tadd(tt, t);
 	}
 	iunlock(&tt->l);
 }
