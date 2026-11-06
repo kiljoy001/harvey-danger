@@ -13,9 +13,12 @@ Status: WORKING SYSTEM, flashed and verified many times
 (board is normally restored to stock AT between rounds;
 restore procedure in backup/BACKUP.md). Our substrate OS
 boots on the chip today - see "What boots today" below.
-The remaining closed code is the Wi-Fi driver layer:
-of libpp's nine objects one (esf_buf) is already ours;
-the re/B*.md reports are the blow-by-blow record.
+The remaining closed code is the Wi-Fi driver layer. Six of the ten
+objects in `libpp.a` are clean-room and linked in the blob's place
+(`esf_buf`, `if_hwctrl`, `pm`, `pp`, `rate_control`, `trc`); `lmac` is
+written and under bisect; `wdev` is the last one. Every replacement
+carries a host test, and the `re/B*.md` reports are the blow-by-blow
+record.
 
 ## Provenance
 
