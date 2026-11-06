@@ -11,7 +11,7 @@
 #define PGSZ (4 * KiB)
 #define BIGPGSZ (2 * MiB)
 #define PGSHFT 12
-#define KSTACK (16 * KiB)
+#define KSTACK (32 * KiB)
 #define BY2SE 8
 #define HZ 100
 #define MACHMAX 16

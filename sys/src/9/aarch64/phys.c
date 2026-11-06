@@ -183,17 +183,24 @@ arm64physpage(void)
 }
 
 #ifdef ARM64_FULL_KERNEL
+/*
+ * physalloc/physfree run on every CPU: page faults, mmurelease from an IPI,
+ * and the kernel heap all allocate or return pages concurrently.  splhi()
+ * only masks interrupts on the local CPU, so the extent list needs a real
+ * cross-CPU lock.
+ */
+static Lock physlock;
+
 u64
 physalloc(u64 size, int *color, void *tag)
 {
 	u64 align, base, end, oldend, oldbase;
 	int i, j;
-	Mpl pl;
 
 	USED(tag);
 	if(size == 0 || size > ramend || (size & (Pagesz-1)))
 		return 0;
-	pl = splhi();
+	ilock(&physlock);
 	startfree();
 	align = (size & (size-1)) == 0 ? size : Pagesz;
 	for(i = 0; i < nfreeext; i++){
@@ -218,10 +225,10 @@ physalloc(u64 size, int *color, void *tag)
 		}
 		if(color != nil)
 			*color = 0;
-		splx(pl);
+		iunlock(&physlock);
 		return base;
 	}
-	splx(pl);
+	iunlock(&physlock);
 	return 0;
 }
 
@@ -229,7 +236,6 @@ void
 physfree(u64 base, u64 size)
 {
 	int i;
-	Mpl pl;
 
 	if((base | size) & (Pagesz-1) || size == 0 ||
 	   base < managedstart || base+size < base || base+size > ramend)
@@ -239,13 +245,13 @@ physfree(u64 base, u64 size)
 		   base < excluded[i].base+excluded[i].size &&
 		   base+size > excluded[i].base)
 			panic("ARM64 physfree: reserved range");
-	pl = splhi();
+	ilock(&physlock);
 	for(i = 0; i < nfreeext; i++)
 		if(base < freeext[i].base+freeext[i].size &&
 		   base+size > freeext[i].base)
 			panic("ARM64 physfree: overlapping free range");
 	addextent(base, size);
-	splx(pl);
+	iunlock(&physlock);
 }
 
 char *
@@ -253,14 +259,13 @@ seprintphysstats(char *s, char *e)
 {
 	u64 bytes;
 	int i;
-	Mpl pl;
 
-	pl = splhi();
+	ilock(&physlock);
 	startfree();
 	bytes = 0;
 	for(i = 0; i < nfreeext; i++)
 		bytes += freeext[i].size;
-	splx(pl);
+	iunlock(&physlock);
 	return seprint(s, e, "%lluK physical memory free\n", bytes/KiB);
 }
 
@@ -269,14 +274,13 @@ arm64physfreepages(void)
 {
 	u64 pages;
 	int i;
-	Mpl pl;
 
-	pl = splhi();
+	ilock(&physlock);
 	startfree();
 	pages = 0;
 	for(i = 0; i < nfreeext; i++)
 		pages += freeext[i].size / Pagesz;
-	splx(pl);
+	iunlock(&physlock);
 	return pages;
 }
 

@@ -225,11 +225,10 @@ qmallocalign(usize nbytes, usize align, i32 offset, usize span)
 				return p + 1;
 			} while((q = p) != rover);
 		}
-		if((n = morecore(nunits)) == 0){
+		if(morecore(nunits) == 0){
 			MUNLOCK;
 			return nil;
 		}
-		tailsize += n;
 	}
 
 	q = ALIGNHDR(tailptr + 1, align);
@@ -240,14 +239,13 @@ qmallocalign(usize nbytes, usize align, i32 offset, usize span)
 		naligned = NUNITS(align) - 1;
 		if(tailsize < nunits + naligned){
 			/*
-			 * There are at least nunits,
-			 * get enough for alignment.
+			 * There are at least nunits, but not enough for the
+			 * alignment residue as well; get both in one request.
 			 */
-			if((n = morecore(naligned)) == 0){
+			if(morecore(nunits + naligned) == 0){
 				MUNLOCK;
 				return nil;
 			}
-			tailsize += n;
 		}
 		/*
 		 * Save the residue before the aligned allocation
@@ -313,11 +311,10 @@ qmalloc(usize nbytes)
 				}
 			} while((q = p) != rover);
 		}
-		if((n = morecore(nunits)) == 0){
+		if(morecore(nunits) == 0){
 			MUNLOCK;
 			return nil;
 		}
-		tailsize += n;
 	}
 	qstats[QSmalloctail]++;
 	tailalloc(p, nunits);
@@ -516,6 +513,8 @@ mallocsummary(void)
 void
 free(void *ap)
 {
+	if(arm64clocktimerfree(ap))
+		panic("free of live clock timer %#p", ap);
 	MLOCK;
 	qfreeinternal(ap);
 	MUNLOCK;
@@ -663,6 +662,7 @@ mallocinit(void)
 
 	tailbase = (Header *)kheap;
 	tailptr = tailbase;
+	tailsize = NUNITS(sizeof(kheap));
 	tailnunits = NUNITS(sizeof(kheap));
 	print("base %#p ptr %#p nunits %u\n", tailbase, tailptr, tailnunits);
 }
@@ -686,10 +686,15 @@ morecore(u32 nunits)
 	if(nunits < NUNITS(128 * KiB))
 		nunits = NUNITS(128 * KiB);
 
-	if(nunits <= tailnunits){
-		tailnunits -= nunits;
-		return nunits;
-	}
+	/*
+	 * tailsize counts the units between tailptr and the end of the
+	 * current chunk.  The old code added only the requested amount and
+	 * left the previous chunk's residue in tailsize, so after a new
+	 * chunk was installed an allocation could walk past its end and
+	 * overwrite the next physical page.
+	 */
+	if(nunits <= tailsize)
+		return 1;
 
 	n = heapchunkunits ? heapchunkunits : NUNITS(128 * KiB);
 	while(n < nunits)
@@ -710,12 +715,12 @@ morecore(u32 nunits)
 
 	tailbase = (Header *)p;
 	tailptr = tailbase;
-	tailsize = 0;
-	tailnunits = (u32)(size / Unitsz) - nunits;
+	tailsize = (u32)(size / Unitsz);
+	tailnunits = tailsize;
 	if((u32)(size / Unitsz) > heapchunkunits){
 		heapchunkunits = (u32)(size / Unitsz);
 		if(heapchunkunits > NUNITS(64 * MiB))
 			heapchunkunits = NUNITS(64 * MiB);
 	}
-	return nunits;
+	return 1;
 }

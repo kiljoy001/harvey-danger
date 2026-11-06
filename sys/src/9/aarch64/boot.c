@@ -539,6 +539,10 @@ worker(void *arg)
 		ringprobe();
 		virtio9pprobe();
 		arm64uartputs("HARVEY-ARM64 BOOT-PROBES PASS\n");
+		if(arm64ipiprobe() == 0)
+			arm64uartputs("HARVEY-ARM64 IPI PASS\n");
+		else
+			arm64uartputs("HARVEY-ARM64 IPI FAIL\n");
 		startuserprocess();
 		while(userprocessphase != 2)
 			sched();

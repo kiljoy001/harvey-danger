@@ -47,6 +47,8 @@ Mach *machp(void);
 extern Mach arm64machs[];
 void arm64setmach(Mach *);
 void arm64cpuirqinit(int);
+void arm64ipi(void);
+int arm64ipiprobe(void);
 static inline Proc *
 externup(void)
 {

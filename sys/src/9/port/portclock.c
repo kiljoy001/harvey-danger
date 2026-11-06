@@ -22,6 +22,33 @@ struct Timers {
 
 static Timers timers[MACHMAX];
 
+/* Debug: the per-CPU HZ timers, to catch a free/reuse of a live Timer. */
+Timer *arm64clocktimer[MACHMAX];
+
+int
+arm64clocktimeroverlap(void *base, u32 size)
+{
+	int i;
+
+	for(i = 0; i < MACHMAX; i++)
+		if(arm64clocktimer[i] != nil &&
+		   (void *)arm64clocktimer[i] >= base &&
+		   (void *)arm64clocktimer[i] < (char *)base + size)
+			return 1;
+	return 0;
+}
+
+int
+arm64clocktimerfree(void *p)
+{
+	int i;
+
+	for(i = 0; i < MACHMAX; i++)
+		if(p != nil && p == arm64clocktimer[i])
+			return 1;
+	return 0;
+}
+
 u32 intrcount[MACHMAX];
 u32 fcallcount[MACHMAX];
 
@@ -31,8 +58,13 @@ tadd(Timers *tt, Timer *nt)
 	i64 when;
 	Timer *t, **last;
 
-	/* Called with tt locked */
-	assert(nt->tt == nil);
+	/*
+	 * Called with tt locked.  A periodic timer being re-armed by
+	 * timerintr() is already on tt, so allow that case as well; the
+	 * important part is that timeradd() cannot observe tt == nil in the
+	 * middle of a requeue and add the same Timer to a second CPU's list.
+	 */
+	assert(nt->tt == nil || nt->tt == tt);
 	switch(nt->tmode){
 	default:
 		panic("timer");
@@ -231,8 +263,26 @@ timerintr(Ureg *u, i64 j)
 			return;
 		}
 		tt->head = t->tnext;
-		assert(t->tt == tt);
-		t->tt = nil;
+		if(t->tt != tt){
+			print("TIMERBAD cpu%d t %#p t->tt %#p tt %#p tf %#p tmode %d tns %lld twhen %lld next %#p clock %#p %#p %#p %#p\n",
+			    machp()->machno, t, t->tt, tt, t->tf,
+			    t->tmode, t->tns, t->twhen, t->tnext,
+			    arm64clocktimer[0], arm64clocktimer[1],
+			    arm64clocktimer[2], arm64clocktimer[3]);
+			{
+				int pi;
+				Proc *pp;
+
+				for(pi = 0; (pp = psincref(pi)) != nil; pi++){
+					if(t >= (Timer *)pp->kstack &&
+					   t < (Timer *)(pp->kstack + KSTACK))
+						print("TIMERBAD t in kstack pid %d %s kstack %#p\n",
+						    pp->pid, pp->text, pp->kstack);
+					psdecref(pp);
+				}
+			}
+			panic("TIMERBAD");
+		}
 		fcallcount[machp()->machno]++;
 		/*
 		 * Capture the handler and re-arm a periodic timer before
@@ -240,11 +290,17 @@ timerintr(Ureg *u, i64 j)
 		 * exits and recycles its Proc (and embedded Timer) on another
 		 * CPU; the old post-handler tadd() then read freed memory and
 		 * sometimes re-linked a garbage Timer.
+		 *
+		 * Keep t->tt pointing at tt while requeueing.  Clearing it opened
+		 * a window where a concurrent timeradd() on another CPU saw nil,
+		 * used its own list, and linked the same Timer into two lists.
 		 */
 		tf = t->tf;
 		periodic = t->tmode == Tperiodic;
 		if(periodic)
 			tadd(tt, t);
+		else
+			t->tt = nil;
 		iunlock(&tt->l);
 		if(tf != nil)
 			(*tf)(u, t);
@@ -265,6 +321,19 @@ timersinit(void)
 	 */
 	todinit();
 	t = malloc(sizeof(*t));
+	{
+		int pi;
+		Proc *pp;
+
+		for(pi = 0; (pp = psincref(pi)) != nil; pi++){
+			if((void *)t >= (void *)pp->kstack &&
+			   (void *)t < (void *)(pp->kstack + KSTACK))
+				print("TIMERSTACK timer %#p pid %d kstack %#p\n",
+				    t, pp->pid, pp->kstack);
+			psdecref(pp);
+		}
+	}
+	arm64clocktimer[machp()->machno] = t;
 	t->tmode = Tperiodic;
 	t->tt = nil;
 	t->tns = 1000000000 / HZ;

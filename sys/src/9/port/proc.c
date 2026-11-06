@@ -179,8 +179,9 @@ stackok(void)
 	Proc *up = externup();
 	char dummy;
 
-	if(&dummy < (char *)up->kstack + 4 * KiB){
-		print("tc kernel stack overflow, cpu%d stopped\n", machp()->machno);
+	if(&dummy < (char *)up->kstack + 8 * KiB){
+		print("tc kernel stack overflow, cpu%d pid %d up %#p kstack %#p sp %#p\n",
+		    machp()->machno, up->pid, up, up->kstack, &dummy);
 		DONE();
 	}
 }
@@ -827,8 +828,11 @@ newproc(void)
 	p->noteid = incref(&noteidalloc);
 	if(p->pid <= 0 || p->noteid <= 0)
 		panic("pidalloc");
-	if(p->kstack == 0)
+	if(p->kstack == 0){
 		p->kstack = smalloc(KSTACK);
+		if(arm64clocktimeroverlap(p->kstack, KSTACK))
+			panic("newproc: kstack %#p overlaps a clock timer", p->kstack);
+	}
 
 	/* sched params */
 	p->mp = 0;
@@ -1542,6 +1546,9 @@ procflushseg(Segment *s)
 
 	if(nwait == 0)
 		return;
+
+	/* Ask the other CPUs to flush now instead of at the next clock. */
+	arm64ipi();
 
 	/*
 	 *  wait for all processors to take a clock interrupt

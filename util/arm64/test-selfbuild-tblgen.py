@@ -81,8 +81,8 @@ def main() -> None:
     ap.add_argument("--stage", default="/tmp/opencode/tblgen-stage")
     ap.add_argument("--boot", default="/tmp/opencode/sdk-tblgen.boot")
     ap.add_argument("--dump", default="/tmp/opencode/tblgen.log")
-    ap.add_argument("--mem", type=int, default=3072,
-                    help="guest RAM in MiB; --jobs > 1 needs more")
+    ap.add_argument("--mem", type=int, default=0,
+                    help="guest RAM in MiB (0: 3072, or 6144 with --jobs > 1)")
     ap.add_argument("--smp", type=int, default=1,
                     help="QEMU vCPUs (the guest kernel supports SMP)")
     ap.add_argument("--jobs", type=int, default=1,
@@ -172,9 +172,11 @@ def main() -> None:
              "--in-tree", "/initramfs/bin/tblgen",
              "--untar", "/boot/sdk.tar:/initramfs",
              "--env", "TMPDIR=/initramfs/sdk/tmp"]
-    if args.jobs > 1 and args.mem < 6144:
-        args.mem = 6144
-        print("note: --jobs > 1 needs more than 3 GiB; using 6144 MiB")
+    if args.mem == 0:
+        args.mem = 6144 if args.jobs > 1 else 3072
+    elif args.jobs > 1 and args.mem < 6144:
+        print(f"note: --jobs {args.jobs} at {args.mem} MiB; "
+              "the guest may run out of physical memory")
     if args.limit:
         mkrun += ["--env", f"TGEN_LIMIT={args.limit}"]
     if args.jobs > 1:

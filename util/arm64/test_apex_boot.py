@@ -14,6 +14,7 @@ from pathlib import Path
 import argparse
 import os
 import re
+import shutil
 import subprocess
 import sys
 
@@ -60,6 +61,9 @@ def main() -> None:
     ap.add_argument("--mem", type=int, default=0,
                     help="guest RAM in MiB (default: 512, or enough to "
                          "hold the boot archive)")
+    ap.add_argument("--image-out",
+                    help="build the kernel with this ELF as init, write the "
+                         "Image here, and do not boot QEMU")
     args = ap.parse_args()
 
     if args.elf:
@@ -103,6 +107,11 @@ def main() -> None:
         env = dict(os.environ, ARM64_REUSE_USERLAND="1")
         subprocess.run([sys.executable, str(HERE / "build_kernel.py")],
                        check=True, env=env)
+
+        if args.image_out:
+            shutil.copyfile(OUT / "harvey.img", args.image_out)
+            print(f"ARM64 board image: {args.image_out}")
+            return
 
         mem = args.mem
         if mem == 0 and args.archive:

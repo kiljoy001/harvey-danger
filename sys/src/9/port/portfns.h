@@ -386,6 +386,8 @@ void timerdel(Timer *);
 void timerintr(Ureg *, i64);
 void timerset(u64);
 void timersinit(void);
+int arm64clocktimerfree(void *);
+int arm64clocktimeroverlap(void *, u32);
 #define TK2MS(x) ((x) * (1000 / HZ))
 u64 tod2fastticks(i64);
 i64 todget(i64 *);

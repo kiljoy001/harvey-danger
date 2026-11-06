@@ -130,7 +130,7 @@ fixfault(Segment *s, usize addr, int ftype, int dommuput, int color)
 	usize soff;
 	u64 pgsz;
 	u32 mmuattr;
-	Page **pg, *lkp, *new;
+	Page **pg, *lkp, *new, *keep;
 	Page *(*fn)(Segment *, usize);
 
 	pgsz = sys->pgsz[s->pgszi];
@@ -279,11 +279,34 @@ fixfault(Segment *s, usize addr, int ftype, int dommuput, int color)
 		(*pg)->modref = PG_MOD | PG_REF;
 		break;
 	}
+	/*
+	 * Another CPU can reclaim or COW-replace *pg as soon as the segment
+	 * lock is dropped.  Pin the Page we are about to map so its struct
+	 * cannot be freed/reused while mmuput() and the alignment check use
+	 * it.  The segment map keeps its own reference.
+	 */
+	keep = nil;
+	if(dommuput && *pg != nil){
+		keep = *pg;
+		lock(&keep->l);
+		keep->ref++;
+		unlock(&keep->l);
+	}
 	qunlock(&s->lk);
 
-	if(dommuput){
-		assert(segppn(s, (*pg)->pa) == (*pg)->pa);
-		mmuput(addr, *pg, mmuattr);
+	if(dommuput && keep != nil){
+		static int badprint;
+		if(segppn(s, keep->pa) != keep->pa){
+			if(badprint++ < 8)
+				print("FAULTBAD pid %d type %s addr %#p pa %#p spgsz %lud ppgsz %lud ref %d image %#p\n",
+				    up->pid, segtypes[s->type & SG_TYPE], addr,
+				    keep->pa, sys->pgsz[s->pgszi],
+				    sys->pgsz[keep->pgszi], keep->ref, keep->image);
+			putpage(keep);
+			return -1;
+		}
+		mmuput(addr, keep, mmuattr);
+		putpage(keep);
 	}
 	return 0;
 }
@@ -317,10 +340,12 @@ pio(Segment *s, usize addr, u32 soff, Page **p, int color)
 				doff = 0;
 
 			newpg = lookpage(s->image, daddr + doff);
-			if(newpg != nil){
+			if(newpg != nil && newpg->pgszi == s->pgszi){
 				*p = newpg;
 				return;
 			}
+			if(newpg != nil)
+				putpage(newpg);	/* cached at a different page size */
 		} else {
 			// zero fill
 			ask = 0;

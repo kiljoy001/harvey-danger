@@ -411,6 +411,25 @@ is required. The repeatable development path is a serial boot script; the
 durable fix is in the board's U-Boot PHY setup and boot script, keeping these
 MDIO commands out of the common kernel.
 
+The APEX SDK self-build is delivered as two TFTP files.  The first is an
+Image whose `/boot/init` is the tblgen runner; the second is a 343 MiB
+`O9BOOT01` archive holding `/boot/sdk.tar`.  The kernel reads the archive at
+the fixed address `0x50000000` (up to 768 MiB), reserves it, and exposes its
+files under `/boot`; the runner unpacks `sdk.tar` into `/initramfs` before
+compiling.  Load the archive before `booti`:
+
+```text
+tftpboot 0x40080000 aspera-tblgen.img
+tftpboot 0x50000000 aspera-tblgen-sdk.boot
+tftpboot 0x48000000 orangepi-3b-v1.1.dtb
+booti 0x40080000 - 0x48000000
+```
+
+The kernel currently manages only the contiguous RAM bank containing the
+Image.  On the 8 GiB board that is the ~3.8 GiB lower bank, which holds the
+256 MiB kernel/archive window and is enough for a sequential SDK
+self-build; the second bank is not yet used.
+
 This uses QEMU's direct ARM64 Image loading. No UEFI or Limine is involved.
 The Image header and x0 device tree handoff also match U-Boot's `booti`
 interface. The early parser supports root-level 1- or 2-cell
