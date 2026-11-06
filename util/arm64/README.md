@@ -167,7 +167,10 @@ stacks are 32 KiB.
 
 `test-selfbuild-tblgen.py --jobs N` compiles several TableGen TUs at once
 through `TGEN_JOBS`.  `--mem` is explicit now; when omitted, `--jobs > 1`
-still defaults to 6 GiB, and a lower value is honoured with a warning.
+defaults to 4 GiB and a lower value is honoured with a warning.  With the
+exact-size allocator and the qmalloc tail fix, 8-TU `--jobs 2` and
+`--jobs 4` runs both completed at 3 GiB on one vCPU, so four concurrent
+clang++ processes no longer need 6 GiB for this workload.
 Cross-CPU page-table shootdown uses SGI 0 (`GICD_SGIR` on GICv2,
 `ICC_SGI1R_EL1` on GICv3): `procflushseg()` broadcasts it and the boot probe
 reports `IPI PASS`.  The SGI handler only invalidates translations; page
@@ -447,6 +450,14 @@ The kernel currently manages only the contiguous RAM bank containing the
 Image.  On the 8 GiB board that is the ~3.8 GiB lower bank, which holds the
 256 MiB kernel/archive window and is enough for a sequential SDK
 self-build; the second bank is not yet used.
+
+The two-file layout was validated in QEMU virt exactly as U-Boot will load
+it: `aspera-tblgen.img` was built with `ARM64_PIN_USER=1` and a runner as
+`/boot/init`, the 390 MiB overlay archive was loaded at `0x50000000`, and
+all 77 TUs compiled on four vCPUs with `TGEN VT-MATCH 46644 bytes`.  The
+image build is `test_apex_boot.py --elf <runner.elf> --image-out <Image>`
+with `ARM64_PIN_USER=1` in the environment; the archive comes from
+`test-selfbuild-tblgen.py --stage-only --boot <archive>`.
 
 This uses QEMU's direct ARM64 Image loading. No UEFI or Limine is involved.
 The Image header and x0 device tree handoff also match U-Boot's `booti`

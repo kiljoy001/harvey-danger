@@ -175,8 +175,8 @@ def main() -> None:
              "--untar", "/boot/sdk.tar:/initramfs",
              "--env", "TMPDIR=/initramfs/sdk/tmp"]
     if args.mem == 0:
-        args.mem = 6144 if args.jobs > 1 else 3072
-    elif args.jobs > 1 and args.mem < 6144:
+        args.mem = 4096 if args.jobs > 1 else 3072
+    elif args.jobs > 1 and args.mem < 3072:
         print(f"note: --jobs {args.jobs} at {args.mem} MiB; "
               "the guest may run out of physical memory")
     if args.limit:
