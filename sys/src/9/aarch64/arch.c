@@ -107,6 +107,12 @@ procrestore(Proc *p)
 	if(p->kp)
 		return;
 	arm64fprestore(p);
+	/*
+	 * TPIDR_EL0 is per-CPU, not part of the trap frame.  A process that
+	 * was preempted by the timer and resumes through the IRQ path never
+	 * goes through arm64usertrap(), so restore its TLS pointer here.
+	 */
+	arm64settls(p->tls);
 	cycles(&t);
 	p->pcycles -= t;
 }

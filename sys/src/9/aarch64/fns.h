@@ -61,6 +61,7 @@ void arm64fpsave(Proc *);
 void arm64fpstore(void *);
 void arm64fpload(void *);
 void arm64fprestore(Proc *);
+void arm64settls(usize);
 void procrestore(Proc *);
 void mmuflushtlb(void);
 void mmuswitch(Proc *);
