@@ -394,7 +394,39 @@ bisecting:
 * `timer_free` could free the `Timer` while the timer thread was still
   using it.  The thread now owns the object and frees it on exit.
 
-## Root cause: a Harvey kernel timer wakeup is lost
+## Root cause (corrected): the guest clockevent IRQ is never delivered
+
+The earlier "Harvey timer wakeup is lost" diagnosis was wrong.  A
+per-second kernel probe (`CLKP` in `hzclock`) shows the Harvey clock is
+healthy for the entire run: `arm64ticks`, `intrcount` and `fcallcount`
+all keep advancing, and `tadd0` stays 0 (no zero-delta timers).  The
+"beat" counter that appeared to freeze was only the host debug-print
+budget being exhausted.
+
+Instrumenting the LKL guest instead gives the real picture:
+
+```text
+q (defer)      68   timer fires, cpu is busy, IRQ marked pending
+Q (pending)    34   cpu.irqs_pending=1, irqs_disabled=0  -> drain SHOULD run
+r (run_irqs)   35   drain runs, pending index = 1
+R (deliver_irq)68   computed irq = 0/1  (correct)
+U (run_irq)   102   received irq = 0x10cf5868 (68x!) or 1 (34x)
+T (timer handler) 0  timer_irq_handler NEVER runs
+n (nanosleep exit) 0  do_nanosleep loop never exits
+```
+
+`timer_fn` always passes the correct `timer_irq` (1), and `deliver_irq`
+computes the right irq, but `run_irq()` receives a heap pointer
+(`0x10cf5868`, in the libc sbrk region) instead of the irq number for 68
+of its 102 calls.  `timer_irq_handler` therefore never runs, the hrtimer
+never fires, and the nanosleep task blocks in `schedule()` forever.
+
+This is a guest-side (LKL aarch64) corruption in the interrupt delivery
+path -- the irq argument is clobbered between `deliver_irq` and
+`run_irq` -- independent of the Harvey timer and of the host-layer
+primitives, both of which check out.
+
+## Root cause: a Harvey kernel timer wakeup is lost (superseded)
 
 The nanosleep payload (`lklboot -t`) hangs after `getpid` returns, and
 it is not an LKL scheduler defect at all.  Three independent results pin
