@@ -12,7 +12,7 @@
 
 enum {
 	Page		= 4096,
-	Threadstack	= 128*1024,
+	Threadstack	= 512*1024,
 	Ntls		= 16,
 	Ntid		= 64,
 	Nreap		= 64,
@@ -92,6 +92,13 @@ static int	nexttid = 2;
 
 static int hostdebug = 0;	/* thread/timer/console lifecycle */
 static int blocktrace = 0;	/* every sem/mutex wait: noisy, opt-in */
+
+void
+lklhost_debug(int enabled)
+{
+	hostdebug = enabled;
+	blocktrace = enabled;
+}
 static int ndbg;
 
 enum { Dbgmax = 6000 };
@@ -146,6 +153,105 @@ hdbg(char *fmt, ...)
 
 static int curtid(void);
 static void tls_cleanup(int);
+
+/*
+ * In-memory host state for the liveness watchdog.  The hot paths only do a
+ * few stores here; nothing calls into the kernel, so the observation does
+ * not perturb the handoff it is meant to catch.
+ */
+typedef struct Tstate Tstate;
+struct Tstate {
+	int	op;
+	void	*p;
+	int	v;
+};
+static Tstate	 tstate[Ntid];
+
+enum { Nseminfo = 256 };
+static struct {
+	void	*p;
+	void	*ra;
+	int	kind;	/* 's' semaphore, 'm' mutex */
+} seminfo[Nseminfo];
+static int nseminfo;
+
+static void
+semnote(void *p, void *ra, int kind)
+{
+	if(nseminfo < Nseminfo){
+		seminfo[nseminfo].p = p;
+		seminfo[nseminfo].ra = ra;
+		seminfo[nseminfo].kind = kind;
+		nseminfo++;
+	}
+}
+
+static int
+semkind(void *p)
+{
+	int i;
+
+	for(i = nseminfo-1; i >= 0; i--)
+		if(seminfo[i].p == p)
+			return seminfo[i].kind;
+	return 0;
+}
+
+static void*
+semra(void *p)
+{
+	int i;
+
+	for(i = nseminfo-1; i >= 0; i--)
+		if(seminfo[i].p == p)
+			return seminfo[i].ra;
+	return nil;
+}
+
+#define TS(tid, o, ptr, val) do{ \
+	int _t = (tid); \
+	if(_t >= 0 && _t < Ntid){ \
+		tstate[_t].op = (o); \
+		tstate[_t].p = (void*)(uintptr)(ptr); \
+		tstate[_t].v = (val); \
+	} \
+}while(0)
+
+/* Called from the LKL CPU handoff; only stores, never enters the kernel. */
+static volatile int g_owner;
+
+/*
+ * Ring of handoff transitions, dumped by the watchdog.  Entries are tiny
+ * and appended with plain stores; a racing writer can only produce a
+ * slightly torn sample, never perturb the handoff.
+ */
+enum { Ntrace = 256 };
+typedef struct Trace Trace;
+struct Trace {
+	int	tid;
+	int	op;
+	int	a;
+	int	b;
+};
+static Trace trace[Ntrace];
+static volatile int trhead;
+
+void
+lklhost_note(int op, void *p, int v)
+{
+	int i;
+
+	if(op == 'G' || op == 'O')
+		g_owner = (int)(uintptr)p;
+	else if(op == 'P')
+		g_owner = 0;
+	TS(curtid(), op, p, v);
+	i = trhead++;
+	trace[i % Ntrace].tid = curtid();
+	trace[i % Ntrace].op = op;
+	trace[i % Ntrace].a = (int)(uintptr)p;
+	trace[i % Ntrace].b = v;
+}
 
 int
 lkl_printf(const char *fmt, ...)
@@ -203,6 +309,7 @@ hsem_alloc(int count)
 	if((s = mallocz(sizeof *s, 1)) == nil)
 		return nil;
 	s->count = count;
+	semnote(s, RA(), 's');
 	BDBG("sem_alloc %p count %d from %p\n", s, count, RA());
 	return (struct lkl_sem*)s;
 }
@@ -220,6 +327,7 @@ hsem_up(struct lkl_sem *sem)
 	Sem *s = (Sem*)sem;
 
 	BDBG("T%d up %p c%d from %p\n", curtid(), s, s->count, RA());
+	TS(curtid(), 'U', s, s->count);
 	semrelease(&s->count, 1);
 }
 
@@ -228,11 +336,11 @@ hsem_down(struct lkl_sem *sem)
 {
 	Sem *s = (Sem*)sem;
 
-	BDBG("T%d down %p c%d from %p\n", curtid(), s, s->count, RA());
+	TS(curtid(), 'D', s, s->count);
 	/* semacquire returns < 0 if a note interrupted the wait */
 	while(semacquire(&s->count, 1) < 0)
 		;
-	BDBG("T%d got %p\n", curtid(), s);
+	TS(curtid(), 'd', s, s->count);
 }
 
 /* ---- mutexes ---- */
@@ -246,6 +354,7 @@ hmut_alloc(int recursive)
 		return nil;
 	m->recursive = recursive;
 	m->sem = 1;
+	semnote(m, RA(), 'm');
 	return (struct lkl_mutex*)m;
 }
 
@@ -270,10 +379,10 @@ hmut_lock(struct lkl_mutex *mutex)
 		}
 		unlock(&m->lk);
 	}
-	BDBG("T%d mlock %p c%d from %p\n", tid, m, m->sem, RA());
+	TS(tid, 'L', m, m->sem);
 	while(semacquire(&m->sem, 1) < 0)
 		;
-	BDBG("T%d mlok %p\n", tid, m);
+	TS(tid, 'l', m, m->sem);
 	lock(&m->lk);
 	m->owner = tid;
 	m->count = 1;
@@ -291,9 +400,11 @@ hmut_unlock(struct lkl_mutex *mutex)
 		return;
 	}
 	m->owner = 0;
-	unlock(&m->lk);
-	BDBG("T%d munlk %p\n", curtid(), m);
+	/* Publish the permit before dropping the meta-lock, so a waiter that
+	 * observes owner==0 can never find the permit missing. */
 	semrelease(&m->sem, 1);
+	TS(curtid(), 'X', m, m->count);
+	unlock(&m->lk);
 }
 
 /* ---- threads ---- */
@@ -303,6 +414,7 @@ extern void harvey_thread_tramp(void *sp, void *arg, void (*f)(void*));
 void
 hthread_entry(void *arg, void (*f)(void*))
 {
+	TS(curtid(), 'R', nil, 0);
 	HDBG("thread %d enter\n", curtid());
 	f(arg);
 	tls_cleanup(curtid());
@@ -629,15 +741,31 @@ htimer_thread(void *x)
 static void
 hwatchdog(void *arg)
 {
-	vlong last = 0;
-
 	USED(arg);
 	for(;;){
+		int i;
+		char *k;
+
 		sleep(1);
-		if(nsec() - last > 500*1000*1000){
-			last = nsec();
-			HDBG("wd\n");
+		int h, n;
+		USED(k);
+
+		hdbg("own=%d st:", g_owner);
+		for(i = 0; i < Ntid; i++){
+			if(tstate[i].op == 0)
+				continue;
+			hdbg(" %d%c%p/%d", i, tstate[i].op,
+			     tstate[i].p, tstate[i].v);
+			if(semkind(tstate[i].p) == 's')
+				hdbg("c%d", ((Sem*)tstate[i].p)->count);
 		}
+		hdbg("\ntr:");
+		h = trhead;
+		for(n = (h > 20 ? h-20 : 0); n < h; n++){
+			Trace *t = &trace[n % Ntrace];
+			hdbg(" %d%c%d/%d", t->tid, t->op, t->a, t->b);
+		}
+		say("\n", 1);
 	}
 }
 

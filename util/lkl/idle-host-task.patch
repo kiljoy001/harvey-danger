@@ -1,5 +1,5 @@
 diff --git a/arch/lkl/kernel/cpu.c b/arch/lkl/kernel/cpu.c
-index 4afab4817..11f3263bc 100644
+index 4afab4817..460aafe65 100644
 --- a/arch/lkl/kernel/cpu.c
 +++ b/arch/lkl/kernel/cpu.c
 @@ -8,6 +8,8 @@
@@ -27,7 +27,36 @@ index 4afab4817..11f3263bc 100644
  }
  
  int lkl_cpu_get(void)
-@@ -147,6 +151,7 @@ void lkl_cpu_put(void)
+@@ -97,15 +101,20 @@ int lkl_cpu_get(void)
+ 	int ret;
+ 
+ 	ret = __cpu_try_get_lock(1);
++	lklhost_note('1', (void *)(long)cpu.owner, ret);
+ 
+ 	while (ret == 0) {
++		lklhost_note('w', (void *)(long)cpu.owner, cpu.sleepers);
+ 		cpu.sleepers++;
+ 		__cpu_try_get_unlock(ret, 0);
+ 		lkl_ops->sem_down(cpu.sem);
++		lklhost_note('s', (void *)(long)cpu.owner, cpu.sleepers);
+ 		ret = __cpu_try_get_lock(0);
++		lklhost_note('r', (void *)(long)cpu.owner, ret);
+ 	}
+ 
+ 	__cpu_try_get_unlock(ret, 1);
++	lklhost_note('g', (void *)(long)lkl_ops->thread_self(), cpu.count);
+ 
+ 	return ret;
+ }
+@@ -113,6 +122,7 @@ int lkl_cpu_get(void)
+ void lkl_cpu_put(void)
+ {
+ 	lkl_ops->mutex_lock(cpu.lock);
++	lklhost_note('p', (void *)(long)cpu.owner, cpu.sleepers);
+ 
+ 	if (!cpu.count || !cpu.owner ||
+ 	    !lkl_ops->thread_equal(cpu.owner, lkl_ops->thread_self()))
+@@ -147,6 +157,7 @@ void lkl_cpu_put(void)
  	cpu.owner = 0;
  
  	lkl_ops->mutex_unlock(cpu.lock);

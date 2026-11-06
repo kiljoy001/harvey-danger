@@ -19,6 +19,7 @@ extern int	lkl_start_kernel(const char *fmt, ...);
 extern long	lkl_sys_halt(void);
 extern void	lkl_cleanup(void);
 extern void	lklhost_setout(int);
+extern void	lklhost_debug(int);
 extern int	lklhost_mapdev(char*, u64*, u64*);
 extern int	lklhost_iomem(u64, void*, int, int);
 extern int	lkl_printf(const char*, ...);
@@ -55,6 +56,15 @@ void
 main(int argc, char **argv)
 {
 	int fd;
+
+	ARGBEGIN{
+	case 'd':
+		lklhost_debug(1);
+		break;
+	default:
+		fprint(2, "usage: lklboot [-d] [platform-node]\n");
+		exits("usage");
+	}ARGEND
 	/*
 	 * Diagnostics go to /dev/lkllog, a synthetic file backed by a ring
 	 * buffer.  Writing to /dev/cons from these threads is not safe: the
@@ -80,8 +90,8 @@ main(int argc, char **argv)
 		fd = 1;
 	}
 	lklhost_setout(fd);
-	if(argc > 1)
-		probe(argv[1]);
+	if(argc > 0)
+		probe(argv[0]);
 
 	say("lklboot: start\n");
 	if(lkl_init(&lkl_harvey_ops) < 0){

@@ -416,6 +416,45 @@ Instrumentation notes:
 * the probe's `idleforever()` (syscall 17 = `sleep`) is what runs when the
   system is otherwise idle, so seeing it in `hzclock` samples is expected.
 
+## Fix: publish a mutex permit before it looks free (2026-11-05)
+
+Root cause of the board-only handoff stall was in the host mutex, not in
+LKL.  `hmut_unlock()` cleared `owner` and dropped the meta-lock before
+posting the semaphore permit:
+
+```c
+m->owner = 0;
+unlock(&m->lk);
+semrelease(&m->sem, 1);      /* too late */
+```
+
+A locker could then see the mutex as free (`owner == 0`) while the permit
+was still held, and if the unlocker was descheduled in that window the
+waiter blocked on a permit that would arrive too late -- with the CPU
+already free.  The watchdog caught exactly that: `own=0` and the boot
+task asleep in `hsem_down(cpu.sem)` with the count at 0.
+
+Publish the permit while the meta-lock is still held:
+
+```c
+m->owner = 0;
+semrelease(&m->sem, 1);
+unlock(&m->lk);
+```
+
+`semrelease` never reschedules (the kernel documents `syssemrelease`
+that way), so holding `m->lk` across it is safe.
+
+Validated on the board: before the change every no-debug run stopped
+after `lklboot: init ok`; after it, three consecutive runs printed the
+banner, `lklboot: kernel up` and `lklboot: halted`.
+
+The instrumentation that found it is kept: per-thread state and a
+20-entry handoff trace ring in the host layer, dumped once a second by
+the liveness watchdog only under `lklboot -d`.  The hot paths only do
+stores (no host calls), and `lklhost_note()` is called from the LKL CPU
+handoff.
+
 ## Fat kernel experiment (2026-11-05)
 
 A single "fat" LKL -- MMC, MMC_BLOCK, MMC_SDHCI, MMC_SDHCI_PLTFM, plus
