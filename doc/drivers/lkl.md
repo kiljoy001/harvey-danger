@@ -335,38 +335,74 @@ counters), a `sleep(1)` watchdog never woke, and `/proc` was not even
 reachable.  Resolving the sampled PC to symbols showed the guest sitting
 in `do_idle`/`arch_cpu_idle`, which named the bug.
 
-## Missing preemption on the ARM64 port
+## Preemption on the ARM64 port (fixed 2026-11-06)
 
-The remaining stall is not in LKL and not in `sleep()`.  The port has no
-preemption point on the interrupt return path: `_arm64irq` restores the
-saved frame and executes `eret` straight back to EL0.  Nothing checks
-`up->delaysched`, so `hzclock()` can raise it forever and no switch
-happens.
+The port had no preemption point on the interrupt return path:
+`_arm64irq` restored its frame and executed `eret` straight back to EL0,
+so nothing ever acted on `up->delaysched` raised by `hzclock()`.
+LKL's kernel is user-space code, so one guest spin loop starved the whole
+machine -- the timer thread, every woken task, everything.
 
-Evidence, from in-kernel counters printed in interrupt context:
+The earlier attempt to call `sched()` from the IRQ path was rejected
+because other processes then faulted at `pc 0x0`.  The missing piece was
+not the `Ureg` frame: it is `SP_EL0`.  On an exception from EL0 the CPU
+leaves the user stack pointer in `SP_EL0`, which is *outside* `Ureg`, and
+a context switch inside the IRQ ran another process's user resume path
+over it.  `_arm64irq` now saves `SP_EL0` in an extra word at offset 288
+and restores it before `eret`, and `arm64irq()` calls `sched()` (clock
+interrupt) or `preempted()` (other interrupts) after the handler when the
+interrupted context was EL0 and the process is Running.
 
-* `.`/`:` around `timerintr()` -- timer interrupts fire and the handler
-  completes;
-* `*` in `hzclock()` -- the HZ clock runs, so `machp()->ticks` advances;
-* a watchdog host thread that only does `sleep(1)` and print wakes
-  **once** and never again.
+Verified with a host-layer test rather than a board run.  A thread spins
+in user mode (no syscalls); the main thread times a `sleep(10)`:
 
-So processes are marked Ready and their `tsleep` timers expire, but the
-running user-mode process is never displaced.  LKL's kernel is user-space
-code, so one guest spin loop starves the whole machine.
+| kernel | `sleep(10)` returns in |
+|---|---|
+| before | 1178 ms (only after the spinner finished) |
+| after | 132 ms (one 100 ms scheduling quantum) |
 
-Preemption is now checked on the **syscall return path**
-(`arm64syscall`), which is where Plan 9 normally does it and where a
-switch is safe.  That covers host-call loops (LKL's `__ndelay()` calls
-`lkl_ops->time()`, i.e. `nsec()`, in a tight loop), but not a pure
-user-mode spin.
+The default M1 boot still reaches `lklboot: halted`, so the IRQ-frame
+change does not disturb the syscall path.
 
-Doing it directly in the IRQ vector was tried and rejected: calling
-`sched()` there corrupts the saved register frame, and other processes
-then fault with `pc 0x0`.  A save/restore of the `Ureg` around `sched()`
-did not fix it.  A correct fix needs the IRQ return path restructured so
-the switch happens on a clean frame (or a trap-to-kernel trampoline);
-that is the open item.
+## Deterministic host-layer test (2026-11-06)
+
+LKL's own tests (`tools/lkl/tests/boot`) exercise liblkl's host ops on
+the build host.  They do not touch `harvey-host.c`, which is where the
+port's bugs live, so `lklboot -s` now runs the same *payload* against
+our host layer:
+
+* a 1 s clock calibration (`sleep(1000)` must return in ~1000 ms);
+* a user-mode spin preemption test (see above);
+* a strict block-then-post handoff: the poster waits 100 ms so the
+  waiter is already asleep;
+* a 20 000 round-trip semaphore ping-pong;
+* a 4-thread, 80 000-iteration contended mutex.
+
+All five pass.  This isolates the host layer from the guest: when they
+pass, a guest stall is not a lost semaphore, a lost mutex, or a clock
+problem.
+
+Two host-layer contract bugs were found by reading rather than
+bisecting:
+
+* `timer_set_oneshot` computed `nsec() + delta` in signed 64 bits.  LKL
+  programs `KTIME_MAX` when `NO_HZ_IDLE` stops the tick, so the sum
+  overflowed into the past and the timer fired immediately, forever --
+  an IRQ storm exactly when the guest went idle.  The POSIX reference
+  host avoids this by splitting the delta into seconds and nanoseconds;
+  we now treat anything beyond the representable deadline as unarmed.
+* `timer_free` could free the `Timer` while the timer thread was still
+  using it.  The thread now owns the object and frees it on exit.
+
+## Remaining guest deadlock
+
+The nanosleep payload (`lklboot -t`) still hangs after `getpid`
+returns, and a dump shows the CPU permit owned by a task whose host
+thread is parked inside `__switch_to` (`cpu.owner=2`, thread 2 in state
+`d` on its `sched_sem`).  All other threads are parked, the timer thread
+has fired and has no armed timer.  This is a lost handoff in LKL's
+scheduler, independent of the two fixes above, and it is now a
+deterministic reproduction that runs in QEMU in seconds.
 
 ## Remaining stall
 
