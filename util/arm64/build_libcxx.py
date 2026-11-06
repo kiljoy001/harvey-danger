@@ -42,7 +42,11 @@ x86 = importlib.util.module_from_spec(importlib.util.spec_from_file_location(
     "hx", ROOT / "util" / "9vm" / "build_libcxx.py"))
 importlib.util.spec_from_file_location(
     "hx", ROOT / "util" / "9vm" / "build_libcxx.py").loader.exec_module(x86)
-SOURCES = x86.SOURCES
+SOURCES = list(x86.SOURCES)
+# std::placeholders lives in bind.cpp; the x86 list predates it and does not
+# include it, which leaves std::bind users with an undefined _1.
+if "bind" not in SOURCES:
+    SOURCES.append("bind")
 CONFIG_SITE = x86.CONFIG_SITE
 
 
@@ -165,7 +169,7 @@ def build_library() -> None:
 
     cxxabi_flags = base_flags(False) + [f"-I{LIBCXXABI / 'include'}"]
     for name in ("private_typeinfo", "cxa_aux_runtime", "abort_message",
-                 "cxa_virtual", "stdlib_new_delete"):
+                 "cxa_virtual", "stdlib_new_delete", "cxa_guard"):
         src = LIBCXXABI / "src" / f"{name}.cpp"
         obj = OBJDIR / f"cxxabi_{name}.o"
         run([CC, *cxxabi_flags, "-c", str(src), "-o", str(obj)])

@@ -15,7 +15,8 @@ IMAGE = ROOT / "build/arm64/harvey-virt.img"
 
 
 def boot_until(command: list[str], marker: str, idle: float = 8,
-               limit: int = 1024 * 1024, total: float = 0) -> str:
+               limit: int = 1024 * 1024, total: float = 0,
+               log=None) -> str:
     guest = subprocess.Popen(command, stdout=subprocess.PIPE,
                              stderr=subprocess.STDOUT)
     output = bytearray()
@@ -36,6 +37,9 @@ def boot_until(command: list[str], marker: str, idle: float = 8,
             if not chunk:
                 break
             output.extend(chunk)
+            if log is not None:
+                log.write(chunk)
+                log.flush()
     finally:
         if guest.poll() is None:
             guest.terminate()

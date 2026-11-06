@@ -127,9 +127,14 @@ def main() -> None:
         sys.path.insert(0, str(HERE))
         from test_virt import boot_until
         idle = args.timeout or (3600 if args.archive else 8)
-        transcript = boot_until(command, args.marker, idle=idle,
-                                limit=8 * 1024 * 1024,
-                                total=args.deadline)
+        log = open(args.dump, "wb") if args.dump else None
+        try:
+            transcript = boot_until(command, args.marker, idle=idle,
+                                    limit=8 * 1024 * 1024,
+                                    total=args.deadline, log=log)
+        finally:
+            if log is not None:
+                log.close()
     finally:
         if args.dump:
             Path(args.dump).write_text(transcript)

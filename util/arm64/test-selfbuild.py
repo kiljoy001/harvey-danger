@@ -73,6 +73,8 @@ def main() -> None:
     ap.add_argument("--boot", default="/tmp/opencode/sdk-selfbuild.boot")
     ap.add_argument("--dump", default="/tmp/opencode/selfbuild.log")
     ap.add_argument("--mem", type=int, default=3072)
+    ap.add_argument("--smp", type=int, default=1,
+                    help="QEMU vCPUs (the guest kernel supports SMP)")
     ap.add_argument("--deadline", type=int, default=900)
     ap.add_argument("--keep", action="store_true",
                     help="keep the staged tree and archive")
@@ -153,7 +155,7 @@ def main() -> None:
     dump = Path(args.dump)
     run([sys.executable, str(HERE / "test_apex_boot.py"),
          "--elf", str(runner), "--archive", str(boot),
-         "--mem", str(args.mem), "--marker", "SELFBUILD-DONE",
+         "--mem", str(args.mem), "--smp", str(args.smp), "--marker", "SELFBUILD-DONE",
          "--allow-missing", "--deadline", str(args.deadline),
          "--dump", str(dump)])
 

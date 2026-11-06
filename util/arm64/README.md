@@ -90,6 +90,76 @@ cxx-libcxx harvey arm64 sum=6 tls=7 shared=42 int=1 what=boom
 LIBCXX-ARM64-OK
 ```
 
+### SMP
+
+`test_apex_boot.py --smp N` starts N QEMU vCPUs (the default is still one).
+The kernel reads the `device_type = "cpu"` nodes and `/psci` from the device
+tree, gives every core a `Mach` selected through `TPIDR_EL1`, and starts the
+secondaries with PSCI `CPU_ON` (`hvc` on QEMU virt, `smc` on the board).  The
+entry stub in `smp.S` installs the stack, `VBAR_EL1`, and the boot CPU's
+`MAIR`/`TCR`/`TTBR0`/`SCTLR`, then `arm64cpustart()` wakes that core's GICv3
+redistributor (or the banked GICv2 CPU interface), arms its virtual timer,
+and enters the shared scheduler.  Each secondary calls `timersinit()` for its
+own per-CPU HZ timer.  Pinned boot workers report:
+
+```text
+ARM64 smp: ncpu 4 psci 1/0xc4000003
+ARM64 cpu1 online
+...
+HARVEY-ARM64 CPU1-SCHED PASS
+HARVEY-ARM64 CPU1-TIMER PASS
+```
+
+SMP found two uniprocessor-only bugs in shared port code.  Clang hoisted the
+plain loads in `while(l->key)` (`taslock.c`) and `while(p->mach != 0)`
+(`sysproc.c`) out of their loops, turning a contended wait into an infinite
+self-branch; both now use atomic loads.  `todinit()` is also serialised
+because every core calls it through `timersinit()`.
+
+Two more SMP-only failures came out of stress.  User TLS (`TPIDR_EL0`) is a
+per-CPU register, not part of the trap frame, so `procrestore()` now restores
+`p->tls` for the IRQ resume path as well; APEX also installs the register
+directly when it builds a thread's TLS block.  A thread's stack was freed by
+`pthread_join()` while the exiting thread was still running `_exits()` on it;
+the join now leaves it to process teardown.  Periodic timers are re-armed
+before their handler runs: the old post-handler `tadd()` could touch a
+`Proc.Timer` after the handler had woken a process that exited and recycled
+its Proc on another CPU.
+
+User FP/SIMD state is now part of the context switch.  The kernel is built
+with `-mgeneral-regs-only`, so `procsave`/`procrestore` use `fpu.S` to save
+and restore q0-q31, FPCR and FPSR; without that a process resuming on a
+different CPU inherits the previous occupant's registers.  An eight-process
+register stress test failed with another child's value before the change
+and passes after it.
+
+Status: 1, 2 and 4 vCPU boots pass, and `test-selfbuild.py --smp 4` compiles,
+links and runs the guest `llvm-as` with byte-identical bitcode.
+`test-selfbuild-tblgen.py --smp 4 --jobs 4` compiles several TableGen TUs at
+once through `TGEN_JOBS`; a limit-8 run took 80 s instead of the 8x26 s a
+sequential run needs.  Four concurrent clang++ processes do not fit in the
+3 GiB QEMU guest, though: a full `--jobs 4` run stopped at 55/77 with
+`kickpager(): no physical memory`, and TCG contention made it slower than
+the sequential build.  The default remains `--jobs 1`; parallel builds need
+more guest RAM (or the board's second memory bank) first.  Cross-CPU
+page-table shootdown still uses the existing `procflushseg()`/`hzclock`
+polling path, not SGIs, and an EL0 code replacement invalidates the I-cache
+only on the core that performs it.
+
+### Heap and large allocations
+
+APEX `malloc` keeps allocations >= 1 MiB at their exact size on a large
+free list instead of rounding to the next power of two, and extends the
+block at the top of the heap in place on `realloc` (`libc` now provides
+`sbrkbrk()`).  The old power-of-two buckets retained every old size class;
+one guest `clang` reached 1.4-1.6 GB of segments for a TU whose host build
+peaks near 100 MB.  The heap is shared by `rfork(RFMEM)` threads, so it is
+not shrunk; parallel builds still need RAM, and on the board that means the
+second memory bank first.
+
+`Proc.Timer` is zeroed when a `Proc` is allocated and detached in `pexit()`,
+so a recycled Proc cannot inherit a stale timer-list pointer.
+
 ### Running ARM tools with arguments
 
 The kernel starts its first user process with no descriptors and no
@@ -202,8 +272,8 @@ built with `-mstrict-align`: before the MMU
 is enabled, the RK3566 traps on unaligned multi-byte stores even with
 `SCTLR_EL1.A` clear. Replacing EL0 test code at an identity-mapped address
 also requires invalidating the instruction-cache alias used by its user
-virtual address. A local `ic iallu` currently handles that single-core boot
-probe; SMP code replacement will need cross-core synchronization. The board
+virtual address. A local `ic iallu` handles that boot probe; with SMP, replacing
+code that another core may execute still needs an I-cache shootdown. The board
 has no virtio-9P device attached, so the optional `#9` exchange is skipped.
 
 ### Rockchip IOMMU
