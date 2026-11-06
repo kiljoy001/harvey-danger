@@ -416,44 +416,39 @@ Instrumentation notes:
 * the probe's `idleforever()` (syscall 17 = `sleep`) is what runs when the
   system is otherwise idle, so seeing it in `hzclock` samples is expected.
 
-## Fix: publish a mutex permit before it looks free (2026-11-05)
+## Diagnosis: the guest goes idle and never wakes (2026-11-05)
 
-Root cause of the board-only handoff stall was in the host mutex, not in
-LKL.  `hmut_unlock()` cleared `owner` and dropped the meta-lock before
-posting the semaphore permit:
+The board-only stall reproduces with the watchdog dumping only when the
+handoff state is frozen, so the observation cannot mask the bug.  A
+stalling run shows:
 
-```c
-m->owner = 0;
-unlock(&m->lk);
-semrelease(&m->sem, 1);      /* too late */
+```
+own=0 st: 1D<sem> 2D<sem>@threads_init c0 3R 4X ... 5..10D<sched_sem> c0
+tr: 2G2/1 212/1 2g2/1 2O5/1 ... 5O2/1 2p2/0 2P0/0 4G4/1 4p4/0 4P0/0 ...
 ```
 
-A locker could then see the mutex as free (`owner == 0`) while the permit
-was still held, and if the unlocker was descheduled in that window the
-waiter blocked on a permit that would arrive too late -- with the CPU
-already free.  The watchdog caught exactly that: `own=0` and the boot
-task asleep in `hsem_down(cpu.sem)` with the count at 0.
+**Correction to an earlier reading:** `own=0` with every task parked is
+*normal idle*, not a stuck CPU handoff.  Thread 2 (the boot task) does
+`put`/release (`2p2/0`, `2P0/0`) and immediately parks on its own
+`sched_sem` (allocated by `threads_init`), which is what
+`lkl_idle_park()` does.  Another thread then repeatedly takes and
+releases the CPU (`4G4/1 4p4/0 4P0/0`), which is consistent with the
+timer thread running `t->fn()`.
 
-Publish the permit while the meta-lock is still held:
+So the guest is genuinely idle: the CPU is free, every Linux task is
+parked, and the timer callback is running, yet no task becomes runnable.
+The missing wakeup is in the guest timer/IRQ delivery, not in the CPU
+semaphore.
 
-```c
-m->owner = 0;
-semrelease(&m->sem, 1);
-unlock(&m->lk);
-```
+`hmut_unlock()` did have a real defect -- it cleared `owner` and dropped
+the meta-lock before posting the permit -- and publishing the permit
+first is correct (it narrows the window), but it is **not** the cause.
 
-`semrelease` never reschedules (the kernel documents `syssemrelease`
-that way), so holding `m->lk` across it is safe.
-
-Validated on the board: before the change every no-debug run stopped
-after `lklboot: init ok`; after it, three consecutive runs printed the
-banner, `lklboot: kernel up` and `lklboot: halted`.
-
-The instrumentation that found it is kept: per-thread state and a
-20-entry handoff trace ring in the host layer, dumped once a second by
-the liveness watchdog only under `lklboot -d`.  The hot paths only do
-stores (no host calls), and `lklhost_note()` is called from the LKL CPU
-handoff.
+Next: instrument the timer path -- whether `lkl_cpu_try_run_irq()` gets
+the CPU and `run_irqs()` actually invokes the clockevent handler, and
+whether a task is made runnable afterwards.  The `-d` trace masks the
+bug, so the frozen-state watchdog and the handoff ring are the tools to
+use.
 
 ## Fat kernel experiment (2026-11-05)
 

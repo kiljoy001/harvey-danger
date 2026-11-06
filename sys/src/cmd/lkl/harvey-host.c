@@ -219,6 +219,13 @@ semra(void *p)
 
 /* Called from the LKL CPU handoff; only stores, never enters the kernel. */
 static volatile int g_owner;
+static void *cpusem;
+
+void
+lklhost_cpusem(void *p)
+{
+	cpusem = p;
+}
 
 /*
  * Ring of handoff transitions, dumped by the watchdog.  Entries are tiny
@@ -328,6 +335,8 @@ hsem_up(struct lkl_sem *sem)
 
 	BDBG("T%d up %p c%d from %p\n", curtid(), s, s->count, RA());
 	TS(curtid(), 'U', s, s->count);
+	if(s == cpusem)
+		lklhost_note('U', s, s->count);
 	semrelease(&s->count, 1);
 }
 
@@ -337,10 +346,14 @@ hsem_down(struct lkl_sem *sem)
 	Sem *s = (Sem*)sem;
 
 	TS(curtid(), 'D', s, s->count);
+	if(s == cpusem)
+		lklhost_note('D', s, s->count);
 	/* semacquire returns < 0 if a note interrupted the wait */
 	while(semacquire(&s->count, 1) < 0)
 		;
 	TS(curtid(), 'd', s, s->count);
+	if(s == cpusem)
+		lklhost_note('d', s, s->count);
 }
 
 /* ---- mutexes ---- */
@@ -746,9 +759,36 @@ hwatchdog(void *arg)
 		int i;
 		char *k;
 
-		sleep(1);
 		int h, n;
+		static Tstate prev[Ntid];
+		static int gprev, frozen, dumped;
+
+		sleep(1);
+		if(!hostdebug){
+			/* Dump only when nothing has moved for two ticks: the
+			 * stall is the interesting case, and a steady stream of
+			 * output would mask it. */
+			int same = (gprev == g_owner);
+
+			for(i = 0; same && i < Ntid; i++)
+				same = prev[i].op == tstate[i].op &&
+				       prev[i].p == tstate[i].p &&
+				       prev[i].v == tstate[i].v;
+			if(same){
+				if(++frozen == 2 && !dumped){
+					dumped = 1;
+					goto dump;
+				}
+			}else{
+				frozen = 0;
+				dumped = 0;
+			}
+			gprev = g_owner;
+			memmove(prev, tstate, sizeof prev);
+			continue;
+		}
 		USED(k);
+dump:
 
 		hdbg("own=%d st:", g_owner);
 		for(i = 0; i < Ntid; i++){
@@ -761,7 +801,7 @@ hwatchdog(void *arg)
 		}
 		hdbg("\ntr:");
 		h = trhead;
-		for(n = (h > 20 ? h-20 : 0); n < h; n++){
+		for(n = (h > 60 ? h-60 : 0); n < h; n++){
 			Trace *t = &trace[n % Ntrace];
 			hdbg(" %d%c%d/%d", t->tid, t->op, t->a, t->b);
 		}
