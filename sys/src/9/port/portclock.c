@@ -22,7 +22,13 @@ struct Timers {
 
 static Timers timers[MACHMAX];
 
-/* Debug: the per-CPU HZ timers, to catch a free/reuse of a live Timer. */
+/*
+ * The per-CPU HZ timers live in their own BSS array.  They used to be
+ * malloc'd, which placed them immediately below the init process's kernel
+ * stack; a stack underflow then overwrote tmode/tf/tt and timerintr()
+ * paniced.  BSS is far from every kernel stack.
+ */
+static Timer clocktimers[MACHMAX];
 Timer *arm64clocktimer[MACHMAX];
 
 int
@@ -320,19 +326,8 @@ timersinit(void)
 	 * T->tf == nil means the HZ clock for this processor.
 	 */
 	todinit();
-	t = malloc(sizeof(*t));
-	{
-		int pi;
-		Proc *pp;
-
-		for(pi = 0; (pp = psincref(pi)) != nil; pi++){
-			if((void *)t >= (void *)pp->kstack &&
-			   (void *)t < (void *)(pp->kstack + KSTACK))
-				print("TIMERSTACK timer %#p pid %d kstack %#p\n",
-				    t, pp->pid, pp->kstack);
-			psdecref(pp);
-		}
-	}
+	t = &clocktimers[machp()->machno];
+	memset(t, 0, sizeof *t);
 	arm64clocktimer[machp()->machno] = t;
 	t->tmode = Tperiodic;
 	t->tt = nil;

@@ -829,9 +829,10 @@ newproc(void)
 	if(p->pid <= 0 || p->noteid <= 0)
 		panic("pidalloc");
 	if(p->kstack == 0){
-		p->kstack = smalloc(KSTACK);
-		if(arm64clocktimeroverlap(p->kstack, KSTACK))
-			panic("newproc: kstack %#p overlaps a clock timer", p->kstack);
+		char *base;
+
+		base = smalloc(KSTACK + KGUARD);
+		p->kstack = base + KGUARD;
 	}
 
 	/* sched params */

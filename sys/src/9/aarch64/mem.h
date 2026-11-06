@@ -12,6 +12,7 @@
 #define BIGPGSZ (2 * MiB)
 #define PGSHFT 12
 #define KSTACK (32 * KiB)
+#define KGUARD (8 * KiB)	/* unused gap below each kernel stack */
 #define BY2SE 8
 #define HZ 100
 #define MACHMAX 16
