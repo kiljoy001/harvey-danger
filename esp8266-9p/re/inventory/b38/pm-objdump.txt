@@ -1,0 +1,4157 @@
+
+pm.o:     file format elf32-xtensa-le
+
+
+Disassembly of section .text2.14:
+
+00000000 <esp_wifi_set_pm_config-0x4>:
+   0:	00 00 00 00 	
+			0: R_XTENSA_32	.bss.pmc
+
+00000004 <esp_wifi_set_pm_config>:
+   4:	0a1216        	beqz	a2, a9 <esp_wifi_set_pm_config+0xa5>
+			4: R_XTENSA_SLOT0_OP	.text2.14+0xa9
+   7:	000242        	l8ui	a4, a2, 0
+   a:	f50c      	movi.n	a5, 15
+   c:	fffd31        	l32r	a3, 0 <esp_wifi_set_pm_config-0x4>
+			c: R_XTENSA_SLOT0_OP	.text2.14
+   f:	05b547        	bgeu	a5, a4, 18 <esp_wifi_set_pm_config+0x14>
+			f: R_XTENSA_SLOT0_OP	.text2.14+0x18
+  12:	8a4352        	s8i	a5, a3, 138
+  15:	0001c6        	j	20 <esp_wifi_set_pm_config+0x1c>
+			15: R_XTENSA_SLOT0_OP	.text2.14+0x20
+  18:	0134f6        	bgeui	a4, 3, 1d <esp_wifi_set_pm_config+0x19>
+			18: R_XTENSA_SLOT0_OP	.text2.14+0x1d
+  1b:	340c      	movi.n	a4, 3
+  1d:	8a4342        	s8i	a4, a3, 138
+  20:	010242        	l8ui	a4, a2, 1
+  23:	052c      	movi.n	a5, 32
+  25:	05b547        	bgeu	a5, a4, 2e <esp_wifi_set_pm_config+0x2a>
+			25: R_XTENSA_SLOT0_OP	.text2.14+0x2e
+  28:	8b4352        	s8i	a5, a3, 139
+  2b:	000246        	j	38 <esp_wifi_set_pm_config+0x34>
+			2b: R_XTENSA_SLOT0_OP	.text2.14+0x38
+  2e:	c50c      	movi.n	a5, 12
+  30:	013547        	bltu	a5, a4, 35 <esp_wifi_set_pm_config+0x31>
+			30: R_XTENSA_SLOT0_OP	.text2.14+0x35
+  33:	d40c      	movi.n	a4, 13
+  35:	8b4342        	s8i	a4, a3, 139
+  38:	020242        	l8ui	a4, a2, 2
+  3b:	64a052        	movi	a5, 100
+  3e:	07b547        	bgeu	a5, a4, 49 <esp_wifi_set_pm_config+0x45>
+			3e: R_XTENSA_SLOT0_OP	.text2.14+0x49
+  41:	864352        	s8i	a5, a3, 134
+  44:	0002c6        	j	53 <esp_wifi_set_pm_config+0x4f>
+			44: R_XTENSA_SLOT0_OP	.text2.14+0x53
+  47:	00          	.byte 00
+  48:	00          	.byte 00
+  49:	950c      	movi.n	a5, 9
+  4b:	013547        	bltu	a5, a4, 50 <esp_wifi_set_pm_config+0x4c>
+			4b: R_XTENSA_SLOT0_OP	.text2.14+0x50
+  4e:	a40c      	movi.n	a4, 10
+  50:	864342        	s8i	a4, a3, 134
+  53:	030242        	l8ui	a4, a2, 3
+  56:	451c      	movi.n	a5, 20
+  58:	05b547        	bgeu	a5, a4, 61 <esp_wifi_set_pm_config+0x5d>
+			58: R_XTENSA_SLOT0_OP	.text2.14+0x61
+  5b:	874352        	s8i	a5, a3, 135
+  5e:	000186        	j	68 <esp_wifi_set_pm_config+0x64>
+			5e: R_XTENSA_SLOT0_OP	.text2.14+0x68
+  61:	04cc      	bnez.n	a4, 65 <esp_wifi_set_pm_config+0x61>
+			61: R_XTENSA_SLOT0_OP	.text2.14+0x65
+  63:	140c      	movi.n	a4, 1
+  65:	874342        	s8i	a4, a3, 135
+  68:	040242        	l8ui	a4, a2, 4
+  6b:	64a052        	movi	a5, 100
+  6e:	06b547        	bgeu	a5, a4, 78 <esp_wifi_set_pm_config+0x74>
+			6e: R_XTENSA_SLOT0_OP	.text2.14+0x78
+  71:	884352        	s8i	a5, a3, 136
+  74:	0001c6        	j	7f <esp_wifi_set_pm_config+0x7b>
+			74: R_XTENSA_SLOT0_OP	.text2.14+0x7f
+  77:	00          	.byte 00
+  78:	04cc      	bnez.n	a4, 7c <esp_wifi_set_pm_config+0x78>
+			78: R_XTENSA_SLOT0_OP	.text2.14+0x7c
+  7a:	140c      	movi.n	a4, 1
+  7c:	884342        	s8i	a4, a3, 136
+  7f:	050242        	l8ui	a4, a2, 5
+  82:	64a052        	movi	a5, 100
+  85:	07b547        	bgeu	a5, a4, 90 <esp_wifi_set_pm_config+0x8c>
+			85: R_XTENSA_SLOT0_OP	.text2.14+0x90
+  88:	894352        	s8i	a5, a3, 137
+  8b:	000246        	j	98 <esp_wifi_set_pm_config+0x94>
+			8b: R_XTENSA_SLOT0_OP	.text2.14+0x98
+  8e:	00          	.byte 00
+  8f:	00          	.byte 00
+  90:	14cc      	bnez.n	a4, 95 <esp_wifi_set_pm_config+0x91>
+			90: R_XTENSA_SLOT0_OP	.text2.14+0x95
+  92:	01a042        	movi	a4, 1
+  95:	894342        	s8i	a4, a3, 137
+  98:	060242        	l8ui	a4, a2, 6
+  9b:	0144b6        	bltui	a4, 4, a0 <esp_wifi_set_pm_config+0x9c>
+			9b: R_XTENSA_SLOT0_OP	.text2.14+0xa0
+  9e:	340c      	movi.n	a4, 3
+  a0:	8c4342        	s8i	a4, a3, 140
+  a3:	070222        	l8ui	a2, a2, 7
+  a6:	8d4322        	s8i	a2, a3, 141
+  a9:	f00d      	ret.n
+
+Disassembly of section .text2.15:
+
+00000000 <esp_wifi_get_pm_config-0x4>:
+   0:	00 00 00 00 	
+			0: R_XTENSA_32	.bss.pmc
+
+00000004 <esp_wifi_get_pm_config>:
+   4:	12bc      	beqz.n	a2, 39 <esp_wifi_get_pm_config+0x35>
+			4: R_XTENSA_SLOT0_OP	.text2.15+0x39
+   6:	fffe31        	l32r	a3, 0 <esp_wifi_get_pm_config-0x4>
+			6: R_XTENSA_SLOT0_OP	.text2.15
+   9:	8a0342        	l8ui	a4, a3, 138
+   c:	004242        	s8i	a4, a2, 0
+   f:	8b0342        	l8ui	a4, a3, 139
+  12:	014242        	s8i	a4, a2, 1
+  15:	860342        	l8ui	a4, a3, 134
+  18:	024242        	s8i	a4, a2, 2
+  1b:	870342        	l8ui	a4, a3, 135
+  1e:	034242        	s8i	a4, a2, 3
+  21:	880342        	l8ui	a4, a3, 136
+  24:	044242        	s8i	a4, a2, 4
+  27:	890342        	l8ui	a4, a3, 137
+  2a:	054242        	s8i	a4, a2, 5
+  2d:	8c0342        	l8ui	a4, a3, 140
+  30:	064242        	s8i	a4, a2, 6
+  33:	8d0332        	l8ui	a3, a3, 141
+  36:	074232        	s8i	a3, a2, 7
+  39:	f00d      	ret.n
+
+Disassembly of section .text2.16:
+
+00000000 <esp_wifi_set_pm_recv_multi_data-0x4>:
+   0:	00 00 00 00 	
+			0: R_XTENSA_32	.bss.pmc
+
+00000004 <esp_wifi_set_pm_recv_multi_data>:
+   4:	ffff31        	l32r	a3, 0 <esp_wifi_set_pm_recv_multi_data-0x4>
+			4: R_XTENSA_SLOT0_OP	.text2.16
+   7:	8d4322        	s8i	a2, a3, 141
+   a:	f00d      	ret.n
+
+Disassembly of section .text2.17:
+
+00000000 <esp_wifi_get_pm_recv_multi_data-0x4>:
+   0:	00 00 00 00 	
+			0: R_XTENSA_32	.bss.pmc
+
+00000004 <esp_wifi_get_pm_recv_multi_data>:
+   4:	ffff21        	l32r	a2, 0 <esp_wifi_get_pm_recv_multi_data-0x4>
+			4: R_XTENSA_SLOT0_OP	.text2.17
+   7:	8d0222        	l8ui	a2, a2, 141
+   a:	f00d      	ret.n
+
+Disassembly of section .text2.18:
+
+00000000 <pm_reset_param-0x18>:
+   0:	00 00 00 00 	
+			0: R_XTENSA_32	.data.cur_early
+   4:	dc 82 00 00 	
+   8:	00 00 00 00 	
+			8: R_XTENSA_32	.data.cur_timeout
+   c:	10 27 00 00 	
+	...
+			10: R_XTENSA_32	.bss.early_time_cnt
+			14: R_XTENSA_32	.bss.cntnum
+
+00000018 <pm_reset_param>:
+  18:	fffb31        	l32r	a3, 4 <pm_reset_param-0x14>
+			18: R_XTENSA_SLOT0_OP	.text2.18+0x4
+  1b:	fff921        	l32r	a2, 0 <pm_reset_param-0x18>
+			1b: R_XTENSA_SLOT0_OP	.text2.18
+  1e:	fffc61        	l32r	a6, 10 <pm_reset_param-0x8>
+			1e: R_XTENSA_SLOT0_OP	.text2.18+0x10
+  21:	0239      	s32i.n	a3, a2, 0
+  23:	fffa31        	l32r	a3, c <pm_reset_param-0xc>
+			23: R_XTENSA_SLOT0_OP	.text2.18+0xc
+  26:	fff821        	l32r	a2, 8 <pm_reset_param-0x10>
+			26: R_XTENSA_SLOT0_OP	.text2.18+0x8
+  29:	0239      	s32i.n	a3, a2, 0
+  2b:	020c      	movi.n	a2, 0
+  2d:	025d      	mov.n	a5, a2
+  2f:	77a132        	movi	a3, 0x177
+  32:	426a      	add.n	a4, a2, a6
+  34:	004452        	s8i	a5, a4, 0
+  37:	221b      	addi.n	a2, a2, 1
+  39:	f59237        	bne	a2, a3, 32 <pm_reset_param+0x1a>
+			39: R_XTENSA_SLOT0_OP	.text2.18+0x32
+  3c:	fff621        	l32r	a2, 14 <pm_reset_param-0x4>
+			3c: R_XTENSA_SLOT0_OP	.text2.18+0x14
+  3f:	030c      	movi.n	a3, 0
+  41:	004232        	s8i	a3, a2, 0
+  44:	f00d      	ret.n
+
+Disassembly of section .text2.19:
+
+00000000 <pm_rtc_clock_cali_proc-0xc>:
+	...
+			0: R_XTENSA_32	.bss.ck_170
+			4: R_XTENSA_32	g_phyFuns
+			8: R_XTENSA_32	pm_rtc_clock_cali
+
+0000000c <pm_rtc_clock_cali_proc>:
+   c:	fffe21        	l32r	a2, 4 <pm_rtc_clock_cali_proc-0x8>
+			c: R_XTENSA_SLOT0_OP	.text2.19+0x4
+   f:	f0c112        	addi	a1, a1, -16
+  12:	0228      	l32i.n	a2, a2, 0
+  14:	21c9      	s32i.n	a12, a1, 8
+  16:	fffac1        	l32r	a12, 0 <pm_rtc_clock_cali_proc-0xc>
+			16: R_XTENSA_SLOT0_OP	.text2.19
+  19:	3109      	s32i.n	a0, a1, 12
+  1b:	050c      	movi.n	a5, 0
+  1d:	262262        	l32i	a6, a2, 152
+  20:	1c59      	s32i.n	a5, a12, 4
+  22:	840c      	movi.n	a4, 8
+  24:	230c      	movi.n	a3, 2
+  26:	6aa022        	movi	a2, 106
+  29:	0006c0        	callx0	a6
+  2c:	0c2d      	mov.n	a2, a12
+  2e:	fff601        	l32r	a0, 8 <pm_rtc_clock_cali_proc-0x4>
+			2e: R_XTENSA_SLOT0_OP	.text2.19+0x8
+			2e: R_XTENSA_ASM_EXPAND	pm_rtc_clock_cali
+  31:	0000c0        	callx0	a0
+  34:	3108      	l32i.n	a0, a1, 12
+  36:	1c28      	l32i.n	a2, a12, 4
+  38:	21c8      	l32i.n	a12, a1, 8
+  3a:	10c112        	addi	a1, a1, 16
+  3d:	f00d      	ret.n
+
+Disassembly of section .text2.20:
+
+00000000 <pm_set_sleep_time-0xc>:
+	...
+			0: R_XTENSA_32	.bss.ck_170
+			4: R_XTENSA_32	pm_usec2rtc
+			8: R_XTENSA_32	pm_set_sleep_cycles
+
+0000000c <pm_set_sleep_time>:
+   c:	fffd31        	l32r	a3, 0 <pm_set_sleep_time-0xc>
+			c: R_XTENSA_SLOT0_OP	.text2.20
+   f:	f0c112        	addi	a1, a1, -16
+  12:	1338      	l32i.n	a3, a3, 4
+  14:	3109      	s32i.n	a0, a1, 12
+  16:	fffb01        	l32r	a0, 4 <pm_set_sleep_time-0x8>
+			16: R_XTENSA_SLOT0_OP	.text2.20+0x4
+			16: R_XTENSA_ASM_EXPAND	pm_usec2rtc
+  19:	0000c0        	callx0	a0
+  1c:	fffb01        	l32r	a0, 8 <pm_set_sleep_time-0x4>
+			1c: R_XTENSA_SLOT0_OP	.text2.20+0x8
+			1c: R_XTENSA_ASM_EXPAND	pm_set_sleep_cycles
+  1f:	0000c0        	callx0	a0
+  22:	3108      	l32i.n	a0, a1, 12
+  24:	10c112        	addi	a1, a1, 16
+  27:	f00d      	ret.n
+
+Disassembly of section .text2.21:
+
+00000000 <pm_get_sleep_cycles_64-0x8>:
+	...
+			0: R_XTENSA_32	.bss.ck_170
+			4: R_XTENSA_32	pm_usec2rtc_64
+
+00000008 <pm_get_sleep_cycles_64>:
+   8:	fffe41        	l32r	a4, 0 <pm_get_sleep_cycles_64-0x8>
+			8: R_XTENSA_SLOT0_OP	.text2.21
+   b:	f0c112        	addi	a1, a1, -16
+   e:	1448      	l32i.n	a4, a4, 4
+  10:	3109      	s32i.n	a0, a1, 12
+  12:	fffc01        	l32r	a0, 4 <pm_get_sleep_cycles_64-0x4>
+			12: R_XTENSA_SLOT0_OP	.text2.21+0x4
+			12: R_XTENSA_ASM_EXPAND	pm_usec2rtc_64
+  15:	0000c0        	callx0	a0
+  18:	3108      	l32i.n	a0, a1, 12
+  1a:	10c112        	addi	a1, a1, 16
+  1d:	f00d      	ret.n
+
+Disassembly of section .text2.23:
+
+00000000 <esp_wifi_ps_lock-0x4>:
+   0:	00 00 00 00 	
+			0: R_XTENSA_32	app_optimize_and_debug_mac
+
+00000004 <esp_wifi_ps_lock>:
+   4:	ffff31        	l32r	a3, 0 <esp_wifi_ps_lock-0x4>
+			4: R_XTENSA_SLOT0_OP	.text2.23
+   7:	120c      	movi.n	a2, 1
+   9:	0348      	l32i.n	a4, a3, 0
+   b:	202420        	or	a2, a4, a2
+   e:	0329      	s32i.n	a2, a3, 0
+  10:	f00d      	ret.n
+
+Disassembly of section .text2.24:
+
+00000000 <esp_wifi_ps_unlock-0x4>:
+   0:	00 00 00 00 	
+			0: R_XTENSA_32	app_optimize_and_debug_mac
+
+00000004 <esp_wifi_ps_unlock>:
+   4:	ffff31        	l32r	a3, 0 <esp_wifi_ps_unlock-0x4>
+			4: R_XTENSA_SLOT0_OP	.text2.24
+   7:	e27c      	movi.n	a2, -2
+   9:	0348      	l32i.n	a4, a3, 0
+   b:	102420        	and	a2, a4, a2
+   e:	0329      	s32i.n	a2, a3, 0
+  10:	f00d      	ret.n
+
+Disassembly of section .text2.26:
+
+00000000 <pm_get_sleep_type-0x4>:
+   0:	00 00 00 00 	
+			0: R_XTENSA_32	.bss.pmc
+
+00000004 <pm_get_sleep_type>:
+   4:	ffff21        	l32r	a2, 0 <pm_get_sleep_type-0x4>
+			4: R_XTENSA_SLOT0_OP	.text2.26
+   7:	1d2222        	l32i	a2, a2, 116
+   a:	f00d      	ret.n
+
+Disassembly of section .text2.27:
+
+00000000 <pm_set_the_time_of_phy_init-0x8>:
+	...
+			0: R_XTENSA_32	.bss.the_time_of_open_rf
+			4: R_XTENSA_32	esp_timer_get_time
+
+00000008 <pm_set_the_time_of_phy_init>:
+   8:	f0c112        	addi	a1, a1, -16
+   b:	036102        	s32i	a0, a1, 12
+   e:	fffd01        	l32r	a0, 4 <pm_set_the_time_of_phy_init-0x4>
+			e: R_XTENSA_SLOT0_OP	.text2.27+0x4
+			e: R_XTENSA_ASM_EXPAND	esp_timer_get_time
+  11:	0000c0        	callx0	a0
+  14:	fffb41        	l32r	a4, 0 <pm_set_the_time_of_phy_init-0x8>
+			14: R_XTENSA_SLOT0_OP	.text2.27
+  17:	3108      	l32i.n	a0, a1, 12
+  19:	0429      	s32i.n	a2, a4, 0
+  1b:	1439      	s32i.n	a3, a4, 4
+  1d:	10c112        	addi	a1, a1, 16
+  20:	f00d      	ret.n
+
+Disassembly of section .text.wifi_pm_open_rf:
+
+00000000 <wifi_pm_open_rf-0x20>:
+	...
+			0: R_XTENSA_32	.bss.the_time_of_open_rf
+			4: R_XTENSA_32	pend_flag_noise_check
+			8: R_XTENSA_32	esp_sleep_lock
+			c: R_XTENSA_32	esp_timer_get_time
+			10: R_XTENSA_32	clockgate_watchdog
+			14: R_XTENSA_32	phy_open_rf
+			18: R_XTENSA_32	clockgate_watchdog
+			1c: R_XTENSA_32	noise_check_loop
+
+00000020 <wifi_pm_open_rf>:
+  20:	f0c112        	addi	a1, a1, -16
+  23:	036102        	s32i	a0, a1, 12
+  26:	fff801        	l32r	a0, 8 <wifi_pm_open_rf-0x18>
+			26: R_XTENSA_SLOT0_OP	.text.wifi_pm_open_rf+0x8
+			26: R_XTENSA_ASM_EXPAND	esp_sleep_lock
+  29:	0000c0        	callx0	a0
+  2c:	fff801        	l32r	a0, c <wifi_pm_open_rf-0x14>
+			2c: R_XTENSA_SLOT0_OP	.text.wifi_pm_open_rf+0xc
+			2c: R_XTENSA_ASM_EXPAND	esp_timer_get_time
+  2f:	0000c0        	callx0	a0
+  32:	fff341        	l32r	a4, 0 <wifi_pm_open_rf-0x20>
+			32: R_XTENSA_SLOT0_OP	.text.wifi_pm_open_rf
+  35:	0429      	s32i.n	a2, a4, 0
+  37:	120c      	movi.n	a2, 1
+  39:	1439      	s32i.n	a3, a4, 4
+  3b:	fff501        	l32r	a0, 10 <wifi_pm_open_rf-0x10>
+			3b: R_XTENSA_SLOT0_OP	.text.wifi_pm_open_rf+0x10
+			3b: R_XTENSA_ASM_EXPAND	clockgate_watchdog
+  3e:	0000c0        	callx0	a0
+  41:	fff401        	l32r	a0, 14 <wifi_pm_open_rf-0xc>
+			41: R_XTENSA_SLOT0_OP	.text.wifi_pm_open_rf+0x14
+			41: R_XTENSA_ASM_EXPAND	phy_open_rf
+  44:	0000c0        	callx0	a0
+  47:	00a022        	movi	a2, 0
+  4a:	fff301        	l32r	a0, 18 <wifi_pm_open_rf-0x8>
+			4a: R_XTENSA_SLOT0_OP	.text.wifi_pm_open_rf+0x18
+			4a: R_XTENSA_ASM_EXPAND	clockgate_watchdog
+  4d:	0000c0        	callx0	a0
+  50:	ffed31        	l32r	a3, 4 <wifi_pm_open_rf-0x1c>
+			50: R_XTENSA_SLOT0_OP	.text.wifi_pm_open_rf+0x4
+  53:	000322        	l8ui	a2, a3, 0
+  56:	0c1266        	bnei	a2, 1, 66 <wifi_pm_open_rf+0x46>
+			56: R_XTENSA_SLOT0_OP	.text.wifi_pm_open_rf+0x66
+  59:	040c      	movi.n	a4, 0
+  5b:	004342        	s8i	a4, a3, 0
+  5e:	023d      	mov.n	a3, a2
+  60:	ffef01        	l32r	a0, 1c <wifi_pm_open_rf-0x4>
+			60: R_XTENSA_SLOT0_OP	.text.wifi_pm_open_rf+0x1c
+			60: R_XTENSA_ASM_EXPAND	noise_check_loop
+  63:	0000c0        	callx0	a0
+  66:	3108      	l32i.n	a0, a1, 12
+  68:	10c112        	addi	a1, a1, 16
+  6b:	f00d      	ret.n
+
+Disassembly of section .text.wifi_pm_close_rf:
+
+00000000 <wifi_pm_close_rf-0x1c>:
+	...
+			0: R_XTENSA_32	.bss.all_time_of_open_rf
+			4: R_XTENSA_32	.bss.the_time_of_open_rf
+			8: R_XTENSA_32	esp_timer_get_time
+			c: R_XTENSA_32	clockgate_watchdog
+			10: R_XTENSA_32	phy_close_rf
+			14: R_XTENSA_32	clockgate_watchdog
+			18: R_XTENSA_32	esp_sleep_unlock
+
+0000001c <wifi_pm_close_rf>:
+  1c:	f0c112        	addi	a1, a1, -16
+  1f:	036102        	s32i	a0, a1, 12
+  22:	fff901        	l32r	a0, 8 <wifi_pm_close_rf-0x14>
+			22: R_XTENSA_SLOT0_OP	.text.wifi_pm_close_rf+0x8
+			22: R_XTENSA_ASM_EXPAND	esp_timer_get_time
+  25:	0000c0        	callx0	a0
+  28:	fff771        	l32r	a7, 4 <wifi_pm_close_rf-0x18>
+			28: R_XTENSA_SLOT0_OP	.text.wifi_pm_close_rf+0x4
+  2b:	fff561        	l32r	a6, 0 <wifi_pm_close_rf-0x1c>
+			2b: R_XTENSA_SLOT0_OP	.text.wifi_pm_close_rf
+  2e:	0758      	l32i.n	a5, a7, 0
+  30:	0688      	l32i.n	a8, a6, 0
+  32:	1798      	l32i.n	a9, a7, 4
+  34:	c05850        	sub	a5, a8, a5
+  37:	1648      	l32i.n	a4, a6, 4
+  39:	170c      	movi.n	a7, 1
+  3b:	023857        	bltu	a8, a5, 41 <wifi_pm_close_rf+0x25>
+			3b: R_XTENSA_SLOT0_OP	.text.wifi_pm_close_rf+0x41
+  3e:	00a072        	movi	a7, 0
+  41:	c04490        	sub	a4, a4, a9
+  44:	252a      	add.n	a2, a5, a2
+  46:	c04470        	sub	a4, a4, a7
+  49:	170c      	movi.n	a7, 1
+  4b:	013257        	bltu	a2, a5, 50 <wifi_pm_close_rf+0x34>
+			4b: R_XTENSA_SLOT0_OP	.text.wifi_pm_close_rf+0x50
+  4e:	070c      	movi.n	a7, 0
+  50:	343a      	add.n	a3, a4, a3
+  52:	373a      	add.n	a3, a7, a3
+  54:	0629      	s32i.n	a2, a6, 0
+  56:	120c      	movi.n	a2, 1
+  58:	1639      	s32i.n	a3, a6, 4
+  5a:	ffec01        	l32r	a0, c <wifi_pm_close_rf-0x10>
+			5a: R_XTENSA_SLOT0_OP	.text.wifi_pm_close_rf+0xc
+			5a: R_XTENSA_ASM_EXPAND	clockgate_watchdog
+  5d:	0000c0        	callx0	a0
+  60:	ffec01        	l32r	a0, 10 <wifi_pm_close_rf-0xc>
+			60: R_XTENSA_SLOT0_OP	.text.wifi_pm_close_rf+0x10
+			60: R_XTENSA_ASM_EXPAND	phy_close_rf
+  63:	0000c0        	callx0	a0
+  66:	020c      	movi.n	a2, 0
+  68:	ffeb01        	l32r	a0, 14 <wifi_pm_close_rf-0x8>
+			68: R_XTENSA_SLOT0_OP	.text.wifi_pm_close_rf+0x14
+			68: R_XTENSA_ASM_EXPAND	clockgate_watchdog
+  6b:	0000c0        	callx0	a0
+  6e:	ffea01        	l32r	a0, 18 <wifi_pm_close_rf-0x4>
+			6e: R_XTENSA_SLOT0_OP	.text.wifi_pm_close_rf+0x18
+			6e: R_XTENSA_ASM_EXPAND	esp_sleep_unlock
+  71:	0000c0        	callx0	a0
+  74:	3108      	l32i.n	a0, a1, 12
+  76:	10c112        	addi	a1, a1, 16
+  79:	f00d      	ret.n
+
+Disassembly of section .text2.28:
+
+00000000 <esp_power_consumption_info-0x188>:
+	...
+			0: R_XTENSA_32	.bss.all_time_of_open_rf
+			4: R_XTENSA_32	.bss.pmc
+			8: R_XTENSA_32	.bss.the_time_of_open_rf
+			c: R_XTENSA_32	WdevTimOffSet
+			10: R_XTENSA_32	.bss.last_open_rf_time$8449
+			14: R_XTENSA_32	.bss.last_close_cpu_and_rf_time$8450
+			18: R_XTENSA_32	.bss.last_now$8452
+			1c: R_XTENSA_32	.bss.last_only_cpu_on_time$8453
+  20:	e8 03 00 00 	
+	...
+			28: R_XTENSA_32	.rodata.str1.1
+  2c:	05 00 00 00 	
+			2c: R_XTENSA_32	.rodata.str1.1
+  30:	43 00 00 00 	
+			30: R_XTENSA_32	.rodata.str1.1
+  34:	81 00 00 00 	
+			34: R_XTENSA_32	.rodata.str1.1
+  38:	bf 00 00 00 	
+			38: R_XTENSA_32	.rodata.str1.1
+  3c:	a0 86 01 00 	
+  40:	00 00 00 00 	
+  44:	0a 00 00 00 	
+  48:	00 00 00 00 	
+  4c:	fd 00 00 00 	
+			4c: R_XTENSA_32	.rodata.str1.1
+  50:	37 01 00 00 	
+			50: R_XTENSA_32	.rodata.str1.1
+  54:	71 01 00 00 	
+			54: R_XTENSA_32	.rodata.str1.1
+  58:	29 01 00 00 	
+  5c:	00 00 00 00 	
+  60:	0c 12 00 00 	
+  64:	00 00 00 00 	
+  68:	80 f0 fa 02 	
+  6c:	00 00 00 00 	
+  70:	3c 5a 00 00 	
+  74:	00 00 00 00 	
+  78:	00 e1 f5 05 	
+  7c:	00 00 00 00 	
+  80:	00 e8 76 48 	
+  84:	17 00 00 00 	
+  88:	ab 01 00 00 	
+			88: R_XTENSA_32	.rodata.str1.1
+  8c:	9a 0b 00 00 	
+  90:	00 00 00 00 	
+  94:	78 b4 00 00 	
+  98:	00 00 00 00 	
+  9c:	58 86 03 00 	
+  a0:	00 00 00 00 	
+  a4:	ed 01 00 00 	
+			a4: R_XTENSA_32	.rodata.str1.1
+	...
+			a8: R_XTENSA_32	.data.cur_timeout
+			ac: R_XTENSA_32	.data.cur_early
+  b0:	30 02 00 00 	
+			b0: R_XTENSA_32	.rodata.str1.1
+	...
+			b4: R_XTENSA_32	esp_timer_get_time
+			b8: R_XTENSA_32	esp_timer_get_time
+			bc: R_XTENSA_32	esp_log_early_timestamp
+			c0: R_XTENSA_32	__udivdi3
+			c4: R_XTENSA_32	ets_printf
+			c8: R_XTENSA_32	esp_log_early_timestamp
+			cc: R_XTENSA_32	__udivdi3
+			d0: R_XTENSA_32	ets_printf
+			d4: R_XTENSA_32	esp_log_early_timestamp
+			d8: R_XTENSA_32	__udivdi3
+			dc: R_XTENSA_32	ets_printf
+			e0: R_XTENSA_32	esp_log_early_timestamp
+			e4: R_XTENSA_32	__udivdi3
+			e8: R_XTENSA_32	ets_printf
+			ec: R_XTENSA_32	__muldi3
+			f0: R_XTENSA_32	__udivdi3
+			f4: R_XTENSA_32	__udivdi3
+			f8: R_XTENSA_32	esp_log_early_timestamp
+			fc: R_XTENSA_32	__umodsi3
+			100: R_XTENSA_32	__udivsi3
+			104: R_XTENSA_32	ets_printf
+			108: R_XTENSA_32	__muldi3
+			10c: R_XTENSA_32	__udivdi3
+			110: R_XTENSA_32	__udivdi3
+			114: R_XTENSA_32	esp_log_early_timestamp
+			118: R_XTENSA_32	__umodsi3
+			11c: R_XTENSA_32	__udivsi3
+			120: R_XTENSA_32	ets_printf
+			124: R_XTENSA_32	__muldi3
+			128: R_XTENSA_32	__udivdi3
+			12c: R_XTENSA_32	__udivdi3
+			130: R_XTENSA_32	esp_log_early_timestamp
+			134: R_XTENSA_32	__umodsi3
+			138: R_XTENSA_32	__udivsi3
+			13c: R_XTENSA_32	ets_printf
+			140: R_XTENSA_32	__muldi3
+			144: R_XTENSA_32	__muldi3
+			148: R_XTENSA_32	__muldi3
+			14c: R_XTENSA_32	esp_log_early_timestamp
+			150: R_XTENSA_32	__udivdi3
+			154: R_XTENSA_32	__umoddi3
+			158: R_XTENSA_32	__udivdi3
+			15c: R_XTENSA_32	ets_printf
+			160: R_XTENSA_32	__muldi3
+			164: R_XTENSA_32	__muldi3
+			168: R_XTENSA_32	__muldi3
+			16c: R_XTENSA_32	__udivdi3
+			170: R_XTENSA_32	esp_log_early_timestamp
+			174: R_XTENSA_32	__umoddi3
+			178: R_XTENSA_32	__udivdi3
+			17c: R_XTENSA_32	ets_printf
+			180: R_XTENSA_32	esp_log_early_timestamp
+			184: R_XTENSA_32	ets_printf
+
+00000188 <esp_power_consumption_info>:
+ 188:	c0c112        	addi	a1, a1, -64
+ 18b:	e1c9      	s32i.n	a12, a1, 56
+ 18d:	d1d9      	s32i.n	a13, a1, 52
+ 18f:	b1f9      	s32i.n	a15, a1, 44
+ 191:	f109      	s32i.n	a0, a1, 60
+ 193:	c1e9      	s32i.n	a14, a1, 48
+ 195:	74f020        	extui	a15, a2, 0, 8
+ 198:	ffc701        	l32r	a0, b4 <esp_power_consumption_info-0xd4>
+			198: R_XTENSA_SLOT0_OP	.text2.28+0xb4
+			198: R_XTENSA_ASM_EXPAND	esp_timer_get_time
+ 19b:	0000c0        	callx0	a0
+ 19e:	026d      	mov.n	a6, a2
+ 1a0:	02dd      	mov.n	a13, a2
+ 1a2:	ff9721        	l32r	a2, 0 <esp_power_consumption_info-0x188>
+			1a2: R_XTENSA_SLOT0_OP	.text2.28
+ 1a5:	1139      	s32i.n	a3, a1, 4
+ 1a7:	02c8      	l32i.n	a12, a2, 0
+ 1a9:	1228      	l32i.n	a2, a2, 4
+ 1ab:	035d      	mov.n	a5, a3
+ 1ad:	0129      	s32i.n	a2, a1, 0
+ 1af:	ff9521        	l32r	a2, 4 <esp_power_consumption_info-0x184>
+			1af: R_XTENSA_SLOT0_OP	.text2.28+0x4
+ 1b2:	1b2222        	l32i	a2, a2, 108
+ 1b5:	3c1226        	beqi	a2, 1, 1f5 <esp_power_consumption_info+0x6d>
+			1b5: R_XTENSA_SLOT0_OP	.text2.28+0x1f5
+ 1b8:	396226        	beqi	a2, 6, 1f5 <esp_power_consumption_info+0x6d>
+			1b8: R_XTENSA_SLOT0_OP	.text2.28+0x1f5
+ 1bb:	6169      	s32i.n	a6, a1, 24
+ 1bd:	5139      	s32i.n	a3, a1, 20
+ 1bf:	ffbe01        	l32r	a0, b8 <esp_power_consumption_info-0xd0>
+			1bf: R_XTENSA_SLOT0_OP	.text2.28+0xb8
+			1bf: R_XTENSA_ASM_EXPAND	esp_timer_get_time
+ 1c2:	0000c0        	callx0	a0
+ 1c5:	ff9041        	l32r	a4, 8 <esp_power_consumption_info-0x180>
+			1c5: R_XTENSA_SLOT0_OP	.text2.28+0x8
+ 1c8:	180c      	movi.n	a8, 1
+ 1ca:	0478      	l32i.n	a7, a4, 0
+ 1cc:	5158      	l32i.n	a5, a1, 20
+ 1ce:	c07c70        	sub	a7, a12, a7
+ 1d1:	1448      	l32i.n	a4, a4, 4
+ 1d3:	6168      	l32i.n	a6, a1, 24
+ 1d5:	013c77        	bltu	a12, a7, 1da <esp_power_consumption_info+0x52>
+			1d5: R_XTENSA_SLOT0_OP	.text2.28+0x1da
+ 1d8:	080c      	movi.n	a8, 0
+ 1da:	0198      	l32i.n	a9, a1, 0
+ 1dc:	80c270        	add	a12, a2, a7
+ 1df:	c04940        	sub	a4, a9, a4
+ 1e2:	c04480        	sub	a4, a4, a8
+ 1e5:	01a072        	movi	a7, 1
+ 1e8:	023c27        	bltu	a12, a2, 1ee <esp_power_consumption_info+0x66>
+			1e8: R_XTENSA_SLOT0_OP	.text2.28+0x1ee
+ 1eb:	00a072        	movi	a7, 0
+ 1ee:	334a      	add.n	a3, a3, a4
+ 1f0:	373a      	add.n	a3, a7, a3
+ 1f2:	006132        	s32i	a3, a1, 0
+ 1f5:	ff8521        	l32r	a2, c <esp_power_consumption_info-0x17c>
+			1f5: R_XTENSA_SLOT0_OP	.text2.28+0xc
+ 1f8:	02e8      	l32i.n	a14, a2, 0
+ 1fa:	1228      	l32i.n	a2, a2, 4
+ 1fc:	c046e0        	sub	a4, a6, a14
+ 1ff:	2129      	s32i.n	a2, a1, 8
+ 201:	01a022        	movi	a2, 1
+ 204:	023d47        	bltu	a13, a4, 20a <esp_power_consumption_info+0x82>
+			204: R_XTENSA_SLOT0_OP	.text2.28+0x20a
+ 207:	00a022        	movi	a2, 0
+ 20a:	2198      	l32i.n	a9, a1, 8
+ 20c:	c084c0        	sub	a8, a4, a12
+ 20f:	c03590        	sub	a3, a5, a9
+ 212:	c03320        	sub	a3, a3, a2
+ 215:	120c      	movi.n	a2, 1
+ 217:	023487        	bltu	a4, a8, 21d <esp_power_consumption_info+0x95>
+			217: R_XTENSA_SLOT0_OP	.text2.28+0x21d
+ 21a:	00a022        	movi	a2, 0
+ 21d:	0198      	l32i.n	a9, a1, 0
+ 21f:	3189      	s32i.n	a8, a1, 12
+ 221:	c03390        	sub	a3, a3, a9
+ 224:	c02320        	sub	a2, a3, a2
+ 227:	4129      	s32i.n	a2, a1, 16
+ 229:	083f16        	beqz	a15, 2b0 <esp_power_consumption_info+0x128>
+			229: R_XTENSA_SLOT0_OP	.text2.28+0x2b0
+ 22c:	ff7931        	l32r	a3, 10 <esp_power_consumption_info-0x178>
+			22c: R_XTENSA_SLOT0_OP	.text2.28+0x10
+ 22f:	170c      	movi.n	a7, 1
+ 231:	03a8      	l32i.n	a10, a3, 0
+ 233:	1348      	l32i.n	a4, a3, 4
+ 235:	c0aca0        	sub	a10, a12, a10
+ 238:	013ca7        	bltu	a12, a10, 23d <esp_power_consumption_info+0xb5>
+			238: R_XTENSA_SLOT0_OP	.text2.28+0x23d
+ 23b:	070c      	movi.n	a7, 0
+ 23d:	0198      	l32i.n	a9, a1, 0
+ 23f:	03c9      	s32i.n	a12, a3, 0
+ 241:	1399      	s32i.n	a9, a3, 4
+ 243:	ff7431        	l32r	a3, 14 <esp_power_consumption_info-0x174>
+			243: R_XTENSA_SLOT0_OP	.text2.28+0x14
+ 246:	c04940        	sub	a4, a9, a4
+ 249:	03b8      	l32i.n	a11, a3, 0
+ 24b:	c04470        	sub	a4, a4, a7
+ 24e:	c0beb0        	sub	a11, a14, a11
+ 251:	1378      	l32i.n	a7, a3, 4
+ 253:	190c      	movi.n	a9, 1
+ 255:	013eb7        	bltu	a14, a11, 25a <esp_power_consumption_info+0xd2>
+			255: R_XTENSA_SLOT0_OP	.text2.28+0x25a
+ 258:	090c      	movi.n	a9, 0
+ 25a:	21c8      	l32i.n	a12, a1, 8
+ 25c:	03e9      	s32i.n	a14, a3, 0
+ 25e:	c07c70        	sub	a7, a12, a7
+ 261:	13c9      	s32i.n	a12, a3, 4
+ 263:	ff6dc1        	l32r	a12, 18 <esp_power_consumption_info-0x170>
+			263: R_XTENSA_SLOT0_OP	.text2.28+0x18
+ 266:	c07790        	sub	a7, a7, a9
+ 269:	0c98      	l32i.n	a9, a12, 0
+ 26b:	1c38      	l32i.n	a3, a12, 4
+ 26d:	c09690        	sub	a9, a6, a9
+ 270:	01a0e2        	movi	a14, 1
+ 273:	023d97        	bltu	a13, a9, 279 <esp_power_consumption_info+0xf1>
+			273: R_XTENSA_SLOT0_OP	.text2.28+0x279
+ 276:	00a0e2        	movi	a14, 0
+ 279:	c03530        	sub	a3, a5, a3
+ 27c:	1c59      	s32i.n	a5, a12, 4
+ 27e:	ff6751        	l32r	a5, 1c <esp_power_consumption_info-0x16c>
+			27e: R_XTENSA_SLOT0_OP	.text2.28+0x1c
+ 281:	0c69      	s32i.n	a6, a12, 0
+ 283:	0568      	l32i.n	a6, a5, 0
+ 285:	c033e0        	sub	a3, a3, a14
+ 288:	c06860        	sub	a6, a8, a6
+ 28b:	15c8      	l32i.n	a12, a5, 4
+ 28d:	1d0c      	movi.n	a13, 1
+ 28f:	013867        	bltu	a8, a6, 294 <esp_power_consumption_info+0x10c>
+			28f: R_XTENSA_SLOT0_OP	.text2.28+0x294
+ 292:	0d0c      	movi.n	a13, 0
+ 294:	c0c2c0        	sub	a12, a2, a12
+ 297:	c0ccd0        	sub	a12, a12, a13
+ 29a:	41c9      	s32i.n	a12, a1, 16
+ 29c:	0589      	s32i.n	a8, a5, 0
+ 29e:	1529      	s32i.n	a2, a5, 4
+ 2a0:	3169      	s32i.n	a6, a1, 12
+ 2a2:	0bed      	mov.n	a14, a11
+ 2a4:	2179      	s32i.n	a7, a1, 8
+ 2a6:	0acd      	mov.n	a12, a10
+ 2a8:	0149      	s32i.n	a4, a1, 0
+ 2aa:	20d990        	or	a13, a9, a9
+ 2ad:	016132        	s32i	a3, a1, 4
+ 2b0:	ff8301        	l32r	a0, bc <esp_power_consumption_info-0xcc>
+			2b0: R_XTENSA_SLOT0_OP	.text2.28+0xbc
+			2b0: R_XTENSA_ASM_EXPAND	esp_log_early_timestamp
+ 2b3:	0000c0        	callx0	a0
+ 2b6:	02fd      	mov.n	a15, a2
+ 2b8:	f4a122        	movi	a2, 0x1f4
+ 2bb:	2d2a      	add.n	a2, a13, a2
+ 2bd:	130c      	movi.n	a3, 1
+ 2bf:	0132d7        	bltu	a2, a13, 2c4 <esp_power_consumption_info+0x13c>
+			2bf: R_XTENSA_SLOT0_OP	.text2.28+0x2c4
+ 2c2:	030c      	movi.n	a3, 0
+ 2c4:	1198      	l32i.n	a9, a1, 4
+ 2c6:	ff5641        	l32r	a4, 20 <esp_power_consumption_info-0x168>
+			2c6: R_XTENSA_SLOT0_OP	.text2.28+0x20
+ 2c9:	ff5651        	l32r	a5, 24 <esp_power_consumption_info-0x164>
+			2c9: R_XTENSA_SLOT0_OP	.text2.28+0x24
+ 2cc:	339a      	add.n	a3, a3, a9
+ 2ce:	ff7c01        	l32r	a0, c0 <esp_power_consumption_info-0xc8>
+			2ce: R_XTENSA_SLOT0_OP	.text2.28+0xc0
+			2ce: R_XTENSA_ASM_EXPAND	__udivdi3
+ 2d1:	0000c0        	callx0	a0
+ 2d4:	027d      	mov.n	a7, a2
+ 2d6:	1158      	l32i.n	a5, a1, 4
+ 2d8:	ff5441        	l32r	a4, 28 <esp_power_consumption_info-0x160>
+			2d8: R_XTENSA_SLOT0_OP	.text2.28+0x28
+ 2db:	ff5421        	l32r	a2, 2c <esp_power_consumption_info-0x15c>
+			2db: R_XTENSA_SLOT0_OP	.text2.28+0x2c
+ 2de:	0f3d      	mov.n	a3, a15
+ 2e0:	0d6d      	mov.n	a6, a13
+ 2e2:	ff7801        	l32r	a0, c4 <esp_power_consumption_info-0xc4>
+			2e2: R_XTENSA_SLOT0_OP	.text2.28+0xc4
+			2e2: R_XTENSA_ASM_EXPAND	ets_printf
+ 2e5:	0000c0        	callx0	a0
+ 2e8:	ff7801        	l32r	a0, c8 <esp_power_consumption_info-0xc0>
+			2e8: R_XTENSA_SLOT0_OP	.text2.28+0xc8
+			2e8: R_XTENSA_ASM_EXPAND	esp_log_early_timestamp
+ 2eb:	0000c0        	callx0	a0
+ 2ee:	02fd      	mov.n	a15, a2
+ 2f0:	f4a122        	movi	a2, 0x1f4
+ 2f3:	2c2a      	add.n	a2, a12, a2
+ 2f5:	130c      	movi.n	a3, 1
+ 2f7:	0132c7        	bltu	a2, a12, 2fc <esp_power_consumption_info+0x174>
+			2f7: R_XTENSA_SLOT0_OP	.text2.28+0x2fc
+ 2fa:	030c      	movi.n	a3, 0
+ 2fc:	0198      	l32i.n	a9, a1, 0
+ 2fe:	ff4841        	l32r	a4, 20 <esp_power_consumption_info-0x168>
+			2fe: R_XTENSA_SLOT0_OP	.text2.28+0x20
+ 301:	ff4851        	l32r	a5, 24 <esp_power_consumption_info-0x164>
+			301: R_XTENSA_SLOT0_OP	.text2.28+0x24
+ 304:	339a      	add.n	a3, a3, a9
+ 306:	ff7101        	l32r	a0, cc <esp_power_consumption_info-0xbc>
+			306: R_XTENSA_SLOT0_OP	.text2.28+0xcc
+			306: R_XTENSA_ASM_EXPAND	__udivdi3
+ 309:	0000c0        	callx0	a0
+ 30c:	027d      	mov.n	a7, a2
+ 30e:	0158      	l32i.n	a5, a1, 0
+ 310:	ff4641        	l32r	a4, 28 <esp_power_consumption_info-0x160>
+			310: R_XTENSA_SLOT0_OP	.text2.28+0x28
+ 313:	ff4721        	l32r	a2, 30 <esp_power_consumption_info-0x158>
+			313: R_XTENSA_SLOT0_OP	.text2.28+0x30
+ 316:	0f3d      	mov.n	a3, a15
+ 318:	0c6d      	mov.n	a6, a12
+ 31a:	ff6d01        	l32r	a0, d0 <esp_power_consumption_info-0xb8>
+			31a: R_XTENSA_SLOT0_OP	.text2.28+0xd0
+			31a: R_XTENSA_ASM_EXPAND	ets_printf
+ 31d:	0000c0        	callx0	a0
+ 320:	ff6d01        	l32r	a0, d4 <esp_power_consumption_info-0xb4>
+			320: R_XTENSA_SLOT0_OP	.text2.28+0xd4
+			320: R_XTENSA_ASM_EXPAND	esp_log_early_timestamp
+ 323:	0000c0        	callx0	a0
+ 326:	3198      	l32i.n	a9, a1, 12
+ 328:	02fd      	mov.n	a15, a2
+ 32a:	f4a122        	movi	a2, 0x1f4
+ 32d:	292a      	add.n	a2, a9, a2
+ 32f:	130c      	movi.n	a3, 1
+ 331:	013297        	bltu	a2, a9, 336 <esp_power_consumption_info+0x1ae>
+			331: R_XTENSA_SLOT0_OP	.text2.28+0x336
+ 334:	030c      	movi.n	a3, 0
+ 336:	4198      	l32i.n	a9, a1, 16
+ 338:	ff3a41        	l32r	a4, 20 <esp_power_consumption_info-0x168>
+			338: R_XTENSA_SLOT0_OP	.text2.28+0x20
+ 33b:	ff3a51        	l32r	a5, 24 <esp_power_consumption_info-0x164>
+			33b: R_XTENSA_SLOT0_OP	.text2.28+0x24
+ 33e:	339a      	add.n	a3, a3, a9
+ 340:	ff6601        	l32r	a0, d8 <esp_power_consumption_info-0xb0>
+			340: R_XTENSA_SLOT0_OP	.text2.28+0xd8
+			340: R_XTENSA_ASM_EXPAND	__udivdi3
+ 343:	0000c0        	callx0	a0
+ 346:	027d      	mov.n	a7, a2
+ 348:	3168      	l32i.n	a6, a1, 12
+ 34a:	042152        	l32i	a5, a1, 16
+ 34d:	ff3641        	l32r	a4, 28 <esp_power_consumption_info-0x160>
+			34d: R_XTENSA_SLOT0_OP	.text2.28+0x28
+ 350:	ff3921        	l32r	a2, 34 <esp_power_consumption_info-0x154>
+			350: R_XTENSA_SLOT0_OP	.text2.28+0x34
+ 353:	203ff0        	or	a3, a15, a15
+ 356:	ff6101        	l32r	a0, dc <esp_power_consumption_info-0xac>
+			356: R_XTENSA_SLOT0_OP	.text2.28+0xdc
+			356: R_XTENSA_ASM_EXPAND	ets_printf
+ 359:	0000c0        	callx0	a0
+ 35c:	ff6101        	l32r	a0, e0 <esp_power_consumption_info-0xa8>
+			35c: R_XTENSA_SLOT0_OP	.text2.28+0xe0
+			35c: R_XTENSA_ASM_EXPAND	esp_log_early_timestamp
+ 35f:	0000c0        	callx0	a0
+ 362:	02fd      	mov.n	a15, a2
+ 364:	f4a122        	movi	a2, 0x1f4
+ 367:	2e2a      	add.n	a2, a14, a2
+ 369:	130c      	movi.n	a3, 1
+ 36b:	0132e7        	bltu	a2, a14, 370 <esp_power_consumption_info+0x1e8>
+			36b: R_XTENSA_SLOT0_OP	.text2.28+0x370
+ 36e:	030c      	movi.n	a3, 0
+ 370:	2198      	l32i.n	a9, a1, 8
+ 372:	ff2b41        	l32r	a4, 20 <esp_power_consumption_info-0x168>
+			372: R_XTENSA_SLOT0_OP	.text2.28+0x20
+ 375:	ff2b51        	l32r	a5, 24 <esp_power_consumption_info-0x164>
+			375: R_XTENSA_SLOT0_OP	.text2.28+0x24
+ 378:	339a      	add.n	a3, a3, a9
+ 37a:	ff5a01        	l32r	a0, e4 <esp_power_consumption_info-0xa4>
+			37a: R_XTENSA_SLOT0_OP	.text2.28+0xe4
+			37a: R_XTENSA_ASM_EXPAND	__udivdi3
+ 37d:	0000c0        	callx0	a0
+ 380:	027d      	mov.n	a7, a2
+ 382:	2158      	l32i.n	a5, a1, 8
+ 384:	ff2941        	l32r	a4, 28 <esp_power_consumption_info-0x160>
+			384: R_XTENSA_SLOT0_OP	.text2.28+0x28
+ 387:	ff2c21        	l32r	a2, 38 <esp_power_consumption_info-0x150>
+			387: R_XTENSA_SLOT0_OP	.text2.28+0x38
+ 38a:	0e6d      	mov.n	a6, a14
+ 38c:	0f3d      	mov.n	a3, a15
+ 38e:	ff5601        	l32r	a0, e8 <esp_power_consumption_info-0xa0>
+			38e: R_XTENSA_SLOT0_OP	.text2.28+0xe8
+			38e: R_XTENSA_ASM_EXPAND	ets_printf
+ 391:	0000c0        	callx0	a0
+ 394:	ff2a41        	l32r	a4, 3c <esp_power_consumption_info-0x14c>
+			394: R_XTENSA_SLOT0_OP	.text2.28+0x3c
+ 397:	ff2a51        	l32r	a5, 40 <esp_power_consumption_info-0x148>
+			397: R_XTENSA_SLOT0_OP	.text2.28+0x40
+ 39a:	0138      	l32i.n	a3, a1, 0
+ 39c:	0c2d      	mov.n	a2, a12
+ 39e:	ff5301        	l32r	a0, ec <esp_power_consumption_info-0x9c>
+			39e: R_XTENSA_SLOT0_OP	.text2.28+0xec
+			39e: R_XTENSA_ASM_EXPAND	__muldi3
+ 3a1:	0000c0        	callx0	a0
+ 3a4:	1158      	l32i.n	a5, a1, 4
+ 3a6:	0d4d      	mov.n	a4, a13
+ 3a8:	ff5201        	l32r	a0, f0 <esp_power_consumption_info-0x98>
+			3a8: R_XTENSA_SLOT0_OP	.text2.28+0xf0
+			3a8: R_XTENSA_ASM_EXPAND	__udivdi3
+ 3ab:	0000c0        	callx0	a0
+ 3ae:	024d      	mov.n	a4, a2
+ 3b0:	225b      	addi.n	a2, a2, 5
+ 3b2:	160c      	movi.n	a6, 1
+ 3b4:	013247        	bltu	a2, a4, 3b9 <esp_power_consumption_info+0x231>
+			3b4: R_XTENSA_SLOT0_OP	.text2.28+0x3b9
+ 3b7:	060c      	movi.n	a6, 0
+ 3b9:	ff2241        	l32r	a4, 44 <esp_power_consumption_info-0x144>
+			3b9: R_XTENSA_SLOT0_OP	.text2.28+0x44
+ 3bc:	ff2351        	l32r	a5, 48 <esp_power_consumption_info-0x140>
+			3bc: R_XTENSA_SLOT0_OP	.text2.28+0x48
+ 3bf:	803630        	add	a3, a6, a3
+ 3c2:	ff4c01        	l32r	a0, f4 <esp_power_consumption_info-0x94>
+			3c2: R_XTENSA_SLOT0_OP	.text2.28+0xf4
+			3c2: R_XTENSA_ASM_EXPAND	__udivdi3
+ 3c5:	0000c0        	callx0	a0
+ 3c8:	20f220        	or	a15, a2, a2
+ 3cb:	ff4b01        	l32r	a0, f8 <esp_power_consumption_info-0x90>
+			3cb: R_XTENSA_SLOT0_OP	.text2.28+0xf8
+			3cb: R_XTENSA_ASM_EXPAND	esp_log_early_timestamp
+ 3ce:	0000c0        	callx0	a0
+ 3d1:	028d      	mov.n	a8, a2
+ 3d3:	64a032        	movi	a3, 100
+ 3d6:	0f2d      	mov.n	a2, a15
+ 3d8:	076182        	s32i	a8, a1, 28
+ 3db:	ff4801        	l32r	a0, fc <esp_power_consumption_info-0x8c>
+			3db: R_XTENSA_SLOT0_OP	.text2.28+0xfc
+			3db: R_XTENSA_ASM_EXPAND	__umodsi3
+ 3de:	0000c0        	callx0	a0
+ 3e1:	026d      	mov.n	a6, a2
+ 3e3:	64a032        	movi	a3, 100
+ 3e6:	202ff0        	or	a2, a15, a15
+ 3e9:	066162        	s32i	a6, a1, 24
+ 3ec:	ff4501        	l32r	a0, 100 <esp_power_consumption_info-0x88>
+			3ec: R_XTENSA_SLOT0_OP	.text2.28+0x100
+			3ec: R_XTENSA_ASM_EXPAND	__udivsi3
+ 3ef:	0000c0        	callx0	a0
+ 3f2:	7188      	l32i.n	a8, a1, 28
+ 3f4:	6168      	l32i.n	a6, a1, 24
+ 3f6:	025d      	mov.n	a5, a2
+ 3f8:	ff0c41        	l32r	a4, 28 <esp_power_consumption_info-0x160>
+			3f8: R_XTENSA_SLOT0_OP	.text2.28+0x28
+ 3fb:	ff1421        	l32r	a2, 4c <esp_power_consumption_info-0x13c>
+			3fb: R_XTENSA_SLOT0_OP	.text2.28+0x4c
+ 3fe:	083d      	mov.n	a3, a8
+ 400:	572c      	movi.n	a7, 37
+ 402:	ff4001        	l32r	a0, 104 <esp_power_consumption_info-0x84>
+			402: R_XTENSA_SLOT0_OP	.text2.28+0x104
+			402: R_XTENSA_ASM_EXPAND	ets_printf
+ 405:	0000c0        	callx0	a0
+ 408:	ff0d41        	l32r	a4, 3c <esp_power_consumption_info-0x14c>
+			408: R_XTENSA_SLOT0_OP	.text2.28+0x3c
+ 40b:	ff0d51        	l32r	a5, 40 <esp_power_consumption_info-0x148>
+			40b: R_XTENSA_SLOT0_OP	.text2.28+0x40
+ 40e:	3128      	l32i.n	a2, a1, 12
+ 410:	4138      	l32i.n	a3, a1, 16
+ 412:	ff3d01        	l32r	a0, 108 <esp_power_consumption_info-0x80>
+			412: R_XTENSA_SLOT0_OP	.text2.28+0x108
+			412: R_XTENSA_ASM_EXPAND	__muldi3
+ 415:	0000c0        	callx0	a0
+ 418:	1158      	l32i.n	a5, a1, 4
+ 41a:	0d4d      	mov.n	a4, a13
+ 41c:	ff3c01        	l32r	a0, 10c <esp_power_consumption_info-0x7c>
+			41c: R_XTENSA_SLOT0_OP	.text2.28+0x10c
+			41c: R_XTENSA_ASM_EXPAND	__udivdi3
+ 41f:	0000c0        	callx0	a0
+ 422:	024d      	mov.n	a4, a2
+ 424:	225b      	addi.n	a2, a2, 5
+ 426:	160c      	movi.n	a6, 1
+ 428:	013247        	bltu	a2, a4, 42d <esp_power_consumption_info+0x2a5>
+			428: R_XTENSA_SLOT0_OP	.text2.28+0x42d
+ 42b:	060c      	movi.n	a6, 0
+ 42d:	ff0541        	l32r	a4, 44 <esp_power_consumption_info-0x144>
+			42d: R_XTENSA_SLOT0_OP	.text2.28+0x44
+ 430:	ff0651        	l32r	a5, 48 <esp_power_consumption_info-0x140>
+			430: R_XTENSA_SLOT0_OP	.text2.28+0x48
+ 433:	803630        	add	a3, a6, a3
+ 436:	ff3601        	l32r	a0, 110 <esp_power_consumption_info-0x78>
+			436: R_XTENSA_SLOT0_OP	.text2.28+0x110
+			436: R_XTENSA_ASM_EXPAND	__udivdi3
+ 439:	0000c0        	callx0	a0
+ 43c:	20f220        	or	a15, a2, a2
+ 43f:	ff3501        	l32r	a0, 114 <esp_power_consumption_info-0x74>
+			43f: R_XTENSA_SLOT0_OP	.text2.28+0x114
+			43f: R_XTENSA_ASM_EXPAND	esp_log_early_timestamp
+ 442:	0000c0        	callx0	a0
+ 445:	028d      	mov.n	a8, a2
+ 447:	64a032        	movi	a3, 100
+ 44a:	0f2d      	mov.n	a2, a15
+ 44c:	076182        	s32i	a8, a1, 28
+ 44f:	ff3201        	l32r	a0, 118 <esp_power_consumption_info-0x70>
+			44f: R_XTENSA_SLOT0_OP	.text2.28+0x118
+			44f: R_XTENSA_ASM_EXPAND	__umodsi3
+ 452:	0000c0        	callx0	a0
+ 455:	026d      	mov.n	a6, a2
+ 457:	64a032        	movi	a3, 100
+ 45a:	202ff0        	or	a2, a15, a15
+ 45d:	066162        	s32i	a6, a1, 24
+ 460:	ff2f01        	l32r	a0, 11c <esp_power_consumption_info-0x6c>
+			460: R_XTENSA_SLOT0_OP	.text2.28+0x11c
+			460: R_XTENSA_ASM_EXPAND	__udivsi3
+ 463:	0000c0        	callx0	a0
+ 466:	7188      	l32i.n	a8, a1, 28
+ 468:	6168      	l32i.n	a6, a1, 24
+ 46a:	025d      	mov.n	a5, a2
+ 46c:	feef41        	l32r	a4, 28 <esp_power_consumption_info-0x160>
+			46c: R_XTENSA_SLOT0_OP	.text2.28+0x28
+ 46f:	fef821        	l32r	a2, 50 <esp_power_consumption_info-0x138>
+			46f: R_XTENSA_SLOT0_OP	.text2.28+0x50
+ 472:	083d      	mov.n	a3, a8
+ 474:	572c      	movi.n	a7, 37
+ 476:	ff2a01        	l32r	a0, 120 <esp_power_consumption_info-0x68>
+			476: R_XTENSA_SLOT0_OP	.text2.28+0x120
+			476: R_XTENSA_ASM_EXPAND	ets_printf
+ 479:	0000c0        	callx0	a0
+ 47c:	fef041        	l32r	a4, 3c <esp_power_consumption_info-0x14c>
+			47c: R_XTENSA_SLOT0_OP	.text2.28+0x3c
+ 47f:	fef051        	l32r	a5, 40 <esp_power_consumption_info-0x148>
+			47f: R_XTENSA_SLOT0_OP	.text2.28+0x40
+ 482:	2138      	l32i.n	a3, a1, 8
+ 484:	0e2d      	mov.n	a2, a14
+ 486:	ff2701        	l32r	a0, 124 <esp_power_consumption_info-0x64>
+			486: R_XTENSA_SLOT0_OP	.text2.28+0x124
+			486: R_XTENSA_ASM_EXPAND	__muldi3
+ 489:	0000c0        	callx0	a0
+ 48c:	1158      	l32i.n	a5, a1, 4
+ 48e:	0d4d      	mov.n	a4, a13
+ 490:	ff2601        	l32r	a0, 128 <esp_power_consumption_info-0x60>
+			490: R_XTENSA_SLOT0_OP	.text2.28+0x128
+			490: R_XTENSA_ASM_EXPAND	__udivdi3
+ 493:	0000c0        	callx0	a0
+ 496:	024d      	mov.n	a4, a2
+ 498:	225b      	addi.n	a2, a2, 5
+ 49a:	160c      	movi.n	a6, 1
+ 49c:	013247        	bltu	a2, a4, 4a1 <esp_power_consumption_info+0x319>
+			49c: R_XTENSA_SLOT0_OP	.text2.28+0x4a1
+ 49f:	060c      	movi.n	a6, 0
+ 4a1:	fee841        	l32r	a4, 44 <esp_power_consumption_info-0x144>
+			4a1: R_XTENSA_SLOT0_OP	.text2.28+0x44
+ 4a4:	fee951        	l32r	a5, 48 <esp_power_consumption_info-0x140>
+			4a4: R_XTENSA_SLOT0_OP	.text2.28+0x48
+ 4a7:	803630        	add	a3, a6, a3
+ 4aa:	ff2001        	l32r	a0, 12c <esp_power_consumption_info-0x5c>
+			4aa: R_XTENSA_SLOT0_OP	.text2.28+0x12c
+			4aa: R_XTENSA_ASM_EXPAND	__udivdi3
+ 4ad:	0000c0        	callx0	a0
+ 4b0:	20f220        	or	a15, a2, a2
+ 4b3:	ff1f01        	l32r	a0, 130 <esp_power_consumption_info-0x58>
+			4b3: R_XTENSA_SLOT0_OP	.text2.28+0x130
+			4b3: R_XTENSA_ASM_EXPAND	esp_log_early_timestamp
+ 4b6:	0000c0        	callx0	a0
+ 4b9:	028d      	mov.n	a8, a2
+ 4bb:	64a032        	movi	a3, 100
+ 4be:	0f2d      	mov.n	a2, a15
+ 4c0:	076182        	s32i	a8, a1, 28
+ 4c3:	ff1c01        	l32r	a0, 134 <esp_power_consumption_info-0x54>
+			4c3: R_XTENSA_SLOT0_OP	.text2.28+0x134
+			4c3: R_XTENSA_ASM_EXPAND	__umodsi3
+ 4c6:	0000c0        	callx0	a0
+ 4c9:	026d      	mov.n	a6, a2
+ 4cb:	64a032        	movi	a3, 100
+ 4ce:	202ff0        	or	a2, a15, a15
+ 4d1:	066162        	s32i	a6, a1, 24
+ 4d4:	ff1901        	l32r	a0, 138 <esp_power_consumption_info-0x50>
+			4d4: R_XTENSA_SLOT0_OP	.text2.28+0x138
+			4d4: R_XTENSA_ASM_EXPAND	__udivsi3
+ 4d7:	0000c0        	callx0	a0
+ 4da:	7188      	l32i.n	a8, a1, 28
+ 4dc:	6168      	l32i.n	a6, a1, 24
+ 4de:	025d      	mov.n	a5, a2
+ 4e0:	fed241        	l32r	a4, 28 <esp_power_consumption_info-0x160>
+			4e0: R_XTENSA_SLOT0_OP	.text2.28+0x28
+ 4e3:	fedc21        	l32r	a2, 54 <esp_power_consumption_info-0x134>
+			4e3: R_XTENSA_SLOT0_OP	.text2.28+0x54
+ 4e6:	083d      	mov.n	a3, a8
+ 4e8:	572c      	movi.n	a7, 37
+ 4ea:	ff1401        	l32r	a0, 13c <esp_power_consumption_info-0x4c>
+			4ea: R_XTENSA_SLOT0_OP	.text2.28+0x13c
+			4ea: R_XTENSA_ASM_EXPAND	ets_printf
+ 4ed:	0000c0        	callx0	a0
+ 4f0:	feda41        	l32r	a4, 58 <esp_power_consumption_info-0x130>
+			4f0: R_XTENSA_SLOT0_OP	.text2.28+0x58
+ 4f3:	feda51        	l32r	a5, 5c <esp_power_consumption_info-0x12c>
+			4f3: R_XTENSA_SLOT0_OP	.text2.28+0x5c
+ 4f6:	2138      	l32i.n	a3, a1, 8
+ 4f8:	0e2d      	mov.n	a2, a14
+ 4fa:	ff1101        	l32r	a0, 140 <esp_power_consumption_info-0x48>
+			4fa: R_XTENSA_SLOT0_OP	.text2.28+0x140
+			4fa: R_XTENSA_ASM_EXPAND	__muldi3
+ 4fd:	0000c0        	callx0	a0
+ 500:	036d      	mov.n	a6, a3
+ 502:	02fd      	mov.n	a15, a2
+ 504:	fed741        	l32r	a4, 60 <esp_power_consumption_info-0x128>
+			504: R_XTENSA_SLOT0_OP	.text2.28+0x60
+ 507:	fed751        	l32r	a5, 64 <esp_power_consumption_info-0x124>
+			507: R_XTENSA_SLOT0_OP	.text2.28+0x64
+ 50a:	3128      	l32i.n	a2, a1, 12
+ 50c:	4138      	l32i.n	a3, a1, 16
+ 50e:	6169      	s32i.n	a6, a1, 24
+ 510:	ff0d01        	l32r	a0, 144 <esp_power_consumption_info-0x44>
+			510: R_XTENSA_SLOT0_OP	.text2.28+0x144
+			510: R_XTENSA_ASM_EXPAND	__muldi3
+ 513:	0000c0        	callx0	a0
+ 516:	2f2a      	add.n	a2, a15, a2
+ 518:	140c      	movi.n	a4, 1
+ 51a:	6168      	l32i.n	a6, a1, 24
+ 51c:	0132f7        	bltu	a2, a15, 521 <esp_power_consumption_info+0x399>
+			51c: R_XTENSA_SLOT0_OP	.text2.28+0x521
+ 51f:	040c      	movi.n	a4, 0
+ 521:	363a      	add.n	a3, a6, a3
+ 523:	343a      	add.n	a3, a4, a3
+ 525:	fed041        	l32r	a4, 68 <esp_power_consumption_info-0x120>
+			525: R_XTENSA_SLOT0_OP	.text2.28+0x68
+ 528:	1f0c      	movi.n	a15, 1
+ 52a:	624a      	add.n	a6, a2, a4
+ 52c:	013627        	bltu	a6, a2, 531 <esp_power_consumption_info+0x3a9>
+			52c: R_XTENSA_SLOT0_OP	.text2.28+0x531
+ 52f:	0f0c      	movi.n	a15, 0
+ 531:	ff3a      	add.n	a15, a15, a3
+ 533:	fecf41        	l32r	a4, 70 <esp_power_consumption_info-0x118>
+			533: R_XTENSA_SLOT0_OP	.text2.28+0x70
+ 536:	fecf51        	l32r	a5, 74 <esp_power_consumption_info-0x114>
+			536: R_XTENSA_SLOT0_OP	.text2.28+0x74
+ 539:	0138      	l32i.n	a3, a1, 0
+ 53b:	0c2d      	mov.n	a2, a12
+ 53d:	6169      	s32i.n	a6, a1, 24
+ 53f:	ff0201        	l32r	a0, 148 <esp_power_consumption_info-0x40>
+			53f: R_XTENSA_SLOT0_OP	.text2.28+0x148
+			53f: R_XTENSA_ASM_EXPAND	__muldi3
+ 542:	0000c0        	callx0	a0
+ 545:	6168      	l32i.n	a6, a1, 24
+ 547:	762a      	add.n	a7, a6, a2
+ 549:	01a022        	movi	a2, 1
+ 54c:	023767        	bltu	a7, a6, 552 <esp_power_consumption_info+0x3ca>
+			54c: R_XTENSA_SLOT0_OP	.text2.28+0x552
+ 54f:	00a022        	movi	a2, 0
+ 552:	3f3a      	add.n	a3, a15, a3
+ 554:	f23a      	add.n	a15, a2, a3
+ 556:	5179      	s32i.n	a7, a1, 20
+ 558:	fefd01        	l32r	a0, 14c <esp_power_consumption_info-0x3c>
+			558: R_XTENSA_SLOT0_OP	.text2.28+0x14c
+			558: R_XTENSA_ASM_EXPAND	esp_log_early_timestamp
+ 55b:	0000c0        	callx0	a0
+ 55e:	5178      	l32i.n	a7, a1, 20
+ 560:	fec641        	l32r	a4, 78 <esp_power_consumption_info-0x110>
+			560: R_XTENSA_SLOT0_OP	.text2.28+0x78
+ 563:	fec651        	l32r	a5, 7c <esp_power_consumption_info-0x10c>
+			563: R_XTENSA_SLOT0_OP	.text2.28+0x7c
+ 566:	028d      	mov.n	a8, a2
+ 568:	0f3d      	mov.n	a3, a15
+ 56a:	072d      	mov.n	a2, a7
+ 56c:	7189      	s32i.n	a8, a1, 28
+ 56e:	fef801        	l32r	a0, 150 <esp_power_consumption_info-0x38>
+			56e: R_XTENSA_SLOT0_OP	.text2.28+0x150
+			56e: R_XTENSA_ASM_EXPAND	__udivdi3
+ 571:	0000c0        	callx0	a0
+ 574:	feab41        	l32r	a4, 20 <esp_power_consumption_info-0x168>
+			574: R_XTENSA_SLOT0_OP	.text2.28+0x20
+ 577:	feab51        	l32r	a5, 24 <esp_power_consumption_info-0x164>
+			577: R_XTENSA_SLOT0_OP	.text2.28+0x24
+ 57a:	fef601        	l32r	a0, 154 <esp_power_consumption_info-0x34>
+			57a: R_XTENSA_SLOT0_OP	.text2.28+0x154
+			57a: R_XTENSA_ASM_EXPAND	__umoddi3
+ 57d:	0000c0        	callx0	a0
+ 580:	5178      	l32i.n	a7, a1, 20
+ 582:	febf41        	l32r	a4, 80 <esp_power_consumption_info-0x108>
+			582: R_XTENSA_SLOT0_OP	.text2.28+0x80
+ 585:	febf51        	l32r	a5, 84 <esp_power_consumption_info-0x104>
+			585: R_XTENSA_SLOT0_OP	.text2.28+0x84
+ 588:	026d      	mov.n	a6, a2
+ 58a:	0f3d      	mov.n	a3, a15
+ 58c:	072d      	mov.n	a2, a7
+ 58e:	6169      	s32i.n	a6, a1, 24
+ 590:	fef201        	l32r	a0, 158 <esp_power_consumption_info-0x30>
+			590: R_XTENSA_SLOT0_OP	.text2.28+0x158
+			590: R_XTENSA_ASM_EXPAND	__udivdi3
+ 593:	0000c0        	callx0	a0
+ 596:	7188      	l32i.n	a8, a1, 28
+ 598:	6168      	l32i.n	a6, a1, 24
+ 59a:	205220        	or	a5, a2, a2
+ 59d:	fea241        	l32r	a4, 28 <esp_power_consumption_info-0x160>
+			59d: R_XTENSA_SLOT0_OP	.text2.28+0x28
+ 5a0:	feba21        	l32r	a2, 88 <esp_power_consumption_info-0x100>
+			5a0: R_XTENSA_SLOT0_OP	.text2.28+0x88
+ 5a3:	203880        	or	a3, a8, a8
+ 5a6:	feed01        	l32r	a0, 15c <esp_power_consumption_info-0x2c>
+			5a6: R_XTENSA_SLOT0_OP	.text2.28+0x15c
+			5a6: R_XTENSA_ASM_EXPAND	ets_printf
+ 5a9:	0000c0        	callx0	a0
+ 5ac:	feb841        	l32r	a4, 8c <esp_power_consumption_info-0xfc>
+			5ac: R_XTENSA_SLOT0_OP	.text2.28+0x8c
+ 5af:	feb851        	l32r	a5, 90 <esp_power_consumption_info-0xf8>
+			5af: R_XTENSA_SLOT0_OP	.text2.28+0x90
+ 5b2:	2138      	l32i.n	a3, a1, 8
+ 5b4:	0e2d      	mov.n	a2, a14
+ 5b6:	feea01        	l32r	a0, 160 <esp_power_consumption_info-0x28>
+			5b6: R_XTENSA_SLOT0_OP	.text2.28+0x160
+			5b6: R_XTENSA_ASM_EXPAND	__muldi3
+ 5b9:	0000c0        	callx0	a0
+ 5bc:	026d      	mov.n	a6, a2
+ 5be:	03fd      	mov.n	a15, a3
+ 5c0:	feb541        	l32r	a4, 94 <esp_power_consumption_info-0xf4>
+			5c0: R_XTENSA_SLOT0_OP	.text2.28+0x94
+ 5c3:	feb551        	l32r	a5, 98 <esp_power_consumption_info-0xf0>
+			5c3: R_XTENSA_SLOT0_OP	.text2.28+0x98
+ 5c6:	3128      	l32i.n	a2, a1, 12
+ 5c8:	4138      	l32i.n	a3, a1, 16
+ 5ca:	6169      	s32i.n	a6, a1, 24
+ 5cc:	fee601        	l32r	a0, 164 <esp_power_consumption_info-0x24>
+			5cc: R_XTENSA_SLOT0_OP	.text2.28+0x164
+			5cc: R_XTENSA_ASM_EXPAND	__muldi3
+ 5cf:	0000c0        	callx0	a0
+ 5d2:	6168      	l32i.n	a6, a1, 24
+ 5d4:	fe95e1        	l32r	a14, 28 <esp_power_consumption_info-0x160>
+			5d4: R_XTENSA_SLOT0_OP	.text2.28+0x28
+ 5d7:	762a      	add.n	a7, a6, a2
+ 5d9:	120c      	movi.n	a2, 1
+ 5db:	013767        	bltu	a7, a6, 5e0 <esp_power_consumption_info+0x458>
+			5db: R_XTENSA_SLOT0_OP	.text2.28+0x5e0
+ 5de:	020c      	movi.n	a2, 0
+ 5e0:	ff3a      	add.n	a15, a15, a3
+ 5e2:	feae41        	l32r	a4, 9c <esp_power_consumption_info-0xec>
+			5e2: R_XTENSA_SLOT0_OP	.text2.28+0x9c
+ 5e5:	feae51        	l32r	a5, a0 <esp_power_consumption_info-0xe8>
+			5e5: R_XTENSA_SLOT0_OP	.text2.28+0xa0
+ 5e8:	0138      	l32i.n	a3, a1, 0
+ 5ea:	f2fa      	add.n	a15, a2, a15
+ 5ec:	0c2d      	mov.n	a2, a12
+ 5ee:	5179      	s32i.n	a7, a1, 20
+ 5f0:	fede01        	l32r	a0, 168 <esp_power_consumption_info-0x20>
+			5f0: R_XTENSA_SLOT0_OP	.text2.28+0x168
+			5f0: R_XTENSA_ASM_EXPAND	__muldi3
+ 5f3:	0000c0        	callx0	a0
+ 5f6:	5178      	l32i.n	a7, a1, 20
+ 5f8:	672a      	add.n	a6, a7, a2
+ 5fa:	120c      	movi.n	a2, 1
+ 5fc:	013677        	bltu	a6, a7, 601 <esp_power_consumption_info+0x479>
+			5fc: R_XTENSA_SLOT0_OP	.text2.28+0x601
+ 5ff:	020c      	movi.n	a2, 0
+ 601:	1198      	l32i.n	a9, a1, 4
+ 603:	5f3a      	add.n	a5, a15, a3
+ 605:	525a      	add.n	a5, a2, a5
+ 607:	4141d0        	srli	a4, a13, 1
+ 60a:	012910        	slli	a2, a9, 31
+ 60d:	204240        	or	a4, a2, a4
+ 610:	264a      	add.n	a2, a6, a4
+ 612:	413190        	srli	a3, a9, 1
+ 615:	170c      	movi.n	a7, 1
+ 617:	013267        	bltu	a2, a6, 61c <esp_power_consumption_info+0x494>
+			617: R_XTENSA_SLOT0_OP	.text2.28+0x61c
+ 61a:	070c      	movi.n	a7, 0
+ 61c:	353a      	add.n	a3, a5, a3
+ 61e:	1158      	l32i.n	a5, a1, 4
+ 620:	373a      	add.n	a3, a7, a3
+ 622:	0d4d      	mov.n	a4, a13
+ 624:	fed201        	l32r	a0, 16c <esp_power_consumption_info-0x1c>
+			624: R_XTENSA_SLOT0_OP	.text2.28+0x16c
+			624: R_XTENSA_ASM_EXPAND	__udivdi3
+ 627:	0000c0        	callx0	a0
+ 62a:	02cd      	mov.n	a12, a2
+ 62c:	03dd      	mov.n	a13, a3
+ 62e:	fed001        	l32r	a0, 170 <esp_power_consumption_info-0x18>
+			62e: R_XTENSA_SLOT0_OP	.text2.28+0x170
+			62e: R_XTENSA_ASM_EXPAND	esp_log_early_timestamp
+ 631:	0000c0        	callx0	a0
+ 634:	fe7b41        	l32r	a4, 20 <esp_power_consumption_info-0x168>
+			634: R_XTENSA_SLOT0_OP	.text2.28+0x20
+ 637:	fe7b51        	l32r	a5, 24 <esp_power_consumption_info-0x164>
+			637: R_XTENSA_SLOT0_OP	.text2.28+0x24
+ 63a:	02fd      	mov.n	a15, a2
+ 63c:	203dd0        	or	a3, a13, a13
+ 63f:	202cc0        	or	a2, a12, a12
+ 642:	fecc01        	l32r	a0, 174 <esp_power_consumption_info-0x14>
+			642: R_XTENSA_SLOT0_OP	.text2.28+0x174
+			642: R_XTENSA_ASM_EXPAND	__umoddi3
+ 645:	0000c0        	callx0	a0
+ 648:	fe7641        	l32r	a4, 20 <esp_power_consumption_info-0x168>
+			648: R_XTENSA_SLOT0_OP	.text2.28+0x20
+ 64b:	fe7651        	l32r	a5, 24 <esp_power_consumption_info-0x164>
+			64b: R_XTENSA_SLOT0_OP	.text2.28+0x24
+ 64e:	026d      	mov.n	a6, a2
+ 650:	0d3d      	mov.n	a3, a13
+ 652:	0c2d      	mov.n	a2, a12
+ 654:	6169      	s32i.n	a6, a1, 24
+ 656:	fec801        	l32r	a0, 178 <esp_power_consumption_info-0x10>
+			656: R_XTENSA_SLOT0_OP	.text2.28+0x178
+			656: R_XTENSA_ASM_EXPAND	__udivdi3
+ 659:	0000c0        	callx0	a0
+ 65c:	6168      	l32i.n	a6, a1, 24
+ 65e:	025d      	mov.n	a5, a2
+ 660:	fe9121        	l32r	a2, a4 <esp_power_consumption_info-0xe4>
+			660: R_XTENSA_SLOT0_OP	.text2.28+0xa4
+ 663:	0e4d      	mov.n	a4, a14
+ 665:	0f3d      	mov.n	a3, a15
+ 667:	fec501        	l32r	a0, 17c <esp_power_consumption_info-0xc>
+			667: R_XTENSA_SLOT0_OP	.text2.28+0x17c
+			667: R_XTENSA_ASM_EXPAND	ets_printf
+ 66a:	0000c0        	callx0	a0
+ 66d:	fec401        	l32r	a0, 180 <esp_power_consumption_info-0x8>
+			66d: R_XTENSA_SLOT0_OP	.text2.28+0x180
+			66d: R_XTENSA_ASM_EXPAND	esp_log_early_timestamp
+ 670:	0000c0        	callx0	a0
+ 673:	fe8d31        	l32r	a3, a8 <esp_power_consumption_info-0xe0>
+			673: R_XTENSA_SLOT0_OP	.text2.28+0xa8
+ 676:	0e4d      	mov.n	a4, a14
+ 678:	0368      	l32i.n	a6, a3, 0
+ 67a:	fe8c31        	l32r	a3, ac <esp_power_consumption_info-0xdc>
+			67a: R_XTENSA_SLOT0_OP	.text2.28+0xac
+ 67d:	0358      	l32i.n	a5, a3, 0
+ 67f:	023d      	mov.n	a3, a2
+ 681:	fe8b21        	l32r	a2, b0 <esp_power_consumption_info-0xd8>
+			681: R_XTENSA_SLOT0_OP	.text2.28+0xb0
+ 684:	fec001        	l32r	a0, 184 <esp_power_consumption_info-0x4>
+			684: R_XTENSA_SLOT0_OP	.text2.28+0x184
+			684: R_XTENSA_ASM_EXPAND	ets_printf
+ 687:	0000c0        	callx0	a0
+ 68a:	f108      	l32i.n	a0, a1, 60
+ 68c:	e1c8      	l32i.n	a12, a1, 56
+ 68e:	d1d8      	l32i.n	a13, a1, 52
+ 690:	c1e8      	l32i.n	a14, a1, 48
+ 692:	b1f8      	l32i.n	a15, a1, 44
+ 694:	40c112        	addi	a1, a1, 64
+ 697:	f00d      	ret.n
+
+Disassembly of section .text2.37:
+
+00000000 <pm_set_idle_timer-0x10>:
+	...
+			0: R_XTENSA_32	.bss.idle_timer_set
+			4: R_XTENSA_32	.bss.pmc
+   8:	38 00 00 00 	
+			8: R_XTENSA_32	.bss.pmc
+   c:	00 00 00 00 	
+			c: R_XTENSA_32	os_timer_arm
+
+00000010 <pm_set_idle_timer>:
+  10:	f0c112        	addi	a1, a1, -16
+  13:	21c9      	s32i.n	a12, a1, 8
+  15:	fffac1        	l32r	a12, 0 <pm_set_idle_timer-0x10>
+			15: R_XTENSA_SLOT0_OP	.text2.37
+  18:	036102        	s32i	a0, a1, 12
+  1b:	000c42        	l8ui	a4, a12, 0
+  1e:	013456        	bnez	a4, 35 <pm_set_idle_timer+0x25>
+			1e: R_XTENSA_SLOT0_OP	.text2.37+0x35
+  21:	fff821        	l32r	a2, 4 <pm_set_idle_timer-0xc>
+			21: R_XTENSA_SLOT0_OP	.text2.37+0x4
+  24:	860232        	l8ui	a3, a2, 134
+  27:	fff821        	l32r	a2, 8 <pm_set_idle_timer-0x8>
+			27: R_XTENSA_SLOT0_OP	.text2.37+0x8
+  2a:	fff801        	l32r	a0, c <pm_set_idle_timer-0x4>
+			2a: R_XTENSA_SLOT0_OP	.text2.37+0xc
+			2a: R_XTENSA_ASM_EXPAND	os_timer_arm
+  2d:	0000c0        	callx0	a0
+  30:	120c      	movi.n	a2, 1
+  32:	004c22        	s8i	a2, a12, 0
+  35:	3108      	l32i.n	a0, a1, 12
+  37:	21c8      	l32i.n	a12, a1, 8
+  39:	10c112        	addi	a1, a1, 16
+  3c:	f00d      	ret.n
+
+Disassembly of section .text2.38:
+
+00000000 <pm_reset_tdata-0x4>:
+   0:	00 00 00 00 	
+			0: R_XTENSA_32	.bss.pmc
+
+00000004 <pm_reset_tdata>:
+   4:	ffff21        	l32r	a2, 0 <pm_reset_tdata-0x4>
+			4: R_XTENSA_SLOT0_OP	.text2.38
+   7:	870232        	l8ui	a3, a2, 135
+   a:	834232        	s8i	a3, a2, 131
+   d:	f00d      	ret.n
+
+Disassembly of section .text2.41:
+
+00000000 <pm_have_more_data_to_recv-0x4>:
+   0:	00 00 00 00 	
+			0: R_XTENSA_32	.bss.pmc
+
+00000004 <pm_have_more_data_to_recv>:
+   4:	ffff21        	l32r	a2, 0 <pm_have_more_data_to_recv-0x4>
+			4: R_XTENSA_SLOT0_OP	.text2.41
+   7:	840242        	l8ui	a4, a2, 132
+   a:	880232        	l8ui	a3, a2, 136
+   d:	04b437        	bgeu	a4, a3, 15 <pm_have_more_data_to_recv+0x11>
+			d: R_XTENSA_SLOT0_OP	.text2.41+0x15
+  10:	030c      	movi.n	a3, 0
+  12:	844232        	s8i	a3, a2, 132
+  15:	850242        	l8ui	a4, a2, 133
+  18:	890232        	l8ui	a3, a2, 137
+  1b:	05b437        	bgeu	a4, a3, 24 <pm_have_more_data_to_recv+0x20>
+			1b: R_XTENSA_SLOT0_OP	.text2.41+0x24
+  1e:	00a032        	movi	a3, 0
+  21:	854232        	s8i	a3, a2, 133
+  24:	f00d      	ret.n
+
+Disassembly of section .text2.42:
+
+00000000 <pm_recv_all_data-0x4>:
+   0:	00 00 00 00 	
+			0: R_XTENSA_32	.bss.pmc
+
+00000004 <pm_recv_all_data>:
+   4:	ffff21        	l32r	a2, 0 <pm_recv_all_data-0x4>
+			4: R_XTENSA_SLOT0_OP	.text2.42
+   7:	880232        	l8ui	a3, a2, 136
+   a:	850242        	l8ui	a4, a2, 133
+   d:	844232        	s8i	a3, a2, 132
+  10:	890232        	l8ui	a3, a2, 137
+  13:	081437        	beq	a4, a3, 1f <pm_recv_all_data+0x1b>
+			13: R_XTENSA_SLOT0_OP	.text2.42+0x1f
+  16:	0533b6        	bltui	a3, 3, 1f <pm_recv_all_data+0x1b>
+			16: R_XTENSA_SLOT0_OP	.text2.42+0x1f
+  19:	fec332        	addi	a3, a3, -2
+  1c:	854232        	s8i	a3, a2, 133
+  1f:	f00d      	ret.n
+
+Disassembly of section .text2.45:
+
+00000000 <pm_rf_is_closed-0x4>:
+   0:	00 00 00 00 	
+			0: R_XTENSA_32	.bss.pmc
+
+00000004 <pm_rf_is_closed>:
+   4:	ffff21        	l32r	a2, 0 <pm_rf_is_closed-0x4>
+			4: R_XTENSA_SLOT0_OP	.text2.45
+   7:	050c      	movi.n	a5, 0
+   9:	1b2232        	l32i	a3, a2, 108
+   c:	160c      	movi.n	a6, 1
+   e:	230b      	addi.n	a2, a3, -1
+  10:	054d      	mov.n	a4, a5
+  12:	834620        	moveqz	a4, a6, a2
+  15:	042d      	mov.n	a2, a4
+  17:	fac342        	addi	a4, a3, -6
+  1a:	053d      	mov.n	a3, a5
+  1c:	833640        	moveqz	a3, a6, a4
+  1f:	202230        	or	a2, a2, a3
+  22:	f00d      	ret.n
+
+Disassembly of section .text2.46:
+
+00000000 <pm_reset_keepalive_time-0xc>:
+   0:	00 0c f2 3f 	
+	...
+			4: R_XTENSA_32	.bss.pmc
+			8: R_XTENSA_32	WdevTimOffSet
+
+0000000c <pm_reset_keepalive_time>:
+   c:	fffd21        	l32r	a2, 0 <pm_reset_keepalive_time-0xc>
+			c: R_XTENSA_SLOT0_OP	.text2.46
+   f:	fffe31        	l32r	a3, 8 <pm_reset_keepalive_time-0x4>
+			f: R_XTENSA_SLOT0_OP	.text2.46+0x8
+  12:	0020c0        	memw
+  15:	0228      	l32i.n	a2, a2, 0
+  17:	0338      	l32i.n	a3, a3, 0
+  19:	232a      	add.n	a2, a3, a2
+  1b:	fffa31        	l32r	a3, 4 <pm_reset_keepalive_time-0x8>
+			1b: R_XTENSA_SLOT0_OP	.text2.46+0x4
+  1e:	196322        	s32i	a2, a3, 100
+  21:	f00d      	ret.n
+
+Disassembly of section .text2.51:
+
+00000000 <pm_attach-0x44>:
+	...
+			0: R_XTENSA_32	.bss.pmc
+			4: R_XTENSA_32	pm_wait_bcn_fun
+			8: R_XTENSA_32	pm_open_rf_for_bcn_fun
+   c:	1c 00 00 00 	
+			c: R_XTENSA_32	.bss.pmc
+  10:	00 00 00 00 	
+			10: R_XTENSA_32	pm_wait_tx_rx_idle_fun
+  14:	38 00 00 00 	
+			14: R_XTENSA_32	.bss.pmc
+  18:	30 00 00 00 	
+			18: R_XTENSA_32	.text2.50
+  1c:	30 00 00 00 	
+			1c: R_XTENSA_32	.text2.49
+	...
+			20: R_XTENSA_32	__wifi_task_suspend_all
+			24: R_XTENSA_32	wifi_nvs_get_sta_listen_interval
+			28: R_XTENSA_32	pm_reset_param
+			2c: R_XTENSA_32	os_timer_setfn
+			30: R_XTENSA_32	os_timer_setfn
+			34: R_XTENSA_32	os_timer_setfn
+			38: R_XTENSA_32	ppRegisterTxCallback
+			3c: R_XTENSA_32	ppRegisterTxCallback
+			40: R_XTENSA_32	__wifi_task_resume_all
+
+00000044 <pm_attach>:
+  44:	f0c112        	addi	a1, a1, -16
+  47:	3109      	s32i.n	a0, a1, 12
+  49:	21c9      	s32i.n	a12, a1, 8
+  4b:	fff501        	l32r	a0, 20 <pm_attach-0x24>
+			4b: R_XTENSA_SLOT0_OP	.text2.51+0x20
+			4b: R_XTENSA_ASM_EXPAND	__wifi_task_suspend_all
+  4e:	0000c0        	callx0	a0
+  51:	ffebc1        	l32r	a12, 0 <pm_attach-0x44>
+			51: R_XTENSA_SLOT0_OP	.text2.51
+  54:	140c      	movi.n	a4, 1
+  56:	421c      	movi.n	a2, 20
+  58:	430c      	movi.n	a3, 4
+  5a:	1d6c42        	s32i	a4, a12, 116
+  5d:	864c22        	s8i	a2, a12, 134
+  60:	8d4c42        	s8i	a4, a12, 141
+  63:	220c      	movi.n	a2, 2
+  65:	841c      	movi.n	a4, 24
+  67:	894c32        	s8i	a3, a12, 137
+  6a:	854c32        	s8i	a3, a12, 133
+  6d:	8b4c42        	s8i	a4, a12, 139
+  70:	8a4c32        	s8i	a3, a12, 138
+  73:	874c22        	s8i	a2, a12, 135
+  76:	884c22        	s8i	a2, a12, 136
+  79:	834c22        	s8i	a2, a12, 131
+  7c:	844c22        	s8i	a2, a12, 132
+  7f:	8c4c22        	s8i	a2, a12, 140
+  82:	ffe801        	l32r	a0, 24 <pm_attach-0x20>
+			82: R_XTENSA_SLOT0_OP	.text2.51+0x24
+			82: R_XTENSA_ASM_EXPAND	wifi_nvs_get_sta_listen_interval
+  85:	0000c0        	callx0	a0
+  88:	784c22        	s8i	a2, a12, 120
+  8b:	ffe701        	l32r	a0, 28 <pm_attach-0x1c>
+			8b: R_XTENSA_SLOT0_OP	.text2.51+0x28
+			8b: R_XTENSA_ASM_EXPAND	pm_reset_param
+  8e:	0000c0        	callx0	a0
+  91:	ffdc31        	l32r	a3, 4 <pm_attach-0x40>
+			91: R_XTENSA_SLOT0_OP	.text2.51+0x4
+  94:	202cc0        	or	a2, a12, a12
+  97:	00a042        	movi	a4, 0
+  9a:	ffe401        	l32r	a0, 2c <pm_attach-0x18>
+			9a: R_XTENSA_SLOT0_OP	.text2.51+0x2c
+			9a: R_XTENSA_ASM_EXPAND	os_timer_setfn
+  9d:	0000c0        	callx0	a0
+  a0:	ffda31        	l32r	a3, 8 <pm_attach-0x3c>
+			a0: R_XTENSA_SLOT0_OP	.text2.51+0x8
+  a3:	ffda21        	l32r	a2, c <pm_attach-0x38>
+			a3: R_XTENSA_SLOT0_OP	.text2.51+0xc
+  a6:	040c      	movi.n	a4, 0
+  a8:	ffe201        	l32r	a0, 30 <pm_attach-0x14>
+			a8: R_XTENSA_SLOT0_OP	.text2.51+0x30
+			a8: R_XTENSA_ASM_EXPAND	os_timer_setfn
+  ab:	0000c0        	callx0	a0
+  ae:	ffd831        	l32r	a3, 10 <pm_attach-0x34>
+			ae: R_XTENSA_SLOT0_OP	.text2.51+0x10
+  b1:	ffd821        	l32r	a2, 14 <pm_attach-0x30>
+			b1: R_XTENSA_SLOT0_OP	.text2.51+0x14
+  b4:	00a042        	movi	a4, 0
+  b7:	ffdf01        	l32r	a0, 34 <pm_attach-0x10>
+			b7: R_XTENSA_SLOT0_OP	.text2.51+0x34
+			b7: R_XTENSA_ASM_EXPAND	os_timer_setfn
+  ba:	0000c0        	callx0	a0
+  bd:	ffd621        	l32r	a2, 18 <pm_attach-0x2c>
+			bd: R_XTENSA_SLOT0_OP	.text2.51+0x18
+  c0:	06a032        	movi	a3, 6
+  c3:	ffdd01        	l32r	a0, 38 <pm_attach-0xc>
+			c3: R_XTENSA_SLOT0_OP	.text2.51+0x38
+			c3: R_XTENSA_ASM_EXPAND	ppRegisterTxCallback
+  c6:	0000c0        	callx0	a0
+  c9:	ffd421        	l32r	a2, 1c <pm_attach-0x28>
+			c9: R_XTENSA_SLOT0_OP	.text2.51+0x1c
+  cc:	530c      	movi.n	a3, 5
+  ce:	ffdb01        	l32r	a0, 3c <pm_attach-0x8>
+			ce: R_XTENSA_SLOT0_OP	.text2.51+0x3c
+			ce: R_XTENSA_ASM_EXPAND	ppRegisterTxCallback
+  d1:	0000c0        	callx0	a0
+  d4:	ffdb01        	l32r	a0, 40 <pm_attach-0x4>
+			d4: R_XTENSA_SLOT0_OP	.text2.51+0x40
+			d4: R_XTENSA_ASM_EXPAND	__wifi_task_resume_all
+  d7:	0000c0        	callx0	a0
+  da:	3108      	l32i.n	a0, a1, 12
+  dc:	21c8      	l32i.n	a12, a1, 8
+  de:	10c112        	addi	a1, a1, 16
+  e1:	f00d      	ret.n
+
+Disassembly of section .text2.52:
+
+00000000 <pm_send_nullfunc-0x40>:
+   0:	00 00 00 00 	
+			0: R_XTENSA_32	g_ic
+   4:	56 02 00 00 	
+			4: R_XTENSA_32	.rodata.str1.1
+   8:	00 00 00 00 	
+			8: R_XTENSA_32	.rodata.str1.1
+   c:	00 00 00 80 	
+  10:	00 00 00 40 	
+  14:	ff ff ff df 	
+  18:	ff 0f 00 ff 	
+  1c:	79 00 00 00 	
+			1c: R_XTENSA_32	.bss.pmc
+  20:	00 0c f2 3f 	
+  24:	ff ff 8f ff 	
+	...
+			28: R_XTENSA_32	ieee80211_getmgtframe
+			2c: R_XTENSA_32	esp_log_write
+			30: R_XTENSA_32	memset
+			34: R_XTENSA_32	ic_get_addr
+			38: R_XTENSA_32	ieee80211_send_setup
+			3c: R_XTENSA_32	ppTxPkt
+
+00000040 <pm_send_nullfunc>:
+  40:	b0c112        	addi	a1, a1, -80
+  43:	1161d2        	s32i	a13, a1, 68
+  46:	ffeed1        	l32r	a13, 0 <pm_send_nullfunc-0x40>
+			46: R_XTENSA_SLOT0_OP	.text2.52
+  49:	1061e2        	s32i	a14, a1, 64
+  4c:	74e020        	extui	a14, a2, 0, 8
+  4f:	020c      	movi.n	a2, 0
+  51:	4129      	s32i.n	a2, a1, 16
+  53:	2d28      	l32i.n	a2, a13, 8
+  55:	136102        	s32i	a0, a1, 76
+  58:	1261c2        	s32i	a12, a1, 72
+  5b:	f1f9      	s32i.n	a15, a1, 60
+  5d:	11f216        	beqz	a2, 180 <pm_send_nullfunc+0x140>
+			5d: R_XTENSA_SLOT0_OP	.text2.52+0x180
+  60:	1e2232        	l32i	a3, a2, 120
+  63:	025326        	beqi	a3, 5, 69 <pm_send_nullfunc+0x29>
+			63: R_XTENSA_SLOT0_OP	.text2.52+0x69
+  66:	004586        	j	180 <pm_send_nullfunc+0x140>
+			66: R_XTENSA_SLOT0_OP	.text2.52+0x180
+  69:	302222        	l32i	a2, a2, 192
+  6c:	8c1c      	movi.n	a12, 24
+  6e:	e28c      	beqz.n	a2, 80 <pm_send_nullfunc+0x40>
+			6e: R_XTENSA_SLOT0_OP	.text2.52+0x80
+  70:	2228      	l32i.n	a2, a2, 8
+  72:	2c4c      	movi.n	a12, 66
+  74:	102c20        	and	a2, a12, a2
+  77:	1aa032        	movi	a3, 26
+  7a:	18a0c2        	movi	a12, 24
+  7d:	93c320        	movnez	a12, a3, a2
+  80:	040c      	movi.n	a4, 0
+  82:	203cc0        	or	a3, a12, a12
+  85:	10c122        	addi	a2, a1, 16
+  88:	ffe801        	l32r	a0, 28 <pm_send_nullfunc-0x18>
+			88: R_XTENSA_SLOT0_OP	.text2.52+0x28
+			88: R_XTENSA_ASM_EXPAND	ieee80211_getmgtframe
+  8b:	0000c0        	callx0	a0
+  8e:	02fd      	mov.n	a15, a2
+  90:	22dc      	bnez.n	a2, a6 <pm_send_nullfunc+0x66>
+			90: R_XTENSA_SLOT0_OP	.text2.52+0xa6
+  92:	ffdc41        	l32r	a4, 4 <pm_send_nullfunc-0x3c>
+			92: R_XTENSA_SLOT0_OP	.text2.52+0x4
+  95:	ffdc31        	l32r	a3, 8 <pm_send_nullfunc-0x38>
+			95: R_XTENSA_SLOT0_OP	.text2.52+0x8
+  98:	120c      	movi.n	a2, 1
+  9a:	ffe401        	l32r	a0, 2c <pm_send_nullfunc-0x14>
+			9a: R_XTENSA_SLOT0_OP	.text2.52+0x2c
+			9a: R_XTENSA_ASM_EXPAND	esp_log_write
+  9d:	0000c0        	callx0	a0
+  a0:	003706        	j	180 <pm_send_nullfunc+0x140>
+			a0: R_XTENSA_SLOT0_OP	.text2.52+0x180
+  a3:	00          	.byte 00
+  a4:	00          	.byte 00
+  a5:	00          	.byte 00
+  a6:	3288      	l32i.n	a8, a2, 12
+  a8:	0c4d      	mov.n	a4, a12
+  aa:	082d      	mov.n	a2, a8
+  ac:	030c      	movi.n	a3, 0
+  ae:	8189      	s32i.n	a8, a1, 32
+  b0:	ffe001        	l32r	a0, 30 <pm_send_nullfunc-0x10>
+			b0: R_XTENSA_SLOT0_OP	.text2.52+0x30
+			b0: R_XTENSA_ASM_EXPAND	memset
+  b3:	0000c0        	callx0	a0
+  b6:	020c      	movi.n	a2, 0
+  b8:	0d5f22        	s16i	a2, a15, 26
+  bb:	0f28      	l32i.n	a2, a15, 0
+  bd:	0c5fc2        	s16i	a12, a15, 24
+  c0:	0020c0        	memw
+  c3:	0248      	l32i.n	a4, a2, 0
+  c5:	ffd131        	l32r	a3, c <pm_send_nullfunc-0x34>
+			c5: R_XTENSA_SLOT0_OP	.text2.52+0xc
+  c8:	11cc40        	slli	a12, a12, 12
+  cb:	203430        	or	a3, a4, a3
+  ce:	0020c0        	memw
+  d1:	0239      	s32i.n	a3, a2, 0
+  d3:	0020c0        	memw
+  d6:	0248      	l32i.n	a4, a2, 0
+  d8:	ffce31        	l32r	a3, 10 <pm_send_nullfunc-0x30>
+			d8: R_XTENSA_SLOT0_OP	.text2.52+0x10
+  db:	203430        	or	a3, a4, a3
+  de:	0020c0        	memw
+  e1:	0239      	s32i.n	a3, a2, 0
+  e3:	0020c0        	memw
+  e6:	0248      	l32i.n	a4, a2, 0
+  e8:	ffcb31        	l32r	a3, 14 <pm_send_nullfunc-0x2c>
+			e8: R_XTENSA_SLOT0_OP	.text2.52+0x14
+  eb:	103430        	and	a3, a4, a3
+  ee:	0020c0        	memw
+  f1:	0239      	s32i.n	a3, a2, 0
+  f3:	0020c0        	memw
+  f6:	0248      	l32i.n	a4, a2, 0
+  f8:	ffc831        	l32r	a3, 18 <pm_send_nullfunc-0x28>
+			f8: R_XTENSA_SLOT0_OP	.text2.52+0x18
+  fb:	103430        	and	a3, a4, a3
+  fe:	20c3c0        	or	a12, a3, a12
+ 101:	0020c0        	memw
+ 104:	02c9      	s32i.n	a12, a2, 0
+ 106:	020c      	movi.n	a2, 0
+ 108:	2dc8      	l32i.n	a12, a13, 8
+ 10a:	ffca01        	l32r	a0, 34 <pm_send_nullfunc-0xc>
+			10a: R_XTENSA_SLOT0_OP	.text2.52+0x34
+			10a: R_XTENSA_ASM_EXPAND	ic_get_addr
+ 10d:	0000c0        	callx0	a0
+ 110:	ffc371        	l32r	a7, 1c <pm_send_nullfunc-0x24>
+			110: R_XTENSA_SLOT0_OP	.text2.52+0x1c
+ 113:	026d      	mov.n	a6, a2
+ 115:	844c      	movi.n	a4, 72
+ 117:	0f3d      	mov.n	a3, a15
+ 119:	0c2d      	mov.n	a2, a12
+ 11b:	0179      	s32i.n	a7, a1, 0
+ 11d:	050c      	movi.n	a5, 0
+ 11f:	ffc601        	l32r	a0, 38 <pm_send_nullfunc-0x8>
+			11f: R_XTENSA_SLOT0_OP	.text2.52+0x38
+			11f: R_XTENSA_ASM_EXPAND	ieee80211_send_setup
+ 122:	0000c0        	callx0	a0
+ 125:	ffbe31        	l32r	a3, 20 <pm_send_nullfunc-0x20>
+			125: R_XTENSA_SLOT0_OP	.text2.52+0x20
+ 128:	af28      	l32i.n	a2, a15, 40
+ 12a:	0020c0        	memw
+ 12d:	0338      	l32i.n	a3, a3, 0
+ 12f:	2248      	l32i.n	a4, a2, 8
+ 131:	5239      	s32i.n	a3, a2, 20
+ 133:	ffbc31        	l32r	a3, 24 <pm_send_nullfunc-0x1c>
+			133: R_XTENSA_SLOT0_OP	.text2.52+0x24
+ 136:	103430        	and	a3, a4, a3
+ 139:	047c      	movi.n	a4, -16
+ 13b:	104340        	and	a4, a3, a4
+ 13e:	630c      	movi.n	a3, 6
+ 140:	203430        	or	a3, a4, a3
+ 143:	0248      	l32i.n	a4, a2, 0
+ 145:	2239      	s32i.n	a3, a2, 8
+ 147:	737c      	movi.n	a3, -9
+ 149:	103430        	and	a3, a4, a3
+ 14c:	1248      	l32i.n	a4, a2, 4
+ 14e:	0239      	s32i.n	a3, a2, 0
+ 150:	d37c      	movi.n	a3, -3
+ 152:	103430        	and	a3, a4, a3
+ 155:	1239      	s32i.n	a3, a2, 4
+ 157:	030c      	movi.n	a3, 0
+ 159:	8f39      	s32i.n	a3, a15, 32
+ 15b:	8188      	l32i.n	a8, a1, 32
+ 15d:	111e37        	beq	a14, a3, 172 <pm_send_nullfunc+0x132>
+			15d: R_XTENSA_SLOT0_OP	.text2.52+0x172
+ 160:	010832        	l8ui	a3, a8, 1
+ 163:	021c      	movi.n	a2, 16
+ 165:	202320        	or	a2, a3, a2
+ 168:	014822        	s8i	a2, a8, 1
+ 16b:	af28      	l32i.n	a2, a15, 40
+ 16d:	032c      	movi.n	a3, 32
+ 16f:	000046        	j	174 <pm_send_nullfunc+0x134>
+			16f: R_XTENSA_SLOT0_OP	.text2.52+0x174
+ 172:	034c      	movi.n	a3, 64
+ 174:	046232        	s32i	a3, a2, 16
+ 177:	202ff0        	or	a2, a15, a15
+ 17a:	ffb001        	l32r	a0, 3c <pm_send_nullfunc-0x4>
+			17a: R_XTENSA_SLOT0_OP	.text2.52+0x3c
+			17a: R_XTENSA_ASM_EXPAND	ppTxPkt
+ 17d:	0000c0        	callx0	a0
+ 180:	132102        	l32i	a0, a1, 76
+ 183:	1221c2        	l32i	a12, a1, 72
+ 186:	1121d2        	l32i	a13, a1, 68
+ 189:	1021e2        	l32i	a14, a1, 64
+ 18c:	f1f8      	l32i.n	a15, a1, 60
+ 18e:	50c112        	addi	a1, a1, 80
+ 191:	f00d      	ret.n
+
+Disassembly of section .text2.40:
+
+00000000 <pm_change_to_state-0x84>:
+	...
+			0: R_XTENSA_32	g_wifi_nvs
+			4: R_XTENSA_32	g_ic
+			8: R_XTENSA_32	.bss.pmc
+			c: R_XTENSA_32	sniffer_enable
+  10:	1c 00 00 00 	
+			10: R_XTENSA_32	.bss.pmc
+  14:	00 0c f2 3f 	
+	...
+			18: R_XTENSA_32	WdevTimOffSet
+			1c: R_XTENSA_32	.data.cur_early
+  20:	7f 4f 12 00 	
+  24:	88 13 00 00 	
+	...
+			28: R_XTENSA_32	os_timer_disarm
+			2c: R_XTENSA_32	wifi_pm_open_rf
+			30: R_XTENSA_32	pm_send_nullfunc
+			34: R_XTENSA_32	wifi_pm_open_rf
+			38: R_XTENSA_32	ppCheckTxIdle
+			3c: R_XTENSA_32	wifi_pm_close_rf
+			40: R_XTENSA_32	pm_wait_tx_rx_idle_fun
+			44: R_XTENSA_32	ppProcessWaitQ
+			48: R_XTENSA_32	os_timer_disarm
+			4c: R_XTENSA_32	wifi_pm_open_rf
+			50: R_XTENSA_32	pm_send_nullfunc
+			54: R_XTENSA_32	os_timer_disarm
+			58: R_XTENSA_32	wifi_pm_open_rf
+			5c: R_XTENSA_32	ppCheckTxIdle
+			60: R_XTENSA_32	pm_send_nullfunc
+			64: R_XTENSA_32	ppCheckTxIdle
+			68: R_XTENSA_32	os_timer_arm_us
+			6c: R_XTENSA_32	wifi_pm_close_rf
+			70: R_XTENSA_32	ppCheckTxIdle
+			74: R_XTENSA_32	os_timer_arm_us
+			78: R_XTENSA_32	os_timer_disarm
+			7c: R_XTENSA_32	wifi_pm_open_rf
+			80: R_XTENSA_32	pm_send_nullfunc
+
+00000084 <pm_change_to_state>:
+  84:	f0c112        	addi	a1, a1, -16
+  87:	01e9      	s32i.n	a14, a1, 0
+  89:	02ed      	mov.n	a14, a2
+  8b:	ffdd21        	l32r	a2, 0 <pm_change_to_state-0x84>
+			8b: R_XTENSA_SLOT0_OP	.text2.40
+  8e:	3109      	s32i.n	a0, a1, 12
+  90:	0228      	l32i.n	a2, a2, 0
+  92:	21c9      	s32i.n	a12, a1, 8
+  94:	11d9      	s32i.n	a13, a1, 4
+  96:	000262        	l8ui	a6, a2, 0
+  99:	fec622        	addi	a2, a6, -2
+  9c:	742020        	extui	a2, a2, 0, 8
+  9f:	1522f6        	bgeui	a2, 2, b8 <pm_change_to_state+0x34>
+			9f: R_XTENSA_SLOT0_OP	.text2.40+0xb8
+  a2:	ffd821        	l32r	a2, 4 <pm_change_to_state-0x80>
+			a2: R_XTENSA_SLOT0_OP	.text2.40+0x4
+  a5:	3228      	l32i.n	a2, a2, 12
+  a7:	d28c      	beqz.n	a2, b8 <pm_change_to_state+0x34>
+			a7: R_XTENSA_SLOT0_OP	.text2.40+0xb8
+  a9:	412222        	l32i	a2, a2, 0x104
+  ac:	086287        	bbci	a2, 8, b8 <pm_change_to_state+0x34>
+			ac: R_XTENSA_SLOT0_OP	.text2.40+0xb8
+  af:	ffd621        	l32r	a2, 8 <pm_change_to_state-0x7c>
+			af: R_XTENSA_SLOT0_OP	.text2.40+0x8
+  b2:	1c62e2        	s32i	a14, a2, 112
+  b5:	00a0e2        	movi	a14, 0
+  b8:	ffd521        	l32r	a2, c <pm_change_to_state-0x78>
+			b8: R_XTENSA_SLOT0_OP	.text2.40+0xc
+  bb:	0228      	l32i.n	a2, a2, 0
+  bd:	000222        	l8ui	a2, a2, 0
+  c0:	428c      	beqz.n	a2, c8 <pm_change_to_state+0x44>
+			c0: R_XTENSA_SLOT0_OP	.text2.40+0xc8
+  c2:	027e26        	beqi	a14, 7, c8 <pm_change_to_state+0x44>
+			c2: R_XTENSA_SLOT0_OP	.text2.40+0xc8
+  c5:	00cd86        	j	3ff <pm_change_to_state+0x37b>
+			c5: R_XTENSA_SLOT0_OP	.text2.40+0x3ff
+  c8:	ffcf41        	l32r	a4, 4 <pm_change_to_state-0x80>
+			c8: R_XTENSA_SLOT0_OP	.text2.40+0x4
+  cb:	01d422        	addmi	a2, a4, 0x100
+  ce:	600252        	l8ui	a5, a2, 96
+  d1:	858c      	beqz.n	a5, dd <pm_change_to_state+0x59>
+			d1: R_XTENSA_SLOT0_OP	.text2.40+0xdd
+  d3:	ffcd21        	l32r	a2, 8 <pm_change_to_state-0x7c>
+			d3: R_XTENSA_SLOT0_OP	.text2.40+0x8
+  d6:	0e7e66        	bnei	a14, 7, e8 <pm_change_to_state+0x64>
+			d6: R_XTENSA_SLOT0_OP	.text2.40+0xe8
+  d9:	00c886        	j	3ff <pm_change_to_state+0x37b>
+			d9: R_XTENSA_SLOT0_OP	.text2.40+0x3ff
+  dc:	00          	.byte 00
+  dd:	ffca21        	l32r	a2, 8 <pm_change_to_state-0x7c>
+			dd: R_XTENSA_SLOT0_OP	.text2.40+0x8
+  e0:	1b22d2        	l32i	a13, a2, 108
+  e3:	02cd      	mov.n	a12, a2
+  e5:	057d66        	bnei	a13, 7, ee <pm_change_to_state+0x6a>
+			e5: R_XTENSA_SLOT0_OP	.text2.40+0xee
+  e8:	1c62e2        	s32i	a14, a2, 112
+  eb:	00c406        	j	3ff <pm_change_to_state+0x37b>
+			eb: R_XTENSA_SLOT0_OP	.text2.40+0x3ff
+  ee:	170c      	movi.n	a7, 1
+  f0:	c02ed0        	sub	a2, a14, a13
+  f3:	073d      	mov.n	a3, a7
+  f5:	933520        	movnez	a3, a5, a2
+  f8:	938c      	beqz.n	a3, 105 <pm_change_to_state+0x81>
+			f8: R_XTENSA_SLOT0_OP	.text2.40+0x105
+  fa:	face32        	addi	a3, a14, -6
+  fd:	052d      	mov.n	a2, a5
+  ff:	932730        	movnez	a2, a7, a3
+ 102:	2f9256        	bnez	a2, 3ff <pm_change_to_state+0x37b>
+			102: R_XTENSA_SLOT0_OP	.text2.40+0x3ff
+ 105:	022e66        	bnei	a14, 2, 10b <pm_change_to_state+0x87>
+			105: R_XTENSA_SLOT0_OP	.text2.40+0x10b
+ 108:	002986        	j	1b2 <pm_change_to_state+0x12e>
+			108: R_XTENSA_SLOT0_OP	.text2.40+0x1b2
+ 10b:	093ef6        	bgeui	a14, 3, 118 <pm_change_to_state+0x94>
+			10b: R_XTENSA_SLOT0_OP	.text2.40+0x118
+ 10e:	be9c      	beqz.n	a14, 12d <pm_change_to_state+0xa9>
+			10e: R_XTENSA_SLOT0_OP	.text2.40+0x12d
+ 110:	481e26        	beqi	a14, 1, 15c <pm_change_to_state+0xd8>
+			110: R_XTENSA_SLOT0_OP	.text2.40+0x15c
+ 113:	00ba06        	j	3ff <pm_change_to_state+0x37b>
+			113: R_XTENSA_SLOT0_OP	.text2.40+0x3ff
+ 116:	00          	.byte 00
+ 117:	00          	.byte 00
+ 118:	026e66        	bnei	a14, 6, 11e <pm_change_to_state+0x9a>
+			118: R_XTENSA_SLOT0_OP	.text2.40+0x11e
+ 11b:	004646        	j	238 <pm_change_to_state+0x1b4>
+			11b: R_XTENSA_SLOT0_OP	.text2.40+0x238
+ 11e:	027e66        	bnei	a14, 7, 124 <pm_change_to_state+0xa0>
+			11e: R_XTENSA_SLOT0_OP	.text2.40+0x124
+ 121:	009cc6        	j	398 <pm_change_to_state+0x314>
+			121: R_XTENSA_SLOT0_OP	.text2.40+0x398
+ 124:	024e26        	beqi	a14, 4, 12a <pm_change_to_state+0xa6>
+			124: R_XTENSA_SLOT0_OP	.text2.40+0x12a
+ 127:	00b506        	j	3ff <pm_change_to_state+0x37b>
+			127: R_XTENSA_SLOT0_OP	.text2.40+0x3ff
+ 12a:	003306        	j	1fa <pm_change_to_state+0x176>
+			12a: R_XTENSA_SLOT0_OP	.text2.40+0x1fa
+ 12d:	1b6d66        	bnei	a13, 6, 14c <pm_change_to_state+0xc8>
+			12d: R_XTENSA_SLOT0_OP	.text2.40+0x14c
+ 130:	ffb821        	l32r	a2, 10 <pm_change_to_state-0x74>
+			130: R_XTENSA_SLOT0_OP	.text2.40+0x10
+ 133:	ffbd01        	l32r	a0, 28 <pm_change_to_state-0x5c>
+			133: R_XTENSA_SLOT0_OP	.text2.40+0x28
+			133: R_XTENSA_ASM_EXPAND	os_timer_disarm
+ 136:	0000c0        	callx0	a0
+ 139:	ffbc01        	l32r	a0, 2c <pm_change_to_state-0x58>
+			139: R_XTENSA_SLOT0_OP	.text2.40+0x2c
+			139: R_XTENSA_ASM_EXPAND	wifi_pm_open_rf
+ 13c:	0000c0        	callx0	a0
+ 13f:	202ee0        	or	a2, a14, a14
+ 142:	ffbb01        	l32r	a0, 30 <pm_change_to_state-0x54>
+			142: R_XTENSA_SLOT0_OP	.text2.40+0x30
+			142: R_XTENSA_ASM_EXPAND	pm_send_nullfunc
+ 145:	0000c0        	callx0	a0
+ 148:	000246        	j	155 <pm_change_to_state+0xd1>
+			148: R_XTENSA_SLOT0_OP	.text2.40+0x155
+ 14b:	00          	.byte 00
+ 14c:	051d66        	bnei	a13, 1, 155 <pm_change_to_state+0xd1>
+			14c: R_XTENSA_SLOT0_OP	.text2.40+0x155
+ 14f:	ffb901        	l32r	a0, 34 <pm_change_to_state-0x50>
+			14f: R_XTENSA_SLOT0_OP	.text2.40+0x34
+			14f: R_XTENSA_ASM_EXPAND	wifi_pm_open_rf
+ 152:	0000c0        	callx0	a0
+ 155:	020c      	movi.n	a2, 0
+ 157:	00a2c6        	j	3e6 <pm_change_to_state+0x362>
+			157: R_XTENSA_SLOT0_OP	.text2.40+0x3e6
+ 15a:	00          	.byte 00
+ 15b:	00          	.byte 00
+ 15c:	026d66        	bnei	a13, 6, 162 <pm_change_to_state+0xde>
+			15c: R_XTENSA_SLOT0_OP	.text2.40+0x162
+ 15f:	002bc6        	j	212 <pm_change_to_state+0x18e>
+			15f: R_XTENSA_SLOT0_OP	.text2.40+0x212
+ 162:	d27c      	movi.n	a2, -3
+ 164:	106620        	and	a6, a6, a2
+ 167:	0e1666        	bnei	a6, 1, 179 <pm_change_to_state+0xf5>
+			167: R_XTENSA_SLOT0_OP	.text2.40+0x179
+ 16a:	022422        	l32i	a2, a4, 8
+ 16d:	008216        	beqz	a2, 179 <pm_change_to_state+0xf5>
+			16d: R_XTENSA_SLOT0_OP	.text2.40+0x179
+ 170:	1e2222        	l32i	a2, a2, 120
+ 173:	025266        	bnei	a2, 5, 179 <pm_change_to_state+0xf5>
+			173: R_XTENSA_SLOT0_OP	.text2.40+0x179
+ 176:	00a146        	j	3ff <pm_change_to_state+0x37b>
+			176: R_XTENSA_SLOT0_OP	.text2.40+0x3ff
+ 179:	120c      	movi.n	a2, 1
+ 17b:	ffaf01        	l32r	a0, 38 <pm_change_to_state-0x4c>
+			17b: R_XTENSA_SLOT0_OP	.text2.40+0x38
+			17b: R_XTENSA_ASM_EXPAND	ppCheckTxIdle
+ 17e:	0000c0        	callx0	a0
+ 181:	42ec      	bnez.n	a2, 1a9 <pm_change_to_state+0x125>
+			181: R_XTENSA_SLOT0_OP	.text2.40+0x1a9
+ 183:	850c32        	l8ui	a3, a12, 133
+ 186:	890c22        	l8ui	a2, a12, 137
+ 189:	1c3327        	bltu	a3, a2, 1a9 <pm_change_to_state+0x125>
+			189: R_XTENSA_SLOT0_OP	.text2.40+0x1a9
+ 18c:	840c32        	l8ui	a3, a12, 132
+ 18f:	880c22        	l8ui	a2, a12, 136
+ 192:	133327        	bltu	a3, a2, 1a9 <pm_change_to_state+0x125>
+			192: R_XTENSA_SLOT0_OP	.text2.40+0x1a9
+ 195:	830c32        	l8ui	a3, a12, 131
+ 198:	870c22        	l8ui	a2, a12, 135
+ 19b:	0a3327        	bltu	a3, a2, 1a9 <pm_change_to_state+0x125>
+			19b: R_XTENSA_SLOT0_OP	.text2.40+0x1a9
+ 19e:	ffa701        	l32r	a0, 3c <pm_change_to_state-0x48>
+			19e: R_XTENSA_SLOT0_OP	.text2.40+0x3c
+			19e: R_XTENSA_ASM_EXPAND	wifi_pm_close_rf
+ 1a1:	0000c0        	callx0	a0
+ 1a4:	120c      	movi.n	a2, 1
+ 1a6:	008f06        	j	3e6 <pm_change_to_state+0x362>
+			1a6: R_XTENSA_SLOT0_OP	.text2.40+0x3e6
+ 1a9:	ffa501        	l32r	a0, 40 <pm_change_to_state-0x44>
+			1a9: R_XTENSA_SLOT0_OP	.text2.40+0x40
+			1a9: R_XTENSA_ASM_EXPAND	pm_wait_tx_rx_idle_fun
+ 1ac:	0000c0        	callx0	a0
+ 1af:	009306        	j	3ff <pm_change_to_state+0x37b>
+			1af: R_XTENSA_SLOT0_OP	.text2.40+0x3ff
+ 1b2:	2dcc      	bnez.n	a13, 1b8 <pm_change_to_state+0x134>
+			1b2: R_XTENSA_SLOT0_OP	.text2.40+0x1b8
+ 1b4:	001686        	j	212 <pm_change_to_state+0x18e>
+			1b4: R_XTENSA_SLOT0_OP	.text2.40+0x212
+ 1b7:	00          	.byte 00
+ 1b8:	0c5d66        	bnei	a13, 5, 1c8 <pm_change_to_state+0x144>
+			1b8: R_XTENSA_SLOT0_OP	.text2.40+0x1c8
+ 1bb:	1b6ce2        	s32i	a14, a12, 108
+ 1be:	ffa101        	l32r	a0, 44 <pm_change_to_state-0x40>
+			1be: R_XTENSA_SLOT0_OP	.text2.40+0x44
+			1be: R_XTENSA_ASM_EXPAND	ppProcessWaitQ
+ 1c1:	0000c0        	callx0	a0
+ 1c4:	008dc6        	j	3ff <pm_change_to_state+0x37b>
+			1c4: R_XTENSA_SLOT0_OP	.text2.40+0x3ff
+ 1c7:	00          	.byte 00
+ 1c8:	044d66        	bnei	a13, 4, 1d0 <pm_change_to_state+0x14c>
+			1c8: R_XTENSA_SLOT0_OP	.text2.40+0x1d0
+ 1cb:	0004c6        	j	1e2 <pm_change_to_state+0x15e>
+			1cb: R_XTENSA_SLOT0_OP	.text2.40+0x1e2
+ 1ce:	00          	.byte 00
+ 1cf:	00          	.byte 00
+ 1d0:	1b6d66        	bnei	a13, 6, 1ef <pm_change_to_state+0x16b>
+			1d0: R_XTENSA_SLOT0_OP	.text2.40+0x1ef
+ 1d3:	ff8f21        	l32r	a2, 10 <pm_change_to_state-0x74>
+			1d3: R_XTENSA_SLOT0_OP	.text2.40+0x10
+ 1d6:	ff9c01        	l32r	a0, 48 <pm_change_to_state-0x3c>
+			1d6: R_XTENSA_SLOT0_OP	.text2.40+0x48
+			1d6: R_XTENSA_ASM_EXPAND	os_timer_disarm
+ 1d9:	0000c0        	callx0	a0
+ 1dc:	ff9c01        	l32r	a0, 4c <pm_change_to_state-0x38>
+			1dc: R_XTENSA_SLOT0_OP	.text2.40+0x4c
+			1dc: R_XTENSA_ASM_EXPAND	wifi_pm_open_rf
+ 1df:	0000c0        	callx0	a0
+ 1e2:	020c      	movi.n	a2, 0
+ 1e4:	ff9b01        	l32r	a0, 50 <pm_change_to_state-0x34>
+			1e4: R_XTENSA_SLOT0_OP	.text2.40+0x50
+			1e4: R_XTENSA_ASM_EXPAND	pm_send_nullfunc
+ 1e7:	0000c0        	callx0	a0
+ 1ea:	520c      	movi.n	a2, 5
+ 1ec:	007d86        	j	3e6 <pm_change_to_state+0x362>
+			1ec: R_XTENSA_SLOT0_OP	.text2.40+0x3e6
+ 1ef:	023d26        	beqi	a13, 3, 1f5 <pm_change_to_state+0x171>
+			1ef: R_XTENSA_SLOT0_OP	.text2.40+0x1f5
+ 1f2:	008246        	j	3ff <pm_change_to_state+0x37b>
+			1f2: R_XTENSA_SLOT0_OP	.text2.40+0x3ff
+ 1f5:	fffa46        	j	1e2 <pm_change_to_state+0x15e>
+			1f5: R_XTENSA_SLOT0_OP	.text2.40+0x1e2
+ 1f8:	00          	.byte 00
+ 1f9:	00          	.byte 00
+ 1fa:	023d66        	bnei	a13, 3, 200 <pm_change_to_state+0x17c>
+			1fa: R_XTENSA_SLOT0_OP	.text2.40+0x200
+ 1fd:	000446        	j	212 <pm_change_to_state+0x18e>
+			1fd: R_XTENSA_SLOT0_OP	.text2.40+0x212
+ 200:	146d66        	bnei	a13, 6, 218 <pm_change_to_state+0x194>
+			200: R_XTENSA_SLOT0_OP	.text2.40+0x218
+ 203:	ff8321        	l32r	a2, 10 <pm_change_to_state-0x74>
+			203: R_XTENSA_SLOT0_OP	.text2.40+0x10
+ 206:	ff9301        	l32r	a0, 54 <pm_change_to_state-0x30>
+			206: R_XTENSA_SLOT0_OP	.text2.40+0x54
+			206: R_XTENSA_ASM_EXPAND	os_timer_disarm
+ 209:	0000c0        	callx0	a0
+ 20c:	ff9301        	l32r	a0, 58 <pm_change_to_state-0x2c>
+			20c: R_XTENSA_SLOT0_OP	.text2.40+0x58
+			20c: R_XTENSA_ASM_EXPAND	wifi_pm_open_rf
+ 20f:	0000c0        	callx0	a0
+ 212:	1b6ce2        	s32i	a14, a12, 108
+ 215:	007986        	j	3ff <pm_change_to_state+0x37b>
+			215: R_XTENSA_SLOT0_OP	.text2.40+0x3ff
+ 218:	022d26        	beqi	a13, 2, 21e <pm_change_to_state+0x19a>
+			218: R_XTENSA_SLOT0_OP	.text2.40+0x21e
+ 21b:	007806        	j	3ff <pm_change_to_state+0x37b>
+			21b: R_XTENSA_SLOT0_OP	.text2.40+0x3ff
+ 21e:	120c      	movi.n	a2, 1
+ 220:	ff8f01        	l32r	a0, 5c <pm_change_to_state-0x28>
+			220: R_XTENSA_SLOT0_OP	.text2.40+0x5c
+			220: R_XTENSA_ASM_EXPAND	ppCheckTxIdle
+ 223:	0000c0        	callx0	a0
+ 226:	1d5256        	bnez	a2, 3ff <pm_change_to_state+0x37b>
+			226: R_XTENSA_SLOT0_OP	.text2.40+0x3ff
+ 229:	120c      	movi.n	a2, 1
+ 22b:	ff8d01        	l32r	a0, 60 <pm_change_to_state-0x24>
+			22b: R_XTENSA_SLOT0_OP	.text2.40+0x60
+			22b: R_XTENSA_ASM_EXPAND	pm_send_nullfunc
+ 22e:	0000c0        	callx0	a0
+ 231:	320c      	movi.n	a2, 3
+ 233:	006bc6        	j	3e6 <pm_change_to_state+0x362>
+			233: R_XTENSA_SLOT0_OP	.text2.40+0x3e6
+ 236:	00          	.byte 00
+ 237:	00          	.byte 00
+ 238:	fdcd22        	addi	a2, a13, -3
+ 23b:	0222b6        	bltui	a2, 2, 241 <pm_change_to_state+0x1bd>
+			23b: R_XTENSA_SLOT0_OP	.text2.40+0x241
+ 23e:	0029c6        	j	2e9 <pm_change_to_state+0x265>
+			23e: R_XTENSA_SLOT0_OP	.text2.40+0x2e9
+ 241:	120c      	movi.n	a2, 1
+ 243:	ff8801        	l32r	a0, 64 <pm_change_to_state-0x20>
+			243: R_XTENSA_SLOT0_OP	.text2.40+0x64
+			243: R_XTENSA_ASM_EXPAND	ppCheckTxIdle
+ 246:	0000c0        	callx0	a0
+ 249:	f5c256        	bnez	a2, 1a9 <pm_change_to_state+0x125>
+			249: R_XTENSA_SLOT0_OP	.text2.40+0x1a9
+ 24c:	850c32        	l8ui	a3, a12, 133
+ 24f:	890c22        	l8ui	a2, a12, 137
+ 252:	02b327        	bgeu	a3, a2, 258 <pm_change_to_state+0x1d4>
+			252: R_XTENSA_SLOT0_OP	.text2.40+0x258
+ 255:	ffd406        	j	1a9 <pm_change_to_state+0x125>
+			255: R_XTENSA_SLOT0_OP	.text2.40+0x1a9
+ 258:	840c32        	l8ui	a3, a12, 132
+ 25b:	880c22        	l8ui	a2, a12, 136
+ 25e:	02b327        	bgeu	a3, a2, 264 <pm_change_to_state+0x1e0>
+			25e: R_XTENSA_SLOT0_OP	.text2.40+0x264
+ 261:	ffd106        	j	1a9 <pm_change_to_state+0x125>
+			261: R_XTENSA_SLOT0_OP	.text2.40+0x1a9
+ 264:	830c32        	l8ui	a3, a12, 131
+ 267:	870c22        	l8ui	a2, a12, 135
+ 26a:	02b327        	bgeu	a3, a2, 270 <pm_change_to_state+0x1ec>
+			26a: R_XTENSA_SLOT0_OP	.text2.40+0x270
+ 26d:	ffce06        	j	1a9 <pm_change_to_state+0x125>
+			26d: R_XTENSA_SLOT0_OP	.text2.40+0x1a9
+ 270:	ff6961        	l32r	a6, 14 <pm_change_to_state-0x70>
+			270: R_XTENSA_SLOT0_OP	.text2.40+0x14
+ 273:	ff6a51        	l32r	a5, 1c <pm_change_to_state-0x68>
+			273: R_XTENSA_SLOT0_OP	.text2.40+0x1c
+ 276:	ff6831        	l32r	a3, 18 <pm_change_to_state-0x6c>
+			276: R_XTENSA_SLOT0_OP	.text2.40+0x18
+ 279:	0020c0        	memw
+ 27c:	0648      	l32i.n	a4, a6, 0
+ 27e:	0558      	l32i.n	a5, a5, 0
+ 280:	172c22        	l32i	a2, a12, 92
+ 283:	0338      	l32i.n	a3, a3, 0
+ 285:	445a      	add.n	a4, a4, a5
+ 287:	7dd222        	addmi	a2, a2, 0x7d00
+ 28a:	443a      	add.n	a4, a4, a3
+ 28c:	023427        	bltu	a4, a2, 292 <pm_change_to_state+0x20e>
+			28c: R_XTENSA_SLOT0_OP	.text2.40+0x292
+ 28f:	005b06        	j	3ff <pm_change_to_state+0x37b>
+			28f: R_XTENSA_SLOT0_OP	.text2.40+0x3ff
+ 292:	0020c0        	memw
+ 295:	0648      	l32i.n	a4, a6, 0
+ 297:	ff6261        	l32r	a6, 20 <pm_change_to_state-0x64>
+			297: R_XTENSA_SLOT0_OP	.text2.40+0x20
+ 29a:	c04240        	sub	a4, a2, a4
+ 29d:	c04450        	sub	a4, a4, a5
+ 2a0:	c04430        	sub	a4, a4, a3
+ 2a3:	02b647        	bgeu	a6, a4, 2a9 <pm_change_to_state+0x225>
+			2a3: R_XTENSA_SLOT0_OP	.text2.40+0x2a9
+ 2a6:	005546        	j	3ff <pm_change_to_state+0x37b>
+			2a6: R_XTENSA_SLOT0_OP	.text2.40+0x3ff
+ 2a9:	ff5a61        	l32r	a6, 14 <pm_change_to_state-0x70>
+			2a9: R_XTENSA_SLOT0_OP	.text2.40+0x14
+ 2ac:	ff5e71        	l32r	a7, 24 <pm_change_to_state-0x60>
+			2ac: R_XTENSA_SLOT0_OP	.text2.40+0x24
+ 2af:	0020c0        	memw
+ 2b2:	0648      	l32i.n	a4, a6, 0
+ 2b4:	c04240        	sub	a4, a2, a4
+ 2b7:	c04450        	sub	a4, a4, a5
+ 2ba:	c04430        	sub	a4, a4, a3
+ 2bd:	023747        	bltu	a7, a4, 2c3 <pm_change_to_state+0x23f>
+			2bd: R_XTENSA_SLOT0_OP	.text2.40+0x2c3
+ 2c0:	004ec6        	j	3ff <pm_change_to_state+0x37b>
+			2c0: R_XTENSA_SLOT0_OP	.text2.40+0x3ff
+ 2c3:	0020c0        	memw
+ 2c6:	0648      	l32i.n	a4, a6, 0
+ 2c8:	c02240        	sub	a2, a2, a4
+ 2cb:	c02250        	sub	a2, a2, a5
+ 2ce:	c03230        	sub	a3, a2, a3
+ 2d1:	ff4f21        	l32r	a2, 10 <pm_change_to_state-0x74>
+			2d1: R_XTENSA_SLOT0_OP	.text2.40+0x10
+ 2d4:	040c      	movi.n	a4, 0
+ 2d6:	ff6401        	l32r	a0, 68 <pm_change_to_state-0x1c>
+			2d6: R_XTENSA_SLOT0_OP	.text2.40+0x68
+			2d6: R_XTENSA_ASM_EXPAND	os_timer_arm_us
+ 2d9:	0000c0        	callx0	a0
+ 2dc:	ff6401        	l32r	a0, 6c <pm_change_to_state-0x18>
+			2dc: R_XTENSA_SLOT0_OP	.text2.40+0x6c
+			2dc: R_XTENSA_ASM_EXPAND	wifi_pm_close_rf
+ 2df:	0000c0        	callx0	a0
+ 2e2:	620c      	movi.n	a2, 6
+ 2e4:	003f86        	j	3e6 <pm_change_to_state+0x362>
+			2e4: R_XTENSA_SLOT0_OP	.text2.40+0x3e6
+ 2e7:	00          	.byte 00
+ 2e8:	00          	.byte 00
+ 2e9:	342d66        	bnei	a13, 2, 321 <pm_change_to_state+0x29d>
+			2e9: R_XTENSA_SLOT0_OP	.text2.40+0x321
+ 2ec:	120c      	movi.n	a2, 1
+ 2ee:	ff6001        	l32r	a0, 70 <pm_change_to_state-0x14>
+			2ee: R_XTENSA_SLOT0_OP	.text2.40+0x70
+			2ee: R_XTENSA_ASM_EXPAND	ppCheckTxIdle
+ 2f1:	0000c0        	callx0	a0
+ 2f4:	107256        	bnez	a2, 3ff <pm_change_to_state+0x37b>
+			2f4: R_XTENSA_SLOT0_OP	.text2.40+0x3ff
+ 2f7:	850c32        	l8ui	a3, a12, 133
+ 2fa:	890c22        	l8ui	a2, a12, 137
+ 2fd:	02b327        	bgeu	a3, a2, 303 <pm_change_to_state+0x27f>
+			2fd: R_XTENSA_SLOT0_OP	.text2.40+0x303
+ 300:	003ec6        	j	3ff <pm_change_to_state+0x37b>
+			300: R_XTENSA_SLOT0_OP	.text2.40+0x3ff
+ 303:	840c32        	l8ui	a3, a12, 132
+ 306:	880c22        	l8ui	a2, a12, 136
+ 309:	02b327        	bgeu	a3, a2, 30f <pm_change_to_state+0x28b>
+			309: R_XTENSA_SLOT0_OP	.text2.40+0x30f
+ 30c:	003bc6        	j	3ff <pm_change_to_state+0x37b>
+			30c: R_XTENSA_SLOT0_OP	.text2.40+0x3ff
+ 30f:	830c32        	l8ui	a3, a12, 131
+ 312:	870c22        	l8ui	a2, a12, 135
+ 315:	02b327        	bgeu	a3, a2, 31b <pm_change_to_state+0x297>
+			315: R_XTENSA_SLOT0_OP	.text2.40+0x31b
+ 318:	0038c6        	j	3ff <pm_change_to_state+0x37b>
+			318: R_XTENSA_SLOT0_OP	.text2.40+0x3ff
+ 31b:	ffc286        	j	229 <pm_change_to_state+0x1a5>
+			31b: R_XTENSA_SLOT0_OP	.text2.40+0x229
+ 31e:	00          	.byte 00
+ 31f:	00          	.byte 00
+ 320:	00          	.byte 00
+ 321:	026d26        	beqi	a13, 6, 327 <pm_change_to_state+0x2a3>
+			321: R_XTENSA_SLOT0_OP	.text2.40+0x327
+ 324:	0035c6        	j	3ff <pm_change_to_state+0x37b>
+			324: R_XTENSA_SLOT0_OP	.text2.40+0x3ff
+ 327:	ff3b61        	l32r	a6, 14 <pm_change_to_state-0x70>
+			327: R_XTENSA_SLOT0_OP	.text2.40+0x14
+ 32a:	ff3c51        	l32r	a5, 1c <pm_change_to_state-0x68>
+			32a: R_XTENSA_SLOT0_OP	.text2.40+0x1c
+ 32d:	ff3a31        	l32r	a3, 18 <pm_change_to_state-0x6c>
+			32d: R_XTENSA_SLOT0_OP	.text2.40+0x18
+ 330:	0020c0        	memw
+ 333:	0648      	l32i.n	a4, a6, 0
+ 335:	0558      	l32i.n	a5, a5, 0
+ 337:	172c22        	l32i	a2, a12, 92
+ 33a:	0338      	l32i.n	a3, a3, 0
+ 33c:	445a      	add.n	a4, a4, a5
+ 33e:	7dd222        	addmi	a2, a2, 0x7d00
+ 341:	443a      	add.n	a4, a4, a3
+ 343:	023427        	bltu	a4, a2, 349 <pm_change_to_state+0x2c5>
+			343: R_XTENSA_SLOT0_OP	.text2.40+0x349
+ 346:	002d46        	j	3ff <pm_change_to_state+0x37b>
+			346: R_XTENSA_SLOT0_OP	.text2.40+0x3ff
+ 349:	0020c0        	memw
+ 34c:	0648      	l32i.n	a4, a6, 0
+ 34e:	ff3471        	l32r	a7, 20 <pm_change_to_state-0x64>
+			34e: R_XTENSA_SLOT0_OP	.text2.40+0x20
+ 351:	c04240        	sub	a4, a2, a4
+ 354:	c04450        	sub	a4, a4, a5
+ 357:	c04430        	sub	a4, a4, a3
+ 35a:	02b747        	bgeu	a7, a4, 360 <pm_change_to_state+0x2dc>
+			35a: R_XTENSA_SLOT0_OP	.text2.40+0x360
+ 35d:	002786        	j	3ff <pm_change_to_state+0x37b>
+			35d: R_XTENSA_SLOT0_OP	.text2.40+0x3ff
+ 360:	0020c0        	memw
+ 363:	0648      	l32i.n	a4, a6, 0
+ 365:	ff2f71        	l32r	a7, 24 <pm_change_to_state-0x60>
+			365: R_XTENSA_SLOT0_OP	.text2.40+0x24
+ 368:	c04240        	sub	a4, a2, a4
+ 36b:	c04450        	sub	a4, a4, a5
+ 36e:	c04430        	sub	a4, a4, a3
+ 371:	023747        	bltu	a7, a4, 377 <pm_change_to_state+0x2f3>
+			371: R_XTENSA_SLOT0_OP	.text2.40+0x377
+ 374:	0021c6        	j	3ff <pm_change_to_state+0x37b>
+			374: R_XTENSA_SLOT0_OP	.text2.40+0x3ff
+ 377:	0020c0        	memw
+ 37a:	0648      	l32i.n	a4, a6, 0
+ 37c:	c02240        	sub	a2, a2, a4
+ 37f:	c02250        	sub	a2, a2, a5
+ 382:	c03230        	sub	a3, a2, a3
+ 385:	ff2221        	l32r	a2, 10 <pm_change_to_state-0x74>
+			385: R_XTENSA_SLOT0_OP	.text2.40+0x10
+ 388:	040c      	movi.n	a4, 0
+ 38a:	ff3a01        	l32r	a0, 74 <pm_change_to_state-0x10>
+			38a: R_XTENSA_SLOT0_OP	.text2.40+0x74
+			38a: R_XTENSA_ASM_EXPAND	os_timer_arm_us
+ 38d:	0000c0        	callx0	a0
+ 390:	1b6cd2        	s32i	a13, a12, 108
+ 393:	001a06        	j	3ff <pm_change_to_state+0x37b>
+			393: R_XTENSA_SLOT0_OP	.text2.40+0x3ff
+ 396:	00          	.byte 00
+ 397:	00          	.byte 00
+ 398:	1c6cd2        	s32i	a13, a12, 112
+ 39b:	024d66        	bnei	a13, 4, 3a1 <pm_change_to_state+0x31d>
+			39b: R_XTENSA_SLOT0_OP	.text2.40+0x3a1
+ 39e:	001086        	j	3e4 <pm_change_to_state+0x360>
+			39e: R_XTENSA_SLOT0_OP	.text2.40+0x3e4
+ 3a1:	facd32        	addi	a3, a13, -6
+ 3a4:	150c      	movi.n	a5, 1
+ 3a6:	020c      	movi.n	a2, 0
+ 3a8:	832530        	moveqz	a2, a5, a3
+ 3ab:	742020        	extui	a2, a2, 0, 8
+ 3ae:	62cc      	bnez.n	a2, 3b8 <pm_change_to_state+0x334>
+			3ae: R_XTENSA_SLOT0_OP	.text2.40+0x3b8
+ 3b0:	3d0b      	addi.n	a3, a13, -1
+ 3b2:	832530        	moveqz	a2, a5, a3
+ 3b5:	013216        	beqz	a2, 3cc <pm_change_to_state+0x348>
+			3b5: R_XTENSA_SLOT0_OP	.text2.40+0x3cc
+ 3b8:	ff1621        	l32r	a2, 10 <pm_change_to_state-0x74>
+			3b8: R_XTENSA_SLOT0_OP	.text2.40+0x10
+ 3bb:	ff2f01        	l32r	a0, 78 <pm_change_to_state-0xc>
+			3bb: R_XTENSA_SLOT0_OP	.text2.40+0x78
+			3bb: R_XTENSA_ASM_EXPAND	os_timer_disarm
+ 3be:	0000c0        	callx0	a0
+ 3c1:	ff2e01        	l32r	a0, 7c <pm_change_to_state-0x8>
+			3c1: R_XTENSA_SLOT0_OP	.text2.40+0x7c
+			3c1: R_XTENSA_ASM_EXPAND	wifi_pm_open_rf
+ 3c4:	0000c0        	callx0	a0
+ 3c7:	000646        	j	3e4 <pm_change_to_state+0x360>
+			3c7: R_XTENSA_SLOT0_OP	.text2.40+0x3e4
+ 3ca:	00          	.byte 00
+ 3cb:	00          	.byte 00
+ 3cc:	fecd32        	addi	a3, a13, -2
+ 3cf:	832530        	moveqz	a2, a5, a3
+ 3d2:	62cc      	bnez.n	a2, 3dc <pm_change_to_state+0x358>
+			3d2: R_XTENSA_SLOT0_OP	.text2.40+0x3dc
+ 3d4:	fbcd32        	addi	a3, a13, -5
+ 3d7:	832530        	moveqz	a2, a5, a3
+ 3da:	e28c      	beqz.n	a2, 3ec <pm_change_to_state+0x368>
+			3da: R_XTENSA_SLOT0_OP	.text2.40+0x3ec
+ 3dc:	120c      	movi.n	a2, 1
+ 3de:	ff2801        	l32r	a0, 80 <pm_change_to_state-0x4>
+			3de: R_XTENSA_SLOT0_OP	.text2.40+0x80
+			3de: R_XTENSA_ASM_EXPAND	pm_send_nullfunc
+ 3e1:	0000c0        	callx0	a0
+ 3e4:	720c      	movi.n	a2, 7
+ 3e6:	1b6c22        	s32i	a2, a12, 108
+ 3e9:	000486        	j	3ff <pm_change_to_state+0x37b>
+			3e9: R_XTENSA_SLOT0_OP	.text2.40+0x3ff
+ 3ec:	fdcc      	bnez.n	a13, 3ff <pm_change_to_state+0x37b>
+			3ec: R_XTENSA_SLOT0_OP	.text2.40+0x3ff
+ 3ee:	2428      	l32i.n	a2, a4, 8
+ 3f0:	ff0216        	beqz	a2, 3e4 <pm_change_to_state+0x360>
+			3f0: R_XTENSA_SLOT0_OP	.text2.40+0x3e4
+ 3f3:	ed1666        	bnei	a6, 1, 3e4 <pm_change_to_state+0x360>
+			3f3: R_XTENSA_SLOT0_OP	.text2.40+0x3e4
+ 3f6:	1e2222        	l32i	a2, a2, 120
+ 3f9:	e75266        	bnei	a2, 5, 3e4 <pm_change_to_state+0x360>
+			3f9: R_XTENSA_SLOT0_OP	.text2.40+0x3e4
+ 3fc:	fff706        	j	3dc <pm_change_to_state+0x358>
+			3fc: R_XTENSA_SLOT0_OP	.text2.40+0x3dc
+ 3ff:	3108      	l32i.n	a0, a1, 12
+ 401:	21c8      	l32i.n	a12, a1, 8
+ 403:	11d8      	l32i.n	a13, a1, 4
+ 405:	01e8      	l32i.n	a14, a1, 0
+ 407:	10c112        	addi	a1, a1, 16
+ 40a:	f00d      	ret.n
+
+Disassembly of section .text2.53:
+
+00000000 <pm_allow_tx-0x28>:
+	...
+			0: R_XTENSA_32	.bss.pmc
+			4: R_XTENSA_32	__wifi_task_suspend_all
+			8: R_XTENSA_32	pm_change_to_state
+			c: R_XTENSA_32	__wifi_task_resume_all
+			10: R_XTENSA_32	pm_set_idle_timer
+			14: R_XTENSA_32	__wifi_task_suspend_all
+			18: R_XTENSA_32	pm_change_to_state
+			1c: R_XTENSA_32	__wifi_task_resume_all
+			20: R_XTENSA_32	pm_set_idle_timer
+			24: R_XTENSA_32	pm_set_idle_timer
+
+00000028 <pm_allow_tx>:
+  28:	fff641        	l32r	a4, 0 <pm_allow_tx-0x28>
+			28: R_XTENSA_SLOT0_OP	.text2.53
+  2b:	f0c112        	addi	a1, a1, -16
+  2e:	11d9      	s32i.n	a13, a1, 4
+  30:	1b24d2        	l32i	a13, a4, 108
+  33:	21c9      	s32i.n	a12, a1, 8
+  35:	0c0c      	movi.n	a12, 0
+  37:	150c      	movi.n	a5, 1
+  39:	0c6d      	mov.n	a6, a12
+  3b:	f9cd32        	addi	a3, a13, -7
+  3e:	83c530        	moveqz	a12, a5, a3
+  41:	8365d0        	moveqz	a6, a5, a13
+  44:	3109      	s32i.n	a0, a1, 12
+  46:	20c6c0        	or	a12, a6, a12
+  49:	742020        	extui	a2, a2, 0, 8
+  4c:	043d      	mov.n	a3, a4
+  4e:	070c56        	bnez	a12, c2 <pm_allow_tx+0x9a>
+			4e: R_XTENSA_SLOT0_OP	.text2.53+0xc2
+  51:	082d66        	bnei	a13, 2, 5d <pm_allow_tx+0x35>
+			51: R_XTENSA_SLOT0_OP	.text2.53+0x5d
+  54:	1d2442        	l32i	a4, a4, 116
+  57:	061456        	bnez	a4, bc <pm_allow_tx+0x94>
+			57: R_XTENSA_SLOT0_OP	.text2.53+0xbc
+  5a:	001646        	j	b7 <pm_allow_tx+0x8f>
+			5a: R_XTENSA_SLOT0_OP	.text2.53+0xb7
+  5d:	328c      	beqz.n	a2, 64 <pm_allow_tx+0x3c>
+			5d: R_XTENSA_SLOT0_OP	.text2.53+0x64
+  5f:	020c      	movi.n	a2, 0
+  61:	834322        	s8i	a2, a3, 131
+  64:	201d66        	bnei	a13, 1, 88 <pm_allow_tx+0x60>
+			64: R_XTENSA_SLOT0_OP	.text2.53+0x88
+  67:	ffe701        	l32r	a0, 4 <pm_allow_tx-0x24>
+			67: R_XTENSA_SLOT0_OP	.text2.53+0x4
+			67: R_XTENSA_ASM_EXPAND	__wifi_task_suspend_all
+  6a:	0000c0        	callx0	a0
+  6d:	020c      	movi.n	a2, 0
+  6f:	ffe601        	l32r	a0, 8 <pm_allow_tx-0x20>
+			6f: R_XTENSA_SLOT0_OP	.text2.53+0x8
+			6f: R_XTENSA_ASM_EXPAND	pm_change_to_state
+  72:	0000c0        	callx0	a0
+  75:	ffe501        	l32r	a0, c <pm_allow_tx-0x1c>
+			75: R_XTENSA_SLOT0_OP	.text2.53+0xc
+			75: R_XTENSA_ASM_EXPAND	__wifi_task_resume_all
+  78:	0000c0        	callx0	a0
+  7b:	ffe501        	l32r	a0, 10 <pm_allow_tx-0x18>
+			7b: R_XTENSA_SLOT0_OP	.text2.53+0x10
+			7b: R_XTENSA_ASM_EXPAND	pm_set_idle_timer
+  7e:	0000c0        	callx0	a0
+  81:	0dcd      	mov.n	a12, a13
+  83:	000ec6        	j	c2 <pm_allow_tx+0x9a>
+			83: R_XTENSA_SLOT0_OP	.text2.53+0xc2
+  86:	00          	.byte 00
+  87:	00          	.byte 00
+  88:	202d26        	beqi	a13, 2, ac <pm_allow_tx+0x84>
+			88: R_XTENSA_SLOT0_OP	.text2.53+0xac
+  8b:	1d5d26        	beqi	a13, 5, ac <pm_allow_tx+0x84>
+			8b: R_XTENSA_SLOT0_OP	.text2.53+0xac
+  8e:	ffe101        	l32r	a0, 14 <pm_allow_tx-0x14>
+			8e: R_XTENSA_SLOT0_OP	.text2.53+0x14
+			8e: R_XTENSA_ASM_EXPAND	__wifi_task_suspend_all
+  91:	0000c0        	callx0	a0
+  94:	220c      	movi.n	a2, 2
+  96:	ffe001        	l32r	a0, 18 <pm_allow_tx-0x10>
+			96: R_XTENSA_SLOT0_OP	.text2.53+0x18
+			96: R_XTENSA_ASM_EXPAND	pm_change_to_state
+  99:	0000c0        	callx0	a0
+  9c:	ffe001        	l32r	a0, 1c <pm_allow_tx-0xc>
+			9c: R_XTENSA_SLOT0_OP	.text2.53+0x1c
+			9c: R_XTENSA_ASM_EXPAND	__wifi_task_resume_all
+  9f:	0000c0        	callx0	a0
+  a2:	ffdf01        	l32r	a0, 20 <pm_allow_tx-0x8>
+			a2: R_XTENSA_SLOT0_OP	.text2.53+0x20
+			a2: R_XTENSA_ASM_EXPAND	pm_set_idle_timer
+  a5:	0000c0        	callx0	a0
+  a8:	000586        	j	c2 <pm_allow_tx+0x9a>
+			a8: R_XTENSA_SLOT0_OP	.text2.53+0xc2
+  ab:	00          	.byte 00
+  ac:	ffde01        	l32r	a0, 24 <pm_allow_tx-0x4>
+			ac: R_XTENSA_SLOT0_OP	.text2.53+0x24
+			ac: R_XTENSA_ASM_EXPAND	pm_set_idle_timer
+  af:	0000c0        	callx0	a0
+  b2:	1c0c      	movi.n	a12, 1
+  b4:	000286        	j	c2 <pm_allow_tx+0x9a>
+			b4: R_XTENSA_SLOT0_OP	.text2.53+0xc2
+  b7:	05cd      	mov.n	a12, a5
+  b9:	000146        	j	c2 <pm_allow_tx+0x9a>
+			b9: R_XTENSA_SLOT0_OP	.text2.53+0xc2
+  bc:	fc8216        	beqz	a2, 88 <pm_allow_tx+0x60>
+			bc: R_XTENSA_SLOT0_OP	.text2.53+0x88
+  bf:	ffe706        	j	5f <pm_allow_tx+0x37>
+			bf: R_XTENSA_SLOT0_OP	.text2.53+0x5f
+  c2:	3108      	l32i.n	a0, a1, 12
+  c4:	0c2d      	mov.n	a2, a12
+  c6:	11d8      	l32i.n	a13, a1, 4
+  c8:	21c8      	l32i.n	a12, a1, 8
+  ca:	10c112        	addi	a1, a1, 16
+  cd:	f00d      	ret.n
+
+Disassembly of section .text2.25:
+
+00000000 <pm_set_sleep_type-0x4c>:
+	...
+			0: R_XTENSA_32	.bss.pmc
+			4: R_XTENSA_32	.rodata.str1.1
+   8:	65 02 00 00 	
+			8: R_XTENSA_32	.rodata.str1.1
+	...
+			c: R_XTENSA_32	g_ic
+			10: R_XTENSA_32	g_wifi_nvs
+  14:	83 02 00 00 	
+			14: R_XTENSA_32	.rodata.str1.1
+	...
+			18: R_XTENSA_32	__wifi_task_suspend_all
+			1c: R_XTENSA_32	__wifi_task_resume_all
+			20: R_XTENSA_32	pm_reset_param
+			24: R_XTENSA_32	__wifi_task_suspend_all
+			28: R_XTENSA_32	pm_change_to_state
+			2c: R_XTENSA_32	__wifi_task_resume_all
+			30: R_XTENSA_32	esp_log_early_timestamp
+			34: R_XTENSA_32	ets_printf
+			38: R_XTENSA_32	__wifi_task_suspend_all
+			3c: R_XTENSA_32	pm_change_to_state
+			40: R_XTENSA_32	__wifi_task_resume_all
+			44: R_XTENSA_32	esp_log_early_timestamp
+			48: R_XTENSA_32	ets_printf
+
+0000004c <pm_set_sleep_type>:
+  4c:	e0c112        	addi	a1, a1, -32
+  4f:	61c9      	s32i.n	a12, a1, 24
+  51:	41e9      	s32i.n	a14, a1, 16
+  53:	31f9      	s32i.n	a15, a1, 12
+  55:	7109      	s32i.n	a0, a1, 28
+  57:	51d9      	s32i.n	a13, a1, 20
+  59:	02ed      	mov.n	a14, a2
+  5b:	ffef01        	l32r	a0, 18 <pm_set_sleep_type-0x34>
+			5b: R_XTENSA_SLOT0_OP	.text2.25+0x18
+			5b: R_XTENSA_ASM_EXPAND	__wifi_task_suspend_all
+  5e:	0000c0        	callx0	a0
+  61:	ffe7f1        	l32r	a15, 0 <pm_set_sleep_type-0x4c>
+			61: R_XTENSA_SLOT0_OP	.text2.25
+  64:	1d2f22        	l32i	a2, a15, 116
+  67:	0fcd      	mov.n	a12, a15
+  69:	0892e7        	bne	a2, a14, 75 <pm_set_sleep_type+0x29>
+			69: R_XTENSA_SLOT0_OP	.text2.25+0x75
+  6c:	ffec01        	l32r	a0, 1c <pm_set_sleep_type-0x30>
+			6c: R_XTENSA_SLOT0_OP	.text2.25+0x1c
+			6c: R_XTENSA_ASM_EXPAND	__wifi_task_resume_all
+  6f:	0000c0        	callx0	a0
+  72:	002746        	j	113 <pm_set_sleep_type+0xc7>
+			72: R_XTENSA_SLOT0_OP	.text2.25+0x113
+  75:	ffea01        	l32r	a0, 20 <pm_set_sleep_type-0x2c>
+			75: R_XTENSA_SLOT0_OP	.text2.25+0x20
+			75: R_XTENSA_ASM_EXPAND	pm_reset_param
+  78:	0000c0        	callx0	a0
+  7b:	ffe2d1        	l32r	a13, 4 <pm_set_sleep_type-0x48>
+			7b: R_XTENSA_SLOT0_OP	.text2.25+0x4
+  7e:	3efc      	bnez.n	a14, b5 <pm_set_sleep_type+0x69>
+			7e: R_XTENSA_SLOT0_OP	.text2.25+0xb5
+  80:	1b2f22        	l32i	a2, a15, 108
+  83:	1d6fe2        	s32i	a14, a15, 116
+  86:	1422b6        	bltui	a2, 2, 9e <pm_set_sleep_type+0x52>
+			86: R_XTENSA_SLOT0_OP	.text2.25+0x9e
+  89:	ffe601        	l32r	a0, 24 <pm_set_sleep_type-0x28>
+			89: R_XTENSA_SLOT0_OP	.text2.25+0x24
+			89: R_XTENSA_ASM_EXPAND	__wifi_task_suspend_all
+  8c:	0000c0        	callx0	a0
+  8f:	202ee0        	or	a2, a14, a14
+  92:	ffe501        	l32r	a0, 28 <pm_set_sleep_type-0x24>
+			92: R_XTENSA_SLOT0_OP	.text2.25+0x28
+			92: R_XTENSA_ASM_EXPAND	pm_change_to_state
+  95:	0000c0        	callx0	a0
+  98:	ffe501        	l32r	a0, 2c <pm_set_sleep_type-0x20>
+			98: R_XTENSA_SLOT0_OP	.text2.25+0x2c
+			98: R_XTENSA_ASM_EXPAND	__wifi_task_resume_all
+  9b:	0000c0        	callx0	a0
+  9e:	ffe401        	l32r	a0, 30 <pm_set_sleep_type-0x1c>
+			9e: R_XTENSA_SLOT0_OP	.text2.25+0x30
+			9e: R_XTENSA_ASM_EXPAND	esp_log_early_timestamp
+  a1:	0000c0        	callx0	a0
+  a4:	023d      	mov.n	a3, a2
+  a6:	ffd821        	l32r	a2, 8 <pm_set_sleep_type-0x44>
+			a6: R_XTENSA_SLOT0_OP	.text2.25+0x8
+  a9:	0d4d      	mov.n	a4, a13
+  ab:	ffe201        	l32r	a0, 34 <pm_set_sleep_type-0x18>
+			ab: R_XTENSA_SLOT0_OP	.text2.25+0x34
+			ab: R_XTENSA_ASM_EXPAND	ets_printf
+  ae:	0000c0        	callx0	a0
+  b1:	ffedc6        	j	6c <pm_set_sleep_type+0x20>
+			b1: R_XTENSA_SLOT0_OP	.text2.25+0x6c
+  b4:	00          	.byte 00
+  b5:	1d2f42        	l32i	a4, a15, 116
+  b8:	1d6fe2        	s32i	a14, a15, 116
+  bb:	b4fc      	bnez.n	a4, fa <pm_set_sleep_type+0xae>
+			bb: R_XTENSA_SLOT0_OP	.text2.25+0xfa
+  bd:	ffd321        	l32r	a2, c <pm_set_sleep_type-0x40>
+			bd: R_XTENSA_SLOT0_OP	.text2.25+0xc
+  c0:	130c      	movi.n	a3, 1
+  c2:	2258      	l32i.n	a5, a2, 8
+  c4:	ffd321        	l32r	a2, 10 <pm_set_sleep_type-0x3c>
+			c4: R_XTENSA_SLOT0_OP	.text2.25+0x10
+  c7:	046d      	mov.n	a6, a4
+  c9:	0228      	l32i.n	a2, a2, 0
+  cb:	000222        	l8ui	a2, a2, 0
+  ce:	220b      	addi.n	a2, a2, -1
+  d0:	836320        	moveqz	a6, a3, a2
+  d3:	742060        	extui	a2, a6, 0, 8
+  d6:	02ac      	beqz.n	a2, fa <pm_set_sleep_type+0xae>
+			d6: R_XTENSA_SLOT0_OP	.text2.25+0xfa
+  d8:	833450        	moveqz	a3, a4, a5
+  db:	743030        	extui	a3, a3, 0, 8
+  de:	839c      	beqz.n	a3, fa <pm_set_sleep_type+0xae>
+			de: R_XTENSA_SLOT0_OP	.text2.25+0xfa
+  e0:	1e2522        	l32i	a2, a5, 120
+  e3:	135266        	bnei	a2, 5, fa <pm_set_sleep_type+0xae>
+			e3: R_XTENSA_SLOT0_OP	.text2.25+0xfa
+  e6:	ffd401        	l32r	a0, 38 <pm_set_sleep_type-0x14>
+			e6: R_XTENSA_SLOT0_OP	.text2.25+0x38
+			e6: R_XTENSA_ASM_EXPAND	__wifi_task_suspend_all
+  e9:	0000c0        	callx0	a0
+  ec:	220c      	movi.n	a2, 2
+  ee:	ffd301        	l32r	a0, 3c <pm_set_sleep_type-0x10>
+			ee: R_XTENSA_SLOT0_OP	.text2.25+0x3c
+			ee: R_XTENSA_ASM_EXPAND	pm_change_to_state
+  f1:	0000c0        	callx0	a0
+  f4:	ffd301        	l32r	a0, 40 <pm_set_sleep_type-0xc>
+			f4: R_XTENSA_SLOT0_OP	.text2.25+0x40
+			f4: R_XTENSA_ASM_EXPAND	__wifi_task_resume_all
+  f7:	0000c0        	callx0	a0
+  fa:	ffd201        	l32r	a0, 44 <pm_set_sleep_type-0x8>
+			fa: R_XTENSA_SLOT0_OP	.text2.25+0x44
+			fa: R_XTENSA_ASM_EXPAND	esp_log_early_timestamp
+  fd:	0000c0        	callx0	a0
+ 100:	023d      	mov.n	a3, a2
+ 102:	1d2c52        	l32i	a5, a12, 116
+ 105:	ffc321        	l32r	a2, 14 <pm_set_sleep_type-0x38>
+			105: R_XTENSA_SLOT0_OP	.text2.25+0x14
+ 108:	0d4d      	mov.n	a4, a13
+ 10a:	ffcf01        	l32r	a0, 48 <pm_set_sleep_type-0x4>
+			10a: R_XTENSA_SLOT0_OP	.text2.25+0x48
+			10a: R_XTENSA_ASM_EXPAND	ets_printf
+ 10d:	0000c0        	callx0	a0
+ 110:	ffd606        	j	6c <pm_set_sleep_type+0x20>
+			110: R_XTENSA_SLOT0_OP	.text2.25+0x6c
+ 113:	7108      	l32i.n	a0, a1, 28
+ 115:	61c8      	l32i.n	a12, a1, 24
+ 117:	51d8      	l32i.n	a13, a1, 20
+ 119:	41e8      	l32i.n	a14, a1, 16
+ 11b:	31f8      	l32i.n	a15, a1, 12
+ 11d:	20c112        	addi	a1, a1, 32
+ 120:	f00d      	ret.n
+
+Disassembly of section .text2.29:
+
+00000000 <pm_scan_start-0x1c>:
+	...
+			0: R_XTENSA_32	.bss.pmc
+			4: R_XTENSA_32	__wifi_task_suspend_all
+			8: R_XTENSA_32	__wifi_task_suspend_all
+			c: R_XTENSA_32	pm_change_to_state
+			10: R_XTENSA_32	__wifi_task_resume_all
+			14: R_XTENSA_32	__wifi_task_resume_all
+			18: R_XTENSA_32	__wifi_task_resume_all
+
+0000001c <pm_scan_start>:
+  1c:	f0c112        	addi	a1, a1, -16
+  1f:	21c9      	s32i.n	a12, a1, 8
+  21:	3109      	s32i.n	a0, a1, 12
+  23:	fff801        	l32r	a0, 4 <pm_scan_start-0x18>
+			23: R_XTENSA_SLOT0_OP	.text2.29+0x4
+			23: R_XTENSA_ASM_EXPAND	__wifi_task_suspend_all
+  26:	0000c0        	callx0	a0
+  29:	fff5c1        	l32r	a12, 0 <pm_scan_start-0x1c>
+			29: R_XTENSA_SLOT0_OP	.text2.29
+  2c:	1b2c22        	l32i	a2, a12, 108
+  2f:	2e7226        	beqi	a2, 7, 61 <pm_scan_start+0x45>
+			2f: R_XTENSA_SLOT0_OP	.text2.29+0x61
+  32:	b2ac      	beqz.n	a2, 61 <pm_scan_start+0x45>
+			32: R_XTENSA_SLOT0_OP	.text2.29+0x61
+  34:	fff501        	l32r	a0, 8 <pm_scan_start-0x14>
+			34: R_XTENSA_SLOT0_OP	.text2.29+0x8
+			34: R_XTENSA_ASM_EXPAND	__wifi_task_suspend_all
+  37:	0000c0        	callx0	a0
+  3a:	720c      	movi.n	a2, 7
+  3c:	fff401        	l32r	a0, c <pm_scan_start-0x10>
+			3c: R_XTENSA_SLOT0_OP	.text2.29+0xc
+			3c: R_XTENSA_ASM_EXPAND	pm_change_to_state
+  3f:	0000c0        	callx0	a0
+  42:	fff301        	l32r	a0, 10 <pm_scan_start-0xc>
+			42: R_XTENSA_SLOT0_OP	.text2.29+0x10
+			42: R_XTENSA_ASM_EXPAND	__wifi_task_resume_all
+  45:	0000c0        	callx0	a0
+  48:	fff301        	l32r	a0, 14 <pm_scan_start-0x8>
+			48: R_XTENSA_SLOT0_OP	.text2.29+0x14
+			48: R_XTENSA_ASM_EXPAND	__wifi_task_resume_all
+  4b:	0000c0        	callx0	a0
+  4e:	1b2c22        	l32i	a2, a12, 108
+  51:	140c      	movi.n	a4, 1
+  53:	f9c232        	addi	a3, a2, -7
+  56:	020c      	movi.n	a2, 0
+  58:	832430        	moveqz	a2, a4, a3
+  5b:	742020        	extui	a2, a2, 0, 8
+  5e:	0001c6        	j	69 <pm_scan_start+0x4d>
+			5e: R_XTENSA_SLOT0_OP	.text2.29+0x69
+  61:	ffed01        	l32r	a0, 18 <pm_scan_start-0x4>
+			61: R_XTENSA_SLOT0_OP	.text2.29+0x18
+			61: R_XTENSA_ASM_EXPAND	__wifi_task_resume_all
+  64:	0000c0        	callx0	a0
+  67:	120c      	movi.n	a2, 1
+  69:	3108      	l32i.n	a0, a1, 12
+  6b:	21c8      	l32i.n	a12, a1, 8
+  6d:	10c112        	addi	a1, a1, 16
+  70:	f00d      	ret.n
+
+Disassembly of section .text2.32:
+
+00000000 <pm_goto_rf_off-0x24>:
+   0:	1c 00 00 00 	
+			0: R_XTENSA_32	.bss.pmc
+	...
+			4: R_XTENSA_32	.bss.pmc
+			8: R_XTENSA_32	__wifi_task_suspend_all
+			c: R_XTENSA_32	os_timer_disarm
+			10: R_XTENSA_32	os_timer_disarm
+			14: R_XTENSA_32	__wifi_task_suspend_all
+			18: R_XTENSA_32	pm_change_to_state
+			1c: R_XTENSA_32	__wifi_task_resume_all
+			20: R_XTENSA_32	__wifi_task_resume_all
+
+00000024 <pm_goto_rf_off>:
+  24:	f0c112        	addi	a1, a1, -16
+  27:	036102        	s32i	a0, a1, 12
+  2a:	fff701        	l32r	a0, 8 <pm_goto_rf_off-0x1c>
+			2a: R_XTENSA_SLOT0_OP	.text2.32+0x8
+			2a: R_XTENSA_ASM_EXPAND	__wifi_task_suspend_all
+  2d:	0000c0        	callx0	a0
+  30:	fff421        	l32r	a2, 0 <pm_goto_rf_off-0x24>
+			30: R_XTENSA_SLOT0_OP	.text2.32
+  33:	fff601        	l32r	a0, c <pm_goto_rf_off-0x18>
+			33: R_XTENSA_SLOT0_OP	.text2.32+0xc
+			33: R_XTENSA_ASM_EXPAND	os_timer_disarm
+  36:	0000c0        	callx0	a0
+  39:	fff221        	l32r	a2, 4 <pm_goto_rf_off-0x20>
+			39: R_XTENSA_SLOT0_OP	.text2.32+0x4
+  3c:	fff501        	l32r	a0, 10 <pm_goto_rf_off-0x14>
+			3c: R_XTENSA_SLOT0_OP	.text2.32+0x10
+			3c: R_XTENSA_ASM_EXPAND	os_timer_disarm
+  3f:	0000c0        	callx0	a0
+  42:	fff401        	l32r	a0, 14 <pm_goto_rf_off-0x10>
+			42: R_XTENSA_SLOT0_OP	.text2.32+0x14
+			42: R_XTENSA_ASM_EXPAND	__wifi_task_suspend_all
+  45:	0000c0        	callx0	a0
+  48:	120c      	movi.n	a2, 1
+  4a:	fff301        	l32r	a0, 18 <pm_goto_rf_off-0xc>
+			4a: R_XTENSA_SLOT0_OP	.text2.32+0x18
+			4a: R_XTENSA_ASM_EXPAND	pm_change_to_state
+  4d:	0000c0        	callx0	a0
+  50:	fff301        	l32r	a0, 1c <pm_goto_rf_off-0x8>
+			50: R_XTENSA_SLOT0_OP	.text2.32+0x1c
+			50: R_XTENSA_ASM_EXPAND	__wifi_task_resume_all
+  53:	0000c0        	callx0	a0
+  56:	fff201        	l32r	a0, 20 <pm_goto_rf_off-0x4>
+			56: R_XTENSA_SLOT0_OP	.text2.32+0x20
+			56: R_XTENSA_ASM_EXPAND	__wifi_task_resume_all
+  59:	0000c0        	callx0	a0
+  5c:	3108      	l32i.n	a0, a1, 12
+  5e:	10c112        	addi	a1, a1, 16
+  61:	f00d      	ret.n
+
+Disassembly of section .text2.33:
+
+00000000 <pm_goto_rf_on_set_old_state-0x10>:
+	...
+			0: R_XTENSA_32	.bss.pmc
+			4: R_XTENSA_32	__wifi_task_suspend_all
+			8: R_XTENSA_32	pm_change_to_state
+			c: R_XTENSA_32	__wifi_task_resume_all
+
+00000010 <pm_goto_rf_on_set_old_state>:
+  10:	fffc21        	l32r	a2, 0 <pm_goto_rf_on_set_old_state-0x10>
+			10: R_XTENSA_SLOT0_OP	.text2.33
+  13:	f0c112        	addi	a1, a1, -16
+  16:	1b2232        	l32i	a3, a2, 108
+  19:	3109      	s32i.n	a0, a1, 12
+  1b:	027326        	beqi	a3, 7, 21 <pm_goto_rf_on_set_old_state+0x11>
+			1b: R_XTENSA_SLOT0_OP	.text2.33+0x21
+  1e:	1c6232        	s32i	a3, a2, 112
+  21:	fff801        	l32r	a0, 4 <pm_goto_rf_on_set_old_state-0xc>
+			21: R_XTENSA_SLOT0_OP	.text2.33+0x4
+			21: R_XTENSA_ASM_EXPAND	__wifi_task_suspend_all
+  24:	0000c0        	callx0	a0
+  27:	00a022        	movi	a2, 0
+  2a:	fff701        	l32r	a0, 8 <pm_goto_rf_on_set_old_state-0x8>
+			2a: R_XTENSA_SLOT0_OP	.text2.33+0x8
+			2a: R_XTENSA_ASM_EXPAND	pm_change_to_state
+  2d:	0000c0        	callx0	a0
+  30:	fff701        	l32r	a0, c <pm_goto_rf_on_set_old_state-0x4>
+			30: R_XTENSA_SLOT0_OP	.text2.33+0xc
+			30: R_XTENSA_ASM_EXPAND	__wifi_task_resume_all
+  33:	0000c0        	callx0	a0
+  36:	3108      	l32i.n	a0, a1, 12
+  38:	10c112        	addi	a1, a1, 16
+  3b:	f00d      	ret.n
+
+Disassembly of section .text2.34:
+
+00000000 <pm_goto_rf_on-0xc>:
+	...
+			0: R_XTENSA_32	__wifi_task_suspend_all
+			4: R_XTENSA_32	pm_change_to_state
+			8: R_XTENSA_32	__wifi_task_resume_all
+
+0000000c <pm_goto_rf_on>:
+   c:	f0c112        	addi	a1, a1, -16
+   f:	036102        	s32i	a0, a1, 12
+  12:	fffb01        	l32r	a0, 0 <pm_goto_rf_on-0xc>
+			12: R_XTENSA_SLOT0_OP	.text2.34
+			12: R_XTENSA_ASM_EXPAND	__wifi_task_suspend_all
+  15:	0000c0        	callx0	a0
+  18:	020c      	movi.n	a2, 0
+  1a:	fffa01        	l32r	a0, 4 <pm_goto_rf_on-0x8>
+			1a: R_XTENSA_SLOT0_OP	.text2.34+0x4
+			1a: R_XTENSA_ASM_EXPAND	pm_change_to_state
+  1d:	0000c0        	callx0	a0
+  20:	fffa01        	l32r	a0, 8 <pm_goto_rf_on-0x4>
+			20: R_XTENSA_SLOT0_OP	.text2.34+0x8
+			20: R_XTENSA_ASM_EXPAND	__wifi_task_resume_all
+  23:	0000c0        	callx0	a0
+  26:	3108      	l32i.n	a0, a1, 12
+  28:	10c112        	addi	a1, a1, 16
+  2b:	f00d      	ret.n
+
+Disassembly of section .text2.35:
+
+00000000 <pm_wifi_connected-0x18>:
+	...
+			0: R_XTENSA_32	.bss.pmc
+			4: R_XTENSA_32	wifi_nvs_get_sta_listen_interval
+			8: R_XTENSA_32	pm_reset_param
+			c: R_XTENSA_32	__wifi_task_suspend_all
+			10: R_XTENSA_32	pm_change_to_state
+			14: R_XTENSA_32	__wifi_task_resume_all
+
+00000018 <pm_wifi_connected>:
+  18:	f0c112        	addi	a1, a1, -16
+  1b:	036102        	s32i	a0, a1, 12
+  1e:	fff901        	l32r	a0, 4 <pm_wifi_connected-0x14>
+			1e: R_XTENSA_SLOT0_OP	.text2.35+0x4
+			1e: R_XTENSA_ASM_EXPAND	wifi_nvs_get_sta_listen_interval
+  21:	0000c0        	callx0	a0
+  24:	742020        	extui	a2, a2, 0, 8
+  27:	a40c      	movi.n	a4, 10
+  29:	fff531        	l32r	a3, 0 <pm_wifi_connected-0x18>
+			29: R_XTENSA_SLOT0_OP	.text2.35
+  2c:	053427        	bltu	a4, a2, 35 <pm_wifi_connected+0x1d>
+			2c: R_XTENSA_SLOT0_OP	.text2.35+0x35
+  2f:	784322        	s8i	a2, a3, 120
+  32:	000086        	j	38 <pm_wifi_connected+0x20>
+			32: R_XTENSA_SLOT0_OP	.text2.35+0x38
+  35:	784342        	s8i	a4, a3, 120
+  38:	fff401        	l32r	a0, 8 <pm_wifi_connected-0x10>
+			38: R_XTENSA_SLOT0_OP	.text2.35+0x8
+			38: R_XTENSA_ASM_EXPAND	pm_reset_param
+  3b:	0000c0        	callx0	a0
+  3e:	fff301        	l32r	a0, c <pm_wifi_connected-0xc>
+			3e: R_XTENSA_SLOT0_OP	.text2.35+0xc
+			3e: R_XTENSA_ASM_EXPAND	__wifi_task_suspend_all
+  41:	0000c0        	callx0	a0
+  44:	220c      	movi.n	a2, 2
+  46:	fff201        	l32r	a0, 10 <pm_wifi_connected-0x8>
+			46: R_XTENSA_SLOT0_OP	.text2.35+0x10
+			46: R_XTENSA_ASM_EXPAND	pm_change_to_state
+  49:	0000c0        	callx0	a0
+  4c:	fff201        	l32r	a0, 14 <pm_wifi_connected-0x4>
+			4c: R_XTENSA_SLOT0_OP	.text2.35+0x14
+			4c: R_XTENSA_ASM_EXPAND	__wifi_task_resume_all
+  4f:	0000c0        	callx0	a0
+  52:	3108      	l32i.n	a0, a1, 12
+  54:	10c112        	addi	a1, a1, 16
+  57:	f00d      	ret.n
+
+Disassembly of section .text2.36:
+
+00000000 <pm_wifi_set_mode-0x24>:
+	...
+			0: R_XTENSA_32	g_ic
+			4: R_XTENSA_32	g_wifi_nvs
+			8: R_XTENSA_32	__wifi_task_suspend_all
+			c: R_XTENSA_32	__wifi_task_suspend_all
+			10: R_XTENSA_32	__wifi_task_suspend_all
+			14: R_XTENSA_32	__wifi_task_suspend_all
+			18: R_XTENSA_32	pm_change_to_state
+			1c: R_XTENSA_32	__wifi_task_resume_all
+			20: R_XTENSA_32	__wifi_task_resume_all
+
+00000024 <pm_wifi_set_mode>:
+  24:	f0c112        	addi	a1, a1, -16
+  27:	036102        	s32i	a0, a1, 12
+  2a:	fff701        	l32r	a0, 8 <pm_wifi_set_mode-0x1c>
+			2a: R_XTENSA_SLOT0_OP	.text2.36+0x8
+			2a: R_XTENSA_ASM_EXPAND	__wifi_task_suspend_all
+  2d:	0000c0        	callx0	a0
+  30:	fff521        	l32r	a2, 4 <pm_wifi_set_mode-0x20>
+			30: R_XTENSA_SLOT0_OP	.text2.36+0x4
+  33:	fff331        	l32r	a3, 0 <pm_wifi_set_mode-0x24>
+			33: R_XTENSA_SLOT0_OP	.text2.36
+  36:	0228      	l32i.n	a2, a2, 0
+  38:	2348      	l32i.n	a4, a3, 8
+  3a:	000222        	l8ui	a2, a2, 0
+  3d:	131266        	bnei	a2, 1, 54 <pm_wifi_set_mode+0x30>
+			3d: R_XTENSA_SLOT0_OP	.text2.36+0x54
+  40:	049c      	beqz.n	a4, 54 <pm_wifi_set_mode+0x30>
+			40: R_XTENSA_SLOT0_OP	.text2.36+0x54
+  42:	1e2442        	l32i	a4, a4, 120
+  45:	0b5466        	bnei	a4, 5, 54 <pm_wifi_set_mode+0x30>
+			45: R_XTENSA_SLOT0_OP	.text2.36+0x54
+  48:	fff101        	l32r	a0, c <pm_wifi_set_mode-0x18>
+			48: R_XTENSA_SLOT0_OP	.text2.36+0xc
+			48: R_XTENSA_ASM_EXPAND	__wifi_task_suspend_all
+  4b:	0000c0        	callx0	a0
+  4e:	220c      	movi.n	a2, 2
+  50:	000a06        	j	7c <pm_wifi_set_mode+0x58>
+			50: R_XTENSA_SLOT0_OP	.text2.36+0x7c
+  53:	00          	.byte 00
+  54:	fec222        	addi	a2, a2, -2
+  57:	742020        	extui	a2, a2, 0, 8
+  5a:	1622f6        	bgeui	a2, 2, 74 <pm_wifi_set_mode+0x50>
+			5a: R_XTENSA_SLOT0_OP	.text2.36+0x74
+  5d:	3328      	l32i.n	a2, a3, 12
+  5f:	129c      	beqz.n	a2, 74 <pm_wifi_set_mode+0x50>
+			5f: R_XTENSA_SLOT0_OP	.text2.36+0x74
+  61:	412222        	l32i	a2, a2, 0x104
+  64:	0c6287        	bbci	a2, 8, 74 <pm_wifi_set_mode+0x50>
+			64: R_XTENSA_SLOT0_OP	.text2.36+0x74
+  67:	ffea01        	l32r	a0, 10 <pm_wifi_set_mode-0x14>
+			67: R_XTENSA_SLOT0_OP	.text2.36+0x10
+			67: R_XTENSA_ASM_EXPAND	__wifi_task_suspend_all
+  6a:	0000c0        	callx0	a0
+  6d:	020c      	movi.n	a2, 0
+  6f:	000246        	j	7c <pm_wifi_set_mode+0x58>
+			6f: R_XTENSA_SLOT0_OP	.text2.36+0x7c
+  72:	00          	.byte 00
+  73:	00          	.byte 00
+  74:	ffe801        	l32r	a0, 14 <pm_wifi_set_mode-0x10>
+			74: R_XTENSA_SLOT0_OP	.text2.36+0x14
+			74: R_XTENSA_ASM_EXPAND	__wifi_task_suspend_all
+  77:	0000c0        	callx0	a0
+  7a:	120c      	movi.n	a2, 1
+  7c:	ffe701        	l32r	a0, 18 <pm_wifi_set_mode-0xc>
+			7c: R_XTENSA_SLOT0_OP	.text2.36+0x18
+			7c: R_XTENSA_ASM_EXPAND	pm_change_to_state
+  7f:	0000c0        	callx0	a0
+  82:	ffe601        	l32r	a0, 1c <pm_wifi_set_mode-0x8>
+			82: R_XTENSA_SLOT0_OP	.text2.36+0x1c
+			82: R_XTENSA_ASM_EXPAND	__wifi_task_resume_all
+  85:	0000c0        	callx0	a0
+  88:	ffe601        	l32r	a0, 20 <pm_wifi_set_mode-0x4>
+			88: R_XTENSA_SLOT0_OP	.text2.36+0x20
+			88: R_XTENSA_ASM_EXPAND	__wifi_task_resume_all
+  8b:	0000c0        	callx0	a0
+  8e:	3108      	l32i.n	a0, a1, 12
+  90:	10c112        	addi	a1, a1, 16
+  93:	f00d      	ret.n
+
+Disassembly of section .text2.39:
+
+00000000 <pm_wait_tx_rx_idle_fun-0x40>:
+   0:	38 00 00 00 	
+			0: R_XTENSA_32	.bss.pmc
+	...
+			4: R_XTENSA_32	.bss.idle_timer_set
+			8: R_XTENSA_32	.bss.pmc
+			c: R_XTENSA_32	g_ic
+			10: R_XTENSA_32	g_wifi_nvs
+			14: R_XTENSA_32	app_optimize_and_debug_mac
+			18: R_XTENSA_32	__wifi_task_suspend_all
+			1c: R_XTENSA_32	os_timer_disarm
+			20: R_XTENSA_32	__wifi_task_resume_all
+			24: R_XTENSA_32	ppCheckTxIdle
+			28: R_XTENSA_32	ppProcessWaitQ
+			2c: R_XTENSA_32	__wifi_task_suspend_all
+			30: R_XTENSA_32	pm_set_idle_timer
+			34: R_XTENSA_32	__wifi_task_suspend_all
+			38: R_XTENSA_32	pm_change_to_state
+			3c: R_XTENSA_32	__wifi_task_resume_all
+
+00000040 <pm_wait_tx_rx_idle_fun>:
+  40:	f0c112        	addi	a1, a1, -16
+  43:	3109      	s32i.n	a0, a1, 12
+  45:	0261c2        	s32i	a12, a1, 8
+  48:	0161d2        	s32i	a13, a1, 4
+  4b:	fff301        	l32r	a0, 18 <pm_wait_tx_rx_idle_fun-0x28>
+			4b: R_XTENSA_SLOT0_OP	.text2.39+0x18
+			4b: R_XTENSA_ASM_EXPAND	__wifi_task_suspend_all
+  4e:	0000c0        	callx0	a0
+  51:	ffeb21        	l32r	a2, 0 <pm_wait_tx_rx_idle_fun-0x40>
+			51: R_XTENSA_SLOT0_OP	.text2.39
+  54:	0d0c      	movi.n	a13, 0
+  56:	fff101        	l32r	a0, 1c <pm_wait_tx_rx_idle_fun-0x24>
+			56: R_XTENSA_SLOT0_OP	.text2.39+0x1c
+			56: R_XTENSA_ASM_EXPAND	os_timer_disarm
+  59:	0000c0        	callx0	a0
+  5c:	ffea21        	l32r	a2, 4 <pm_wait_tx_rx_idle_fun-0x3c>
+			5c: R_XTENSA_SLOT0_OP	.text2.39+0x4
+  5f:	ffeac1        	l32r	a12, 8 <pm_wait_tx_rx_idle_fun-0x38>
+			5f: R_XTENSA_SLOT0_OP	.text2.39+0x8
+  62:	030c      	movi.n	a3, 0
+  64:	004232        	s8i	a3, a2, 0
+  67:	1b2c32        	l32i	a3, a12, 108
+  6a:	120c      	movi.n	a2, 1
+  6c:	fac342        	addi	a4, a3, -6
+  6f:	83d240        	moveqz	a13, a2, a4
+  72:	74d0d0        	extui	a13, a13, 0, 8
+  75:	7dcc      	bnez.n	a13, 80 <pm_wait_tx_rx_idle_fun+0x40>
+			75: R_XTENSA_SLOT0_OP	.text2.39+0x80
+  77:	ffc332        	addi	a3, a3, -1
+  7a:	83d230        	moveqz	a13, a2, a3
+  7d:	008d16        	beqz	a13, 89 <pm_wait_tx_rx_idle_fun+0x49>
+			7d: R_XTENSA_SLOT0_OP	.text2.39+0x89
+  80:	ffe801        	l32r	a0, 20 <pm_wait_tx_rx_idle_fun-0x20>
+			80: R_XTENSA_SLOT0_OP	.text2.39+0x20
+			80: R_XTENSA_ASM_EXPAND	__wifi_task_resume_all
+  83:	0000c0        	callx0	a0
+  86:	002cc6        	j	13d <pm_wait_tx_rx_idle_fun+0xfd>
+			86: R_XTENSA_SLOT0_OP	.text2.39+0x13d
+  89:	ffe601        	l32r	a0, 24 <pm_wait_tx_rx_idle_fun-0x1c>
+			89: R_XTENSA_SLOT0_OP	.text2.39+0x24
+			89: R_XTENSA_ASM_EXPAND	ppCheckTxIdle
+  8c:	0000c0        	callx0	a0
+  8f:	92cc      	bnez.n	a2, 9c <pm_wait_tx_rx_idle_fun+0x5c>
+			8f: R_XTENSA_SLOT0_OP	.text2.39+0x9c
+  91:	830c22        	l8ui	a2, a12, 131
+  94:	221b      	addi.n	a2, a2, 1
+  96:	834c22        	s8i	a2, a12, 131
+  99:	000206        	j	a5 <pm_wait_tx_rx_idle_fun+0x65>
+			99: R_XTENSA_SLOT0_OP	.text2.39+0xa5
+  9c:	834cd2        	s8i	a13, a12, 131
+  9f:	ffe201        	l32r	a0, 28 <pm_wait_tx_rx_idle_fun-0x18>
+			9f: R_XTENSA_SLOT0_OP	.text2.39+0x28
+			9f: R_XTENSA_ASM_EXPAND	ppProcessWaitQ
+  a2:	0000c0        	callx0	a0
+  a5:	840c32        	l8ui	a3, a12, 132
+  a8:	850c22        	l8ui	a2, a12, 133
+  ab:	331b      	addi.n	a3, a3, 1
+  ad:	221b      	addi.n	a2, a2, 1
+  af:	743030        	extui	a3, a3, 0, 8
+  b2:	742020        	extui	a2, a2, 0, 8
+  b5:	880c42        	l8ui	a4, a12, 136
+  b8:	844c32        	s8i	a3, a12, 132
+  bb:	854c22        	s8i	a2, a12, 133
+  be:	02b437        	bgeu	a4, a3, c4 <pm_wait_tx_rx_idle_fun+0x84>
+			be: R_XTENSA_SLOT0_OP	.text2.39+0xc4
+  c1:	844c42        	s8i	a4, a12, 132
+  c4:	890c32        	l8ui	a3, a12, 137
+  c7:	02b327        	bgeu	a3, a2, cd <pm_wait_tx_rx_idle_fun+0x8d>
+			c7: R_XTENSA_SLOT0_OP	.text2.39+0xcd
+  ca:	854c32        	s8i	a3, a12, 133
+  cd:	870c22        	l8ui	a2, a12, 135
+  d0:	830c52        	l8ui	a5, a12, 131
+  d3:	02b257        	bgeu	a2, a5, d9 <pm_wait_tx_rx_idle_fun+0x99>
+			d3: R_XTENSA_SLOT0_OP	.text2.39+0xd9
+  d6:	834c22        	s8i	a2, a12, 131
+  d9:	840c52        	l8ui	a5, a12, 132
+  dc:	383547        	bltu	a5, a4, 118 <pm_wait_tx_rx_idle_fun+0xd8>
+			dc: R_XTENSA_SLOT0_OP	.text2.39+0x118
+  df:	850c42        	l8ui	a4, a12, 133
+  e2:	323437        	bltu	a4, a3, 118 <pm_wait_tx_rx_idle_fun+0xd8>
+			e2: R_XTENSA_SLOT0_OP	.text2.39+0x118
+  e5:	830c32        	l8ui	a3, a12, 131
+  e8:	2c3327        	bltu	a3, a2, 118 <pm_wait_tx_rx_idle_fun+0xd8>
+			e8: R_XTENSA_SLOT0_OP	.text2.39+0x118
+  eb:	ffc821        	l32r	a2, c <pm_wait_tx_rx_idle_fun-0x34>
+			eb: R_XTENSA_SLOT0_OP	.text2.39+0xc
+  ee:	2238      	l32i.n	a3, a2, 8
+  f0:	ffc821        	l32r	a2, 10 <pm_wait_tx_rx_idle_fun-0x30>
+			f0: R_XTENSA_SLOT0_OP	.text2.39+0x10
+  f3:	0228      	l32i.n	a2, a2, 0
+  f5:	000242        	l8ui	a4, a2, 0
+  f8:	ffc721        	l32r	a2, 14 <pm_wait_tx_rx_idle_fun-0x2c>
+			f8: R_XTENSA_SLOT0_OP	.text2.39+0x14
+  fb:	221466        	bnei	a4, 1, 121 <pm_wait_tx_rx_idle_fun+0xe1>
+			fb: R_XTENSA_SLOT0_OP	.text2.39+0x121
+  fe:	f39c      	beqz.n	a3, 121 <pm_wait_tx_rx_idle_fun+0xe1>
+			fe: R_XTENSA_SLOT0_OP	.text2.39+0x121
+ 100:	1e2332        	l32i	a3, a3, 120
+ 103:	1a5366        	bnei	a3, 5, 121 <pm_wait_tx_rx_idle_fun+0xe1>
+			103: R_XTENSA_SLOT0_OP	.text2.39+0x121
+ 106:	0228      	l32i.n	a2, a2, 0
+ 108:	0ce207        	bbsi	a2, 0, 118 <pm_wait_tx_rx_idle_fun+0xd8>
+			108: R_XTENSA_SLOT0_OP	.text2.39+0x118
+ 10b:	ffc801        	l32r	a0, 2c <pm_wait_tx_rx_idle_fun-0x14>
+			10b: R_XTENSA_SLOT0_OP	.text2.39+0x2c
+			10b: R_XTENSA_ASM_EXPAND	__wifi_task_suspend_all
+ 10e:	0000c0        	callx0	a0
+ 111:	620c      	movi.n	a2, 6
+ 113:	0005c6        	j	12e <pm_wait_tx_rx_idle_fun+0xee>
+			113: R_XTENSA_SLOT0_OP	.text2.39+0x12e
+ 116:	00          	.byte 00
+ 117:	00          	.byte 00
+ 118:	ffc601        	l32r	a0, 30 <pm_wait_tx_rx_idle_fun-0x10>
+			118: R_XTENSA_SLOT0_OP	.text2.39+0x30
+			118: R_XTENSA_ASM_EXPAND	pm_set_idle_timer
+ 11b:	0000c0        	callx0	a0
+ 11e:	ffd786        	j	80 <pm_wait_tx_rx_idle_fun+0x40>
+			11e: R_XTENSA_SLOT0_OP	.text2.39+0x80
+ 121:	0228      	l32i.n	a2, a2, 0
+ 123:	f1e207        	bbsi	a2, 0, 118 <pm_wait_tx_rx_idle_fun+0xd8>
+			123: R_XTENSA_SLOT0_OP	.text2.39+0x118
+ 126:	ffc301        	l32r	a0, 34 <pm_wait_tx_rx_idle_fun-0xc>
+			126: R_XTENSA_SLOT0_OP	.text2.39+0x34
+			126: R_XTENSA_ASM_EXPAND	__wifi_task_suspend_all
+ 129:	0000c0        	callx0	a0
+ 12c:	120c      	movi.n	a2, 1
+ 12e:	ffc201        	l32r	a0, 38 <pm_wait_tx_rx_idle_fun-0x8>
+			12e: R_XTENSA_SLOT0_OP	.text2.39+0x38
+			12e: R_XTENSA_ASM_EXPAND	pm_change_to_state
+ 131:	0000c0        	callx0	a0
+ 134:	ffc201        	l32r	a0, 3c <pm_wait_tx_rx_idle_fun-0x4>
+			134: R_XTENSA_SLOT0_OP	.text2.39+0x3c
+			134: R_XTENSA_ASM_EXPAND	__wifi_task_resume_all
+ 137:	0000c0        	callx0	a0
+ 13a:	ffd086        	j	80 <pm_wait_tx_rx_idle_fun+0x40>
+			13a: R_XTENSA_SLOT0_OP	.text2.39+0x80
+ 13d:	3108      	l32i.n	a0, a1, 12
+ 13f:	21c8      	l32i.n	a12, a1, 8
+ 141:	11d8      	l32i.n	a13, a1, 4
+ 143:	10c112        	addi	a1, a1, 16
+ 146:	f00d      	ret.n
+
+Disassembly of section .text2.43:
+
+00000000 <pm_wait_bcn_fun-0x30>:
+	...
+			0: R_XTENSA_32	.bss.pmc
+			4: R_XTENSA_32	.data.cur_early
+			8: R_XTENSA_32	.data.cur_timeout
+   c:	0f 27 00 00 	
+  10:	10 27 00 00 	
+	...
+			14: R_XTENSA_32	__wifi_task_suspend_all
+			18: R_XTENSA_32	__wifi_task_suspend_all
+			1c: R_XTENSA_32	__wifi_task_suspend_all
+			20: R_XTENSA_32	__wifi_task_suspend_all
+			24: R_XTENSA_32	pm_change_to_state
+			28: R_XTENSA_32	__wifi_task_resume_all
+			2c: R_XTENSA_32	__wifi_task_resume_all
+
+00000030 <pm_wait_bcn_fun>:
+  30:	f0c112        	addi	a1, a1, -16
+  33:	036102        	s32i	a0, a1, 12
+  36:	fff701        	l32r	a0, 14 <pm_wait_bcn_fun-0x1c>
+			36: R_XTENSA_SLOT0_OP	.text2.43+0x14
+			36: R_XTENSA_ASM_EXPAND	__wifi_task_suspend_all
+  39:	0000c0        	callx0	a0
+  3c:	fff121        	l32r	a2, 0 <pm_wait_bcn_fun-0x30>
+			3c: R_XTENSA_SLOT0_OP	.text2.43
+  3f:	fff161        	l32r	a6, 4 <pm_wait_bcn_fun-0x2c>
+			3f: R_XTENSA_SLOT0_OP	.text2.43+0x4
+  42:	162242        	l32i	a4, a2, 88
+  45:	152232        	l32i	a3, a2, 84
+  48:	8a0292        	l8ui	a9, a2, 138
+  4b:	343a      	add.n	a3, a4, a3
+  4d:	ffee51        	l32r	a5, 8 <pm_wait_bcn_fun-0x28>
+			4d: R_XTENSA_SLOT0_OP	.text2.43+0x8
+  50:	186242        	s32i	a4, a2, 96
+  53:	166232        	s32i	a3, a2, 88
+  56:	820242        	l8ui	a4, a2, 130
+  59:	176232        	s32i	a3, a2, 92
+  5c:	1139b0        	slli	a3, a9, 5
+  5f:	0688      	l32i.n	a8, a6, 0
+  61:	0578      	l32i.n	a7, a5, 0
+  63:	c03390        	sub	a3, a3, a9
+  66:	441b      	addi.n	a4, a4, 1
+  68:	a03390        	addx4	a3, a3, a9
+  6b:	744040        	extui	a4, a4, 0, 8
+  6e:	01d882        	addmi	a8, a8, 0x100
+  71:	02d772        	addmi	a7, a7, 0x200
+  74:	1133d0        	slli	a3, a3, 3
+  77:	824242        	s8i	a4, a2, 130
+  7a:	0689      	s32i.n	a8, a6, 0
+  7c:	0579      	s32i.n	a7, a5, 0
+  7e:	7dd332        	addmi	a3, a3, 0x7d00
+  81:	01b387        	bgeu	a3, a8, 86 <pm_wait_bcn_fun+0x56>
+			81: R_XTENSA_SLOT0_OP	.text2.43+0x86
+  84:	0639      	s32i.n	a3, a6, 0
+  86:	0638      	l32i.n	a3, a6, 0
+  88:	dba582        	movi	a8, 0x5db
+  8b:	053837        	bltu	a8, a3, 94 <pm_wait_bcn_fun+0x64>
+			8b: R_XTENSA_SLOT0_OP	.text2.43+0x94
+  8e:	dca532        	movi	a3, 0x5dc
+  91:	006632        	s32i	a3, a6, 0
+  94:	8b0262        	l8ui	a6, a2, 139
+  97:	1136b0        	slli	a3, a6, 5
+  9a:	c03360        	sub	a3, a3, a6
+  9d:	a03360        	addx4	a3, a3, a6
+  a0:	1133d0        	slli	a3, a3, 3
+  a3:	01b377        	bgeu	a3, a7, a8 <pm_wait_bcn_fun+0x78>
+			a3: R_XTENSA_SLOT0_OP	.text2.43+0xa8
+  a6:	0539      	s32i.n	a3, a5, 0
+  a8:	0538      	l32i.n	a3, a5, 0
+  aa:	ffd861        	l32r	a6, c <pm_wait_bcn_fun-0x24>
+			aa: R_XTENSA_SLOT0_OP	.text2.43+0xc
+  ad:	043637        	bltu	a6, a3, b5 <pm_wait_bcn_fun+0x85>
+			ad: R_XTENSA_SLOT0_OP	.text2.43+0xb5
+  b0:	ffd831        	l32r	a3, 10 <pm_wait_bcn_fun-0x20>
+			b0: R_XTENSA_SLOT0_OP	.text2.43+0x10
+  b3:	0539      	s32i.n	a3, a5, 0
+  b5:	8c0222        	l8ui	a2, a2, 140
+  b8:	0ab247        	bgeu	a2, a4, c6 <pm_wait_bcn_fun+0x96>
+			b8: R_XTENSA_SLOT0_OP	.text2.43+0xc6
+  bb:	ffd701        	l32r	a0, 18 <pm_wait_bcn_fun-0x18>
+			bb: R_XTENSA_SLOT0_OP	.text2.43+0x18
+			bb: R_XTENSA_ASM_EXPAND	__wifi_task_suspend_all
+  be:	0000c0        	callx0	a0
+  c1:	420c      	movi.n	a2, 4
+  c3:	000646        	j	e0 <pm_wait_bcn_fun+0xb0>
+			c3: R_XTENSA_SLOT0_OP	.text2.43+0xe0
+  c6:	221b      	addi.n	a2, a2, 1
+  c8:	0ca247        	bge	a2, a4, d8 <pm_wait_bcn_fun+0xa8>
+			c8: R_XTENSA_SLOT0_OP	.text2.43+0xd8
+  cb:	ffd401        	l32r	a0, 1c <pm_wait_bcn_fun-0x14>
+			cb: R_XTENSA_SLOT0_OP	.text2.43+0x1c
+			cb: R_XTENSA_ASM_EXPAND	__wifi_task_suspend_all
+  ce:	0000c0        	callx0	a0
+  d1:	220c      	movi.n	a2, 2
+  d3:	000246        	j	e0 <pm_wait_bcn_fun+0xb0>
+			d3: R_XTENSA_SLOT0_OP	.text2.43+0xe0
+  d6:	00          	.byte 00
+  d7:	00          	.byte 00
+  d8:	ffd201        	l32r	a0, 20 <pm_wait_bcn_fun-0x10>
+			d8: R_XTENSA_SLOT0_OP	.text2.43+0x20
+			d8: R_XTENSA_ASM_EXPAND	__wifi_task_suspend_all
+  db:	0000c0        	callx0	a0
+  de:	620c      	movi.n	a2, 6
+  e0:	ffd101        	l32r	a0, 24 <pm_wait_bcn_fun-0xc>
+			e0: R_XTENSA_SLOT0_OP	.text2.43+0x24
+			e0: R_XTENSA_ASM_EXPAND	pm_change_to_state
+  e3:	0000c0        	callx0	a0
+  e6:	ffd001        	l32r	a0, 28 <pm_wait_bcn_fun-0x8>
+			e6: R_XTENSA_SLOT0_OP	.text2.43+0x28
+			e6: R_XTENSA_ASM_EXPAND	__wifi_task_resume_all
+  e9:	0000c0        	callx0	a0
+  ec:	ffd001        	l32r	a0, 2c <pm_wait_bcn_fun-0x4>
+			ec: R_XTENSA_SLOT0_OP	.text2.43+0x2c
+			ec: R_XTENSA_ASM_EXPAND	__wifi_task_resume_all
+  ef:	0000c0        	callx0	a0
+  f2:	3108      	l32i.n	a0, a1, 12
+  f4:	10c112        	addi	a1, a1, 16
+  f7:	f00d      	ret.n
+
+Disassembly of section .text2.44:
+
+00000000 <pm_open_rf_for_bcn_fun-0x24>:
+	...
+			0: R_XTENSA_32	.bss.pmc
+			4: R_XTENSA_32	.data.cur_timeout
+			8: R_XTENSA_32	__wifi_task_suspend_all
+			c: R_XTENSA_32	os_timer_disarm
+			10: R_XTENSA_32	__wifi_task_suspend_all
+			14: R_XTENSA_32	pm_change_to_state
+			18: R_XTENSA_32	__wifi_task_resume_all
+			1c: R_XTENSA_32	os_timer_arm_us
+			20: R_XTENSA_32	__wifi_task_resume_all
+
+00000024 <pm_open_rf_for_bcn_fun>:
+  24:	f0c112        	addi	a1, a1, -16
+  27:	3109      	s32i.n	a0, a1, 12
+  29:	21c9      	s32i.n	a12, a1, 8
+  2b:	fff701        	l32r	a0, 8 <pm_open_rf_for_bcn_fun-0x1c>
+			2b: R_XTENSA_SLOT0_OP	.text2.44+0x8
+			2b: R_XTENSA_ASM_EXPAND	__wifi_task_suspend_all
+  2e:	0000c0        	callx0	a0
+  31:	fff3c1        	l32r	a12, 0 <pm_open_rf_for_bcn_fun-0x24>
+			31: R_XTENSA_SLOT0_OP	.text2.44
+  34:	0c2d      	mov.n	a2, a12
+  36:	fff501        	l32r	a0, c <pm_open_rf_for_bcn_fun-0x18>
+			36: R_XTENSA_SLOT0_OP	.text2.44+0xc
+			36: R_XTENSA_ASM_EXPAND	os_timer_disarm
+  39:	0000c0        	callx0	a0
+  3c:	1b2c22        	l32i	a2, a12, 108
+  3f:	226266        	bnei	a2, 6, 65 <pm_open_rf_for_bcn_fun+0x41>
+			3f: R_XTENSA_SLOT0_OP	.text2.44+0x65
+  42:	fff301        	l32r	a0, 10 <pm_open_rf_for_bcn_fun-0x14>
+			42: R_XTENSA_SLOT0_OP	.text2.44+0x10
+			42: R_XTENSA_ASM_EXPAND	__wifi_task_suspend_all
+  45:	0000c0        	callx0	a0
+  48:	420c      	movi.n	a2, 4
+  4a:	fff201        	l32r	a0, 14 <pm_open_rf_for_bcn_fun-0x10>
+			4a: R_XTENSA_SLOT0_OP	.text2.44+0x14
+			4a: R_XTENSA_ASM_EXPAND	pm_change_to_state
+  4d:	0000c0        	callx0	a0
+  50:	fff201        	l32r	a0, 18 <pm_open_rf_for_bcn_fun-0xc>
+			50: R_XTENSA_SLOT0_OP	.text2.44+0x18
+			50: R_XTENSA_ASM_EXPAND	__wifi_task_resume_all
+  53:	0000c0        	callx0	a0
+  56:	ffeb21        	l32r	a2, 4 <pm_open_rf_for_bcn_fun-0x20>
+			56: R_XTENSA_SLOT0_OP	.text2.44+0x4
+  59:	040c      	movi.n	a4, 0
+  5b:	0238      	l32i.n	a3, a2, 0
+  5d:	0c2d      	mov.n	a2, a12
+  5f:	ffef01        	l32r	a0, 1c <pm_open_rf_for_bcn_fun-0x8>
+			5f: R_XTENSA_SLOT0_OP	.text2.44+0x1c
+			5f: R_XTENSA_ASM_EXPAND	os_timer_arm_us
+  62:	0000c0        	callx0	a0
+  65:	ffee01        	l32r	a0, 20 <pm_open_rf_for_bcn_fun-0x4>
+			65: R_XTENSA_SLOT0_OP	.text2.44+0x20
+			65: R_XTENSA_ASM_EXPAND	__wifi_task_resume_all
+  68:	0000c0        	callx0	a0
+  6b:	3108      	l32i.n	a0, a1, 12
+  6d:	21c8      	l32i.n	a12, a1, 8
+  6f:	10c112        	addi	a1, a1, 16
+  72:	f00d      	ret.n
+
+Disassembly of section .text2.30:
+
+00000000 <pm_goto_rf_old_state-0x24>:
+	...
+			0: R_XTENSA_32	.bss.pmc
+			4: R_XTENSA_32	g_ic
+			8: R_XTENSA_32	g_wifi_nvs
+			c: R_XTENSA_32	__wifi_task_suspend_all
+			10: R_XTENSA_32	pm_send_nullfunc
+			14: R_XTENSA_32	__wifi_task_suspend_all
+			18: R_XTENSA_32	pm_change_to_state
+			1c: R_XTENSA_32	__wifi_task_resume_all
+			20: R_XTENSA_32	__wifi_task_resume_all
+
+00000024 <pm_goto_rf_old_state>:
+  24:	f0c112        	addi	a1, a1, -16
+  27:	21c9      	s32i.n	a12, a1, 8
+  29:	3109      	s32i.n	a0, a1, 12
+  2b:	fff801        	l32r	a0, c <pm_goto_rf_old_state-0x18>
+			2b: R_XTENSA_SLOT0_OP	.text2.30+0xc
+			2b: R_XTENSA_ASM_EXPAND	__wifi_task_suspend_all
+  2e:	0000c0        	callx0	a0
+  31:	fff331        	l32r	a3, 0 <pm_goto_rf_old_state-0x24>
+			31: R_XTENSA_SLOT0_OP	.text2.30
+  34:	1c2322        	l32i	a2, a3, 112
+  37:	03cd      	mov.n	a12, a3
+  39:	041266        	bnei	a2, 1, 41 <pm_goto_rf_old_state+0x1d>
+			39: R_XTENSA_SLOT0_OP	.text2.30+0x41
+  3c:	020c      	movi.n	a2, 0
+  3e:	000106        	j	46 <pm_goto_rf_old_state+0x22>
+			3e: R_XTENSA_SLOT0_OP	.text2.30+0x46
+  41:	086266        	bnei	a2, 6, 4d <pm_goto_rf_old_state+0x29>
+			41: R_XTENSA_SLOT0_OP	.text2.30+0x4d
+  44:	420c      	movi.n	a2, 4
+  46:	1b6c22        	s32i	a2, a12, 108
+  49:	000f46        	j	8a <pm_goto_rf_old_state+0x66>
+			49: R_XTENSA_SLOT0_OP	.text2.30+0x8a
+  4c:	00          	.byte 00
+  4d:	32fc      	bnez.n	a2, 84 <pm_goto_rf_old_state+0x60>
+			4d: R_XTENSA_SLOT0_OP	.text2.30+0x84
+  4f:	ffed31        	l32r	a3, 4 <pm_goto_rf_old_state-0x20>
+			4f: R_XTENSA_SLOT0_OP	.text2.30+0x4
+  52:	140c      	movi.n	a4, 1
+  54:	2358      	l32i.n	a5, a3, 8
+  56:	ffec31        	l32r	a3, 8 <pm_goto_rf_old_state-0x1c>
+			56: R_XTENSA_SLOT0_OP	.text2.30+0x8
+  59:	026d      	mov.n	a6, a2
+  5b:	0338      	l32i.n	a3, a3, 0
+  5d:	000332        	l8ui	a3, a3, 0
+  60:	330b      	addi.n	a3, a3, -1
+  62:	836430        	moveqz	a6, a4, a3
+  65:	743060        	extui	a3, a6, 0, 8
+  68:	fd0316        	beqz	a3, 3c <pm_goto_rf_old_state+0x18>
+			68: R_XTENSA_SLOT0_OP	.text2.30+0x3c
+  6b:	834250        	moveqz	a4, a2, a5
+  6e:	744040        	extui	a4, a4, 0, 8
+  71:	fc7416        	beqz	a4, 3c <pm_goto_rf_old_state+0x18>
+			71: R_XTENSA_SLOT0_OP	.text2.30+0x3c
+  74:	1e2532        	l32i	a3, a5, 120
+  77:	c15366        	bnei	a3, 5, 3c <pm_goto_rf_old_state+0x18>
+			77: R_XTENSA_SLOT0_OP	.text2.30+0x3c
+  7a:	ffe501        	l32r	a0, 10 <pm_goto_rf_old_state-0x14>
+			7a: R_XTENSA_SLOT0_OP	.text2.30+0x10
+			7a: R_XTENSA_ASM_EXPAND	pm_send_nullfunc
+  7d:	0000c0        	callx0	a0
+  80:	ffee06        	j	3c <pm_goto_rf_old_state+0x18>
+			80: R_XTENSA_SLOT0_OP	.text2.30+0x3c
+  83:	00          	.byte 00
+  84:	1b6322        	s32i	a2, a3, 108
+  87:	000506        	j	9f <pm_goto_rf_old_state+0x7b>
+			87: R_XTENSA_SLOT0_OP	.text2.30+0x9f
+  8a:	ffe201        	l32r	a0, 14 <pm_goto_rf_old_state-0x10>
+			8a: R_XTENSA_SLOT0_OP	.text2.30+0x14
+			8a: R_XTENSA_ASM_EXPAND	__wifi_task_suspend_all
+  8d:	0000c0        	callx0	a0
+  90:	1c2c22        	l32i	a2, a12, 112
+  93:	ffe101        	l32r	a0, 18 <pm_goto_rf_old_state-0xc>
+			93: R_XTENSA_SLOT0_OP	.text2.30+0x18
+			93: R_XTENSA_ASM_EXPAND	pm_change_to_state
+  96:	0000c0        	callx0	a0
+  99:	ffe001        	l32r	a0, 1c <pm_goto_rf_old_state-0x8>
+			99: R_XTENSA_SLOT0_OP	.text2.30+0x1c
+			99: R_XTENSA_ASM_EXPAND	__wifi_task_resume_all
+  9c:	0000c0        	callx0	a0
+  9f:	ffe001        	l32r	a0, 20 <pm_goto_rf_old_state-0x4>
+			9f: R_XTENSA_SLOT0_OP	.text2.30+0x20
+			9f: R_XTENSA_ASM_EXPAND	__wifi_task_resume_all
+  a2:	0000c0        	callx0	a0
+  a5:	3108      	l32i.n	a0, a1, 12
+  a7:	21c8      	l32i.n	a12, a1, 8
+  a9:	10c112        	addi	a1, a1, 16
+  ac:	f00d      	ret.n
+
+Disassembly of section .text2.31:
+
+00000000 <pm_scan_stop-0x10>:
+	...
+			0: R_XTENSA_32	.bss.pmc
+			4: R_XTENSA_32	__wifi_task_suspend_all
+			8: R_XTENSA_32	pm_goto_rf_old_state
+			c: R_XTENSA_32	__wifi_task_resume_all
+
+00000010 <pm_scan_stop>:
+  10:	f0c112        	addi	a1, a1, -16
+  13:	036102        	s32i	a0, a1, 12
+  16:	fffb01        	l32r	a0, 4 <pm_scan_stop-0xc>
+			16: R_XTENSA_SLOT0_OP	.text2.31+0x4
+			16: R_XTENSA_ASM_EXPAND	__wifi_task_suspend_all
+  19:	0000c0        	callx0	a0
+  1c:	fff921        	l32r	a2, 0 <pm_scan_stop-0x10>
+			1c: R_XTENSA_SLOT0_OP	.text2.31
+  1f:	1b2222        	l32i	a2, a2, 108
+  22:	027226        	beqi	a2, 7, 28 <pm_scan_stop+0x18>
+			22: R_XTENSA_SLOT0_OP	.text2.31+0x28
+  25:	000146        	j	2e <pm_scan_stop+0x1e>
+			25: R_XTENSA_SLOT0_OP	.text2.31+0x2e
+  28:	fff801        	l32r	a0, 8 <pm_scan_stop-0x8>
+			28: R_XTENSA_SLOT0_OP	.text2.31+0x8
+			28: R_XTENSA_ASM_EXPAND	pm_goto_rf_old_state
+  2b:	0000c0        	callx0	a0
+  2e:	fff701        	l32r	a0, c <pm_scan_stop-0x4>
+			2e: R_XTENSA_SLOT0_OP	.text2.31+0xc
+			2e: R_XTENSA_ASM_EXPAND	__wifi_task_resume_all
+  31:	0000c0        	callx0	a0
+  34:	3108      	l32i.n	a0, a1, 12
+  36:	10c112        	addi	a1, a1, 16
+  39:	f00d      	ret.n
+
+Disassembly of section .text2.47:
+
+00000000 <pm_send_keepalive_pkt-0x14>:
+   0:	00 0c f2 3f 	
+	...
+			4: R_XTENSA_32	WdevTimOffSet
+			8: R_XTENSA_32	.bss.pmc
+   c:	80 96 98 00 	
+  10:	00 00 00 00 	
+			10: R_XTENSA_32	pm_send_nullfunc
+
+00000014 <pm_send_keepalive_pkt>:
+  14:	fffc31        	l32r	a3, 4 <pm_send_keepalive_pkt-0x10>
+			14: R_XTENSA_SLOT0_OP	.text2.47+0x4
+  17:	fffa41        	l32r	a4, 0 <pm_send_keepalive_pkt-0x14>
+			17: R_XTENSA_SLOT0_OP	.text2.47
+  1a:	0368      	l32i.n	a6, a3, 0
+  1c:	fffb31        	l32r	a3, 8 <pm_send_keepalive_pkt-0xc>
+			1c: R_XTENSA_SLOT0_OP	.text2.47+0x8
+  1f:	0020c0        	memw
+  22:	0428      	l32i.n	a2, a4, 0
+  24:	192352        	l32i	a5, a3, 100
+  27:	f0c112        	addi	a1, a1, -16
+  2a:	c05650        	sub	a5, a6, a5
+  2d:	fff771        	l32r	a7, c <pm_send_keepalive_pkt-0x8>
+			2d: R_XTENSA_SLOT0_OP	.text2.47+0xc
+  30:	552a      	add.n	a5, a5, a2
+  32:	3109      	s32i.n	a0, a1, 12
+  34:	020c      	movi.n	a2, 0
+  36:	1eb757        	bgeu	a7, a5, 58 <pm_send_keepalive_pkt+0x44>
+			36: R_XTENSA_SLOT0_OP	.text2.47+0x58
+  39:	0020c0        	memw
+  3c:	0448      	l32i.n	a4, a4, 0
+  3e:	464a      	add.n	a4, a6, a4
+  40:	196342        	s32i	a4, a3, 100
+  43:	1b2332        	l32i	a3, a3, 108
+  46:	d47c      	movi.n	a4, -3
+  48:	103430        	and	a3, a4, a3
+  4b:	014366        	bnei	a3, 4, 50 <pm_send_keepalive_pkt+0x3c>
+			4b: R_XTENSA_SLOT0_OP	.text2.47+0x50
+  4e:	120c      	movi.n	a2, 1
+  50:	fff001        	l32r	a0, 10 <pm_send_keepalive_pkt-0x4>
+			50: R_XTENSA_SLOT0_OP	.text2.47+0x10
+			50: R_XTENSA_ASM_EXPAND	pm_send_nullfunc
+  53:	0000c0        	callx0	a0
+  56:	120c      	movi.n	a2, 1
+  58:	3108      	l32i.n	a0, a1, 12
+  5a:	10c112        	addi	a1, a1, 16
+  5d:	f00d      	ret.n
+
+Disassembly of section .text2.48:
+
+00000000 <pm_onBcnRx-0x88>:
+   0:	00 00 00 00 	
+			0: R_XTENSA_32	.bss.pmc
+   4:	1c 00 00 00 	
+			4: R_XTENSA_32	.bss.pmc
+	...
+			8: R_XTENSA_32	app_optimize_and_debug_mac
+			c: R_XTENSA_32	g_ic
+			10: R_XTENSA_32	g_wifi_nvs
+  14:	00 0c f2 3f 	
+	...
+			18: R_XTENSA_32	.bss.tsf_diff
+			1c: R_XTENSA_32	WdevTimOffSet
+  20:	80 3e 00 00 	
+	...
+			24: R_XTENSA_32	.bss.early_time_cnt
+			28: R_XTENSA_32	.bss.cntnum
+  2c:	f4 bd 00 00 	
+	...
+			30: R_XTENSA_32	.data.cur_early
+			34: R_XTENSA_32	.data.cur_timeout
+  38:	0f 27 00 00 	
+  3c:	10 27 00 00 	
+  40:	80 c1 ff ff 	
+	...
+			44: R_XTENSA_32	os_timer_disarm
+			48: R_XTENSA_32	os_timer_disarm
+			4c: R_XTENSA_32	pm_send_keepalive_pkt
+			50: R_XTENSA_32	pm_send_keepalive_pkt
+			54: R_XTENSA_32	pm_set_idle_timer
+			58: R_XTENSA_32	__umoddi3
+			5c: R_XTENSA_32	__divsi3
+			60: R_XTENSA_32	__divsi3
+			64: R_XTENSA_32	pm_allow_tx
+			68: R_XTENSA_32	__wifi_task_suspend_all
+			6c: R_XTENSA_32	pm_change_to_state
+			70: R_XTENSA_32	__wifi_task_resume_all
+			74: R_XTENSA_32	pm_wait_tx_rx_idle_fun
+			78: R_XTENSA_32	pm_send_keepalive_pkt
+			7c: R_XTENSA_32	__wifi_task_suspend_all
+			80: R_XTENSA_32	pm_change_to_state
+			84: R_XTENSA_32	__wifi_task_resume_all
+
+00000088 <pm_onBcnRx>:
+  88:	d0c112        	addi	a1, a1, -48
+  8b:	81e9      	s32i.n	a14, a1, 32
+  8d:	b109      	s32i.n	a0, a1, 44
+  8f:	02ed      	mov.n	a14, a2
+  91:	a1c9      	s32i.n	a12, a1, 40
+  93:	91d9      	s32i.n	a13, a1, 36
+  95:	71f9      	s32i.n	a15, a1, 28
+  97:	c02430        	sub	a2, a4, a3
+  9a:	b50c      	movi.n	a5, 11
+  9c:	022527        	blt	a5, a2, a2 <pm_onBcnRx+0x1a>
+			9c: R_XTENSA_SLOT0_OP	.text2.48+0xa2
+  9f:	00c246        	j	3ac <pm_onBcnRx+0x324>
+			9f: R_XTENSA_SLOT0_OP	.text2.48+0x3ac
+  a2:	041322        	l16ui	a2, a3, 8
+  a5:	ffd6c1        	l32r	a12, 0 <pm_onBcnRx-0x88>
+			a5: R_XTENSA_SLOT0_OP	.text2.48
+  a8:	112260        	slli	a2, a2, 10
+  ab:	156c22        	s32i	a2, a12, 84
+  ae:	202cc0        	or	a2, a12, a12
+  b1:	006132        	s32i	a3, a1, 0
+  b4:	1149      	s32i.n	a4, a1, 4
+  b6:	ffe301        	l32r	a0, 44 <pm_onBcnRx-0x44>
+			b6: R_XTENSA_SLOT0_OP	.text2.48+0x44
+			b6: R_XTENSA_ASM_EXPAND	os_timer_disarm
+  b9:	0000c0        	callx0	a0
+  bc:	ffd221        	l32r	a2, 4 <pm_onBcnRx-0x84>
+			bc: R_XTENSA_SLOT0_OP	.text2.48+0x4
+  bf:	ffe201        	l32r	a0, 48 <pm_onBcnRx-0x40>
+			bf: R_XTENSA_SLOT0_OP	.text2.48+0x48
+			bf: R_XTENSA_ASM_EXPAND	os_timer_disarm
+  c2:	0000c0        	callx0	a0
+  c5:	1d2c62        	l32i	a6, a12, 116
+  c8:	0138      	l32i.n	a3, a1, 0
+  ca:	012142        	l32i	a4, a1, 4
+  cd:	008656        	bnez	a6, d9 <pm_onBcnRx+0x51>
+			cd: R_XTENSA_SLOT0_OP	.text2.48+0xd9
+  d0:	ffdf01        	l32r	a0, 4c <pm_onBcnRx-0x3c>
+			d0: R_XTENSA_SLOT0_OP	.text2.48+0x4c
+			d0: R_XTENSA_ASM_EXPAND	pm_send_keepalive_pkt
+  d3:	0000c0        	callx0	a0
+  d6:	00b486        	j	3ac <pm_onBcnRx+0x324>
+			d6: R_XTENSA_SLOT0_OP	.text2.48+0x3ac
+  d9:	ffcb21        	l32r	a2, 8 <pm_onBcnRx-0x80>
+			d9: R_XTENSA_SLOT0_OP	.text2.48+0x8
+  dc:	02d8      	l32i.n	a13, a2, 0
+  de:	04d0d0        	extui	a13, a13, 0, 1
+  e1:	fd8c      	beqz.n	a13, f4 <pm_onBcnRx+0x6c>
+			e1: R_XTENSA_SLOT0_OP	.text2.48+0xf4
+  e3:	ffdb01        	l32r	a0, 50 <pm_onBcnRx-0x38>
+			e3: R_XTENSA_SLOT0_OP	.text2.48+0x50
+			e3: R_XTENSA_ASM_EXPAND	pm_send_keepalive_pkt
+  e6:	0000c0        	callx0	a0
+  e9:	ffda01        	l32r	a0, 54 <pm_onBcnRx-0x34>
+			e9: R_XTENSA_SLOT0_OP	.text2.48+0x54
+			e9: R_XTENSA_ASM_EXPAND	pm_set_idle_timer
+  ec:	0000c0        	callx0	a0
+  ef:	00ae46        	j	3ac <pm_onBcnRx+0x324>
+			ef: R_XTENSA_SLOT0_OP	.text2.48+0x3ac
+  f2:	00          	.byte 00
+  f3:	00          	.byte 00
+  f4:	ffc621        	l32r	a2, c <pm_onBcnRx-0x7c>
+			f4: R_XTENSA_SLOT0_OP	.text2.48+0xc
+  f7:	824cd2        	s8i	a13, a12, 130
+  fa:	2258      	l32i.n	a5, a2, 8
+  fc:	ffc521        	l32r	a2, 10 <pm_onBcnRx-0x78>
+			fc: R_XTENSA_SLOT0_OP	.text2.48+0x10
+  ff:	170c      	movi.n	a7, 1
+ 101:	0228      	l32i.n	a2, a2, 0
+ 103:	000222        	l8ui	a2, a2, 0
+ 106:	220b      	addi.n	a2, a2, -1
+ 108:	93d720        	movnez	a13, a7, a2
+ 10b:	fc1d56        	bnez	a13, d0 <pm_onBcnRx+0x48>
+			10b: R_XTENSA_SLOT0_OP	.text2.48+0xd0
+ 10e:	83d750        	moveqz	a13, a7, a5
+ 111:	fbbd56        	bnez	a13, d0 <pm_onBcnRx+0x48>
+			111: R_XTENSA_SLOT0_OP	.text2.48+0xd0
+ 114:	1e2522        	l32i	a2, a5, 120
+ 117:	b55266        	bnei	a2, 5, d0 <pm_onBcnRx+0x48>
+			117: R_XTENSA_SLOT0_OP	.text2.48+0xd0
+ 11a:	152cf2        	l32i	a15, a12, 84
+ 11d:	23cb      	addi.n	a2, a3, 12
+ 11f:	9fdc      	bnez.n	a15, 13c <pm_onBcnRx+0xb4>
+			11f: R_XTENSA_SLOT0_OP	.text2.48+0x13c
+ 121:	00a1c6        	j	3ac <pm_onBcnRx+0x324>
+			121: R_XTENSA_SLOT0_OP	.text2.48+0x3ac
+ 124:	010252        	l8ui	a5, a2, 1
+ 127:	851b      	addi.n	a8, a5, 1
+ 129:	022877        	blt	a8, a7, 12f <pm_onBcnRx+0xa7>
+			129: R_XTENSA_SLOT0_OP	.text2.48+0x12f
+ 12c:	009f06        	j	3ac <pm_onBcnRx+0x324>
+			12c: R_XTENSA_SLOT0_OP	.text2.48+0x3ac
+ 12f:	000272        	l8ui	a7, a2, 0
+ 132:	552b      	addi.n	a5, a5, 2
+ 134:	fbc772        	addi	a7, a7, -5
+ 137:	83d270        	moveqz	a13, a2, a7
+ 13a:	225a      	add.n	a2, a2, a5
+ 13c:	c07420        	sub	a7, a4, a2
+ 13f:	e127e6        	bgei	a7, 2, 124 <pm_onBcnRx+0x9c>
+			13f: R_XTENSA_SLOT0_OP	.text2.48+0x124
+ 142:	266d16        	beqz	a13, 3ac <pm_onBcnRx+0x324>
+			142: R_XTENSA_SLOT0_OP	.text2.48+0x3ac
+ 145:	ffb321        	l32r	a2, 14 <pm_onBcnRx-0x74>
+			145: R_XTENSA_SLOT0_OP	.text2.48+0x14
+ 148:	0020c0        	memw
+ 14b:	0248      	l32i.n	a4, a2, 0
+ 14d:	0328      	l32i.n	a2, a3, 0
+ 14f:	c02240        	sub	a2, a2, a4
+ 152:	ffb241        	l32r	a4, 1c <pm_onBcnRx-0x6c>
+			152: R_XTENSA_SLOT0_OP	.text2.48+0x1c
+ 155:	0448      	l32i.n	a4, a4, 0
+ 157:	c02240        	sub	a2, a2, a4
+ 15a:	ffaf41        	l32r	a4, 18 <pm_onBcnRx-0x70>
+			15a: R_XTENSA_SLOT0_OP	.text2.48+0x18
+ 15d:	0429      	s32i.n	a2, a4, 0
+ 15f:	421c42        	l16ui	a4, a12, 132
+ 162:	441c22        	l16ui	a2, a12, 136
+ 165:	3e9427        	bne	a4, a2, 1a7 <pm_onBcnRx+0x11f>
+			165: R_XTENSA_SLOT0_OP	.text2.48+0x1a7
+ 168:	401c52        	l16ui	a5, a12, 128
+ 16b:	040d82        	l8ui	a8, a13, 4
+ 16e:	d42050        	extui	a2, a5, 0, 14
+ 171:	010d42        	l8ui	a4, a13, 1
+ 174:	046807        	bbci	a8, 0, 17c <pm_onBcnRx+0xf4>
+			174: R_XTENSA_SLOT0_OP	.text2.48+0x17c
+ 177:	070c      	movi.n	a7, 0
+ 179:	844c72        	s8i	a7, a12, 132
+ 17c:	22ac      	beqz.n	a2, 1a2 <pm_onBcnRx+0x11a>
+			17c: R_XTENSA_SLOT0_OP	.text2.48+0x1a2
+ 17e:	e77c      	movi.n	a7, -2
+ 180:	412320        	srli	a2, a2, 3
+ 183:	107870        	and	a7, a8, a7
+ 186:	1d3277        	bltu	a2, a7, 1a7 <pm_onBcnRx+0x11f>
+			186: R_XTENSA_SLOT0_OP	.text2.48+0x1a7
+ 189:	fcc442        	addi	a4, a4, -4
+ 18c:	474a      	add.n	a4, a7, a4
+ 18e:	744040        	extui	a4, a4, 0, 8
+ 191:	123427        	bltu	a4, a2, 1a7 <pm_onBcnRx+0x11f>
+			191: R_XTENSA_SLOT0_OP	.text2.48+0x1a7
+ 194:	c02270        	sub	a2, a2, a7
+ 197:	2d2a      	add.n	a2, a13, a2
+ 199:	050222        	l8ui	a2, a2, 5
+ 19c:	245050        	extui	a5, a5, 0, 3
+ 19f:	045257        	bbc	a2, a5, 1a7 <pm_onBcnRx+0x11f>
+			19f: R_XTENSA_SLOT0_OP	.text2.48+0x1a7
+ 1a2:	020c      	movi.n	a2, 0
+ 1a4:	854c22        	s8i	a2, a12, 133
+ 1a7:	840c22        	l8ui	a2, a12, 132
+ 1aa:	00a256        	bnez	a2, 1b8 <pm_onBcnRx+0x130>
+			1aa: R_XTENSA_SLOT0_OP	.text2.48+0x1b8
+ 1ad:	8d0c22        	l8ui	a2, a12, 141
+ 1b0:	42cc      	bnez.n	a2, 1b8 <pm_onBcnRx+0x130>
+			1b0: R_XTENSA_SLOT0_OP	.text2.48+0x1b8
+ 1b2:	880c22        	l8ui	a2, a12, 136
+ 1b5:	844c22        	s8i	a2, a12, 132
+ 1b8:	ae28      	l32i.n	a2, a14, 40
+ 1ba:	75a172        	movi	a7, 0x175
+ 1bd:	1248      	l32i.n	a4, a2, 4
+ 1bf:	ff9821        	l32r	a2, 20 <pm_onBcnRx-0x68>
+			1bf: R_XTENSA_SLOT0_OP	.text2.48+0x20
+ 1c2:	ff9951        	l32r	a5, 28 <pm_onBcnRx-0x60>
+			1c2: R_XTENSA_SLOT0_OP	.text2.48+0x28
+ 1c5:	442a      	add.n	a4, a4, a2
+ 1c7:	172c22        	l32i	a2, a12, 92
+ 1ca:	c04420        	sub	a4, a4, a2
+ 1cd:	414740        	srli	a4, a4, 7
+ 1d0:	240b      	addi.n	a2, a4, -1
+ 1d2:	163727        	bltu	a7, a2, 1ec <pm_onBcnRx+0x164>
+			1d2: R_XTENSA_SLOT0_OP	.text2.48+0x1ec
+ 1d5:	ff9321        	l32r	a2, 24 <pm_onBcnRx-0x64>
+			1d5: R_XTENSA_SLOT0_OP	.text2.48+0x24
+ 1d8:	424a      	add.n	a4, a2, a4
+ 1da:	000422        	l8ui	a2, a4, 0
+ 1dd:	01c222        	addi	a2, a2, 1
+ 1e0:	004422        	s8i	a2, a4, 0
+ 1e3:	000522        	l8ui	a2, a5, 0
+ 1e6:	01c222        	addi	a2, a2, 1
+ 1e9:	004522        	s8i	a2, a5, 0
+ 1ec:	000522        	l8ui	a2, a5, 0
+ 1ef:	63a042        	movi	a4, 99
+ 1f2:	023427        	bltu	a4, a2, 1f8 <pm_onBcnRx+0x170>
+			1f2: R_XTENSA_SLOT0_OP	.text2.48+0x1f8
+ 1f5:	002fc6        	j	2b8 <pm_onBcnRx+0x230>
+			1f5: R_XTENSA_SLOT0_OP	.text2.48+0x2b8
+ 1f8:	020c      	movi.n	a2, 0
+ 1fa:	ff8a91        	l32r	a9, 24 <pm_onBcnRx-0x64>
+			1fa: R_XTENSA_SLOT0_OP	.text2.48+0x24
+ 1fd:	028d      	mov.n	a8, a2
+ 1ff:	77a1a2        	movi	a10, 0x177
+ 202:	489a      	add.n	a4, a8, a9
+ 204:	000442        	l8ui	a4, a4, 0
+ 207:	097d      	mov.n	a7, a9
+ 209:	224a      	add.n	a2, a2, a4
+ 20b:	742020        	extui	a2, a2, 0, 8
+ 20e:	0952f6        	bgeui	a2, 5, 21b <pm_onBcnRx+0x193>
+			20e: R_XTENSA_SLOT0_OP	.text2.48+0x21b
+ 211:	881b      	addi.n	a8, a8, 1
+ 213:	eb98a7        	bne	a8, a10, 202 <pm_onBcnRx+0x17a>
+			213: R_XTENSA_SLOT0_OP	.text2.48+0x202
+ 216:	0a0c      	movi.n	a10, 0
+ 218:	000046        	j	21d <pm_onBcnRx+0x195>
+			218: R_XTENSA_SLOT0_OP	.text2.48+0x21d
+ 21b:	08ad      	mov.n	a10, a8
+ 21d:	481b      	addi.n	a4, a8, 1
+ 21f:	e95c      	movi.n	a9, 94
+ 221:	76a182        	movi	a8, 0x176
+ 224:	0003c6        	j	237 <pm_onBcnRx+0x1af>
+			224: R_XTENSA_SLOT0_OP	.text2.48+0x237
+ 227:	00          	.byte 00
+ 228:	b74a      	add.n	a11, a7, a4
+ 22a:	000bb2        	l8ui	a11, a11, 0
+ 22d:	22ba      	add.n	a2, a2, a11
+ 22f:	742020        	extui	a2, a2, 0, 8
+ 232:	063927        	bltu	a9, a2, 23c <pm_onBcnRx+0x1b4>
+			232: R_XTENSA_SLOT0_OP	.text2.48+0x23c
+ 235:	441b      	addi.n	a4, a4, 1
+ 237:	edb847        	bgeu	a8, a4, 228 <pm_onBcnRx+0x1a0>
+			237: R_XTENSA_SLOT0_OP	.text2.48+0x228
+ 23a:	040c      	movi.n	a4, 0
+ 23c:	8a0cb2        	l8ui	a11, a12, 138
+ 23f:	ff7b81        	l32r	a8, 2c <pm_onBcnRx-0x5c>
+			23f: R_XTENSA_SLOT0_OP	.text2.48+0x2c
+ 242:	112a90        	slli	a2, a10, 7
+ 245:	c044a0        	sub	a4, a4, a10
+ 248:	11abb0        	slli	a10, a11, 5
+ 24b:	c02820        	sub	a2, a8, a2
+ 24e:	114490        	slli	a4, a4, 7
+ 251:	80a082        	movi	a8, 128
+ 254:	c0aab0        	sub	a10, a10, a11
+ 257:	448a      	add.n	a4, a4, a8
+ 259:	ff7591        	l32r	a9, 30 <pm_onBcnRx-0x58>
+			259: R_XTENSA_SLOT0_OP	.text2.48+0x30
+ 25c:	ff7681        	l32r	a8, 34 <pm_onBcnRx-0x54>
+			25c: R_XTENSA_SLOT0_OP	.text2.48+0x34
+ 25f:	a0aab0        	addx4	a10, a10, a11
+ 262:	11aad0        	slli	a10, a10, 3
+ 265:	0929      	s32i.n	a2, a9, 0
+ 267:	0849      	s32i.n	a4, a8, 0
+ 269:	7ddaa2        	addmi	a10, a10, 0x7d00
+ 26c:	01ba27        	bgeu	a10, a2, 271 <pm_onBcnRx+0x1e9>
+			26c: R_XTENSA_SLOT0_OP	.text2.48+0x271
+ 26f:	09a9      	s32i.n	a10, a9, 0
+ 271:	0928      	l32i.n	a2, a9, 0
+ 273:	dba5a2        	movi	a10, 0x5db
+ 276:	043a27        	bltu	a10, a2, 27e <pm_onBcnRx+0x1f6>
+			276: R_XTENSA_SLOT0_OP	.text2.48+0x27e
+ 279:	dca522        	movi	a2, 0x5dc
+ 27c:	0929      	s32i.n	a2, a9, 0
+ 27e:	8b0c92        	l8ui	a9, a12, 139
+ 281:	1129b0        	slli	a2, a9, 5
+ 284:	c02290        	sub	a2, a2, a9
+ 287:	a02290        	addx4	a2, a2, a9
+ 28a:	1122d0        	slli	a2, a2, 3
+ 28d:	01b247        	bgeu	a2, a4, 292 <pm_onBcnRx+0x20a>
+			28d: R_XTENSA_SLOT0_OP	.text2.48+0x292
+ 290:	0829      	s32i.n	a2, a8, 0
+ 292:	0828      	l32i.n	a2, a8, 0
+ 294:	ff6941        	l32r	a4, 38 <pm_onBcnRx-0x50>
+			294: R_XTENSA_SLOT0_OP	.text2.48+0x38
+ 297:	053427        	bltu	a4, a2, 2a0 <pm_onBcnRx+0x218>
+			297: R_XTENSA_SLOT0_OP	.text2.48+0x2a0
+ 29a:	ff6821        	l32r	a2, 3c <pm_onBcnRx-0x4c>
+			29a: R_XTENSA_SLOT0_OP	.text2.48+0x3c
+ 29d:	006822        	s32i	a2, a8, 0
+ 2a0:	00a022        	movi	a2, 0
+ 2a3:	209220        	or	a9, a2, a2
+ 2a6:	77a142        	movi	a4, 0x177
+ 2a9:	872a      	add.n	a8, a7, a2
+ 2ab:	004892        	s8i	a9, a8, 0
+ 2ae:	221b      	addi.n	a2, a2, 1
+ 2b0:	f59247        	bne	a2, a4, 2a9 <pm_onBcnRx+0x221>
+			2b0: R_XTENSA_SLOT0_OP	.text2.48+0x2a9
+ 2b3:	020c      	movi.n	a2, 0
+ 2b5:	004522        	s8i	a2, a5, 0
+ 2b8:	0328      	l32i.n	a2, a3, 0
+ 2ba:	1338      	l32i.n	a3, a3, 4
+ 2bc:	0f4d      	mov.n	a4, a15
+ 2be:	050c      	movi.n	a5, 0
+ 2c0:	0169      	s32i.n	a6, a1, 0
+ 2c2:	ff6501        	l32r	a0, 58 <pm_onBcnRx-0x30>
+			2c2: R_XTENSA_SLOT0_OP	.text2.48+0x58
+			2c2: R_XTENSA_ASM_EXPAND	__umoddi3
+ 2c5:	0000c0        	callx0	a0
+ 2c8:	ff5e31        	l32r	a3, 40 <pm_onBcnRx-0x48>
+			2c8: R_XTENSA_SLOT0_OP	.text2.48+0x40
+ 2cb:	ae48      	l32i.n	a4, a14, 40
+ 2cd:	3f3a      	add.n	a3, a15, a3
+ 2cf:	0168      	l32i.n	a6, a1, 0
+ 2d1:	07b327        	bgeu	a3, a2, 2dc <pm_onBcnRx+0x254>
+			2d1: R_XTENSA_SLOT0_OP	.text2.48+0x2dc
+ 2d4:	1438      	l32i.n	a3, a4, 4
+ 2d6:	3f3a      	add.n	a3, a15, a3
+ 2d8:	000086        	j	2de <pm_onBcnRx+0x256>
+			2d8: R_XTENSA_SLOT0_OP	.text2.48+0x2de
+ 2db:	00          	.byte 00
+ 2dc:	1438      	l32i.n	a3, a4, 4
+ 2de:	c02320        	sub	a2, a3, a2
+ 2e1:	186c22        	s32i	a2, a12, 96
+ 2e4:	182ce2        	l32i	a14, a12, 96
+ 2e7:	2fea      	add.n	a2, a15, a14
+ 2e9:	166c22        	s32i	a2, a12, 88
+ 2ec:	051666        	bnei	a6, 1, 2f5 <pm_onBcnRx+0x26d>
+			2ec: R_XTENSA_SLOT0_OP	.text2.48+0x2f5
+ 2ef:	020d22        	l8ui	a2, a13, 2
+ 2f2:	001446        	j	347 <pm_onBcnRx+0x2bf>
+			2f2: R_XTENSA_SLOT0_OP	.text2.48+0x347
+ 2f5:	780c22        	l8ui	a2, a12, 120
+ 2f8:	502666        	bnei	a6, 2, 34c <pm_onBcnRx+0x2c4>
+			2f8: R_XTENSA_SLOT0_OP	.text2.48+0x34c
+ 2fb:	020d42        	l8ui	a4, a13, 2
+ 2fe:	043216        	beqz	a2, 345 <pm_onBcnRx+0x2bd>
+			2fe: R_XTENSA_SLOT0_OP	.text2.48+0x345
+ 301:	44ac      	beqz.n	a4, 329 <pm_onBcnRx+0x2a1>
+			301: R_XTENSA_SLOT0_OP	.text2.48+0x329
+ 303:	4ab427        	bgeu	a4, a2, 351 <pm_onBcnRx+0x2c9>
+			303: R_XTENSA_SLOT0_OP	.text2.48+0x351
+ 306:	030dd2        	l8ui	a13, a13, 3
+ 309:	c02240        	sub	a2, a2, a4
+ 30c:	4151d0        	srli	a5, a13, 1
+ 30f:	0d3d      	mov.n	a3, a13
+ 311:	225a      	add.n	a2, a2, a5
+ 313:	016142        	s32i	a4, a1, 4
+ 316:	ff5101        	l32r	a0, 5c <pm_onBcnRx-0x2c>
+			316: R_XTENSA_SLOT0_OP	.text2.48+0x5c
+			316: R_XTENSA_ASM_EXPAND	__divsi3
+ 319:	0000c0        	callx0	a0
+ 31c:	8222d0        	mull	a2, a2, a13
+ 31f:	1148      	l32i.n	a4, a1, 4
+ 321:	224a      	add.n	a2, a2, a4
+ 323:	000606        	j	33f <pm_onBcnRx+0x2b7>
+			323: R_XTENSA_SLOT0_OP	.text2.48+0x33f
+ 326:	00          	.byte 00
+ 327:	00          	.byte 00
+ 328:	00          	.byte 00
+ 329:	030dd2        	l8ui	a13, a13, 3
+ 32c:	4141d0        	srli	a4, a13, 1
+ 32f:	1eb427        	bgeu	a4, a2, 351 <pm_onBcnRx+0x2c9>
+			32f: R_XTENSA_SLOT0_OP	.text2.48+0x351
+ 332:	0d3d      	mov.n	a3, a13
+ 334:	224a      	add.n	a2, a2, a4
+ 336:	ff4a01        	l32r	a0, 60 <pm_onBcnRx-0x28>
+			336: R_XTENSA_SLOT0_OP	.text2.48+0x60
+			336: R_XTENSA_ASM_EXPAND	__divsi3
+ 339:	0000c0        	callx0	a0
+ 33c:	8222d0        	mull	a2, a2, a13
+ 33f:	742020        	extui	a2, a2, 0, 8
+ 342:	000186        	j	34c <pm_onBcnRx+0x2c4>
+			342: R_XTENSA_SLOT0_OP	.text2.48+0x34c
+ 345:	042d      	mov.n	a2, a4
+ 347:	62cc      	bnez.n	a2, 351 <pm_onBcnRx+0x2c9>
+			347: R_XTENSA_SLOT0_OP	.text2.48+0x351
+ 349:	030d22        	l8ui	a2, a13, 3
+ 34c:	330c      	movi.n	a3, 3
+ 34e:	832320        	moveqz	a2, a3, a2
+ 351:	8222f0        	mull	a2, a2, a15
+ 354:	22ea      	add.n	a2, a2, a14
+ 356:	176c22        	s32i	a2, a12, 92
+ 359:	850c22        	l8ui	a2, a12, 133
+ 35c:	82cc      	bnez.n	a2, 368 <pm_onBcnRx+0x2e0>
+			35c: R_XTENSA_SLOT0_OP	.text2.48+0x368
+ 35e:	ff4101        	l32r	a0, 64 <pm_onBcnRx-0x24>
+			35e: R_XTENSA_SLOT0_OP	.text2.48+0x64
+			35e: R_XTENSA_ASM_EXPAND	pm_allow_tx
+ 361:	0000c0        	callx0	a0
+ 364:	001106        	j	3ac <pm_onBcnRx+0x324>
+			364: R_XTENSA_SLOT0_OP	.text2.48+0x3ac
+ 367:	00          	.byte 00
+ 368:	840c22        	l8ui	a2, a12, 132
+ 36b:	12ec      	bnez.n	a2, 390 <pm_onBcnRx+0x308>
+			36b: R_XTENSA_SLOT0_OP	.text2.48+0x390
+ 36d:	1b2c22        	l32i	a2, a12, 108
+ 370:	136266        	bnei	a2, 6, 387 <pm_onBcnRx+0x2ff>
+			370: R_XTENSA_SLOT0_OP	.text2.48+0x387
+ 373:	ff3d01        	l32r	a0, 68 <pm_onBcnRx-0x20>
+			373: R_XTENSA_SLOT0_OP	.text2.48+0x68
+			373: R_XTENSA_ASM_EXPAND	__wifi_task_suspend_all
+ 376:	0000c0        	callx0	a0
+ 379:	420c      	movi.n	a2, 4
+ 37b:	ff3c01        	l32r	a0, 6c <pm_onBcnRx-0x1c>
+			37b: R_XTENSA_SLOT0_OP	.text2.48+0x6c
+			37b: R_XTENSA_ASM_EXPAND	pm_change_to_state
+ 37e:	0000c0        	callx0	a0
+ 381:	ff3b01        	l32r	a0, 70 <pm_onBcnRx-0x18>
+			381: R_XTENSA_SLOT0_OP	.text2.48+0x70
+			381: R_XTENSA_ASM_EXPAND	__wifi_task_resume_all
+ 384:	0000c0        	callx0	a0
+ 387:	ff3b01        	l32r	a0, 74 <pm_onBcnRx-0x14>
+			387: R_XTENSA_SLOT0_OP	.text2.48+0x74
+			387: R_XTENSA_ASM_EXPAND	pm_wait_tx_rx_idle_fun
+ 38a:	0000c0        	callx0	a0
+ 38d:	0006c6        	j	3ac <pm_onBcnRx+0x324>
+			38d: R_XTENSA_SLOT0_OP	.text2.48+0x3ac
+ 390:	ff3a01        	l32r	a0, 78 <pm_onBcnRx-0x10>
+			390: R_XTENSA_SLOT0_OP	.text2.48+0x78
+			390: R_XTENSA_ASM_EXPAND	pm_send_keepalive_pkt
+ 393:	0000c0        	callx0	a0
+ 396:	22dc      	bnez.n	a2, 3ac <pm_onBcnRx+0x324>
+			396: R_XTENSA_SLOT0_OP	.text2.48+0x3ac
+ 398:	ff3901        	l32r	a0, 7c <pm_onBcnRx-0xc>
+			398: R_XTENSA_SLOT0_OP	.text2.48+0x7c
+			398: R_XTENSA_ASM_EXPAND	__wifi_task_suspend_all
+ 39b:	0000c0        	callx0	a0
+ 39e:	620c      	movi.n	a2, 6
+ 3a0:	ff3801        	l32r	a0, 80 <pm_onBcnRx-0x8>
+			3a0: R_XTENSA_SLOT0_OP	.text2.48+0x80
+			3a0: R_XTENSA_ASM_EXPAND	pm_change_to_state
+ 3a3:	0000c0        	callx0	a0
+ 3a6:	ff3701        	l32r	a0, 84 <pm_onBcnRx-0x4>
+			3a6: R_XTENSA_SLOT0_OP	.text2.48+0x84
+			3a6: R_XTENSA_ASM_EXPAND	__wifi_task_resume_all
+ 3a9:	0000c0        	callx0	a0
+ 3ac:	b108      	l32i.n	a0, a1, 44
+ 3ae:	a1c8      	l32i.n	a12, a1, 40
+ 3b0:	91d8      	l32i.n	a13, a1, 36
+ 3b2:	81e8      	l32i.n	a14, a1, 32
+ 3b4:	71f8      	l32i.n	a15, a1, 28
+ 3b6:	30c112        	addi	a1, a1, 48
+ 3b9:	f00d      	ret.n
+
+Disassembly of section .text2.49:
+
+00000000 <.text2.49>:
+   0:	00 00 fc 03 	
+   4:	00 00 04 00 	
+	...
+			8: R_XTENSA_32	.bss.retry$8607
+			c: R_XTENSA_32	.bss.pmc
+  10:	38 00 00 00 	
+			10: R_XTENSA_32	.bss.pmc
+	...
+			14: R_XTENSA_32	.bss.idle_timer_set
+			18: R_XTENSA_32	pm_send_nullfunc
+			1c: R_XTENSA_32	__wifi_task_suspend_all
+			20: R_XTENSA_32	pm_change_to_state
+			24: R_XTENSA_32	__wifi_task_resume_all
+			28: R_XTENSA_32	os_timer_disarm
+			2c: R_XTENSA_32	os_timer_arm
+  30:	f0c112        	addi	a1, a1, -16
+  33:	3109      	s32i.n	a0, a1, 12
+  35:	21c9      	s32i.n	a12, a1, 8
+  37:	a228      	l32i.n	a2, a2, 40
+  39:	fff241        	l32r	a4, 4 <.text2.49+0x4>
+			39: R_XTENSA_SLOT0_OP	.text2.49+0x4
+  3c:	1238      	l32i.n	a3, a2, 4
+  3e:	fff021        	l32r	a2, 0 <.text2.49>
+			3e: R_XTENSA_SLOT0_OP	.text2.49
+  41:	103320        	and	a3, a3, a2
+  44:	fff121        	l32r	a2, 8 <.text2.49+0x8>
+			44: R_XTENSA_SLOT0_OP	.text2.49+0x8
+  47:	211347        	beq	a3, a4, 6c <.text2.49+0x6c>
+			47: R_XTENSA_SLOT0_OP	.text2.49+0x6c
+  4a:	000242        	l8ui	a4, a2, 0
+  4d:	341b      	addi.n	a3, a4, 1
+  4f:	004232        	s8i	a3, a2, 0
+  52:	e30c      	movi.n	a3, 14
+  54:	053347        	bltu	a3, a4, 5d <.text2.49+0x5d>
+			54: R_XTENSA_SLOT0_OP	.text2.49+0x5d
+  57:	000146        	j	60 <.text2.49+0x60>
+			57: R_XTENSA_SLOT0_OP	.text2.49+0x60
+  5a:	00          	.byte 00
+  5b:	00          	.byte 00
+  5c:	00          	.byte 00
+  5d:	004232        	s8i	a3, a2, 0
+  60:	120c      	movi.n	a2, 1
+  62:	ffed01        	l32r	a0, 18 <.text2.49+0x18>
+			62: R_XTENSA_SLOT0_OP	.text2.49+0x18
+			62: R_XTENSA_ASM_EXPAND	pm_send_nullfunc
+  65:	0000c0        	callx0	a0
+  68:	001346        	j	b9 <.text2.49+0xb9>
+			68: R_XTENSA_SLOT0_OP	.text2.49+0xb9
+  6b:	00          	.byte 00
+  6c:	ffe831        	l32r	a3, c <.text2.49+0xc>
+			6c: R_XTENSA_SLOT0_OP	.text2.49+0xc
+  6f:	870342        	l8ui	a4, a3, 135
+  72:	834342        	s8i	a4, a3, 131
+  75:	040c      	movi.n	a4, 0
+  77:	004242        	s8i	a4, a2, 0
+  7a:	1b2322        	l32i	a2, a3, 108
+  7d:	164266        	bnei	a2, 4, 97 <.text2.49+0x97>
+			7d: R_XTENSA_SLOT0_OP	.text2.49+0x97
+  80:	ffe701        	l32r	a0, 1c <.text2.49+0x1c>
+			80: R_XTENSA_SLOT0_OP	.text2.49+0x1c
+			80: R_XTENSA_ASM_EXPAND	__wifi_task_suspend_all
+  83:	0000c0        	callx0	a0
+  86:	620c      	movi.n	a2, 6
+  88:	ffe601        	l32r	a0, 20 <.text2.49+0x20>
+			88: R_XTENSA_SLOT0_OP	.text2.49+0x20
+			88: R_XTENSA_ASM_EXPAND	pm_change_to_state
+  8b:	0000c0        	callx0	a0
+  8e:	ffe501        	l32r	a0, 24 <.text2.49+0x24>
+			8e: R_XTENSA_SLOT0_OP	.text2.49+0x24
+			8e: R_XTENSA_ASM_EXPAND	__wifi_task_resume_all
+  91:	0000c0        	callx0	a0
+  94:	000846        	j	b9 <.text2.49+0xb9>
+			94: R_XTENSA_SLOT0_OP	.text2.49+0xb9
+  97:	1e3266        	bnei	a2, 3, b9 <.text2.49+0xb9>
+			97: R_XTENSA_SLOT0_OP	.text2.49+0xb9
+  9a:	ffddc1        	l32r	a12, 10 <.text2.49+0x10>
+			9a: R_XTENSA_SLOT0_OP	.text2.49+0x10
+  9d:	0c2d      	mov.n	a2, a12
+  9f:	ffe201        	l32r	a0, 28 <.text2.49+0x28>
+			9f: R_XTENSA_SLOT0_OP	.text2.49+0x28
+			9f: R_XTENSA_ASM_EXPAND	os_timer_disarm
+  a2:	0000c0        	callx0	a0
+  a5:	a30c      	movi.n	a3, 10
+  a7:	0c2d      	mov.n	a2, a12
+  a9:	040c      	movi.n	a4, 0
+  ab:	ffe001        	l32r	a0, 2c <.text2.49+0x2c>
+			ab: R_XTENSA_SLOT0_OP	.text2.49+0x2c
+			ab: R_XTENSA_ASM_EXPAND	os_timer_arm
+  ae:	0000c0        	callx0	a0
+  b1:	ffd821        	l32r	a2, 14 <.text2.49+0x14>
+			b1: R_XTENSA_SLOT0_OP	.text2.49+0x14
+  b4:	130c      	movi.n	a3, 1
+  b6:	004232        	s8i	a3, a2, 0
+  b9:	3108      	l32i.n	a0, a1, 12
+  bb:	21c8      	l32i.n	a12, a1, 8
+  bd:	10c112        	addi	a1, a1, 16
+  c0:	f00d      	ret.n
+
+Disassembly of section .text2.50:
+
+00000000 <.text2.50>:
+   0:	00 00 00 00 	
+			0: R_XTENSA_32	.bss.retry$8613
+   4:	ff ff 03 fc 	
+   8:	00 00 04 00 	
+   c:	00 00 fc 03 	
+  10:	79 00 00 00 	
+			10: R_XTENSA_32	.bss.pmc
+	...
+			14: R_XTENSA_32	.bss.pmc
+			18: R_XTENSA_32	rc_get_trc
+			1c: R_XTENSA_32	pm_send_nullfunc
+			20: R_XTENSA_32	__wifi_task_suspend_all
+			24: R_XTENSA_32	pm_change_to_state
+			28: R_XTENSA_32	__wifi_task_resume_all
+			2c: R_XTENSA_32	ppProcessWaitQ
+  30:	f0c112        	addi	a1, a1, -16
+  33:	21c9      	s32i.n	a12, a1, 8
+  35:	fff2c1        	l32r	a12, 0 <.text2.50>
+			35: R_XTENSA_SLOT0_OP	.text2.50
+  38:	3109      	s32i.n	a0, a1, 12
+  3a:	000c32        	l8ui	a3, a12, 0
+  3d:	f40c      	movi.n	a4, 15
+  3f:	12b437        	bgeu	a4, a3, 55 <.text2.50+0x55>
+			3f: R_XTENSA_SLOT0_OP	.text2.50+0x55
+  42:	a258      	l32i.n	a5, a2, 40
+  44:	fff031        	l32r	a3, 4 <.text2.50+0x4>
+			44: R_XTENSA_SLOT0_OP	.text2.50+0x4
+  47:	1548      	l32i.n	a4, a5, 4
+  49:	104430        	and	a4, a4, a3
+  4c:	ffef31        	l32r	a3, 8 <.text2.50+0x8>
+			4c: R_XTENSA_SLOT0_OP	.text2.50+0x8
+  4f:	203430        	or	a3, a4, a3
+  52:	016532        	s32i	a3, a5, 4
+  55:	a228      	l32i.n	a2, a2, 40
+  57:	012232        	l32i	a3, a2, 4
+  5a:	ffec21        	l32r	a2, c <.text2.50+0xc>
+			5a: R_XTENSA_SLOT0_OP	.text2.50+0xc
+  5d:	102320        	and	a2, a3, a2
+  60:	ffea31        	l32r	a3, 8 <.text2.50+0x8>
+			60: R_XTENSA_SLOT0_OP	.text2.50+0x8
+  63:	211237        	beq	a2, a3, 88 <.text2.50+0x88>
+			63: R_XTENSA_SLOT0_OP	.text2.50+0x88
+  66:	ffea31        	l32r	a3, 10 <.text2.50+0x10>
+			66: R_XTENSA_SLOT0_OP	.text2.50+0x10
+  69:	00a022        	movi	a2, 0
+  6c:	ffeb01        	l32r	a0, 18 <.text2.50+0x18>
+			6c: R_XTENSA_SLOT0_OP	.text2.50+0x18
+			6c: R_XTENSA_ASM_EXPAND	rc_get_trc
+  6f:	0000c0        	callx0	a0
+  72:	a2bc      	beqz.n	a2, b0 <.text2.50+0xb0>
+			72: R_XTENSA_SLOT0_OP	.text2.50+0xb0
+  74:	000c22        	l8ui	a2, a12, 0
+  77:	221b      	addi.n	a2, a2, 1
+  79:	004c22        	s8i	a2, a12, 0
+  7c:	020c      	movi.n	a2, 0
+  7e:	ffe701        	l32r	a0, 1c <.text2.50+0x1c>
+			7e: R_XTENSA_SLOT0_OP	.text2.50+0x1c
+			7e: R_XTENSA_ASM_EXPAND	pm_send_nullfunc
+  81:	0000c0        	callx0	a0
+  84:	000a06        	j	b0 <.text2.50+0xb0>
+			84: R_XTENSA_SLOT0_OP	.text2.50+0xb0
+  87:	00          	.byte 00
+  88:	020c      	movi.n	a2, 0
+  8a:	004c22        	s8i	a2, a12, 0
+  8d:	ffe121        	l32r	a2, 14 <.text2.50+0x14>
+			8d: R_XTENSA_SLOT0_OP	.text2.50+0x14
+  90:	1b2222        	l32i	a2, a2, 108
+  93:	135266        	bnei	a2, 5, aa <.text2.50+0xaa>
+			93: R_XTENSA_SLOT0_OP	.text2.50+0xaa
+  96:	ffe201        	l32r	a0, 20 <.text2.50+0x20>
+			96: R_XTENSA_SLOT0_OP	.text2.50+0x20
+			96: R_XTENSA_ASM_EXPAND	__wifi_task_suspend_all
+  99:	0000c0        	callx0	a0
+  9c:	220c      	movi.n	a2, 2
+  9e:	ffe101        	l32r	a0, 24 <.text2.50+0x24>
+			9e: R_XTENSA_SLOT0_OP	.text2.50+0x24
+			9e: R_XTENSA_ASM_EXPAND	pm_change_to_state
+  a1:	0000c0        	callx0	a0
+  a4:	ffe101        	l32r	a0, 28 <.text2.50+0x28>
+			a4: R_XTENSA_SLOT0_OP	.text2.50+0x28
+			a4: R_XTENSA_ASM_EXPAND	__wifi_task_resume_all
+  a7:	0000c0        	callx0	a0
+  aa:	ffe001        	l32r	a0, 2c <.text2.50+0x2c>
+			aa: R_XTENSA_SLOT0_OP	.text2.50+0x2c
+			aa: R_XTENSA_ASM_EXPAND	ppProcessWaitQ
+  ad:	0000c0        	callx0	a0
+  b0:	3108      	l32i.n	a0, a1, 12
+  b2:	21c8      	l32i.n	a12, a1, 8
+  b4:	10c112        	addi	a1, a1, 16
+  b7:	f00d      	ret.n
+
+Disassembly of section .text2.54:
+
+00000000 <pm_add_aid-0x4>:
+   0:	00 00 00 00 	
+			0: R_XTENSA_32	.bss.pmc
+
+00000004 <pm_add_aid>:
+   4:	011242        	l16ui	a4, a2, 2
+   7:	023d      	mov.n	a3, a2
+   9:	020c      	movi.n	a2, 0
+   b:	0a9427        	bne	a4, a2, 19 <pm_add_aid+0x15>
+			b: R_XTENSA_SLOT0_OP	.text2.54+0x19
+   e:	fffc21        	l32r	a2, 0 <pm_add_aid-0x4>
+			e: R_XTENSA_SLOT0_OP	.text2.54
+  11:	021332        	l16ui	a3, a3, 4
+  14:	405232        	s16i	a3, a2, 128
+  17:	120c      	movi.n	a2, 1
+  19:	f00d      	ret.n
+
+Disassembly of section .text2.55:
+
+00000000 <pm_set_addr-0x8>:
+	...
+			0: R_XTENSA_32	.bss.pmc
+			4: R_XTENSA_32	memcpy
+
+00000008 <pm_set_addr>:
+   8:	fffe21        	l32r	a2, 0 <pm_set_addr-0x8>
+			8: R_XTENSA_SLOT0_OP	.text2.55
+   b:	f0c112        	addi	a1, a1, -16
+   e:	640c      	movi.n	a4, 6
+  10:	79c222        	addi	a2, a2, 121
+  13:	036102        	s32i	a0, a1, 12
+  16:	fffb01        	l32r	a0, 4 <pm_set_addr-0x4>
+			16: R_XTENSA_SLOT0_OP	.text2.55+0x4
+			16: R_XTENSA_ASM_EXPAND	memcpy
+  19:	0000c0        	callx0	a0
+  1c:	3108      	l32i.n	a0, a1, 12
+  1e:	10c112        	addi	a1, a1, 16
+  21:	f00d      	ret.n
+
+Disassembly of section .text.pm_sleep_for:
+
+00000000 <pm_sleep_for-0x8>:
+   0:	79 00 00 00 	
+			0: R_XTENSA_32	.bss.pmc
+   4:	00 00 00 00 	
+			4: R_XTENSA_32	memcmp
+
+00000008 <pm_sleep_for>:
+   8:	fffe31        	l32r	a3, 0 <pm_sleep_for-0x8>
+			8: R_XTENSA_SLOT0_OP	.text.pm_sleep_for
+   b:	f0c112        	addi	a1, a1, -16
+   e:	640c      	movi.n	a4, 6
+  10:	3109      	s32i.n	a0, a1, 12
+  12:	fffc01        	l32r	a0, 4 <pm_sleep_for-0x4>
+			12: R_XTENSA_SLOT0_OP	.text.pm_sleep_for+0x4
+			12: R_XTENSA_ASM_EXPAND	memcmp
+  15:	0000c0        	callx0	a0
+  18:	030c      	movi.n	a3, 0
+  1a:	140c      	movi.n	a4, 1
+  1c:	3108      	l32i.n	a0, a1, 12
+  1e:	833420        	moveqz	a3, a4, a2
+  21:	032d      	mov.n	a2, a3
+  23:	10c112        	addi	a1, a1, 16
+  26:	f00d      	ret.n
+
+Disassembly of section .text.wdev_get_tsf_time:
+
+00000000 <wdev_get_tsf_time-0x14>:
+   0:	00 0c f2 3f 	
+	...
+			4: R_XTENSA_32	WdevTimOffSet
+			8: R_XTENSA_32	.bss.tsf_diff
+   c:	4c 10 f2 3f 	
+  10:	48 10 f2 3f 	
+
+00000014 <wdev_get_tsf_time>:
+  14:	023d      	mov.n	a3, a2
+  16:	62dc      	bnez.n	a2, 30 <wdev_get_tsf_time+0x1c>
+			16: R_XTENSA_SLOT0_OP	.text.wdev_get_tsf_time+0x30
+  18:	fffa21        	l32r	a2, 0 <wdev_get_tsf_time-0x14>
+			18: R_XTENSA_SLOT0_OP	.text.wdev_get_tsf_time
+  1b:	0020c0        	memw
+  1e:	0248      	l32i.n	a4, a2, 0
+  20:	fff921        	l32r	a2, 4 <wdev_get_tsf_time-0x10>
+			20: R_XTENSA_SLOT0_OP	.text.wdev_get_tsf_time+0x4
+  23:	0258      	l32i.n	a5, a2, 0
+  25:	fff821        	l32r	a2, 8 <wdev_get_tsf_time-0xc>
+			25: R_XTENSA_SLOT0_OP	.text.wdev_get_tsf_time+0x8
+  28:	0228      	l32i.n	a2, a2, 0
+  2a:	252a      	add.n	a2, a5, a2
+  2c:	224a      	add.n	a2, a2, a4
+  2e:	f00d      	ret.n
+  30:	fff721        	l32r	a2, c <wdev_get_tsf_time-0x8>
+			30: R_XTENSA_SLOT0_OP	.text.wdev_get_tsf_time+0xc
+  33:	0020c0        	memw
+  36:	0238      	l32i.n	a3, a2, 0
+  38:	fff621        	l32r	a2, 10 <wdev_get_tsf_time-0x4>
+			38: R_XTENSA_SLOT0_OP	.text.wdev_get_tsf_time+0x10
+  3b:	0020c0        	memw
+  3e:	0228      	l32i.n	a2, a2, 0
+  40:	f00d      	ret.n

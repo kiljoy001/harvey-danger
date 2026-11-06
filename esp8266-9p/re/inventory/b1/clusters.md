@@ -1,0 +1,137 @@
+total functions: 2321 (irom 2082, iram 239, other 0)
+total function bytes: 332146
+
+| unit (string anchor) | anchor funcs | first | last | est. span bytes |
+| --- | --- | --- | --- | --- |
+| user_interface.c | 19 | 0x401018a0 | 0x40204a54 | 0 (0 funcs) |
+  anchors: 0x401018a0 0x40202388 0x402027ac 0x40202c94 0x40203140 0x402031cc 0x40203394 0x402034fc 0x40203708 0x402038c4 0x40203ac4 0x40203cc8 0x40203fac 0x40204064 0x40204194 0x40204428 0x402044c0 0x40204638 0x40204a54
+| uart.c | 5 | 0x40102034 | 0x40212834 | 0 (0 funcs) |
+  anchors: 0x40102034 0x40212410 0x40212470 0x402125e4 0x40212834
+| wdev.c | 3 | 0x40105fd8 | 0x40106200 | 0 (0 funcs) |
+  anchors: 0x40105fd8 0x401060b0 0x40106200
+| etharp.c | 3 | 0x401064f8 | 0x4022ff70 | 0 (0 funcs) |
+  anchors: 0x401064f8 0x4022fb24 0x4022ff70
+| tcp.c | 7 | 0x4010655c | 0x40234e38 | 0 (0 funcs) |
+  anchors: 0x4010655c 0x40234624 0x40234760 0x402349cc 0x40234d0c 0x40234d40 0x40234e38
+| espconn_buf.c | 2 | 0x40106948 | 0x401069ac | 1488 (7 funcs) |
+  anchors: 0x40106948 0x401069ac
+| app_main.c | 1 | 0x40201784 | 0x40201784 | 15947 (151 funcs) |
+  anchors: 0x40201784
+| eagle_lwip_if.c | 2 | 0x40206364 | 0x40206524 | 7428 (42 funcs) |
+  anchors: 0x40206364 0x40206524
+| at_baseCmd.c | 2 | 0x402085b0 | 0x40208c04 | 1488 (16 funcs) |
+  anchors: 0x402085b0 0x40208c04
+| at_ipCmd.c | 17 | 0x40209054 | 0x4020dc78 | 12091 (40 funcs) |
+  anchors: 0x40209054 0x40209a70 0x40209d9c 0x4020a048 0x4020ab2c 0x4020ae00 0x4020b394 0x4020b98c 0x4020c0f4 0x4020c2a4 0x4020ce20 0x4020cfc4 0x4020d0c8 0x4020d500 0x4020d574 0x4020db00 0x4020dc78
+| at_nv_data.c | 1 | 0x4020e408 | 0x4020e408 | 128 (1 funcs) |
+  anchors: 0x4020e408
+| at_port.c | 2 | 0x4020e4d8 | 0x4020e50c | 834 (11 funcs) |
+  anchors: 0x4020e4d8 0x4020e50c
+| at_wifiCmd.c | 9 | 0x4020f1e0 | 0x40211904 | 10594 (68 funcs) |
+  anchors: 0x4020f1e0 0x4020f254 0x4020f9dc 0x4020fa58 0x4020fc64 0x40211388 0x402116b8 0x40211770 0x40211904
+| at_init_para.c | 1 | 0x40212bb0 | 0x40212bb0 | 30762 (201 funcs) |
+  anchors: 0x40212bb0
+| pm_for_bcn_only_mode.c | 2 | 0x4021d4f4 | 0x4021d584 | 12375 (91 funcs) |
+  anchors: 0x4021d4f4 0x4021d584
+| esf_buf.c | 2 | 0x40220924 | 0x40220b0c | 1434 (11 funcs) |
+  anchors: 0x40220924 0x40220b0c
+| ieee80211.c | 1 | 0x40220fac | 0x40220fac | 979 (6 funcs) |
+  anchors: 0x40220fac
+| ieee80211_hostap.c | 5 | 0x402216b0 | 0x40222af8 | 7958 (36 funcs) |
+  anchors: 0x402216b0 0x40221810 0x40221f1c 0x40222040 0x40222af8
+| ieee80211_input.c | 1 | 0x402238bc | 0x402238bc | 2262 (10 funcs) |
+  anchors: 0x402238bc
+| ieee80211_mesh_quick.c | 1 | 0x40224250 | 0x40224250 | 2844 (14 funcs) |
+  anchors: 0x40224250
+| ieee80211_output.c | 1 | 0x40224e98 | 0x40224e98 | 5171 (14 funcs) |
+  anchors: 0x40224e98
+| ieee80211_phy.c | 1 | 0x4022630c | 0x4022630c | 782 (10 funcs) |
+  anchors: 0x4022630c
+| ieee80211_regdomain.c | 2 | 0x40226680 | 0x402266a8 | 2428 (31 funcs) |
+  anchors: 0x40226680 0x402266a8
+| ieee80211_scan.c | 3 | 0x40227118 | 0x40227350 | 1974 (9 funcs) |
+  anchors: 0x40227118 0x402272c4 0x40227350
+| ieee80211_sta.c | 2 | 0x402278f4 | 0x402280e8 | 5732 (31 funcs) |
+  anchors: 0x402278f4 0x402280e8
+| wl_cnx.c | 7 | 0x402290dc | 0x4022a2bc | 8004 (58 funcs) |
+  anchors: 0x402290dc 0x40229a54 0x40229c40 0x40229fdc 0x4022a050 0x4022a158 0x4022a2bc
+| dhcp.c | 2 | 0x4022b4e4 | 0x4022b510 | 5103 (34 funcs) |
+  anchors: 0x4022b4e4 0x4022b510
+| dhcpserver.c | 6 | 0x4022c938 | 0x4022cf8c | 4119 (43 funcs) |
+  anchors: 0x4022c938 0x4022cbb8 0x4022cd68 0x4022cdc8 0x4022cee4 0x4022cf8c
+| espconn.c | 1 | 0x4022dbb0 | 0x4022dbb0 | 1761 (32 funcs) |
+  anchors: 0x4022dbb0
+| espconn_tcp.c | 12 | 0x4022e3b4 | 0x4022f3dc | 4676 (32 funcs) |
+  anchors: 0x4022e3b4 0x4022e510 0x4022e62c 0x4022e690 0x4022e734 0x4022eb30 0x4022ec6c 0x4022ee48 0x4022efbc 0x4022f1e0 0x4022f320 0x4022f3dc
+| espconn_udp.c | 3 | 0x4022f7ac | 0x4022f8cc | 2650 (21 funcs) |
+  anchors: 0x4022f7ac 0x4022f890 0x4022f8cc
+| igmp.c | 3 | 0x4023029c | 0x402303ac | 4717 (26 funcs) |
+  anchors: 0x4023029c 0x40230350 0x402303ac
+| mdns.c | 3 | 0x40231688 | 0x40231e90 | 3075 (26 funcs) |
+  anchors: 0x40231688 0x40231bac 0x40231e90
+| pbuf.c | 2 | 0x40232378 | 0x4023258c | 1687 (18 funcs) |
+  anchors: 0x40232378 0x4023258c
+| ping.c | 2 | 0x40232c64 | 0x40232d94 | 700 (7 funcs) |
+  anchors: 0x40232c64 0x40232d94
+| raw.c | 2 | 0x40232f74 | 0x40232fb0 | 130 (2 funcs) |
+  anchors: 0x40232f74 0x40232fb0
+| tcp_in.c | 1 | 0x40233004 | 0x40233004 | 8453 (39 funcs) |
+  anchors: 0x40233004
+| tcp_out.c | 1 | 0x402351a4 | 0x402351a4 | 3733 (17 funcs) |
+  anchors: 0x402351a4
+| timers.c | 3 | 0x402360b0 | 0x4023617c | 1632 (11 funcs) |
+  anchors: 0x402360b0 0x4023612c 0x4023617c
+| udp.c | 2 | 0x40236744 | 0x40236780 | 727 (5 funcs) |
+  anchors: 0x40236744 0x40236780
+| ap_config.c | 1 | 0x40236b34 | 0x40236b34 | 718 (10 funcs) |
+  anchors: 0x40236b34
+| common.c | 2 | 0x40236e3c | 0x40236f40 | 327 (2 funcs) |
+  anchors: 0x40236e3c 0x40236f40
+| os_xtensa.c | 1 | 0x40236f8c | 0x40236f8c | 195 (5 funcs) |
+  anchors: 0x40236f8c
+| wpa_auth.c | 9 | 0x40237060 | 0x40238880 | 7499 (54 funcs) |
+  anchors: 0x40237060 0x402372ac 0x40237320 0x402373b0 0x40237470 0x40237594 0x40237a00 0x40238448 0x40238880
+| wpa_auth_ie.c | 2 | 0x40238ec0 | 0x40238fbc | 8538 (67 funcs) |
+  anchors: 0x40238ec0 0x40238fbc
+| wpa_main.c | 2 | 0x4023b2b4 | 0x4023b50c | 2345 (14 funcs) |
+  anchors: 0x4023b2b4 0x4023b50c
+| aes-internal-enc.c | 2 | 0x4023bcd0 | 0x4023bd3c | 916 (4 funcs) |
+  anchors: 0x4023bcd0 0x4023bd3c
+| upgrade_lib.c | 10 | 0x4023c074 | 0x4023ccd4 | 2399 (23 funcs) |
+  anchors: 0x4023c074 0x4023c164 0x4023c1f4 0x4023c21c 0x4023c274 0x4023c3d4 0x4023c494 0x4023cb04 0x4023cb74 0x4023ccd4
+| crc.c | 2 | 0x4023cdb0 | 0x4023ce3c | 926 (9 funcs) |
+  anchors: 0x4023cdb0 0x4023ce3c
+| espconn_secure.c | 3 | 0x4023d268 | 0x4023d2f8 | 215 (3 funcs) |
+  anchors: 0x4023d268 0x4023d2b0 0x4023d2f8
+| espconn_ssl.c | 14 | 0x4023d34c | 0x4023e768 | 5125 (32 funcs) |
+  anchors: 0x4023d34c 0x4023d3a4 0x4023d564 0x4023d5cc 0x4023d6b4 0x4023d9f0 0x4023dd28 0x4023de64 0x4023dfec 0x4023e0d0 0x4023e41c 0x4023e50c 0x4023e6a4 0x4023e768
+| ssl_loader.c | 5 | 0x4023e810 | 0x4023ec94 | 4714 (23 funcs) |
+  anchors: 0x4023e810 0x4023e8a0 0x4023e940 0x4023eb08 0x4023ec94
+| ssl_tls1.c | 14 | 0x4023fbec | 0x40241050 | 7003 (58 funcs) |
+  anchors: 0x4023fbec 0x4023fc54 0x4023fcec 0x4023fde0 0x4023fe88 0x4023ffc4 0x402400a0 0x4024056c 0x402406a8 0x40240814 0x40240ee0 0x40240f14 0x40240f5c 0x40241050
+| ssl_x509.c | 3 | 0x40241a58 | 0x40241ee4 | 15691 (26 funcs) |
+  anchors: 0x40241a58 0x40241e38 0x40241ee4
+| ssl_asn1.c | 7 | 0x40245b2c | 0x402462a8 | 2454 (17 funcs) |
+  anchors: 0x40245b2c 0x40245b90 0x40245ff4 0x402460cc 0x40246178 0x40246214 0x402462a8
+| ssl_bigint.c | 7 | 0x40246520 | 0x402475e8 | 4858 (39 funcs) |
+  anchors: 0x40246520 0x40246570 0x402465a8 0x402472b4 0x40247314 0x40247540 0x402475e8
+| ssl_crypto_misc.c | 1 | 0x40247870 | 0x40247870 | 984 (11 funcs) |
+  anchors: 0x40247870
+| ssl_rsa.c | 3 | 0x40247c60 | 0x40247d50 | 1934 (16 funcs) |
+  anchors: 0x40247c60 0x40247ccc 0x40247d50
+| wps.c | 10 | 0x4024843c | 0x40249824 | 6859 (62 funcs) |
+  anchors: 0x4024843c 0x40248584 0x4024861c 0x40248c70 0x40248d1c 0x402492f4 0x40249478 0x40249560 0x40249710 0x40249824
+| wps_dev_attr.c | 6 | 0x4024a78c | 0x4024aa80 | 5938 (49 funcs) |
+  anchors: 0x4024a78c 0x4024a7e4 0x4024a83c 0x4024a894 0x4024a8ec 0x4024aa80
+| wps_registrar.c | 12 | 0x4024bf48 | 0x4024e7e0 | 19022 (223 funcs) |
+  anchors: 0x4024bf48 0x4024bfc4 0x4024c0cc 0x4024c140 0x4024c20c 0x4024c26c 0x4024c330 0x4024c7a0 0x4024cd04 0x4024d0d4 0x4024d520 0x4024e7e0
+| sc_sniffer.c | 4 | 0x40251218 | 0x40251878 | 2184 (12 funcs) |
+  anchors: 0x40251218 0x40251260 0x402514bc 0x40251878
+| sc_airkiss.c | 9 | 0x40251b68 | 0x40253570 | 6577 (20 funcs) |
+  anchors: 0x40251b68 0x40251bb8 0x40251be8 0x40251c44 0x40251c98 0x40251cc0 0x40253458 0x402534fc 0x40253570
+| sc_esptouch.c | 8 | 0x4025368c | 0x40255a08 | 9148 (15 funcs) |
+  anchors: 0x4025368c 0x40253724 0x4025377c 0x402537dc 0x40253a60 0x402558a4 0x40255960 0x40255a08
+| wpabuf.c | 3 | 0x40255f74 | 0x402560cc | 1183 (12 funcs) |
+  anchors: 0x40255f74 0x4025600c 0x402560cc
+| aes-internal-dec.c | 2 | 0x40256464 | 0x402568d8 | 12026 (105 funcs) |
+  anchors: 0x40256464 0x402568d8

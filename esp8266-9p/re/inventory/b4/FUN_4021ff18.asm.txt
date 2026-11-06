@@ -1,0 +1,156 @@
+4021ff18  movi.n a3,0x48
+4021ff1a  l32r a5,0x4021fef8
+4021ff1d  movi a6,0x644
+4021ff20  movi.n a7,0x1
+4021ff22  l32r a4,0x4021fefc
+4021ff25  addi a1,a1,-0x30
+4021ff28  s32i.n a12,a1,0x14
+4021ff2a  s32i.n a13,a1,0x18
+4021ff2c  s32i.n a14,a1,0x1c
+4021ff2e  s32i.n a15,a1,0x20
+4021ff30  s32i.n a0,a1,0x10
+4021ff32  l32r a15,0x4021fe84
+4021ff35  mov.n a2,a4
+4021ff37  l32i.n a8,a15,0x0
+4021ff39  addi a4,a4,0x50
+4021ff3c  addi.n a0,a8,0xc
+4021ff3e  s32i.n a0,a1,0x4
+4021ff40  addi.n a8,a8,0x8
+4021ff42  s32i.n a8,a1,0x0
+4021ff44  l32r a0,0x4021ff10
+4021ff47  callx0 a0
+4021ff4a  l32r a12,0x40215c70
+4021ff4d  l32i.n a0,a15,0x0
+4021ff4f  movi.n a5,0x6
+4021ff51  l32i.n a13,a0,0x8
+4021ff53  s16i a5,a0,0x0
+4021ff56  beqz a13,0x4021ffa4
+4021ff59  l32r a14,0x4021cf30
+4021ff5c  memw
+4021ff5f  l32i.n a9,a13,0x0
+4021ff61  extui a9,a9,0x0,0xc
+4021ff64  addi a9,a9,-0x4
+4021ff67  extui a9,a9,0x0,0xc
+4021ff6a  memw
+4021ff6d  l32i.n a8,a13,0x0
+4021ff6f  and a8,a8,a12
+4021ff72  or a8,a8,a9
+4021ff75  memw
+4021ff78  s32i.n a8,a13,0x0
+4021ff7a  memw
+4021ff7d  l32i.n a7,a13,0x0
+4021ff7f  extui a7,a7,0x0,0xc
+4021ff82  slli a7,a7,0xc
+4021ff85  memw
+4021ff88  l32i.n a6,a13,0x0
+4021ff8a  and a6,a6,a14
+4021ff8d  or a6,a6,a7
+4021ff90  memw
+4021ff93  s32i.n a6,a13,0x0
+4021ff95  mov.n a2,a13
+4021ff97  l32r a0,0x4021ff14
+4021ff9a  callx0 a0
+4021ff9d  l32i.n a13,a13,0x8
+4021ff9f  bnez a13,0x4021ff5c
+4021ffa2  l32i.n a0,a15,0x0
+4021ffa4  movi a3,0x60
+4021ffa7  movi.n a5,0x20
+4021ffa9  movi.n a6,0x4
+4021ffab  movi.n a7,0x0
+4021ffad  l32r a2,0x4021ff00
+4021ffb0  addi a10,a0,0x2c
+4021ffb3  addi a11,a0,0x28
+4021ffb6  s32i.n a11,a1,0x0
+4021ffb8  s32i.n a10,a1,0x4
+4021ffba  addi a4,a2,0x60
+4021ffbd  l32r a0,0x4021ff10
+4021ffc0  callx0 a0
+4021ffc3  l32i.n a5,a15,0x0
+4021ffc5  movi.n a14,0x0
+4021ffc7  s32i.n a14,a5,0x20
+4021ffc9  s16i a14,a5,0x2
+4021ffcc  addi a4,a5,0x24
+4021ffcf  s32i.n a4,a5,0x1c
+4021ffd1  movi.n a6,0x4
+4021ffd3  l32r a13,0x4021cf2c
+4021ffd6  l32r a4,0x4021ff04
+4021ffd9  memw
+4021ffdc  l32i.n a3,a5,0x18
+4021ffde  and a3,a3,a12
+4021ffe1  or a3,a3,a6
+4021ffe4  memw
+4021ffe7  s32i.n a3,a5,0x18
+4021ffe9  l32r a0,0x40216950
+4021ffec  l32r a11,0x4021ab3c
+4021ffef  memw
+4021fff2  l32i.n a10,a5,0x18
+4021fff4  and a10,a10,a0
+4021fff7  or a10,a10,a11
+4021fffa  memw
+4021fffd  s32i.n a10,a5,0x18
+4021ffff  l32r a9,0x40215e48
+40220002  memw
+40220005  l32i.n a8,a5,0x18
+40220007  and a8,a8,a9
+4022000a  memw
+4022000d  s32i.n a8,a5,0x18
+4022000f  memw
+40220012  l32i.n a7,a5,0x18
+40220014  and a7,a7,a13
+40220017  memw
+4022001a  movi.n a3,0x54
+4022001c  addi a6,a5,0x30
+4022001f  mov.n a2,a4
+40220021  s32i.n a7,a5,0x18
+40220023  addi a4,a4,0x60
+40220026  movi.n a7,0x1
+40220028  s32i.n a6,a1,0x0
+4022002a  addi a5,a5,0x34
+4022002d  s32i.n a5,a1,0x4
+4022002f  movi a6,0x100
+40220032  movi a5,0x700
+40220035  l32r a0,0x4021ff10
+40220038  callx0 a0
+4022003b  l32i.n a7,a15,0x0
+4022003d  movi.n a3,0x7
+4022003f  s8i a3,a7,0x4
+40220042  l32r a6,0x40205580
+40220045  memw
+40220048  l32r a2,0x4021fefc
+4022004b  s32i a2,a6,0x280
+4022004e  l32r a0,0x4021ff08
+40220051  memw
+40220054  s32i a0,a6,0x27c
+40220057  memw
+4022005a  l32r a15,0x4021ff04
+4022005d  s32i a15,a6,0x288
+40220060  l32r a12,0x4021ff0c
+40220063  memw
+40220066  s32i a12,a6,0x284
+40220069  movi a11,-0x100
+4022006c  memw
+4022006f  l32i a10,a6,0x200
+40220072  and a10,a10,a11
+40220075  memw
+40220078  s32i a10,a6,0x200
+4022007b  l32i.n a9,a7,0x8
+4022007d  memw
+40220080  s32i a9,a6,0x208
+40220083  l32i.n a8,a7,0x30
+40220085  memw
+40220088  s32i a8,a6,0x20c
+4022008b  s8i a14,a7,0x5
+4022008e  memw
+40220091  s32i a14,a6,0x210
+40220094  memw
+40220097  l32i a5,a6,0x200
+4022009a  and a5,a5,a13
+4022009d  memw
+402200a0  s32i a5,a6,0x200
+402200a3  l32i.n a12,a1,0x14
+402200a5  l32i.n a13,a1,0x18
+402200a7  l32i.n a14,a1,0x1c
+402200a9  l32i.n a15,a1,0x20
+402200ab  l32i.n a0,a1,0x10
+402200ad  addi a1,a1,0x30
+402200b0  ret.n

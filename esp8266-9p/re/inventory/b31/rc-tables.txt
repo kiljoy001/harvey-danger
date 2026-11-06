@@ -1,0 +1,8 @@
+
+/tmp/libpp/rate_control.o:     file format elf32-xtensa-le
+
+Contents of section .rodata.our_ack_time:
+ 0000 3a010201 df00d500 3a01a200 7f007500  :.......:.....u.
+ 0010 2c002c00 30003c00 2c002c00 30003c00  ,.,.0.<.,.,.0.<.
+ 0020 3c003000 30002c00 2c002c00 2c002c00  <.0.0.,.,.,.,.,.
+ 0030 3c003000 30002c00 2c002c00 2c002c00  <.0.0.,.,.,.,.,.

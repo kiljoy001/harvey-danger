@@ -1,0 +1,8190 @@
+{
+ "libnet80211.a": {
+  "ieee80211_action.o": [
+   {
+    "name": "ieee80211_send_action_register",
+    "section": ".irom0.text",
+    "value": 16,
+    "size": 48,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ieee80211_send_action_unregister",
+    "section": ".irom0.text",
+    "value": 68,
+    "size": 18,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ieee80211_send_action",
+    "section": ".irom0.text",
+    "value": 104,
+    "size": 89,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ieee80211_recv_action_register",
+    "section": ".irom0.text",
+    "value": 212,
+    "size": 48,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ieee80211_recv_action_unregister",
+    "section": ".irom0.text",
+    "value": 264,
+    "size": 18,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ieee80211_recv_action",
+    "section": ".irom0.text",
+    "value": 304,
+    "size": 99,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   }
+  ],
+  "ieee80211_action_vendor.o": [
+   {
+    "name": "ieee80211_avs_fetch_key_idx",
+    "section": ".irom0.text",
+    "value": 12,
+    "size": 84,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ieee80211_avs_clear_key_idx",
+    "section": ".irom0.text",
+    "value": 100,
+    "size": 33,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "get_iav_key",
+    "section": ".irom0.text",
+    "value": 140,
+    "size": 33,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "register_ieee80211_action_vendor_get_key_cb",
+    "section": ".irom0.text",
+    "value": 180,
+    "size": 24,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "unregister_ieee80211_action_vendor_get_key_cb",
+    "section": ".irom0.text",
+    "value": 208,
+    "size": 12,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ieee80211_add_action_vendor_spec_esp",
+    "section": ".irom0.text",
+    "value": 240,
+    "size": 68,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ieee80211_alloc_action_vendor_spec",
+    "section": ".irom0.text",
+    "value": 316,
+    "size": 238,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ieee80211_send_action_vendor_spec",
+    "section": ".irom0.text",
+    "value": 604,
+    "size": 408,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ieee80211_recv_action_vendor_spec",
+    "section": ".irom0.text",
+    "value": 1072,
+    "size": 338,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ieee80211_action_vendor_spec_attach",
+    "section": ".irom0.text",
+    "value": 1432,
+    "size": 55,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "register_ieee80211_action_vendor_spec_cb",
+    "section": ".irom0.text",
+    "value": 1492,
+    "size": 24,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "unregister_ieee80211_action_vendor_spec_cb",
+    "section": ".irom0.text",
+    "value": 1520,
+    "size": 12,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   }
+  ],
+  "ieee80211.o": [
+   {
+    "name": "g_ic",
+    "section": ".bss",
+    "value": 0,
+    "size": 1704,
+    "type": "OBJECT",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ieee80211_opcap",
+    "section": ".irom.text",
+    "value": 16,
+    "size": 8,
+    "type": "OBJECT",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ieee80211_mhz2ieee",
+    "section": ".irom0.text",
+    "value": 464,
+    "size": 92,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ieee80211_rate_ref_init",
+    "section": ".irom0.text",
+    "value": 144,
+    "size": 18,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ieee80211_freedom_inside_cb",
+    "section": ".irom0.text",
+    "value": 168,
+    "size": 42,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ieee80211_freedom_init",
+    "section": ".irom0.text",
+    "value": 224,
+    "size": 36,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ieee80211_user_ie_init",
+    "section": ".irom0.text",
+    "value": 264,
+    "size": 28,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ieee80211_ifattach",
+    "section": ".irom0.text",
+    "value": 328,
+    "size": 111,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ieee80211_chan2ieee",
+    "section": ".irom0.text",
+    "value": 560,
+    "size": 21,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ieee80211_ieee2mhz",
+    "section": ".irom0.text",
+    "value": 592,
+    "size": 62,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ieee80211_find_channel",
+    "section": ".irom0.text",
+    "value": 656,
+    "size": 41,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ieee80211_find_channel_byieee",
+    "section": ".irom0.text",
+    "value": 700,
+    "size": 41,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wifi_mode_set",
+    "section": ".irom0.text",
+    "value": 880,
+    "size": 469,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   }
+  ],
+  "ieee80211_crypto.o": [
+   {
+    "name": "ieee80211_crypto_attach",
+    "section": ".irom0.text",
+    "value": 0,
+    "size": 2,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ieee80211_crypto_available",
+    "section": ".irom0.text",
+    "value": 4,
+    "size": 4,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ieee80211_crypto_setkey",
+    "section": ".irom0.text",
+    "value": 8,
+    "size": 4,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ieee80211_crypto_encap",
+    "section": ".irom0.text",
+    "value": 16,
+    "size": 88,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ieee80211_crypto_decap",
+    "section": ".irom0.text",
+    "value": 108,
+    "size": 107,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   }
+  ],
+  "ieee80211_crypto_ccmp.o": [
+   {
+    "name": "ccmp",
+    "section": ".irom.text",
+    "value": 0,
+    "size": 24,
+    "type": "OBJECT",
+    "bind": "GLOBAL"
+   }
+  ],
+  "ieee80211_crypto_tkip.o": [
+   {
+    "name": "tkip",
+    "section": ".irom.text",
+    "value": 0,
+    "size": 24,
+    "type": "OBJECT",
+    "bind": "GLOBAL"
+   }
+  ],
+  "ieee80211_crypto_wep.o": [
+   {
+    "name": "wep",
+    "section": ".irom.text",
+    "value": 0,
+    "size": 24,
+    "type": "OBJECT",
+    "bind": "GLOBAL"
+   }
+  ],
+  "ieee80211_ets.o": [
+   {
+    "name": "ieee80211_getmgtframe",
+    "section": ".irom0.text",
+    "value": 8,
+    "size": 72,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   }
+  ],
+  "ieee80211_hostap.o": [
+   {
+    "name": "BcnEb_update",
+    "section": ".bss",
+    "value": 0,
+    "size": 1,
+    "type": "OBJECT",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "BcnWithMcastSendStart",
+    "section": ".bss",
+    "value": 13,
+    "size": 1,
+    "type": "OBJECT",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "BcnWithMcastSendCnt",
+    "section": ".bss",
+    "value": 14,
+    "size": 1,
+    "type": "OBJECT",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "PendFreeBcnEb",
+    "section": ".bss",
+    "value": 40,
+    "size": 1,
+    "type": "OBJECT",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ApFreqCalTimer",
+    "section": ".bss",
+    "value": 44,
+    "size": 20,
+    "type": "OBJECT",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "APRecvBcnStartTick",
+    "section": ".bss",
+    "value": 64,
+    "size": 4,
+    "type": "OBJECT",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "TmpSTAAPCloseAP",
+    "section": ".data",
+    "value": 0,
+    "size": 1,
+    "type": "OBJECT",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wifi_softap_start",
+    "section": ".irom0.text",
+    "value": 7212,
+    "size": 388,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ieee80211_hostap_attach",
+    "section": ".irom0.text",
+    "value": 2048,
+    "size": 203,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "hostap_handle_timer",
+    "section": ".irom0.text",
+    "value": 2364,
+    "size": 147,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "hostap_input",
+    "section": ".irom0.text",
+    "value": 2648,
+    "size": 1207,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wifi_softap_stop",
+    "section": ".irom0.text",
+    "value": 7752,
+    "size": 447,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   }
+  ],
+  "ieee80211_ht.o": [
+   {
+    "name": "ieee80211_ht_attach",
+    "section": ".irom0.text",
+    "value": 24,
+    "size": 78,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ieee80211_ht_node_init",
+    "section": ".irom0.text",
+    "value": 108,
+    "size": 61,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ieee80211_ht_node_cleanup",
+    "section": ".irom0.text",
+    "value": 172,
+    "size": 19,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ieee80211_parse_htcap",
+    "section": ".irom0.text",
+    "value": 236,
+    "size": 69,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ieee80211_ht_updateparams",
+    "section": ".irom0.text",
+    "value": 532,
+    "size": 267,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ieee80211_setup_htrates",
+    "section": ".irom0.text",
+    "value": 816,
+    "size": 204,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ieee80211_setup_basic_htrates",
+    "section": ".irom0.text",
+    "value": 1024,
+    "size": 128,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ieee80211_add_htcap",
+    "section": ".irom0.text",
+    "value": 1904,
+    "size": 27,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ieee80211_add_htcap_vendor",
+    "section": ".irom0.text",
+    "value": 1932,
+    "size": 49,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ieee80211_add_htinfo",
+    "section": ".irom0.text",
+    "value": 2236,
+    "size": 27,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ieee80211_add_htinfo_vendor",
+    "section": ".irom0.text",
+    "value": 2264,
+    "size": 49,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   }
+  ],
+  "ieee80211_ie_vendor.o": [
+   {
+    "name": "ieee80211_add_ie_vendor_esp_head",
+    "section": ".irom0.text",
+    "value": 8,
+    "size": 56,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ieee80211_add_ie_vendor_esp_mesh_assoc",
+    "section": ".irom0.text",
+    "value": 68,
+    "size": 132,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ieee80211_add_ie_vendor_esp_mesh_group",
+    "section": ".irom0.text",
+    "value": 204,
+    "size": 50,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ieee80211_add_ie_vendor_esp_simple_pair",
+    "section": ".irom0.text",
+    "value": 260,
+    "size": 91,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ieee80211_add_ie_vendor_esp_freq_annon",
+    "section": ".irom0.text",
+    "value": 352,
+    "size": 56,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ieee80211_add_ie_vendor_esp_now",
+    "section": ".irom0.text",
+    "value": 412,
+    "size": 54,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ieee80211_add_ie_vendor_esp_ssid",
+    "section": ".irom0.text",
+    "value": 472,
+    "size": 62,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ieee80211_add_ie_vendor_esp_manufacturer",
+    "section": ".irom0.text",
+    "value": 544,
+    "size": 77,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   }
+  ],
+  "ieee80211_input.o": [
+   {
+    "name": "ieee80211_deliver_data",
+    "section": ".irom0.text",
+    "value": 12,
+    "size": 72,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ieee80211_decap",
+    "section": ".irom0.text",
+    "value": 128,
+    "size": 259,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ieee80211_setup_rates",
+    "section": ".irom0.text",
+    "value": 400,
+    "size": 106,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ieee80211_alloc_challenge",
+    "section": ".irom0.text",
+    "value": 516,
+    "size": 44,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ieee80211_parse_beacon",
+    "section": ".irom0.text",
+    "value": 620,
+    "size": 1207,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ieee80211_parse_wpa",
+    "section": ".irom0.text",
+    "value": 2228,
+    "size": 274,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ieee80211_parse_rsn",
+    "section": ".irom0.text",
+    "value": 2508,
+    "size": 252,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ieee80211_parse_action",
+    "section": ".irom0.text",
+    "value": 2768,
+    "size": 155,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ieee80211_setup_rateset",
+    "section": ".irom0.text",
+    "value": 2924,
+    "size": 4,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   }
+  ],
+  "ieee80211_mesh_quick.o": [
+   {
+    "name": "ieee80211_mesh_quick_init",
+    "section": ".irom0.text",
+    "value": 32,
+    "size": 111,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ieee80211_mesh_quick_deinit",
+    "section": ".irom0.text",
+    "value": 160,
+    "size": 44,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ieee80211_mesh_quick_set",
+    "section": ".irom0.text",
+    "value": 236,
+    "size": 248,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ieee80211_mesh_quick_get",
+    "section": ".irom0.text",
+    "value": 508,
+    "size": 204,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ieee80211_mesh_quick_ie_add",
+    "section": ".irom0.text",
+    "value": 720,
+    "size": 50,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   }
+  ],
+  "ieee80211_output.o": [
+   {
+    "name": "ieee80211_output_pbuf",
+    "section": ".irom0.text",
+    "value": 84,
+    "size": 640,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ieee80211_send_setup",
+    "section": ".irom0.text",
+    "value": 764,
+    "size": 305,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ieee80211_mgmt_output",
+    "section": ".irom0.text",
+    "value": 1112,
+    "size": 233,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ieee80211_tx_mgt_cb",
+    "section": ".irom0.text",
+    "value": 1348,
+    "size": 2,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ieee80211_send_nulldata",
+    "section": ".irom0.text",
+    "value": 1388,
+    "size": 321,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ieee80211_add_rates",
+    "section": ".irom0.text",
+    "value": 2584,
+    "size": 78,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ieee80211_add_xrates",
+    "section": ".irom0.text",
+    "value": 2672,
+    "size": 69,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ieee80211_send_probereq",
+    "section": ".irom0.text",
+    "value": 3060,
+    "size": 626,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ieee80211_getcapinfo",
+    "section": ".irom0.text",
+    "value": 3692,
+    "size": 78,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ieee80211_send_mgmt",
+    "section": ".irom0.text",
+    "value": 3900,
+    "size": 1446,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ieee80211_alloc_proberesp",
+    "section": ".irom0.text",
+    "value": 5456,
+    "size": 632,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ieee80211_send_proberesp",
+    "section": ".irom0.text",
+    "value": 6140,
+    "size": 336,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ieee80211_alloc_deauth",
+    "section": ".irom0.text",
+    "value": 6480,
+    "size": 62,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ieee80211_send_deauth",
+    "section": ".irom0.text",
+    "value": 6592,
+    "size": 317,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ieee80211_freedom_output",
+    "section": ".irom0.text",
+    "value": 6972,
+    "size": 486,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ieee80211_beacon_alloc",
+    "section": ".irom0.text",
+    "value": 8240,
+    "size": 476,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   }
+  ],
+  "ieee80211_phy.o": [
+   {
+    "name": "ieee80211_phy_init",
+    "section": ".irom0.text",
+    "value": 4,
+    "size": 49,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ieee80211_setup_ratetable",
+    "section": ".irom0.text",
+    "value": 120,
+    "size": 144,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ieee80211_phy_type_get",
+    "section": ".irom0.text",
+    "value": 60,
+    "size": 15,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   }
+  ],
+  "ieee80211_power.o": [
+   {
+    "name": "ieee80211_psq_init",
+    "section": ".irom0.text",
+    "value": 4,
+    "size": 32,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ieee80211_psq_cleanup",
+    "section": ".irom0.text",
+    "value": 36,
+    "size": 2,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ieee80211_set_tim",
+    "section": ".irom0.text",
+    "value": 44,
+    "size": 61,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ieee80211_pwrsave",
+    "section": ".irom0.text",
+    "value": 116,
+    "size": 105,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "pwrsave_flushq",
+    "section": ".irom0.text",
+    "value": 256,
+    "size": 187,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ieee80211_node_pwrsave",
+    "section": ".irom0.text",
+    "value": 444,
+    "size": 54,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   }
+  ],
+  "ieee80211_proto.o": [
+   {
+    "name": "ieee80211_proto_attach",
+    "section": ".irom0.text",
+    "value": 12,
+    "size": 39,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ieee80211_set_shortslottime",
+    "section": ".irom0.text",
+    "value": 52,
+    "size": 21,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ieee80211_iserp_rateset",
+    "section": ".irom0.text",
+    "value": 80,
+    "size": 52,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ieee80211_wme_initparams",
+    "section": ".irom0.text",
+    "value": 132,
+    "size": 2,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ieee80211_wme_updateparams",
+    "section": ".irom0.text",
+    "value": 136,
+    "size": 2,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ieee80211_mlme_connect_bss",
+    "section": ".irom0.text",
+    "value": 188,
+    "size": 157,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   }
+  ],
+  "ieee80211_regdomain.o": [
+   {
+    "name": "ieee80211_regdomain_attach",
+    "section": ".irom0.text",
+    "value": 0,
+    "size": 2,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ieee80211_regdomain_detach",
+    "section": ".irom0.text",
+    "value": 12,
+    "size": 39,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ieee80211_alloc_countryie",
+    "section": ".irom0.text",
+    "value": 68,
+    "size": 160,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ieee80211_chan_in_regdomain",
+    "section": ".irom0.text",
+    "value": 232,
+    "size": 54,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ieee80211_update_regdomain",
+    "section": ".irom0.text",
+    "value": 308,
+    "size": 168,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   }
+  ],
+  "ieee80211_rfid.o": [
+   {
+    "name": "ieee80211_rfid_locp_recv_open",
+    "section": ".irom0.text",
+    "value": 12,
+    "size": 53,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ieee80211_rfid_locp_recv_close",
+    "section": ".irom0.text",
+    "value": 76,
+    "size": 23,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ieee80211_rfid_locp_recv_reset",
+    "section": ".irom0.text",
+    "value": 112,
+    "size": 31,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ieee80211_rfid_locp_recv",
+    "section": ".irom0.text",
+    "value": 148,
+    "size": 27,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "register_ieee80211_rfid_locp_recv_cb",
+    "section": ".irom0.text",
+    "value": 180,
+    "size": 19,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "unregister_ieee80211_rfid_locp_recv_cb",
+    "section": ".irom0.text",
+    "value": 204,
+    "size": 10,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   }
+  ],
+  "ieee80211_scan.o": [
+   {
+    "name": "gScanStruct",
+    "section": ".bss",
+    "value": 0,
+    "size": 156,
+    "type": "OBJECT",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "connect_scan_flag",
+    "section": ".bss",
+    "value": 172,
+    "size": 1,
+    "type": "OBJECT",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "FreqCalCntForScan",
+    "section": ".bss",
+    "value": 173,
+    "size": 1,
+    "type": "OBJECT",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "TestStaFreqCalValInput",
+    "section": ".bss",
+    "value": 174,
+    "size": 2,
+    "type": "OBJECT",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "auth_type",
+    "section": ".bss",
+    "value": 176,
+    "size": 1,
+    "type": "OBJECT",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "scannum",
+    "section": ".bss",
+    "value": 178,
+    "size": 2,
+    "type": "OBJECT",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ieee80211_scan_attach",
+    "section": ".irom0.text",
+    "value": 24,
+    "size": 82,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "scan_start",
+    "section": ".irom0.text",
+    "value": 272,
+    "size": 468,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "scan_cancel",
+    "section": ".irom0.text",
+    "value": 1256,
+    "size": 50,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "scan_pm_channel_op_cb",
+    "section": ".irom0.text",
+    "value": 752,
+    "size": 45,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "scan_hidden_ssid",
+    "section": ".irom0.text",
+    "value": 1784,
+    "size": 8,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "scan_add_bssid",
+    "section": ".irom0.text",
+    "value": 1728,
+    "size": 33,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "scan_remove_bssid",
+    "section": ".irom0.text",
+    "value": 1768,
+    "size": 10,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "scan_add_probe_ssid",
+    "section": ".irom0.text",
+    "value": 1808,
+    "size": 83,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "scan_remove_probe_ssid",
+    "section": ".irom0.text",
+    "value": 1896,
+    "size": 24,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "scan_clear_channles",
+    "section": ".irom0.text",
+    "value": 2256,
+    "size": 34,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "scan_set_desChan",
+    "section": ".irom0.text",
+    "value": 2388,
+    "size": 10,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "scan_get_type",
+    "section": ".irom0.text",
+    "value": 2404,
+    "size": 7,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "cannel_scan_connect_state",
+    "section": ".irom0.text",
+    "value": 2420,
+    "size": 18,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "scan_connect_state",
+    "section": ".irom0.text",
+    "value": 2464,
+    "size": 70,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "scan_check_hidden",
+    "section": ".irom0.text",
+    "value": 2536,
+    "size": 30,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "scan_profile_check",
+    "section": ".irom0.text",
+    "value": 2668,
+    "size": 428,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "scan_parse_beacon",
+    "section": ".irom0.text",
+    "value": 3848,
+    "size": 917,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   }
+  ],
+  "ieee80211_sta.o": [
+   {
+    "name": "sta_status_set",
+    "section": ".irom0.text",
+    "value": 100,
+    "size": 92,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ieee80211_sta_new_state",
+    "section": ".irom0.text",
+    "value": 400,
+    "size": 914,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "sta_input",
+    "section": ".irom0.text",
+    "value": 1400,
+    "size": 901,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ieee80211_parse_wmeparams",
+    "section": ".irom0.text",
+    "value": 2864,
+    "size": 98,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wifi_station_start",
+    "section": ".irom0.text",
+    "value": 4816,
+    "size": 120,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wifi_station_stop",
+    "section": ".irom0.text",
+    "value": 4952,
+    "size": 69,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   }
+  ],
+  "wl_chm.o": [
+   {
+    "name": "chm_init",
+    "section": ".irom0.text",
+    "value": 32,
+    "size": 111,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "chm_set_current_channel",
+    "section": ".irom0.text",
+    "value": 656,
+    "size": 48,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "chm_acquire_lock",
+    "section": ".irom0.text",
+    "value": 152,
+    "size": 67,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "chm_cancel_op",
+    "section": ".irom0.text",
+    "value": 536,
+    "size": 49,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "chm_release_lock",
+    "section": ".irom0.text",
+    "value": 224,
+    "size": 17,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "chm_start_op",
+    "section": ".irom0.text",
+    "value": 252,
+    "size": 55,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "chm_get_current_channel",
+    "section": ".text",
+    "value": 4,
+    "size": 7,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "chm_end_op",
+    "section": ".irom0.text",
+    "value": 452,
+    "size": 52,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "chm_return_home_channel",
+    "section": ".irom0.text",
+    "value": 596,
+    "size": 42,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "chm_freq2index",
+    "section": ".irom0.text",
+    "value": 708,
+    "size": 38,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "chm_check_same_channel",
+    "section": ".irom0.text",
+    "value": 764,
+    "size": 50,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   }
+  ],
+  "wl_cnx.o": [
+   {
+    "name": "sta_con_timer",
+    "section": ".bss",
+    "value": 864,
+    "size": 20,
+    "type": "OBJECT",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "backup_ni_connect_status",
+    "section": ".bss",
+    "value": 884,
+    "size": 1,
+    "type": "OBJECT",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "g_cnx_probe_rc_list_cb",
+    "section": ".bss",
+    "value": 888,
+    "size": 4,
+    "type": "OBJECT",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "reconnect_flag",
+    "section": ".bss",
+    "value": 892,
+    "size": 1,
+    "type": "OBJECT",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "no_ap_found_index",
+    "section": ".bss",
+    "value": 893,
+    "size": 1,
+    "type": "OBJECT",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "cnx_attach",
+    "section": ".irom0.text",
+    "value": 24,
+    "size": 61,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "cnx_sta_connect_led_timer_cb",
+    "section": ".irom0.text",
+    "value": 104,
+    "size": 73,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "cnx_sta_connect_cmd",
+    "section": ".irom0.text",
+    "value": 252,
+    "size": 220,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "cnx_sta_scan_cmd",
+    "section": ".irom0.text",
+    "value": 536,
+    "size": 226,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "cnx_start_handoff_cb",
+    "section": ".irom0.text",
+    "value": 1588,
+    "size": 17,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "cnx_rc_search",
+    "section": ".irom0.text",
+    "value": 3644,
+    "size": 83,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "cnx_rc_update_age",
+    "section": ".irom0.text",
+    "value": 4464,
+    "size": 35,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "cnx_rc_update_state_metric",
+    "section": ".irom0.text",
+    "value": 4356,
+    "size": 107,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "cnx_connect_timeout",
+    "section": ".irom0.text",
+    "value": 1272,
+    "size": 121,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "cnx_auth_timeout",
+    "section": ".irom0.text",
+    "value": 1408,
+    "size": 37,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "cnx_assoc_timeout",
+    "section": ".irom0.text",
+    "value": 1460,
+    "size": 37,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "cnx_handshake_timeout",
+    "section": ".irom0.text",
+    "value": 1520,
+    "size": 68,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "cnx_csa_fn",
+    "section": ".irom0.text",
+    "value": 2172,
+    "size": 152,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "cnx_bss_alloc",
+    "section": ".irom0.text",
+    "value": 3468,
+    "size": 160,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "cnx_remove_rc",
+    "section": ".irom0.text",
+    "value": 3996,
+    "size": 114,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "cnx_add_rc",
+    "section": ".irom0.text",
+    "value": 3788,
+    "size": 105,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "cnx_remove_all_rc",
+    "section": ".irom0.text",
+    "value": 3908,
+    "size": 75,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "cnx_rc_update_rssi",
+    "section": ".irom0.text",
+    "value": 4216,
+    "size": 136,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "cnx_update_bss",
+    "section": ".irom0.text",
+    "value": 4508,
+    "size": 48,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "cnx_update_bss_more",
+    "section": ".irom0.text",
+    "value": 4668,
+    "size": 502,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "cnx_sta_leave",
+    "section": ".irom0.text",
+    "value": 5240,
+    "size": 266,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "cnx_sta_associated",
+    "section": ".irom0.text",
+    "value": 6068,
+    "size": 261,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "cnx_node_alloc",
+    "section": ".irom0.text",
+    "value": 6356,
+    "size": 114,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "cnx_node_remove",
+    "section": ".irom0.text",
+    "value": 6516,
+    "size": 147,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "cnx_node_search",
+    "section": ".irom0.text",
+    "value": 6680,
+    "size": 113,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "cnx_node_leave",
+    "section": ".irom0.text",
+    "value": 6860,
+    "size": 255,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wifi_softap_staconnected_event_policy",
+    "section": ".irom0.text",
+    "value": 7120,
+    "size": 39,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wifi_softap_toomany_deny",
+    "section": ".irom0.text",
+    "value": 7168,
+    "size": 47,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "cnx_node_join",
+    "section": ".irom0.text",
+    "value": 7368,
+    "size": 613,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   }
+  ]
+ },
+ "libpp.a": {
+  "esf_buf.o": [
+   {
+    "name": "esf_rx_buf_alloc",
+    "section": ".text",
+    "value": 20,
+    "size": 72,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "esf_buf_alloc",
+    "section": ".irom0.text",
+    "value": 112,
+    "size": 488,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "esf_buf_recycle",
+    "section": ".irom0.text",
+    "value": 700,
+    "size": 302,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "esf_buf_setup",
+    "section": ".irom0.text",
+    "value": 1028,
+    "size": 189,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   }
+  ],
+  "if_hwctrl.o": [
+   {
+    "name": "interface_mask",
+    "section": ".bss",
+    "value": 0,
+    "size": 1,
+    "type": "OBJECT",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "if_ctrl",
+    "section": ".bss",
+    "value": 32,
+    "size": 32,
+    "type": "OBJECT",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ic_get_addr",
+    "section": ".irom0.text",
+    "value": 44,
+    "size": 10,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ic_set_opmode",
+    "section": ".irom0.text",
+    "value": 60,
+    "size": 15,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ic_enable_interface",
+    "section": ".irom0.text",
+    "value": 92,
+    "size": 79,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ic_interface_enabled",
+    "section": ".irom0.text",
+    "value": 176,
+    "size": 17,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ic_disable_interface",
+    "section": ".irom0.text",
+    "value": 216,
+    "size": 72,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ic_is_pure_sta",
+    "section": ".irom0.text",
+    "value": 292,
+    "size": 28,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ic_get_ptk_alg",
+    "section": ".irom0.text",
+    "value": 324,
+    "size": 13,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ic_get_gtk_alg",
+    "section": ".irom0.text",
+    "value": 344,
+    "size": 13,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ic_set_ptk_alg",
+    "section": ".irom0.text",
+    "value": 364,
+    "size": 13,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ic_set_gtk_alg",
+    "section": ".irom0.text",
+    "value": 384,
+    "size": 13,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ic_interface_is_p2p",
+    "section": ".irom0.text",
+    "value": 404,
+    "size": 13,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ic_set_vif",
+    "section": ".irom0.text",
+    "value": 640,
+    "size": 195,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ic_set_sta",
+    "section": ".irom0.text",
+    "value": 924,
+    "size": 251,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ic_bss_info_update",
+    "section": ".irom0.text",
+    "value": 1208,
+    "size": 90,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ic_set_key",
+    "section": ".irom0.text",
+    "value": 1308,
+    "size": 96,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ic_remove_key",
+    "section": ".irom0.text",
+    "value": 1408,
+    "size": 18,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ic_get_rssi",
+    "section": ".irom0.text",
+    "value": 1432,
+    "size": 37,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   }
+  ],
+  "lmac.o": [
+   {
+    "name": "lmacConfMib",
+    "section": ".bss",
+    "value": 4,
+    "size": 32,
+    "type": "OBJECT",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "our_tx_eb",
+    "section": ".bss",
+    "value": 40,
+    "size": 4,
+    "type": "OBJECT",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "lmacIsActive",
+    "section": ".text",
+    "value": 4,
+    "size": 15,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "lmacIsIdle",
+    "section": ".text",
+    "value": 24,
+    "size": 21,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "lmacSetAcParam",
+    "section": ".text",
+    "value": 1300,
+    "size": 83,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "lmacInitAc",
+    "section": ".irom0.text",
+    "value": 4,
+    "size": 44,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "lmacInit",
+    "section": ".irom0.text",
+    "value": 64,
+    "size": 120,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "lmacProcessTXStartData",
+    "section": ".text",
+    "value": 1432,
+    "size": 171,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "lmacProcessCollisions",
+    "section": ".text",
+    "value": 4148,
+    "size": 97,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "lmacProcessTxSuccess",
+    "section": ".text",
+    "value": 1948,
+    "size": 228,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "GetAccess",
+    "section": ".text",
+    "value": 2280,
+    "size": 11,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "lmacDiscardAgedMSDU",
+    "section": ".text",
+    "value": 2292,
+    "size": 19,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "lmacRecycleMPDU",
+    "section": ".text",
+    "value": 2312,
+    "size": 34,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "lmacProcessTxTimeout",
+    "section": ".text",
+    "value": 4008,
+    "size": 103,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "lmacProcessAllTxTimeout",
+    "section": ".text",
+    "value": 4116,
+    "size": 20,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "lmacProcessCollision",
+    "section": ".text",
+    "value": 4288,
+    "size": 129,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "lmacMSDUAged",
+    "section": ".text",
+    "value": 4428,
+    "size": 38,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "lmacTxFrame",
+    "section": ".text",
+    "value": 6084,
+    "size": 295,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "lmacProcessCtsTimeout",
+    "section": ".text",
+    "value": 5468,
+    "size": 54,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "lmacProcessAckTimeout",
+    "section": ".text",
+    "value": 5540,
+    "size": 87,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "lmacProcessRtsStart",
+    "section": ".text",
+    "value": 5632,
+    "size": 8,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "lmacProcessTxRtsError",
+    "section": ".text",
+    "value": 5692,
+    "size": 156,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "lmacProcessTxError",
+    "section": ".text",
+    "value": 5884,
+    "size": 133,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "lmacSetRetryLimit",
+    "section": ".irom0.text",
+    "value": 252,
+    "size": 28,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "lmacRxDone",
+    "section": ".text",
+    "value": 6536,
+    "size": 26,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   }
+  ],
+  "pm.o": [
+   {
+    "name": "pmc",
+    "section": ".bss",
+    "value": 0,
+    "size": 232,
+    "type": "OBJECT",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "pm_set_gpio_wakeup_pin",
+    "section": ".irom0.text",
+    "value": 4,
+    "size": 53,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "pm_clear_gpio_wakeup_pin",
+    "section": ".irom0.text",
+    "value": 64,
+    "size": 13,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "pm_is_gpio_int_trig",
+    "section": ".irom0.text",
+    "value": 80,
+    "size": 13,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "pm_rtc_clock_cali_proc",
+    "section": ".irom0.text",
+    "value": 116,
+    "size": 51,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "pm_get_ck170_period",
+    "section": ".irom0.text",
+    "value": 180,
+    "size": 36,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "pm_set_sleep_time",
+    "section": ".irom0.text",
+    "value": 228,
+    "size": 29,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "pm_rf_is_closed",
+    "section": ".irom0.text",
+    "value": 1352,
+    "size": 20,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "pm_set_sleep_type_from_upper",
+    "section": ".irom0.text",
+    "value": 1468,
+    "size": 237,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "pm_get_sleep_type",
+    "section": ".irom0.text",
+    "value": 1712,
+    "size": 18,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "uart_tx_flush",
+    "section": ".irom0.text",
+    "value": 2268,
+    "size": 2,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "pm_suspend",
+    "section": ".irom0.text",
+    "value": 2272,
+    "size": 2,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "pm_send_nullfunc",
+    "section": ".irom0.text",
+    "value": 6932,
+    "size": 421,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "pm_shutdown",
+    "section": ".irom0.text",
+    "value": 2988,
+    "size": 217,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "pm_reset_idle_sleep",
+    "section": ".irom0.text",
+    "value": 3232,
+    "size": 62,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "pm_idle_sleep",
+    "section": ".irom0.text",
+    "value": 3296,
+    "size": 2,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "pm_open",
+    "section": ".irom0.text",
+    "value": 3392,
+    "size": 244,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "pm_onBcnRx",
+    "section": ".irom0.text",
+    "value": 3708,
+    "size": 679,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "pm_scan_unlocked",
+    "section": ".irom0.text",
+    "value": 7700,
+    "size": 18,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "pm_post",
+    "section": ".irom0.text",
+    "value": 7896,
+    "size": 76,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "pm_get_idle_wait_time",
+    "section": ".irom0.text",
+    "value": 8196,
+    "size": 65,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "StopLightSleepSetFunc",
+    "section": ".irom0.text",
+    "value": 4696,
+    "size": 8,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "LightSleepWakedCbSetFunc",
+    "section": ".irom0.text",
+    "value": 4708,
+    "size": 8,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "pm_enable_gpio_wakeup",
+    "section": ".irom0.text",
+    "value": 6464,
+    "size": 14,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "pm_attach",
+    "section": ".irom0.text",
+    "value": 6600,
+    "size": 230,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "pm_is_waked",
+    "section": ".irom0.text",
+    "value": 7360,
+    "size": 23,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "pm_is_open",
+    "section": ".irom0.text",
+    "value": 7388,
+    "size": 19,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "pm_scan_lock",
+    "section": ".irom0.text",
+    "value": 7428,
+    "size": 40,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "pm_try_scan_unlock",
+    "section": ".irom0.text",
+    "value": 7468,
+    "size": 17,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "pm_force_scan_unlock",
+    "section": ".irom0.text",
+    "value": 7496,
+    "size": 26,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "pm_allow_tx",
+    "section": ".irom0.text",
+    "value": 7724,
+    "size": 28,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "pm_assoc_parse",
+    "section": ".irom0.text",
+    "value": 7756,
+    "size": 22,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "pm_set_addr",
+    "section": ".irom0.text",
+    "value": 7788,
+    "size": 29,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "pm_sleep_for",
+    "section": ".irom0.text",
+    "value": 7828,
+    "size": 43,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   }
+  ],
+  "pm_for_bcn_only_mode.o": [
+   {
+    "name": "fpm_set_type_from_upper",
+    "section": ".irom0.text",
+    "value": 108,
+    "size": 187,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "fpm_get_slp_type",
+    "section": ".irom0.text",
+    "value": 300,
+    "size": 8,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "fpm_rf_is_closed",
+    "section": ".irom0.text",
+    "value": 312,
+    "size": 20,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "fpm_is_open",
+    "section": ".irom0.text",
+    "value": 336,
+    "size": 10,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "fpm_allow_tx",
+    "section": ".irom0.text",
+    "value": 352,
+    "size": 23,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "fpm_close",
+    "section": ".irom0.text",
+    "value": 420,
+    "size": 133,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "fpm_open",
+    "section": ".irom0.text",
+    "value": 604,
+    "size": 131,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "fpm_attach",
+    "section": ".irom0.text",
+    "value": 756,
+    "size": 86,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "fpm_set_wakeup_cb",
+    "section": ".irom0.text",
+    "value": 1316,
+    "size": 7,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "fpm_do_wakeup",
+    "section": ".irom0.text",
+    "value": 1772,
+    "size": 73,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "fpm_do_sleep",
+    "section": ".irom0.text",
+    "value": 3556,
+    "size": 150,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "fpm_auto_sleep_set_in_null_mode",
+    "section": ".irom0.text",
+    "value": 3736,
+    "size": 61,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "get_fpm_auto_sleep_flag",
+    "section": ".irom0.text",
+    "value": 3804,
+    "size": 8,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wifi_fpm_set_sleep_type",
+    "section": ".irom0.text",
+    "value": 108,
+    "size": 187,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wifi_fpm_get_sleep_type",
+    "section": ".irom0.text",
+    "value": 300,
+    "size": 8,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wifi_fpm_close",
+    "section": ".irom0.text",
+    "value": 420,
+    "size": 133,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wifi_fpm_open",
+    "section": ".irom0.text",
+    "value": 604,
+    "size": 131,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wifi_fpm_set_wakeup_cb",
+    "section": ".irom0.text",
+    "value": 1316,
+    "size": 7,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wifi_fpm_do_wakeup",
+    "section": ".irom0.text",
+    "value": 1772,
+    "size": 73,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wifi_fpm_do_sleep",
+    "section": ".irom0.text",
+    "value": 3556,
+    "size": 150,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wifi_fpm_auto_sleep_set_in_null_mode",
+    "section": ".irom0.text",
+    "value": 3736,
+    "size": 61,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   }
+  ],
+  "pp.o": [
+   {
+    "name": "pend_flag_noise_check",
+    "section": ".bss",
+    "value": 24,
+    "size": 1,
+    "type": "OBJECT",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "pend_flag_periodic_cal",
+    "section": ".bss",
+    "value": 32,
+    "size": 1,
+    "type": "OBJECT",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "idle_timer_reopen_flag",
+    "section": ".bss",
+    "value": 56,
+    "size": 1,
+    "type": "OBJECT",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "dbg_stop_sw_wdt",
+    "section": ".bss",
+    "value": 58,
+    "size": 1,
+    "type": "OBJECT",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "dbg_stop_hw_wdt",
+    "section": ".bss",
+    "value": 59,
+    "size": 1,
+    "type": "OBJECT",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "total_buffed_eb_num",
+    "section": ".bss",
+    "value": 61,
+    "size": 1,
+    "type": "OBJECT",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "HighestFreqOffsetInOneChk",
+    "section": ".bss",
+    "value": 64,
+    "size": 2,
+    "type": "OBJECT",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "LowestFreqOffsetInOneChk",
+    "section": ".bss",
+    "value": 66,
+    "size": 2,
+    "type": "OBJECT",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "DefFreqCalTimer",
+    "section": ".bss",
+    "value": 68,
+    "size": 20,
+    "type": "OBJECT",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "PktNumInOneChk",
+    "section": ".bss",
+    "value": 88,
+    "size": 2,
+    "type": "OBJECT",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "buffed_eb_arr",
+    "section": ".bss",
+    "value": 480,
+    "size": 40,
+    "type": "OBJECT",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "soft_wdt_interval",
+    "section": ".data",
+    "value": 0,
+    "size": 4,
+    "type": "OBJECT",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "NoiseTimerInterval",
+    "section": ".data",
+    "value": 4,
+    "size": 2,
+    "type": "OBJECT",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "sleep_start_wait_time",
+    "section": ".data",
+    "value": 12,
+    "size": 2,
+    "type": "OBJECT",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "CanDoFreqCal",
+    "section": ".data",
+    "value": 20,
+    "size": 1,
+    "type": "OBJECT",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "tcb",
+    "section": ".data",
+    "value": 24,
+    "size": 4,
+    "type": "OBJECT",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "pp_soft_wdt_feed_local",
+    "section": ".text",
+    "value": 88,
+    "size": 154,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "pp_post",
+    "section": ".text",
+    "value": 2088,
+    "size": 138,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "PPWdtReset",
+    "section": ".irom0.text",
+    "value": 16,
+    "size": 43,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "pp_soft_wdt_init",
+    "section": ".irom0.text",
+    "value": 76,
+    "size": 32,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "pp_soft_wdt_feed",
+    "section": ".irom0.text",
+    "value": 116,
+    "size": 22,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "pp_soft_wdt_stop",
+    "section": ".irom0.text",
+    "value": 156,
+    "size": 41,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "pp_soft_wdt_restart",
+    "section": ".irom0.text",
+    "value": 224,
+    "size": 52,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "RxNodeNum",
+    "section": ".irom0.text",
+    "value": 280,
+    "size": 24,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "TxNodeNum",
+    "section": ".irom0.text",
+    "value": 308,
+    "size": 31,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "pp_disable_noise_timer",
+    "section": ".irom0.text",
+    "value": 348,
+    "size": 21,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "pp_enable_noise_timer",
+    "section": ".irom0.text",
+    "value": 460,
+    "size": 281,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "pp_noise_test",
+    "section": ".irom0.text",
+    "value": 744,
+    "size": 15,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "reset_noise_timer",
+    "section": ".irom0.text",
+    "value": 780,
+    "size": 51,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "pp_disable_idle_timer",
+    "section": ".irom0.text",
+    "value": 844,
+    "size": 35,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "pp_enable_idle_timer",
+    "section": ".irom0.text",
+    "value": 892,
+    "size": 37,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "pp_try_enable_idle_timer",
+    "section": ".irom0.text",
+    "value": 948,
+    "size": 51,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ppPeocessRxPktHdr",
+    "section": ".irom0.text",
+    "value": 1012,
+    "size": 112,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ppProcessTxQ",
+    "section": ".text",
+    "value": 272,
+    "size": 115,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "HdlAllBuffedEb",
+    "section": ".irom0.text",
+    "value": 1992,
+    "size": 112,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ppTxPkt",
+    "section": ".irom0.text",
+    "value": 2200,
+    "size": 373,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ppDiscardMPDU",
+    "section": ".text",
+    "value": 2016,
+    "size": 31,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ppCalFrameTimes",
+    "section": ".text",
+    "value": 2448,
+    "size": 109,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ppProcessWaitQ",
+    "section": ".irom0.text",
+    "value": 2576,
+    "size": 15,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ppRegisterTxCallback",
+    "section": ".irom0.text",
+    "value": 2596,
+    "size": 39,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ppUnregisterTxCallback",
+    "section": ".irom0.text",
+    "value": 2640,
+    "size": 44,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ppRecycleRxPkt",
+    "section": ".irom0.text",
+    "value": 2700,
+    "size": 91,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ppCheckTxIdle",
+    "section": ".irom0.text",
+    "value": 2816,
+    "size": 211,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "pp_tx_idle_timeout",
+    "section": ".irom0.text",
+    "value": 3528,
+    "size": 29,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "DefFreqCalTimerCB",
+    "section": ".irom0.text",
+    "value": 4024,
+    "size": 10,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ppGetTxQFirstAvail_Locked",
+    "section": ".irom0.text",
+    "value": 5108,
+    "size": 77,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ppFetchTxQFirstAvail",
+    "section": ".text",
+    "value": 392,
+    "size": 62,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ppDequeueTxQ",
+    "section": ".text",
+    "value": 460,
+    "size": 38,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ppRollBackTxQ",
+    "section": ".text",
+    "value": 504,
+    "size": 35,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ppRecordBarRRC",
+    "section": ".text",
+    "value": 544,
+    "size": 15,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ppTxqUpdateBitmap",
+    "section": ".text",
+    "value": 564,
+    "size": 27,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ppEnqueueTxDone",
+    "section": ".text",
+    "value": 612,
+    "size": 52,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ppEnqueueRxq",
+    "section": ".text",
+    "value": 668,
+    "size": 22,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "pp_attach",
+    "section": ".irom0.text",
+    "value": 5400,
+    "size": 240,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "pp_post2",
+    "section": ".text",
+    "value": 2236,
+    "size": 34,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ppCalTxop",
+    "section": ".text",
+    "value": 2308,
+    "size": 122,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "system_soft_wdt_feed",
+    "section": ".irom0.text",
+    "value": 116,
+    "size": 22,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "system_soft_wdt_stop",
+    "section": ".irom0.text",
+    "value": 156,
+    "size": 41,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "system_soft_wdt_restart",
+    "section": ".irom0.text",
+    "value": 224,
+    "size": 52,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   }
+  ],
+  "rate_control.o": [
+   {
+    "name": "RC_SetBasicRate",
+    "section": ".irom0.text",
+    "value": 600,
+    "size": 74,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "RC_GetAckRate",
+    "section": ".text",
+    "value": 32,
+    "size": 11,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "RC_GetRtsRate",
+    "section": ".text",
+    "value": 48,
+    "size": 11,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "RC_GetAckTime",
+    "section": ".text",
+    "value": 68,
+    "size": 20,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "RC_GetCtsTime",
+    "section": ".text",
+    "value": 88,
+    "size": 54,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "RC_GetBlockAckTime",
+    "section": ".text",
+    "value": 148,
+    "size": 58,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   }
+  ],
+  "trc.o": [
+   {
+    "name": "phytype2mode",
+    "section": ".irom0.text",
+    "value": 0,
+    "size": 24,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "rc_set_rate_limit_id",
+    "section": ".irom0.text",
+    "value": 28,
+    "size": 233,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "rcUpdatePhyMode",
+    "section": ".irom0.text",
+    "value": 320,
+    "size": 441,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "rcUpdateTxDone",
+    "section": ".text",
+    "value": 472,
+    "size": 147,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "rcUpdateRxDone",
+    "section": ".text",
+    "value": 620,
+    "size": 89,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "rcUpdateDataRxDone",
+    "section": ".text",
+    "value": 712,
+    "size": 2,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "rcGetSched",
+    "section": ".text",
+    "value": 760,
+    "size": 223,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "rcGetRate",
+    "section": ".text",
+    "value": 1004,
+    "size": 153,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "rcReachRetryLimit",
+    "section": ".text",
+    "value": 2356,
+    "size": 21,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "rcAttach",
+    "section": ".irom0.text",
+    "value": 788,
+    "size": 72,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "rcGetTrc",
+    "section": ".irom0.text",
+    "value": 864,
+    "size": 5,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "trc_NeedRTS",
+    "section": ".text",
+    "value": 2384,
+    "size": 181,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "trc_onDisconnect",
+    "section": ".irom0.text",
+    "value": 872,
+    "size": 2,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "trc_onScanStart",
+    "section": ".irom0.text",
+    "value": 876,
+    "size": 18,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "trc_onScanDone",
+    "section": ".irom0.text",
+    "value": 896,
+    "size": 18,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "rc_enable_trc",
+    "section": ".irom0.text",
+    "value": 952,
+    "size": 214,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "rc_get_mask",
+    "section": ".irom0.text",
+    "value": 1172,
+    "size": 8,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "rc_disable_trc",
+    "section": ".irom0.text",
+    "value": 1200,
+    "size": 83,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "rc_disable_trc_by_interface",
+    "section": ".irom0.text",
+    "value": 1288,
+    "size": 26,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "rc_get_sta_trc",
+    "section": ".irom0.text",
+    "value": 1328,
+    "size": 67,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "rc_get_trc",
+    "section": ".irom0.text",
+    "value": 1408,
+    "size": 111,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "rc_get_trc_by_index",
+    "section": ".irom0.text",
+    "value": 1524,
+    "size": 32,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "rc_only_sta_trc",
+    "section": ".irom0.text",
+    "value": 1568,
+    "size": 45,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   }
+  ],
+  "wdev.o": [
+   {
+    "name": "wDevCtrl",
+    "section": ".bss",
+    "value": 0,
+    "size": 64,
+    "type": "OBJECT",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "WdevTimOffSet",
+    "section": ".bss",
+    "value": 424,
+    "size": 4,
+    "type": "OBJECT",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wDev_AppendRxBlocks",
+    "section": ".text",
+    "value": 2848,
+    "size": 322,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wDev_AppendRxAmpduLensBlocks",
+    "section": ".text",
+    "value": 3220,
+    "size": 210,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wDev_Option_Init",
+    "section": ".irom0.text",
+    "value": 40,
+    "size": 240,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wDev_Enable_Beacon_Tsf",
+    "section": ".irom0.text",
+    "value": 288,
+    "size": 23,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wDev_Disable_Beacon_Tsf",
+    "section": ".irom0.text",
+    "value": 320,
+    "size": 23,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wDev_Set_Beacon_Int",
+    "section": ".irom0.text",
+    "value": 348,
+    "size": 7,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wDev_Reset_TBTT",
+    "section": ".irom0.text",
+    "value": 368,
+    "size": 47,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wDev_Get_Next_TBTT",
+    "section": ".irom0.text",
+    "value": 432,
+    "size": 54,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wDev_SetRxPolicy",
+    "section": ".irom0.text",
+    "value": 1464,
+    "size": 84,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wDev_MacTim1SetFunc",
+    "section": ".text",
+    "value": 1028,
+    "size": 29,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wDev_MacTim1Arm",
+    "section": ".text",
+    "value": 1076,
+    "size": 97,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wDev_Initialize",
+    "section": ".irom0.text",
+    "value": 1144,
+    "size": 104,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wDevForceAck6M",
+    "section": ".irom0.text",
+    "value": 1260,
+    "size": 27,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wDev_ProcessFiq",
+    "section": ".text",
+    "value": 1444,
+    "size": 844,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wDev_EnableTransmit",
+    "section": ".text",
+    "value": 2300,
+    "size": 54,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wDev_DisableTransmit",
+    "section": ".text",
+    "value": 2364,
+    "size": 30,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wDev_SetMacAddress",
+    "section": ".irom0.text",
+    "value": 1300,
+    "size": 149,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "Tx_Copy2Queue",
+    "section": ".text",
+    "value": 2404,
+    "size": 69,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wDev_SetBssid",
+    "section": ".irom0.text",
+    "value": 1668,
+    "size": 213,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wDev_EnableUcRx",
+    "section": ".irom0.text",
+    "value": 1556,
+    "size": 42,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wDev_DisableUcRx",
+    "section": ".irom0.text",
+    "value": 1608,
+    "size": 42,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wDev_ClearBssid",
+    "section": ".irom0.text",
+    "value": 1892,
+    "size": 42,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wDev_ProcessCollision",
+    "section": ".text",
+    "value": 2480,
+    "size": 35,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wDev_GetTxqCollisions",
+    "section": ".text",
+    "value": 2520,
+    "size": 14,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wDev_ClearTxqCollisions",
+    "section": ".text",
+    "value": 2544,
+    "size": 23,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wDev_SetWaitingQueue",
+    "section": ".text",
+    "value": 2580,
+    "size": 71,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wDev_ClearWaitingQueue",
+    "section": ".text",
+    "value": 2660,
+    "size": 30,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wDev_SetFrameAckType",
+    "section": ".text",
+    "value": 2696,
+    "size": 88,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wDev_Is_Mac_Key_Exist",
+    "section": ".irom0.text",
+    "value": 1948,
+    "size": 136,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wDev_Insert_KeyEntry",
+    "section": ".irom0.text",
+    "value": 2108,
+    "size": 236,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wDev_remove_KeyEntry",
+    "section": ".irom0.text",
+    "value": 2356,
+    "size": 60,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wDev_remove_KeyEntry_all_cnx",
+    "section": ".irom0.text",
+    "value": 2424,
+    "size": 68,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wDev_Crypto_Conf",
+    "section": ".irom0.text",
+    "value": 2504,
+    "size": 69,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wDev_Crypto_Disable",
+    "section": ".irom0.text",
+    "value": 2692,
+    "size": 55,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wDev_GetBAInfo",
+    "section": ".text",
+    "value": 3436,
+    "size": 45,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wDevDisableRx",
+    "section": ".text",
+    "value": 3496,
+    "size": 31,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wDevEnableRx",
+    "section": ".irom0.text",
+    "value": 2760,
+    "size": 31,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wdev_go_sniffer",
+    "section": ".irom0.text",
+    "value": 2844,
+    "size": 219,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wdev_set_sniffer_addr",
+    "section": ".irom0.text",
+    "value": 3068,
+    "size": 73,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wdev_exit_sniffer",
+    "section": ".irom0.text",
+    "value": 3188,
+    "size": 207,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   }
+  ]
+ },
+ "libphy.a": {
+  "phy.o": [
+   {
+    "name": "rf_init",
+    "section": ".irom0.text",
+    "value": 4,
+    "size": 28,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "bb_init",
+    "section": ".irom0.text",
+    "value": 36,
+    "size": 22,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "phy_init",
+    "section": ".irom0.text",
+    "value": 68,
+    "size": 48,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "register_phy_ops",
+    "section": ".text",
+    "value": 8,
+    "size": 29,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "register_get_phy_addr",
+    "section": ".text",
+    "value": 44,
+    "size": 7,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "phy_change_channel",
+    "section": ".text",
+    "value": 56,
+    "size": 24,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "RFChannelSel",
+    "section": ".irom0.text",
+    "value": 120,
+    "size": 28,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "phy_delete_channel",
+    "section": ".irom0.text",
+    "value": 152,
+    "size": 22,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "phy_enable_agc",
+    "section": ".irom0.text",
+    "value": 180,
+    "size": 22,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "phy_disable_agc",
+    "section": ".irom0.text",
+    "value": 208,
+    "size": 22,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "phy_initialize_bb",
+    "section": ".irom0.text",
+    "value": 236,
+    "size": 22,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "phy_set_sense",
+    "section": ".irom0.text",
+    "value": 264,
+    "size": 22,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "phy_get_mactime",
+    "section": ".text",
+    "value": 84,
+    "size": 11,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   }
+  ],
+  "phy_chip_v6_ana.o": [
+   {
+    "name": "tout_dis_txpwr_track",
+    "section": ".bss",
+    "value": 0,
+    "size": 1,
+    "type": "OBJECT",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "sleep_mode_flag",
+    "section": ".bss",
+    "value": 1,
+    "size": 1,
+    "type": "OBJECT",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ram_pbus_set_rxgain",
+    "section": ".irom0.text",
+    "value": 4,
+    "size": 198,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ram_pbus_debugmode",
+    "section": ".irom0.text",
+    "value": 232,
+    "size": 179,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ram_pbus_xpd_tx_on",
+    "section": ".irom0.text",
+    "value": 416,
+    "size": 100,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "set_rf_freq_offset",
+    "section": ".irom0.text",
+    "value": 544,
+    "size": 109,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ram_rfpll_set_freq",
+    "section": ".irom0.text",
+    "value": 2748,
+    "size": 197,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wait_rfpll_cal_end",
+    "section": ".irom0.text",
+    "value": 2572,
+    "size": 88,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "chip_v6_rxmax_ext_ana",
+    "section": ".irom0.text",
+    "value": 668,
+    "size": 334,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ram_chip_v6_rx_init",
+    "section": ".irom0.text",
+    "value": 1012,
+    "size": 41,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "tsen_meas",
+    "section": ".irom0.text",
+    "value": 1088,
+    "size": 168,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "readvdd33",
+    "section": ".irom0.text",
+    "value": 1288,
+    "size": 446,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "txpwr_offset",
+    "section": ".irom0.text",
+    "value": 1764,
+    "size": 186,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "set_txcap_reg",
+    "section": ".irom0.text",
+    "value": 1964,
+    "size": 128,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ram_ana_inf_gating_en",
+    "section": ".irom0.text",
+    "value": 2096,
+    "size": 352,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ram_restart_cal",
+    "section": ".irom0.text",
+    "value": 2452,
+    "size": 103,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ram_set_channel_freq",
+    "section": ".irom0.text",
+    "value": 3044,
+    "size": 747,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "chip_60_set_channel",
+    "section": ".irom0.text",
+    "value": 3852,
+    "size": 416,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "chip_v6_set_chan_offset",
+    "section": ".irom0.text",
+    "value": 4276,
+    "size": 88,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "chip_v6_set_chan",
+    "section": ".irom0.text",
+    "value": 4428,
+    "size": 183,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "chip_v6_set_chan_wakeup",
+    "section": ".irom0.text",
+    "value": 4636,
+    "size": 89,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "chip_v6_rf_init",
+    "section": ".irom0.text",
+    "value": 4808,
+    "size": 605,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "low_power_set",
+    "section": ".irom0.text",
+    "value": 5432,
+    "size": 76,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "test_tout",
+    "section": ".irom0.text",
+    "value": 5564,
+    "size": 374,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "phy_adc_read_fast",
+    "section": ".text",
+    "value": 52,
+    "size": 578,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "check_data_flag",
+    "section": ".irom0.text",
+    "value": 5940,
+    "size": 23,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "phy_get_check_flag",
+    "section": ".irom0.text",
+    "value": 6000,
+    "size": 305,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "phy_get_vdd33",
+    "section": ".irom0.text",
+    "value": 6348,
+    "size": 179,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   }
+  ],
+  "phy_chip_v6.o": [
+   {
+    "name": "g_phyFuns",
+    "section": ".bss",
+    "value": 0,
+    "size": 4,
+    "type": "OBJECT",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "rxiq_compute_num",
+    "section": ".bss",
+    "value": 4,
+    "size": 4,
+    "type": "OBJECT",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "rx_table_renew_en",
+    "section": ".bss",
+    "value": 8,
+    "size": 1,
+    "type": "OBJECT",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "check_result",
+    "section": ".bss",
+    "value": 12,
+    "size": 4,
+    "type": "OBJECT",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "chip6_sleep_params",
+    "section": ".bss",
+    "value": 16,
+    "size": 148,
+    "type": "OBJECT",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "chip6_phy_init_ctrl",
+    "section": ".bss",
+    "value": 164,
+    "size": 116,
+    "type": "OBJECT",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "phy_freq_offset",
+    "section": ".bss",
+    "value": 280,
+    "size": 2,
+    "type": "OBJECT",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "do_pwctrl_flag",
+    "section": ".bss",
+    "value": 282,
+    "size": 1,
+    "type": "OBJECT",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "txbk_dpdby_flag",
+    "section": ".bss",
+    "value": 283,
+    "size": 1,
+    "type": "OBJECT",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "sw_scan_mode",
+    "section": ".bss",
+    "value": 285,
+    "size": 1,
+    "type": "OBJECT",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "rxmax_ext_level",
+    "section": ".bss",
+    "value": 286,
+    "size": 1,
+    "type": "OBJECT",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "phy_rx_gain_dc_table",
+    "section": ".bss",
+    "value": 288,
+    "size": 4,
+    "type": "OBJECT",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "periodic_cal_flag",
+    "section": ".bss",
+    "value": 308,
+    "size": 1,
+    "type": "OBJECT",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "bbpll_cal_flag",
+    "section": ".bss",
+    "value": 309,
+    "size": 1,
+    "type": "OBJECT",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "phy_in_most_power",
+    "section": ".bss",
+    "value": 310,
+    "size": 1,
+    "type": "OBJECT",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "init_rf_no_cal",
+    "section": ".bss",
+    "value": 311,
+    "size": 1,
+    "type": "OBJECT",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "test_print_time",
+    "section": ".bss",
+    "value": 312,
+    "size": 4,
+    "type": "OBJECT",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "phy_in_vdd33_offset",
+    "section": ".bss",
+    "value": 316,
+    "size": 1,
+    "type": "OBJECT",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "phy_set_most_tpw_disbg",
+    "section": ".bss",
+    "value": 317,
+    "size": 1,
+    "type": "OBJECT",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "phy_set_most_tpw_index",
+    "section": ".bss",
+    "value": 318,
+    "size": 1,
+    "type": "OBJECT",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "adc_rand_noise",
+    "section": ".bss",
+    "value": 320,
+    "size": 4,
+    "type": "OBJECT",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "phy_rx_gain_dc_flag",
+    "section": ".bss",
+    "value": 324,
+    "size": 1,
+    "type": "OBJECT",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "dpd_bypass_original",
+    "section": ".bss",
+    "value": 325,
+    "size": 1,
+    "type": "OBJECT",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "phy_txpwr_diff_flash",
+    "section": ".bss",
+    "value": 326,
+    "size": 2,
+    "type": "OBJECT",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "noise_array",
+    "section": ".bss",
+    "value": 328,
+    "size": 8,
+    "type": "OBJECT",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "tx_rf_ana_gain",
+    "section": ".data",
+    "value": 2,
+    "size": 2,
+    "type": "OBJECT",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "chip_v6_rf_init",
+    "section": "",
+    "value": 0,
+    "size": 0,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "chip_v6_set_chanfreq",
+    "section": ".irom0.text",
+    "value": 3184,
+    "size": 34,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "chip_v6_set_chan",
+    "section": "",
+    "value": 0,
+    "size": 0,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "chip_v6_unset_chanfreq",
+    "section": "",
+    "value": 0,
+    "size": 0,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "rom_chip_v5_enable_cca",
+    "section": "",
+    "value": 0,
+    "size": 0,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "rom_chip_v5_disable_cca",
+    "section": "",
+    "value": 0,
+    "size": 0,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "chip_v6_initialize_bb",
+    "section": ".irom0.text",
+    "value": 12168,
+    "size": 373,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "chip_v6_set_sense",
+    "section": "",
+    "value": 0,
+    "size": 0,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "rx_gain_swp",
+    "section": ".data",
+    "value": 48,
+    "size": 32,
+    "type": "OBJECT",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "test_rffreq_txcap",
+    "section": ".data",
+    "value": 80,
+    "size": 3,
+    "type": "OBJECT",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ram_tx_mac_enable",
+    "section": ".irom0.text",
+    "value": 0,
+    "size": 2,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ram_tx_mac_disable",
+    "section": ".irom0.text",
+    "value": 4,
+    "size": 2,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "rtc_mem_backup",
+    "section": ".irom0.text",
+    "value": 12,
+    "size": 46,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "rtc_mem_recovery",
+    "section": ".irom0.text",
+    "value": 64,
+    "size": 48,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "set_cal_rxdc",
+    "section": ".irom0.text",
+    "value": 116,
+    "size": 163,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "set_rx_gain_cal_iq",
+    "section": ".irom0.text",
+    "value": 360,
+    "size": 847,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "gen_rx_gain_table",
+    "section": ".irom0.text",
+    "value": 1228,
+    "size": 341,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "pbus_set_rxbbgain",
+    "section": ".irom0.text",
+    "value": 1584,
+    "size": 110,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "set_rx_gain_testchip_50",
+    "section": ".irom0.text",
+    "value": 1744,
+    "size": 814,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ram_get_corr_power",
+    "section": ".irom0.text",
+    "value": 2588,
+    "size": 240,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "check_data_func",
+    "section": ".irom0.text",
+    "value": 2832,
+    "size": 26,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "do_noisefloor_lsleep_v50",
+    "section": ".irom0.text",
+    "value": 2868,
+    "size": 52,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "do_noisefloor",
+    "section": ".irom0.text",
+    "value": 2936,
+    "size": 111,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "start_dig_rx",
+    "section": ".irom0.text",
+    "value": 3056,
+    "size": 62,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "stop_dig_rx",
+    "section": ".irom0.text",
+    "value": 3132,
+    "size": 44,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "tx_cap_init",
+    "section": ".irom0.text",
+    "value": 3336,
+    "size": 559,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "target_power_add_backoff",
+    "section": ".irom0.text",
+    "value": 3896,
+    "size": 32,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "tx_pwctrl_init_cal",
+    "section": ".irom0.text",
+    "value": 3992,
+    "size": 414,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "tx_atten_set_interp",
+    "section": ".irom0.text",
+    "value": 4508,
+    "size": 602,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "set_most_pwr_reg",
+    "section": ".irom0.text",
+    "value": 16880,
+    "size": 205,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "check_tx_pwr_cal",
+    "section": ".irom0.text",
+    "value": 5148,
+    "size": 324,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "tx_pwctrl_init",
+    "section": ".irom0.text",
+    "value": 5500,
+    "size": 297,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ram_get_noisefloor",
+    "section": ".irom0.text",
+    "value": 5804,
+    "size": 28,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "get_noisefloor_sat",
+    "section": ".irom0.text",
+    "value": 5836,
+    "size": 46,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ram_set_noise_floor",
+    "section": ".irom0.text",
+    "value": 5892,
+    "size": 82,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ram_start_noisefloor",
+    "section": ".irom0.text",
+    "value": 5988,
+    "size": 65,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "read_hw_noisefloor",
+    "section": ".irom0.text",
+    "value": 6064,
+    "size": 28,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "noise_check_loop",
+    "section": ".irom0.text",
+    "value": 6124,
+    "size": 339,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "noise_init",
+    "section": ".irom0.text",
+    "value": 6536,
+    "size": 505,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "target_power_backoff",
+    "section": ".irom0.text",
+    "value": 7060,
+    "size": 79,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "sdt_on_noise_start",
+    "section": ".irom0.text",
+    "value": 7160,
+    "size": 119,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "chip_v6_set_chan_rx_cmp",
+    "section": ".irom0.text",
+    "value": 7328,
+    "size": 392,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "chip_v6_set_chan_misc",
+    "section": ".irom0.text",
+    "value": 7756,
+    "size": 101,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "chip_v6_rxmax_ext",
+    "section": ".irom0.text",
+    "value": 9640,
+    "size": 29,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "phy_dig_spur_set",
+    "section": ".irom0.text",
+    "value": 8096,
+    "size": 856,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "phy_dig_spur_prot",
+    "section": ".irom0.text",
+    "value": 8984,
+    "size": 565,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "chip_v6_rxmax_ext_dig",
+    "section": ".irom0.text",
+    "value": 9560,
+    "size": 75,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "phy_bb_rx_cfg",
+    "section": ".irom0.text",
+    "value": 9876,
+    "size": 1048,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "uart_wait_idle",
+    "section": ".irom0.text",
+    "value": 10932,
+    "size": 27,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "phy_pbus_soc_cfg",
+    "section": ".irom0.text",
+    "value": 11000,
+    "size": 166,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "phy_gpio_cfg",
+    "section": ".irom0.text",
+    "value": 11228,
+    "size": 524,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "tx_cont_en",
+    "section": ".irom0.text",
+    "value": 11788,
+    "size": 161,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "tx_cont_dis",
+    "section": ".irom0.text",
+    "value": 11972,
+    "size": 83,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "tx_cont_cfg",
+    "section": ".irom0.text",
+    "value": 12056,
+    "size": 24,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "set_dpd_bypass",
+    "section": ".irom0.text",
+    "value": 16460,
+    "size": 36,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "periodic_cal",
+    "section": ".irom0.text",
+    "value": 12560,
+    "size": 56,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "bbpll_cal",
+    "section": ".irom0.text",
+    "value": 12656,
+    "size": 164,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "periodic_cal_top",
+    "section": ".irom0.text",
+    "value": 12840,
+    "size": 85,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "register_chipv6_phy_init_param",
+    "section": ".irom0.text",
+    "value": 12948,
+    "size": 665,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "change_bbpll160_sleep",
+    "section": ".irom0.text",
+    "value": 13668,
+    "size": 434,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "change_bbpll160",
+    "section": ".irom0.text",
+    "value": 14112,
+    "size": 48,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "set_crystal_uart",
+    "section": ".irom0.text",
+    "value": 14188,
+    "size": 114,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ant_switch_init",
+    "section": ".irom0.text",
+    "value": 14348,
+    "size": 156,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "reduce_current_init",
+    "section": ".irom0.text",
+    "value": 14548,
+    "size": 231,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "rtc_mem_check",
+    "section": ".irom0.text",
+    "value": 14792,
+    "size": 57,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "phy_afterwake_set_rfoption",
+    "section": ".irom0.text",
+    "value": 14856,
+    "size": 26,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "deep_sleep_set_option",
+    "section": ".irom0.text",
+    "value": 14888,
+    "size": 41,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "write_data_to_rtc",
+    "section": ".irom0.text",
+    "value": 14936,
+    "size": 54,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "get_data_from_rtc",
+    "section": ".irom0.text",
+    "value": 14996,
+    "size": 48,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "register_chipv6_phy",
+    "section": ".irom0.text",
+    "value": 15280,
+    "size": 1173,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "phy_check_data_table",
+    "section": ".irom0.text",
+    "value": 17280,
+    "size": 58,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "set_rf_gain_stage10",
+    "section": ".irom0.text",
+    "value": 16504,
+    "size": 44,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "get_vdd33_offset",
+    "section": ".irom0.text",
+    "value": 16564,
+    "size": 113,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "get_phy_target_power",
+    "section": ".irom0.text",
+    "value": 16700,
+    "size": 175,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "phy_set_most_tpw",
+    "section": ".irom0.text",
+    "value": 17092,
+    "size": 26,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "phy_vdd33_set_tpw",
+    "section": ".irom0.text",
+    "value": 17124,
+    "size": 21,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "get_adc_rand",
+    "section": ".irom0.text",
+    "value": 17152,
+    "size": 47,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "phy_get_rand",
+    "section": ".irom0.text",
+    "value": 17208,
+    "size": 20,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "phy_tx_pwctrl_cali",
+    "section": ".irom0.text",
+    "value": 17240,
+    "size": 38,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "phy_after_init_enrx",
+    "section": ".irom0.text",
+    "value": 17360,
+    "size": 93,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "phy_set_rx11b_reg",
+    "section": ".irom0.text",
+    "value": 17464,
+    "size": 51,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "phy_set_powerup_option",
+    "section": ".irom0.text",
+    "value": 17520,
+    "size": 11,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "phy_debug_print",
+    "section": ".text",
+    "value": 24,
+    "size": 61,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "phy_get_txpwr_param",
+    "section": ".irom0.text",
+    "value": 17544,
+    "size": 76,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "phy_get_rxnf_param",
+    "section": ".irom0.text",
+    "value": 17624,
+    "size": 8,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "phy_get_freq_param",
+    "section": ".irom0.text",
+    "value": 17640,
+    "size": 20,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   }
+  ],
+  "phy_chip_v6_cal.o": [
+   {
+    "name": "phy_tx_power_out",
+    "section": ".bss",
+    "value": 0,
+    "size": 2,
+    "type": "OBJECT",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "phy_tx_pwr_error",
+    "section": ".bss",
+    "value": 2,
+    "size": 2,
+    "type": "OBJECT",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "tx_pwctrl_track_num",
+    "section": ".bss",
+    "value": 4,
+    "size": 1,
+    "type": "OBJECT",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "rxiq_cover_fail_num",
+    "section": ".bss",
+    "value": 5,
+    "size": 1,
+    "type": "OBJECT",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "phy_meas_freq_offset",
+    "section": ".bss",
+    "value": 6,
+    "size": 2,
+    "type": "OBJECT",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "tx_pwctrl_pk_num",
+    "section": ".bss",
+    "value": 8,
+    "size": 1,
+    "type": "OBJECT",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "rfcal_bb_atten_init",
+    "section": ".data",
+    "value": 0,
+    "size": 1,
+    "type": "OBJECT",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "txbbgain2dcoindex",
+    "section": ".irom0.text",
+    "value": 0,
+    "size": 32,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "dcoindex2txbbgain",
+    "section": ".irom0.text",
+    "value": 32,
+    "size": 27,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "init_cal_dcoffset",
+    "section": ".irom0.text",
+    "value": 84,
+    "size": 183,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "set_txdc_pbus",
+    "section": ".irom0.text",
+    "value": 452,
+    "size": 105,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "set_rfanagain_dc_reg",
+    "section": ".irom0.text",
+    "value": 284,
+    "size": 153,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "get_rf_gain_qdb",
+    "section": ".irom0.text",
+    "value": 560,
+    "size": 40,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "correct_rf_ana_gain",
+    "section": ".irom0.text",
+    "value": 600,
+    "size": 262,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "get_sar_dout",
+    "section": ".irom0.text",
+    "value": 872,
+    "size": 139,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "read_sar_dout",
+    "section": ".irom0.text",
+    "value": 5576,
+    "size": 99,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "cal_rf_ana_gain",
+    "section": ".irom0.text",
+    "value": 1036,
+    "size": 277,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ram_rfcal_pwrctrl",
+    "section": ".irom0.text",
+    "value": 6924,
+    "size": 562,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "meas_tone_pwr_db",
+    "section": ".irom0.text",
+    "value": 1320,
+    "size": 109,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "tx_pwr_backoff",
+    "section": ".irom0.text",
+    "value": 1436,
+    "size": 433,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "tx_pwr_backoff_old",
+    "section": ".text",
+    "value": 16,
+    "size": 334,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "get_fcc_1m2m_pwr_offset",
+    "section": ".irom0.text",
+    "value": 1880,
+    "size": 58,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ram_set_txbb_atten",
+    "section": ".irom0.text",
+    "value": 1944,
+    "size": 133,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "get_target_power_offset",
+    "section": ".irom0.text",
+    "value": 4000,
+    "size": 264,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "txiq_get_mis_pwr",
+    "section": ".irom0.text",
+    "value": 2108,
+    "size": 156,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "txiq_cover",
+    "section": ".irom0.text",
+    "value": 2312,
+    "size": 526,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ram_rfcal_txiq",
+    "section": ".irom0.text",
+    "value": 2876,
+    "size": 618,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "rc_cal",
+    "section": ".irom0.text",
+    "value": 3540,
+    "size": 438,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "get_pwctrl_correct",
+    "section": ".irom0.text",
+    "value": 4264,
+    "size": 72,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "tx_pwctrl_cal",
+    "section": ".irom0.text",
+    "value": 4436,
+    "size": 770,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "dpd_scale_set",
+    "section": ".irom0.text",
+    "value": 8972,
+    "size": 69,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "tx_pwctrl_bg_init",
+    "section": ".irom0.text",
+    "value": 5220,
+    "size": 107,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "tx_pwctrl_background",
+    "section": ".irom0.text",
+    "value": 5384,
+    "size": 181,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ram_get_fm_sar_dout",
+    "section": ".irom0.text",
+    "value": 5684,
+    "size": 145,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ram_cal_tos_v60",
+    "section": ".irom0.text",
+    "value": 5880,
+    "size": 461,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ram_get_bb_atten",
+    "section": ".irom0.text",
+    "value": 6344,
+    "size": 38,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ram_rfcal_txcap",
+    "section": ".irom0.text",
+    "value": 6440,
+    "size": 446,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ram_rxiq_get_mis",
+    "section": ".irom0.text",
+    "value": 7536,
+    "size": 458,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ram_rxiq_cover_mg_mp",
+    "section": ".irom0.text",
+    "value": 8012,
+    "size": 420,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ram_rfcal_rxiq",
+    "section": ".irom0.text",
+    "value": 8436,
+    "size": 523,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "dpd_mem_write",
+    "section": ".irom0.text",
+    "value": 9048,
+    "size": 124,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "unsign_to_sign",
+    "section": ".text",
+    "value": 352,
+    "size": 44,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "phy_get_bb_freqoffset",
+    "section": ".text",
+    "value": 416,
+    "size": 103,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "phy_get_bb_evm",
+    "section": ".text",
+    "value": 524,
+    "size": 14,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   }
+  ],
+  "phy_chip_v6_unused.o": [
+   {
+    "name": "chip_v6_set_sense",
+    "section": ".irom0.text",
+    "value": 0,
+    "size": 2,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "chip_v6_get_sense",
+    "section": ".irom0.text",
+    "value": 4,
+    "size": 2,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "chip_v6_unset_chanfreq",
+    "section": ".irom0.text",
+    "value": 8,
+    "size": 4,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   }
+  ],
+  "phy_sleep.o": [
+   {
+    "name": "periodic_cal_sat",
+    "section": ".bss",
+    "value": 0,
+    "size": 1,
+    "type": "OBJECT",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "lslp_mem_opt_8266",
+    "section": ".bss",
+    "value": 2,
+    "size": 2,
+    "type": "OBJECT",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "software_slp_reject",
+    "section": ".bss",
+    "value": 4,
+    "size": 1,
+    "type": "OBJECT",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "SDIO_slp_reject",
+    "section": ".bss",
+    "value": 5,
+    "size": 1,
+    "type": "OBJECT",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "hardware_reject",
+    "section": ".bss",
+    "value": 6,
+    "size": 1,
+    "type": "OBJECT",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "chip_version",
+    "section": ".data",
+    "value": 0,
+    "size": 4,
+    "type": "OBJECT",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "pm_usec2rtc",
+    "section": ".irom0.text",
+    "value": 16,
+    "size": 52,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "pm_rtc2usec",
+    "section": ".irom0.text",
+    "value": 68,
+    "size": 8,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "pm_set_sleep_cycles",
+    "section": ".irom0.text",
+    "value": 88,
+    "size": 35,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "pm_sleep_opt",
+    "section": ".irom0.text",
+    "value": 172,
+    "size": 340,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "pm_wakeup_opt",
+    "section": ".irom0.text",
+    "value": 516,
+    "size": 46,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "get_chip_version",
+    "section": ".irom0.text",
+    "value": 580,
+    "size": 57,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "pm_sleep_opt_bb_off",
+    "section": ".irom0.text",
+    "value": 656,
+    "size": 75,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "pm_sleep_opt_bb_on",
+    "section": ".irom0.text",
+    "value": 748,
+    "size": 75,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "pm_rtc_clock_cali",
+    "section": ".text",
+    "value": 28,
+    "size": 181,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "pm_set_pll_xtal_wait_time",
+    "section": ".irom0.text",
+    "value": 836,
+    "size": 44,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "pm_prepare_to_sleep",
+    "section": ".irom0.text",
+    "value": 880,
+    "size": 2,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "pm_sdio_nidle",
+    "section": ".irom0.text",
+    "value": 904,
+    "size": 116,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "chg_lslp_mem_opt_8266",
+    "section": ".irom0.text",
+    "value": 1024,
+    "size": 29,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "pm_goto_sleep",
+    "section": ".text",
+    "value": 264,
+    "size": 334,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "pm_wait4wakeup",
+    "section": ".irom0.text",
+    "value": 1064,
+    "size": 56,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "pm_open_rf",
+    "section": ".irom0.text",
+    "value": 1140,
+    "size": 52,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "pm_sleep_set_mac",
+    "section": ".irom0.text",
+    "value": 1240,
+    "size": 131,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "pm_set_wakeup_mac",
+    "section": ".irom0.text",
+    "value": 1404,
+    "size": 147,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "pm_unmask_bt",
+    "section": ".irom0.text",
+    "value": 2516,
+    "size": 85,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "pm_check_mac_idle",
+    "section": ".irom0.text",
+    "value": 1572,
+    "size": 87,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "pm_set_sleep_btco",
+    "section": ".irom0.text",
+    "value": 1684,
+    "size": 160,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "pm_set_wakeup_btco",
+    "section": ".irom0.text",
+    "value": 1884,
+    "size": 275,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "pm_set_sleep_mode",
+    "section": ".irom0.text",
+    "value": 2220,
+    "size": 270,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "pm_wakeup_init",
+    "section": ".irom0.text",
+    "value": 2756,
+    "size": 602,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "sleep_opt_8266",
+    "section": ".irom0.text",
+    "value": 3364,
+    "size": 31,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "sleep_opt_bb_on_8266",
+    "section": ".irom0.text",
+    "value": 3404,
+    "size": 41,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "sleep_reset_analog_rtcreg_8266",
+    "section": ".irom0.text",
+    "value": 3480,
+    "size": 258,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "clockgate_watchdog",
+    "section": ".text",
+    "value": 604,
+    "size": 43,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   }
+  ]
+ },
+ "libmain.a": {
+  "app_main.o": [
+   {
+    "name": "info",
+    "section": ".bss",
+    "value": 4,
+    "size": 36,
+    "type": "OBJECT",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "lwip_timer_interval",
+    "section": ".bss",
+    "value": 40,
+    "size": 2,
+    "type": "OBJECT",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "check_timeouts_timer",
+    "section": ".bss",
+    "value": 44,
+    "size": 20,
+    "type": "OBJECT",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "rf_cal_sec",
+    "section": ".bss",
+    "value": 64,
+    "size": 4,
+    "type": "OBJECT",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "user_init_flag",
+    "section": ".bss",
+    "value": 68,
+    "size": 1,
+    "type": "OBJECT",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "SDK_VERSION",
+    "section": ".sdk.version",
+    "value": 0,
+    "size": 15,
+    "type": "OBJECT",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "Cache_Read_Enable_New",
+    "section": ".text",
+    "value": 60,
+    "size": 50,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "NmiTimSetFunc",
+    "section": ".text",
+    "value": 120,
+    "size": 32,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "NMI_Handler",
+    "section": ".text",
+    "value": 168,
+    "size": 82,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "call_user_start_local",
+    "section": ".text",
+    "value": 256,
+    "size": 21,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wdt_feed",
+    "section": ".text",
+    "value": 636,
+    "size": 103,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wdt_init",
+    "section": ".irom0.text",
+    "value": 868,
+    "size": 151,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "user_uart_wait_tx_fifo_empty",
+    "section": ".irom0.text",
+    "value": 1040,
+    "size": 84,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "user_rf_pre_init",
+    "section": ".irom0.text",
+    "value": 1836,
+    "size": 2,
+    "type": "FUNC",
+    "bind": "LOCAL"
+   },
+   {
+    "name": "flash_data_check",
+    "section": ".irom0.text",
+    "value": 1860,
+    "size": 155,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   }
+  ],
+  "eagle_lib.o": [
+   {
+    "name": "divide",
+    "section": ".irom0.text",
+    "value": 8,
+    "size": 60,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "skip_atoi",
+    "section": ".irom0.text",
+    "value": 68,
+    "size": 37,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ets_vsnprintf",
+    "section": ".irom0.text",
+    "value": 464,
+    "size": 864,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ets_vsprintf",
+    "section": ".irom0.text",
+    "value": 1328,
+    "size": 33,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ets_sprintf",
+    "section": ".irom0.text",
+    "value": 1364,
+    "size": 38,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ets_strcat",
+    "section": ".irom0.text",
+    "value": 1404,
+    "size": 30,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ets_strrchr",
+    "section": ".irom0.text",
+    "value": 1436,
+    "size": 41,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ets_strchr",
+    "section": ".irom0.text",
+    "value": 1480,
+    "size": 23,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "bit_popcount",
+    "section": ".irom0.text",
+    "value": 1504,
+    "size": 27,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ets_snprintf",
+    "section": ".irom0.text",
+    "value": 1532,
+    "size": 36,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   }
+  ],
+  "eagle_lwip_if.o": [
+   {
+    "name": "hostname",
+    "section": ".bss",
+    "value": 0,
+    "size": 4,
+    "type": "OBJECT",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "default_hostname",
+    "section": ".data",
+    "value": 0,
+    "size": 1,
+    "type": "OBJECT",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "eagle_lwip_getif",
+    "section": ".irom0.text",
+    "value": 964,
+    "size": 34,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "eagle_lwip_if_alloc",
+    "section": ".irom0.text",
+    "value": 312,
+    "size": 457,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "eagle_lwip_if_free",
+    "section": ".irom0.text",
+    "value": 828,
+    "size": 129,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   }
+  ],
+  "ets_timer.o": [
+   {
+    "name": "dbg_timer_flag",
+    "section": ".bss",
+    "value": 0,
+    "size": 1,
+    "type": "OBJECT",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "timer_list",
+    "section": ".bss",
+    "value": 4,
+    "size": 4,
+    "type": "OBJECT",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "debug_timer",
+    "section": ".bss",
+    "value": 8,
+    "size": 4,
+    "type": "OBJECT",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "debug_timerfn",
+    "section": ".bss",
+    "value": 12,
+    "size": 4,
+    "type": "OBJECT",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ets_timer_setfn",
+    "section": ".text",
+    "value": 244,
+    "size": 16,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ets_timer_disarm",
+    "section": ".text",
+    "value": 500,
+    "size": 84,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ets_timer_done",
+    "section": ".irom0.text",
+    "value": 16,
+    "size": 45,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ets_timer_handler_isr",
+    "section": ".irom0.text",
+    "value": 108,
+    "size": 165,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ets_timer_init",
+    "section": ".irom0.text",
+    "value": 336,
+    "size": 98,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "ets_timer_arm_new",
+    "section": ".text",
+    "value": 740,
+    "size": 364,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   }
+  ],
+  "mem_manager.o": [
+   {
+    "name": "check_memleak_debug_enable",
+    "section": ".irom0.text",
+    "value": 0,
+    "size": 4,
+    "type": "FUNC",
+    "bind": "LOCAL"
+   },
+   {
+    "name": "prvInsertBlockIntoUsedList",
+    "section": ".text",
+    "value": 4,
+    "size": 31,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "pvShowMalloc",
+    "section": ".text",
+    "value": 84,
+    "size": 139,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "prvRemoveBlockFromUsedList",
+    "section": ".text",
+    "value": 228,
+    "size": 41,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "xPortWantedSizeAlign",
+    "section": ".text",
+    "value": 276,
+    "size": 27,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "pvPortMalloc",
+    "section": ".text",
+    "value": 332,
+    "size": 195,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "vPortFree",
+    "section": ".text",
+    "value": 552,
+    "size": 81,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "pvPortCalloc",
+    "section": ".text",
+    "value": 640,
+    "size": 46,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "pvPortZalloc",
+    "section": ".text",
+    "value": 688,
+    "size": 25,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "pvPortRealloc",
+    "section": ".text",
+    "value": 720,
+    "size": 74,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "xPortGetFreeHeapSize",
+    "section": ".irom0.text",
+    "value": 112,
+    "size": 7,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "vPortInitialiseBlocks",
+    "section": ".irom0.text",
+    "value": 120,
+    "size": 2,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "system_show_malloc",
+    "section": ".text",
+    "value": 84,
+    "size": 139,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   }
+  ],
+  "spi_flash.o": [
+   {
+    "name": "flash_read",
+    "section": ".bss",
+    "value": 0,
+    "size": 4,
+    "type": "OBJECT",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "Cache_Read_Disable_2",
+    "section": ".text",
+    "value": 12,
+    "size": 59,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "Cache_Read_Enable_2",
+    "section": ".text",
+    "value": 84,
+    "size": 42,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "spi_flash_get_unique_id",
+    "section": ".text",
+    "value": 192,
+    "size": 352,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "spi_flash_get_id",
+    "section": ".text",
+    "value": 572,
+    "size": 85,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "spi_flash_read_status",
+    "section": ".text",
+    "value": 668,
+    "size": 37,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "spi_flash_write_status",
+    "section": ".text",
+    "value": 744,
+    "size": 84,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "flash_gd25q32c_read_status",
+    "section": ".text",
+    "value": 908,
+    "size": 387,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "flash_gd25q32c_write_status",
+    "section": ".text",
+    "value": 1380,
+    "size": 386,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "spi_flash_check_wr_protect",
+    "section": ".text",
+    "value": 1784,
+    "size": 141,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "spi_flash_erase_sector",
+    "section": ".text",
+    "value": 1936,
+    "size": 41,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "spi_flash_enable_qmode",
+    "section": ".text",
+    "value": 1996,
+    "size": 44,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "spi_flash_write",
+    "section": ".text",
+    "value": 2048,
+    "size": 77,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "spi_flash_read",
+    "section": ".text",
+    "value": 2140,
+    "size": 85,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "spi_flash_set_read_func",
+    "section": ".irom0.text",
+    "value": 4,
+    "size": 7,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "spi_flash_issi_enable_QIO_mode",
+    "section": ".text",
+    "value": 2332,
+    "size": 400,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "flash_gd25q32c_enable_QIO_mode",
+    "section": ".text",
+    "value": 2764,
+    "size": 83,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   }
+  ],
+  "spi_overlap.o": [
+   {
+    "name": "overlap_hspi_init",
+    "section": ".irom0.text",
+    "value": 16,
+    "size": 135,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "overlap_hspi_deinit",
+    "section": ".irom0.text",
+    "value": 168,
+    "size": 134,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "overlap_hspi_read_data",
+    "section": ".irom0.text",
+    "value": 316,
+    "size": 213,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   }
+  ],
+  "time.o": [
+   {
+    "name": "millis",
+    "section": ".irom0.text",
+    "value": 148,
+    "size": 55,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "micros",
+    "section": ".irom0.text",
+    "value": 208,
+    "size": 18,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "updateTime",
+    "section": ".irom0.text",
+    "value": 232,
+    "size": 18,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "configTime",
+    "section": ".irom0.text",
+    "value": 312,
+    "size": 160,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "time",
+    "section": ".irom0.text",
+    "value": 476,
+    "size": 36,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "_gettimeofday_r",
+    "section": ".irom0.text",
+    "value": 520,
+    "size": 52,
+    "type": "FUNC",
+    "bind": "LOCAL"
+   },
+   {
+    "name": "sntp_get_rtc_time",
+    "section": ".text",
+    "value": 36,
+    "size": 162,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "getrealtimeofday",
+    "section": ".irom0.text",
+    "value": 580,
+    "size": 30,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "sntp_update_rtc",
+    "section": ".text",
+    "value": 260,
+    "size": 247,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   }
+  ],
+  "user_interface.o": [
+   {
+    "name": "deep_sleep_flag",
+    "section": ".bss",
+    "value": 247,
+    "size": 1,
+    "type": "OBJECT",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "cpu_overclock",
+    "section": ".bss",
+    "value": 248,
+    "size": 1,
+    "type": "OBJECT",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "event_cb",
+    "section": ".bss",
+    "value": 252,
+    "size": 4,
+    "type": "OBJECT",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "status_led_output_level",
+    "section": ".bss",
+    "value": 256,
+    "size": 1,
+    "type": "OBJECT",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "done_cb",
+    "section": ".bss",
+    "value": 260,
+    "size": 4,
+    "type": "OBJECT",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "rst_if",
+    "section": ".bss",
+    "value": 264,
+    "size": 28,
+    "type": "OBJECT",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "default_interface",
+    "section": ".bss",
+    "value": 292,
+    "size": 1,
+    "type": "OBJECT",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "OpmodChgIsOnGoing",
+    "section": ".bss",
+    "value": 293,
+    "size": 1,
+    "type": "OBJECT",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "promiscuous_cb",
+    "section": ".bss",
+    "value": 296,
+    "size": 4,
+    "type": "OBJECT",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "event_TaskQueue",
+    "section": ".bss",
+    "value": 320,
+    "size": 256,
+    "type": "OBJECT",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "default_ssid",
+    "section": ".irom.text",
+    "value": 32,
+    "size": 17,
+    "type": "OBJECT",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "timer2_ms_flag",
+    "section": ".data",
+    "value": 1,
+    "size": 1,
+    "type": "OBJECT",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "dhcps_flag",
+    "section": ".data",
+    "value": 2,
+    "size": 1,
+    "type": "OBJECT",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "dhcpc_flag",
+    "section": ".data",
+    "value": 3,
+    "size": 1,
+    "type": "OBJECT",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "reconnect_internal",
+    "section": ".data",
+    "value": 5,
+    "size": 1,
+    "type": "OBJECT",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "system_set_os_print",
+    "section": ".irom0.text",
+    "value": 4,
+    "size": 13,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "system_get_os_print",
+    "section": ".irom0.text",
+    "value": 24,
+    "size": 8,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "os_printf_plus",
+    "section": ".text",
+    "value": 56,
+    "size": 293,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "system_get_free_heap_size",
+    "section": ".irom0.text",
+    "value": 4440,
+    "size": 18,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "system_restart_local",
+    "section": ".irom0.text",
+    "value": 904,
+    "size": 222,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wifi_station_connect",
+    "section": ".irom0.text",
+    "value": 10616,
+    "size": 146,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wifi_station_disconnect",
+    "section": ".irom0.text",
+    "value": 10832,
+    "size": 198,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "system_pp_recycle_rx_pkt",
+    "section": ".irom0.text",
+    "value": 580,
+    "size": 18,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "system_adc_read",
+    "section": ".irom0.text",
+    "value": 612,
+    "size": 57,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "system_adc_read_fast",
+    "section": ".irom0.text",
+    "value": 684,
+    "size": 94,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "system_get_vdd33",
+    "section": ".irom0.text",
+    "value": 792,
+    "size": 44,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "system_restart_core",
+    "section": ".text",
+    "value": 372,
+    "size": 55,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "system_restart_hook",
+    "section": ".irom0.text",
+    "value": 836,
+    "size": 2,
+    "type": "FUNC",
+    "bind": "LOCAL"
+   },
+   {
+    "name": "system_rtc_mem_read",
+    "section": ".text",
+    "value": 840,
+    "size": 86,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "system_rtc_mem_write",
+    "section": ".text",
+    "value": 748,
+    "size": 86,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "system_restart",
+    "section": ".irom0.text",
+    "value": 1164,
+    "size": 88,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wifi_get_opmode",
+    "section": ".irom0.text",
+    "value": 5736,
+    "size": 17,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "system_restore",
+    "section": ".irom0.text",
+    "value": 1288,
+    "size": 104,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "system_param_save_with_protect",
+    "section": ".irom0.text",
+    "value": 6840,
+    "size": 180,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "system_get_flash_size_map",
+    "section": ".irom0.text",
+    "value": 1396,
+    "size": 29,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "system_get_boot_version",
+    "section": ".irom0.text",
+    "value": 1432,
+    "size": 11,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "system_get_test_result",
+    "section": ".irom0.text",
+    "value": 1496,
+    "size": 31,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "system_get_userbin_addr",
+    "section": ".irom0.text",
+    "value": 1536,
+    "size": 150,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "system_upgrade_userbin_check",
+    "section": ".irom0.text",
+    "value": 2348,
+    "size": 60,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "system_get_boot_mode",
+    "section": ".irom0.text",
+    "value": 1692,
+    "size": 26,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "system_restart_enhance",
+    "section": ".irom0.text",
+    "value": 1836,
+    "size": 426,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "system_param_load",
+    "section": ".irom0.text",
+    "value": 7092,
+    "size": 105,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "system_upgrade_userbin_set",
+    "section": ".irom0.text",
+    "value": 2268,
+    "size": 73,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "system_upgrade_flag_set",
+    "section": ".irom0.text",
+    "value": 2412,
+    "size": 20,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "system_upgrade_flag_check",
+    "section": ".irom0.text",
+    "value": 2436,
+    "size": 8,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "system_upgrade_reboot",
+    "section": ".irom0.text",
+    "value": 2548,
+    "size": 316,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "system_deep_sleep_local_2",
+    "section": ".text",
+    "value": 488,
+    "size": 170,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "system_deep_sleep_instant",
+    "section": ".irom0.text",
+    "value": 2952,
+    "size": 413,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "system_deep_sleep",
+    "section": ".irom0.text",
+    "value": 3408,
+    "size": 98,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "system_deep_sleep_set_option",
+    "section": ".irom0.text",
+    "value": 3512,
+    "size": 28,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "system_phy_temperature_alert",
+    "section": ".irom0.text",
+    "value": 3544,
+    "size": 20,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "system_phy_set_max_tpw",
+    "section": ".irom0.text",
+    "value": 3568,
+    "size": 18,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "system_phy_set_tpw_via_vdd33",
+    "section": ".irom0.text",
+    "value": 3592,
+    "size": 18,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "system_phy_set_rfoption",
+    "section": ".irom0.text",
+    "value": 3616,
+    "size": 18,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "system_phy_set_powerup_option",
+    "section": ".irom0.text",
+    "value": 3640,
+    "size": 18,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "system_update_cpu_freq",
+    "section": ".irom0.text",
+    "value": 3672,
+    "size": 86,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "system_get_cpu_freq",
+    "section": ".irom0.text",
+    "value": 3764,
+    "size": 21,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "system_overclock",
+    "section": ".irom0.text",
+    "value": 3792,
+    "size": 41,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "system_restoreclock",
+    "section": ".irom0.text",
+    "value": 3840,
+    "size": 47,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "system_timer_reinit",
+    "section": ".irom0.text",
+    "value": 3896,
+    "size": 21,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "system_get_time",
+    "section": ".text",
+    "value": 668,
+    "size": 18,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "system_relative_time",
+    "section": ".irom0.text",
+    "value": 3924,
+    "size": 14,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "system_station_got_ip_set",
+    "section": ".irom0.text",
+    "value": 4008,
+    "size": 264,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "system_print_meminfo",
+    "section": ".irom0.text",
+    "value": 4340,
+    "size": 95,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "system_get_chip_id",
+    "section": ".irom0.text",
+    "value": 4472,
+    "size": 35,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "system_rtc_clock_cali_proc",
+    "section": ".irom0.text",
+    "value": 4512,
+    "size": 18,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "system_get_rtc_time",
+    "section": ".irom0.text",
+    "value": 4536,
+    "size": 11,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "system_mktime",
+    "section": ".irom0.text",
+    "value": 4576,
+    "size": 208,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "system_init_done_cb",
+    "section": ".irom0.text",
+    "value": 4788,
+    "size": 8,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "system_get_rst_info",
+    "section": ".irom0.text",
+    "value": 4800,
+    "size": 5,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "system_get_data_of_array_8",
+    "section": ".irom0.text",
+    "value": 4808,
+    "size": 36,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "system_get_data_of_array_16",
+    "section": ".irom0.text",
+    "value": 4844,
+    "size": 38,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "system_get_string_from_flash",
+    "section": ".irom0.text",
+    "value": 4892,
+    "size": 108,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wifi_softap_dhcps_start",
+    "section": ".irom0.text",
+    "value": 5020,
+    "size": 74,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wifi_get_ip_info",
+    "section": ".irom0.text",
+    "value": 16868,
+    "size": 127,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wifi_softap_dhcps_stop",
+    "section": ".irom0.text",
+    "value": 5116,
+    "size": 68,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wifi_softap_dhcps_status",
+    "section": ".irom0.text",
+    "value": 5188,
+    "size": 8,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wifi_station_dhcpc_start",
+    "section": ".irom0.text",
+    "value": 5216,
+    "size": 87,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wifi_station_dhcpc_stop",
+    "section": ".irom0.text",
+    "value": 5324,
+    "size": 68,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wifi_station_dhcpc_event",
+    "section": ".irom0.text",
+    "value": 5432,
+    "size": 123,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wifi_station_get_reconnect_policy",
+    "section": ".irom0.text",
+    "value": 11120,
+    "size": 8,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wifi_station_dhcpc_set_maxtry",
+    "section": ".irom0.text",
+    "value": 5560,
+    "size": 13,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wifi_station_dhcpc_status",
+    "section": ".irom0.text",
+    "value": 5580,
+    "size": 8,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wifi_get_opmode_default",
+    "section": ".irom0.text",
+    "value": 5756,
+    "size": 17,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wifi_get_broadcast_if",
+    "section": ".irom0.text",
+    "value": 5920,
+    "size": 53,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wifi_set_broadcast_if",
+    "section": ".irom0.text",
+    "value": 6008,
+    "size": 126,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wifi_set_opmode",
+    "section": ".irom0.text",
+    "value": 6480,
+    "size": 17,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wifi_set_opmode_current",
+    "section": ".irom0.text",
+    "value": 6500,
+    "size": 17,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "system_get_checksum",
+    "section": ".irom0.text",
+    "value": 6520,
+    "size": 46,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wifi_param_save_protect_with_check",
+    "section": ".irom0.text",
+    "value": 6632,
+    "size": 182,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "system_save_sys_param",
+    "section": ".irom0.text",
+    "value": 7032,
+    "size": 42,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wifi_station_get_config",
+    "section": ".irom0.text",
+    "value": 7456,
+    "size": 17,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wifi_station_get_config_default",
+    "section": ".irom0.text",
+    "value": 7476,
+    "size": 17,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wifi_station_get_ap_info",
+    "section": ".irom0.text",
+    "value": 7528,
+    "size": 183,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wifi_station_ap_number_set",
+    "section": ".irom0.text",
+    "value": 7744,
+    "size": 153,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wifi_station_set_config",
+    "section": ".irom0.text",
+    "value": 9124,
+    "size": 23,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wifi_station_set_config_current",
+    "section": ".irom0.text",
+    "value": 9152,
+    "size": 23,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wifi_station_restore_config",
+    "section": ".irom0.text",
+    "value": 9176,
+    "size": 19,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wifi_station_get_current_ap_id",
+    "section": ".irom0.text",
+    "value": 9200,
+    "size": 18,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wifi_station_ap_check",
+    "section": ".irom0.text",
+    "value": 9224,
+    "size": 51,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wifi_station_ap_change",
+    "section": ".irom0.text",
+    "value": 9364,
+    "size": 273,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wifi_station_scan",
+    "section": ".irom0.text",
+    "value": 9656,
+    "size": 70,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wifi_station_get_auto_connect",
+    "section": ".irom0.text",
+    "value": 9732,
+    "size": 18,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wifi_station_set_auto_connect",
+    "section": ".irom0.text",
+    "value": 9808,
+    "size": 173,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wifi_station_save_pmk2cache",
+    "section": ".irom0.text",
+    "value": 10072,
+    "size": 294,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wifi_station_save_bssid",
+    "section": ".irom0.text",
+    "value": 10424,
+    "size": 155,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wifi_station_get_connect_status",
+    "section": ".irom0.text",
+    "value": 11040,
+    "size": 45,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wifi_station_set_reconnect_policy",
+    "section": ".irom0.text",
+    "value": 11092,
+    "size": 22,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wifi_station_get_rssi",
+    "section": ".irom0.text",
+    "value": 11136,
+    "size": 62,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wifi_station_set_default_hostname",
+    "section": ".irom0.text",
+    "value": 11248,
+    "size": 101,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wifi_station_get_hostname",
+    "section": ".irom0.text",
+    "value": 11356,
+    "size": 31,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wifi_station_set_hostname",
+    "section": ".irom0.text",
+    "value": 11448,
+    "size": 154,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wifi_softap_cacl_mac",
+    "section": ".irom0.text",
+    "value": 11612,
+    "size": 94,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wifi_softap_set_default_ssid",
+    "section": ".irom0.text",
+    "value": 11740,
+    "size": 93,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wifi_get_macaddr",
+    "section": ".irom0.text",
+    "value": 17156,
+    "size": 94,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wifi_softap_get_config",
+    "section": ".irom0.text",
+    "value": 12276,
+    "size": 17,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wifi_softap_get_config_default",
+    "section": ".irom0.text",
+    "value": 12296,
+    "size": 17,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wifi_softap_set_config",
+    "section": ".irom0.text",
+    "value": 13252,
+    "size": 17,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wifi_softap_set_config_current",
+    "section": ".irom0.text",
+    "value": 13272,
+    "size": 17,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wifi_softap_set_station_info",
+    "section": ".irom0.text",
+    "value": 13308,
+    "size": 101,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wifi_softap_get_station_info",
+    "section": ".irom0.text",
+    "value": 13456,
+    "size": 168,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wifi_softap_free_station_info",
+    "section": ".irom0.text",
+    "value": 13644,
+    "size": 62,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wifi_softap_get_station_num",
+    "section": ".irom0.text",
+    "value": 13716,
+    "size": 78,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wifi_softap_deauth",
+    "section": ".irom0.text",
+    "value": 13836,
+    "size": 177,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wifi_softap_get_beacon_only_mode",
+    "section": ".irom0.text",
+    "value": 14020,
+    "size": 18,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wifi_softap_set_beacon_only_mode",
+    "section": ".irom0.text",
+    "value": 14064,
+    "size": 107,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wifi_register_user_ie_manufacturer_recv_cb",
+    "section": ".irom0.text",
+    "value": 14176,
+    "size": 19,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wifi_unregister_user_ie_manufacturer_recv_cb",
+    "section": ".irom0.text",
+    "value": 14200,
+    "size": 10,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wifi_set_user_ie",
+    "section": ".irom0.text",
+    "value": 14304,
+    "size": 270,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wifi_get_user_ie",
+    "section": ".irom0.text",
+    "value": 14580,
+    "size": 47,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wifi_get_phy_mode",
+    "section": ".irom0.text",
+    "value": 14632,
+    "size": 8,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wifi_set_phy_mode",
+    "section": ".irom0.text",
+    "value": 14748,
+    "size": 297,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wifi_check_regdomain_param",
+    "section": ".irom0.text",
+    "value": 15248,
+    "size": 125,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wifi_regdomain_need_update",
+    "section": ".irom0.text",
+    "value": 15388,
+    "size": 216,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wifi_set_regdomain",
+    "section": ".irom0.text",
+    "value": 15664,
+    "size": 309,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wifi_get_regdomain",
+    "section": ".irom0.text",
+    "value": 15988,
+    "size": 173,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wifi_set_sleep_type",
+    "section": ".irom0.text",
+    "value": 16168,
+    "size": 31,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wifi_enable_gpio_wakeup",
+    "section": ".irom0.text",
+    "value": 16208,
+    "size": 40,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wifi_disable_gpio_wakeup",
+    "section": ".irom0.text",
+    "value": 16256,
+    "size": 24,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wifi_get_sleep_type",
+    "section": ".irom0.text",
+    "value": 16284,
+    "size": 18,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wifi_get_channel",
+    "section": ".irom0.text",
+    "value": 16308,
+    "size": 21,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wifi_set_channel",
+    "section": ".irom0.text",
+    "value": 16356,
+    "size": 81,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wifi_promiscuous_set_mac",
+    "section": ".irom0.text",
+    "value": 16452,
+    "size": 92,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wifi_promiscuous_enable",
+    "section": ".irom0.text",
+    "value": 16600,
+    "size": 239,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wifi_set_promiscuous_rx_cb",
+    "section": ".irom0.text",
+    "value": 16844,
+    "size": 8,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wifi_set_ip_info",
+    "section": ".irom0.text",
+    "value": 17016,
+    "size": 113,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wifi_set_macaddr",
+    "section": ".irom0.text",
+    "value": 17336,
+    "size": 299,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wifi_enable_6m_rate",
+    "section": ".irom0.text",
+    "value": 17640,
+    "size": 8,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wifi_get_user_fixed_rate",
+    "section": ".irom0.text",
+    "value": 17652,
+    "size": 30,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wifi_set_user_fixed_rate",
+    "section": ".irom0.text",
+    "value": 17688,
+    "size": 31,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wifi_set_user_sup_rate",
+    "section": ".irom0.text",
+    "value": 17724,
+    "size": 58,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wifi_set_user_rate_limit",
+    "section": ".irom0.text",
+    "value": 17788,
+    "size": 35,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wifi_get_user_limit_rate_mask",
+    "section": ".irom0.text",
+    "value": 17828,
+    "size": 8,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wifi_set_user_limit_rate_mask",
+    "section": ".irom0.text",
+    "value": 17840,
+    "size": 23,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wifi_register_send_pkt_freedom_cb",
+    "section": ".irom0.text",
+    "value": 17868,
+    "size": 19,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wifi_unregister_send_pkt_freedom_cb",
+    "section": ".irom0.text",
+    "value": 17892,
+    "size": 10,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wifi_send_pkt_freedom",
+    "section": ".irom0.text",
+    "value": 17912,
+    "size": 73,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wifi_rfid_locp_recv_open",
+    "section": ".irom0.text",
+    "value": 17992,
+    "size": 18,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wifi_rfid_locp_recv_close",
+    "section": ".irom0.text",
+    "value": 18016,
+    "size": 18,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wifi_register_rfid_locp_recv_cb",
+    "section": ".irom0.text",
+    "value": 18040,
+    "size": 18,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wifi_unregister_rfid_locp_recv_cb",
+    "section": ".irom0.text",
+    "value": 18064,
+    "size": 18,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wifi_status_led_install",
+    "section": ".irom0.text",
+    "value": 18088,
+    "size": 52,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wifi_status_led_uninstall",
+    "section": ".irom0.text",
+    "value": 18152,
+    "size": 35,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wifi_set_status_led_output_level",
+    "section": ".irom0.text",
+    "value": 18192,
+    "size": 17,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wifi_set_event_handler_cb",
+    "section": ".irom0.text",
+    "value": 18300,
+    "size": 63,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "system_os_task",
+    "section": ".irom0.text",
+    "value": 18384,
+    "size": 60,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "system_os_post",
+    "section": ".text",
+    "value": 696,
+    "size": 47,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "system_uart_swap",
+    "section": ".irom0.text",
+    "value": 18468,
+    "size": 99,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "system_uart_de_swap",
+    "section": ".irom0.text",
+    "value": 18588,
+    "size": 54,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "system_get_sdk_version",
+    "section": ".irom0.text",
+    "value": 18648,
+    "size": 5,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   }
+  ],
+  "vector.o": [
+   {
+    "name": "call_user_start",
+    "section": ".UserEnter.text",
+    "value": 8,
+    "size": 0,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   }
+  ]
+ },
+ "libwpa.a": {
+  "ap_config.o": [
+   {
+    "name": "hostapd_config_defaults_bss",
+    "section": ".irom0.text",
+    "value": 8,
+    "size": 71,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "hostapd_config_defaults",
+    "section": ".irom0.text",
+    "value": 108,
+    "size": 132,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "hostapd_mac_comp",
+    "section": ".irom0.text",
+    "value": 244,
+    "size": 20,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "hostapd_mac_comp_empty",
+    "section": ".irom0.text",
+    "value": 272,
+    "size": 36,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "hostapd_setup_wpa_psk",
+    "section": ".irom0.text",
+    "value": 396,
+    "size": 46,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "hostapd_wep_key_cmp",
+    "section": ".irom0.text",
+    "value": 448,
+    "size": 80,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "hostapd_maclist_found",
+    "section": ".irom0.text",
+    "value": 532,
+    "size": 103,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "hostapd_rate_found",
+    "section": ".irom0.text",
+    "value": 636,
+    "size": 25,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "hostapd_get_psk",
+    "section": ".irom0.text",
+    "value": 668,
+    "size": 82,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   }
+  ],
+  "common.o": [
+   {
+    "name": "inc_byte_array",
+    "section": ".irom0.text",
+    "value": 0,
+    "size": 29,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "hex2byte",
+    "section": ".irom0.text",
+    "value": 84,
+    "size": 51,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "hexstr2bin",
+    "section": ".irom0.text",
+    "value": 136,
+    "size": 65,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wpa_get_ntp_timestamp",
+    "section": ".irom0.text",
+    "value": 232,
+    "size": 145,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wpa_config_parse_string",
+    "section": ".irom0.text",
+    "value": 428,
+    "size": 257,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "dup_binstr",
+    "section": ".irom0.text",
+    "value": 700,
+    "size": 70,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   }
+  ],
+  "ieee802_1x.o": [
+   {
+    "name": "ieee802_1x_receive",
+    "section": ".irom0.text",
+    "value": 8,
+    "size": 120,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   }
+  ],
+  "os_xtensa.o": [
+   {
+    "name": "ets_strdup",
+    "section": ".irom0.text",
+    "value": 16,
+    "size": 66,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "os_get_time",
+    "section": ".irom0.text",
+    "value": 84,
+    "size": 4,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "r_rand",
+    "section": ".irom0.text",
+    "value": 92,
+    "size": 18,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "os_random",
+    "section": ".irom0.text",
+    "value": 112,
+    "size": 15,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "os_get_random",
+    "section": ".irom0.text",
+    "value": 128,
+    "size": 92,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   }
+  ],
+  "wpa_auth.o": [
+   {
+    "name": "wpa_auth_for_each_sta",
+    "section": ".irom0.text",
+    "value": 384,
+    "size": 4,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wpa_init",
+    "section": ".irom0.text",
+    "value": 872,
+    "size": 142,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wpa_auth_sta_init",
+    "section": ".irom0.text",
+    "value": 1028,
+    "size": 70,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wpa_auth_sta_associated",
+    "section": ".irom0.text",
+    "value": 1104,
+    "size": 106,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wpa_auth_sta_no_wpa",
+    "section": ".irom0.text",
+    "value": 1212,
+    "size": 9,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wpa_auth_sta_deinit",
+    "section": ".irom0.text",
+    "value": 1328,
+    "size": 34,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wpa_receive",
+    "section": ".irom0.text",
+    "value": 1616,
+    "size": 965,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "__wpa_send_eapol",
+    "section": ".irom0.text",
+    "value": 2924,
+    "size": 1023,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wpa_remove_ptk",
+    "section": ".irom0.text",
+    "value": 4292,
+    "size": 74,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wpa_auth_sm_event",
+    "section": ".irom0.text",
+    "value": 4372,
+    "size": 152,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   }
+  ],
+  "wpa_auth_ie.o": [
+   {
+    "name": "wpa_write_rsn_ie",
+    "section": ".irom0.text",
+    "value": 220,
+    "size": 266,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wpa_auth_gen_wpa_ie",
+    "section": ".irom0.text",
+    "value": 508,
+    "size": 143,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wpa_add_kde",
+    "section": ".irom0.text",
+    "value": 660,
+    "size": 106,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wpa_validate_wpa_ie",
+    "section": ".irom0.text",
+    "value": 808,
+    "size": 321,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wpa_parse_kde_ies",
+    "section": ".irom0.text",
+    "value": 1356,
+    "size": 154,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wpa_auth_uses_mfp",
+    "section": ".irom0.text",
+    "value": 1512,
+    "size": 14,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   }
+  ],
+  "wpabuf.o": [
+   {
+    "name": "wpabuf_put",
+    "section": ".irom0.text",
+    "value": 484,
+    "size": 58,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wpabuf_resize",
+    "section": ".irom0.text",
+    "value": 52,
+    "size": 149,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wpabuf_alloc",
+    "section": ".irom0.text",
+    "value": 212,
+    "size": 41,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wpabuf_alloc_ext_data",
+    "section": ".irom0.text",
+    "value": 264,
+    "size": 47,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wpabuf_alloc_copy",
+    "section": ".irom0.text",
+    "value": 316,
+    "size": 47,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wpabuf_dup",
+    "section": ".irom0.text",
+    "value": 368,
+    "size": 48,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wpabuf_free",
+    "section": ".irom0.text",
+    "value": 432,
+    "size": 48,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wpabuf_concat",
+    "section": ".irom0.text",
+    "value": 552,
+    "size": 87,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wpabuf_zeropad",
+    "section": ".irom0.text",
+    "value": 648,
+    "size": 90,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wpabuf_printf",
+    "section": ".irom0.text",
+    "value": 748,
+    "size": 100,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   }
+  ],
+  "wpa.o": [
+   {
+    "name": "wpa_sm_set_state",
+    "section": ".irom0.text",
+    "value": 5856,
+    "size": 40,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wpa_sm_rx_eapol",
+    "section": ".irom0.text",
+    "value": 4312,
+    "size": 371,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wpa_register",
+    "section": ".irom0.text",
+    "value": 4688,
+    "size": 43,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wpa_set_profile",
+    "section": ".irom0.text",
+    "value": 4736,
+    "size": 21,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wpa_set_pmk",
+    "section": ".irom0.text",
+    "value": 4772,
+    "size": 32,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wpa_set_bss",
+    "section": ".irom0.text",
+    "value": 4848,
+    "size": 130,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "pp_michael_mic_failure",
+    "section": ".irom0.text",
+    "value": 5520,
+    "size": 162,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "eapol_txcb",
+    "section": ".irom0.text",
+    "value": 5700,
+    "size": 138,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   }
+  ],
+  "wpa_common.o": [
+   {
+    "name": "wpa_parse_wpa_ie_rsn",
+    "section": ".irom0.text",
+    "value": 364,
+    "size": 404,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wpa_parse_wpa_ie_wpa",
+    "section": ".irom0.text",
+    "value": 776,
+    "size": 389,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wpa_eapol_key_mic",
+    "section": ".irom0.text",
+    "value": 1180,
+    "size": 63,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wpa_compare_rsn_ie",
+    "section": ".irom0.text",
+    "value": 1248,
+    "size": 38,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wpa_pmk_to_ptk",
+    "section": ".irom0.text",
+    "value": 1332,
+    "size": 227,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "rsn_pmkid",
+    "section": ".irom0.text",
+    "value": 1580,
+    "size": 91,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wpa_cipher_key_len",
+    "section": ".irom0.text",
+    "value": 1672,
+    "size": 36,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wpa_cipher_to_alg",
+    "section": ".irom0.text",
+    "value": 1708,
+    "size": 35,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wpa_cipher_to_suite",
+    "section": ".irom0.text",
+    "value": 1788,
+    "size": 81,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "rsn_cipher_put_suites",
+    "section": ".irom0.text",
+    "value": 1872,
+    "size": 96,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wpa_cipher_put_suites",
+    "section": ".irom0.text",
+    "value": 1968,
+    "size": 74,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   }
+  ],
+  "wpa_debug.o": [
+   {
+    "name": "wpa_snprintf_hex_uppercase",
+    "section": ".irom0.text",
+    "value": 124,
+    "size": 17,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wpa_snprintf_hex",
+    "section": ".irom0.text",
+    "value": 144,
+    "size": 17,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "eloop_cancel_timeout",
+    "section": ".irom0.text",
+    "value": 164,
+    "size": 4,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "eloop_register_timeout",
+    "section": ".irom0.text",
+    "value": 168,
+    "size": 4,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   }
+  ],
+  "wpa_ie.o": [
+   {
+    "name": "wpa_parse_wpa_ie",
+    "section": ".irom0.text",
+    "value": 8,
+    "size": 37,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wpa_supplicant_parse_ies",
+    "section": ".irom0.text",
+    "value": 272,
+    "size": 154,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wpa_gen_wpa_ie",
+    "section": ".irom0.text",
+    "value": 784,
+    "size": 49,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   }
+  ],
+  "wpa_main.o": [
+   {
+    "name": "ppInstallKey",
+    "section": ".irom0.text",
+    "value": 72,
+    "size": 322,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wpa_config_profile",
+    "section": ".irom0.text",
+    "value": 512,
+    "size": 55,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wpa_config_bss",
+    "section": ".irom0.text",
+    "value": 572,
+    "size": 45,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wpa_config_assoc_ie",
+    "section": ".irom0.text",
+    "value": 624,
+    "size": 20,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "dhcp_bind_check",
+    "section": ".irom0.text",
+    "value": 652,
+    "size": 30,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "eagle_auth_done",
+    "section": ".irom0.text",
+    "value": 836,
+    "size": 391,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wpa_neg_complete",
+    "section": ".irom0.text",
+    "value": 1228,
+    "size": 15,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wpa_attach",
+    "section": ".irom0.text",
+    "value": 1276,
+    "size": 60,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   }
+  ],
+  "wpas_glue.o": [
+   {
+    "name": "wpa_sm_alloc_eapol",
+    "section": ".irom0.text",
+    "value": 124,
+    "size": 64,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wpa_sm_deauthenticate",
+    "section": ".irom0.text",
+    "value": 188,
+    "size": 26,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wpa_sm_mlme_setprotection",
+    "section": ".irom0.text",
+    "value": 216,
+    "size": 4,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wpa_sm_get_beacon_ie",
+    "section": ".irom0.text",
+    "value": 220,
+    "size": 4,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   },
+   {
+    "name": "wpa_sm_disassociate",
+    "section": ".irom0.text",
+    "value": 224,
+    "size": 2,
+    "type": "FUNC",
+    "bind": "GLOBAL"
+   }
+  ]
+ }
+}

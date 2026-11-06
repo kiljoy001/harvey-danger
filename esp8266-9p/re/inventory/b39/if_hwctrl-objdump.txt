@@ -1,0 +1,672 @@
+
+/tmp/ifx/if_hwctrl.o:     file format elf32-xtensa-le
+
+
+Disassembly of section .text2.22:
+
+00000000 <.text2.22>:
+	...
+			0: R_XTENSA_32	g_ic
+			4: R_XTENSA_32	if_ctrl
+			8: R_XTENSA_32	wDev_Crypto_Disable
+			c: R_XTENSA_32	wDev_SetRxPolicy
+  10:	f0c112        	addi	a1, a1, -16
+  13:	21c9      	s32i.n	a12, a1, 8
+  15:	02cd      	mov.n	a12, a2
+  17:	fffa21        	l32r	a2, 0 <.text2.22>
+			17: R_XTENSA_SLOT0_OP	.text2.22
+  1a:	3109      	s32i.n	a0, a1, 12
+  1c:	01d222        	addmi	a2, a2, 0x100
+  1f:	600232        	l8ui	a3, a2, 96
+  22:	43dc      	bnez.n	a3, 3a <.text2.22+0x3a>
+			22: R_XTENSA_SLOT0_OP	.text2.22+0x3a
+  24:	fff841        	l32r	a4, 4 <.text2.22+0x4>
+			24: R_XTENSA_SLOT0_OP	.text2.22+0x4
+  27:	112cc0        	slli	a2, a12, 4
+  2a:	242a      	add.n	a2, a4, a2
+  2c:	0c4232        	s8i	a3, a2, 12
+  2f:	0d4232        	s8i	a3, a2, 13
+  32:	0c2d      	mov.n	a2, a12
+  34:	fff501        	l32r	a0, 8 <.text2.22+0x8>
+			34: R_XTENSA_SLOT0_OP	.text2.22+0x8
+			34: R_XTENSA_ASM_EXPAND	wDev_Crypto_Disable
+  37:	0000c0        	callx0	a0
+  3a:	0c3d      	mov.n	a3, a12
+  3c:	040c      	movi.n	a4, 0
+  3e:	120c      	movi.n	a2, 1
+  40:	fff301        	l32r	a0, c <.text2.22+0xc>
+			40: R_XTENSA_SLOT0_OP	.text2.22+0xc
+			40: R_XTENSA_ASM_EXPAND	wDev_SetRxPolicy
+  43:	0000c0        	callx0	a0
+  46:	3108      	l32i.n	a0, a1, 12
+  48:	21c8      	l32i.n	a12, a1, 8
+  4a:	10c112        	addi	a1, a1, 16
+  4d:	f00d      	ret.n
+
+Disassembly of section .text2.12:
+
+00000000 <ic_get_addr-0x4>:
+   0:	00 00 00 00 	
+			0: R_XTENSA_32	if_ctrl
+
+00000004 <ic_get_addr>:
+   4:	ffff31        	l32r	a3, 0 <ic_get_addr-0x4>
+			4: R_XTENSA_SLOT0_OP	.text2.12
+   7:	742020        	extui	a2, a2, 0, 8
+   a:	1122c0        	slli	a2, a2, 4
+   d:	232a      	add.n	a2, a3, a2
+   f:	f00d      	ret.n
+
+Disassembly of section .text2.13:
+
+00000000 <ic_set_opmode-0x4>:
+   0:	00 00 00 00 	
+			0: R_XTENSA_32	if_ctrl
+
+00000004 <ic_set_opmode>:
+   4:	742020        	extui	a2, a2, 0, 8
+   7:	fffe41        	l32r	a4, 0 <ic_set_opmode-0x4>
+			7: R_XTENSA_SLOT0_OP	.text2.13
+   a:	1122c0        	slli	a2, a2, 4
+   d:	242a      	add.n	a2, a4, a2
+   f:	2239      	s32i.n	a3, a2, 8
+  11:	f00d      	ret.n
+
+Disassembly of section .text2.14:
+
+00000000 <ic_enable_interface-0x10>:
+	...
+			0: R_XTENSA_32	if_ctrl
+			4: R_XTENSA_32	interface_mask
+			8: R_XTENSA_32	memcpy
+			c: R_XTENSA_32	bit_popcount
+
+00000010 <ic_enable_interface>:
+  10:	f0c112        	addi	a1, a1, -16
+  13:	21c9      	s32i.n	a12, a1, 8
+  15:	11d9      	s32i.n	a13, a1, 4
+  17:	74c020        	extui	a12, a2, 0, 8
+  1a:	04dd      	mov.n	a13, a4
+  1c:	fff941        	l32r	a4, 0 <ic_enable_interface-0x10>
+			1c: R_XTENSA_SLOT0_OP	.text2.14
+  1f:	115cc0        	slli	a5, a12, 4
+  22:	554a      	add.n	a5, a5, a4
+  24:	052d      	mov.n	a2, a5
+  26:	640c      	movi.n	a4, 6
+  28:	036102        	s32i	a0, a1, 12
+  2b:	fff701        	l32r	a0, 8 <ic_enable_interface-0x8>
+			2b: R_XTENSA_SLOT0_OP	.text2.14+0x8
+			2b: R_XTENSA_ASM_EXPAND	memcpy
+  2e:	0000c0        	callx0	a0
+  31:	fff441        	l32r	a4, 4 <ic_enable_interface-0xc>
+			31: R_XTENSA_SLOT0_OP	.text2.14+0x4
+  34:	22d9      	s32i.n	a13, a2, 8
+  36:	000432        	l8ui	a3, a4, 0
+  39:	120c      	movi.n	a2, 1
+  3b:	401c00        	ssl	a12
+  3e:	a12200        	sll	a2, a2
+  41:	202230        	or	a2, a2, a3
+  44:	742020        	extui	a2, a2, 0, 8
+  47:	004422        	s8i	a2, a4, 0
+  4a:	fff001        	l32r	a0, c <ic_enable_interface-0x4>
+			4a: R_XTENSA_SLOT0_OP	.text2.14+0xc
+			4a: R_XTENSA_ASM_EXPAND	bit_popcount
+  4d:	0000c0        	callx0	a0
+  50:	3108      	l32i.n	a0, a1, 12
+  52:	742020        	extui	a2, a2, 0, 8
+  55:	21c8      	l32i.n	a12, a1, 8
+  57:	11d8      	l32i.n	a13, a1, 4
+  59:	10c112        	addi	a1, a1, 16
+  5c:	f00d      	ret.n
+
+Disassembly of section .text2.15:
+
+00000000 <ic_interface_enabled-0x4>:
+   0:	00 00 00 00 	
+			0: R_XTENSA_32	interface_mask
+
+00000004 <ic_interface_enabled>:
+   4:	ffff31        	l32r	a3, 0 <ic_interface_enabled-0x4>
+			4: R_XTENSA_SLOT0_OP	.text2.15
+   7:	000332        	l8ui	a3, a3, 0
+   a:	400200        	ssr	a2
+   d:	912030        	srl	a2, a3
+  10:	042020        	extui	a2, a2, 0, 1
+  13:	f00d      	ret.n
+
+Disassembly of section .text2.16:
+
+00000000 <ic_disable_interface-0xc>:
+	...
+			0: R_XTENSA_32	interface_mask
+			4: R_XTENSA_32	rc_disable_trc_by_interface
+			8: R_XTENSA_32	bit_popcount
+
+0000000c <ic_disable_interface>:
+   c:	f0c112        	addi	a1, a1, -16
+   f:	21c9      	s32i.n	a12, a1, 8
+  11:	fffbc1        	l32r	a12, 0 <ic_disable_interface-0xc>
+			11: R_XTENSA_SLOT0_OP	.text2.16
+  14:	3109      	s32i.n	a0, a1, 12
+  16:	000c42        	l8ui	a4, a12, 0
+  19:	742020        	extui	a2, a2, 0, 8
+  1c:	145427        	bbc	a4, a2, 34 <ic_disable_interface+0x28>
+			1c: R_XTENSA_SLOT0_OP	.text2.16+0x34
+  1f:	feaf32        	movi	a3, -2
+  22:	401200        	ssl	a2
+  25:	813330        	src	a3, a3, a3
+  28:	103430        	and	a3, a4, a3
+  2b:	004c32        	s8i	a3, a12, 0
+  2e:	fff501        	l32r	a0, 4 <ic_disable_interface-0x8>
+			2e: R_XTENSA_SLOT0_OP	.text2.16+0x4
+			2e: R_XTENSA_ASM_EXPAND	rc_disable_trc_by_interface
+  31:	0000c0        	callx0	a0
+  34:	000c22        	l8ui	a2, a12, 0
+  37:	fff401        	l32r	a0, 8 <ic_disable_interface-0x4>
+			37: R_XTENSA_SLOT0_OP	.text2.16+0x8
+			37: R_XTENSA_ASM_EXPAND	bit_popcount
+  3a:	0000c0        	callx0	a0
+  3d:	3108      	l32i.n	a0, a1, 12
+  3f:	742020        	extui	a2, a2, 0, 8
+  42:	21c8      	l32i.n	a12, a1, 8
+  44:	10c112        	addi	a1, a1, 16
+  47:	f00d      	ret.n
+
+Disassembly of section .text2.17:
+
+00000000 <ic_is_pure_sta-0x4>:
+   0:	00 00 00 00 	
+			0: R_XTENSA_32	if_ctrl
+
+00000004 <ic_is_pure_sta>:
+   4:	ffff31        	l32r	a3, 0 <ic_is_pure_sta-0x4>
+			4: R_XTENSA_SLOT0_OP	.text2.17
+   7:	742020        	extui	a2, a2, 0, 8
+   a:	1122c0        	slli	a2, a2, 4
+   d:	232a      	add.n	a2, a3, a2
+   f:	2228      	l32i.n	a2, a2, 8
+  11:	140c      	movi.n	a4, 1
+  13:	320b      	addi.n	a3, a2, -1
+  15:	020c      	movi.n	a2, 0
+  17:	932430        	movnez	a2, a4, a3
+  1a:	f00d      	ret.n
+
+Disassembly of section .text2.18:
+
+00000000 <ic_get_ptk_alg-0x4>:
+   0:	00 00 00 00 	
+			0: R_XTENSA_32	if_ctrl
+
+00000004 <ic_get_ptk_alg>:
+   4:	ffff31        	l32r	a3, 0 <ic_get_ptk_alg-0x4>
+			4: R_XTENSA_SLOT0_OP	.text2.18
+   7:	742020        	extui	a2, a2, 0, 8
+   a:	1122c0        	slli	a2, a2, 4
+   d:	232a      	add.n	a2, a3, a2
+   f:	0c0222        	l8ui	a2, a2, 12
+  12:	f00d      	ret.n
+
+Disassembly of section .text2.19:
+
+00000000 <ic_get_gtk_alg-0x4>:
+   0:	00 00 00 00 	
+			0: R_XTENSA_32	if_ctrl
+
+00000004 <ic_get_gtk_alg>:
+   4:	ffff31        	l32r	a3, 0 <ic_get_gtk_alg-0x4>
+			4: R_XTENSA_SLOT0_OP	.text2.19
+   7:	742020        	extui	a2, a2, 0, 8
+   a:	1122c0        	slli	a2, a2, 4
+   d:	232a      	add.n	a2, a3, a2
+   f:	0d0222        	l8ui	a2, a2, 13
+  12:	f00d      	ret.n
+
+Disassembly of section .text2.20:
+
+00000000 <ic_set_ptk_alg-0x4>:
+   0:	00 00 00 00 	
+			0: R_XTENSA_32	if_ctrl
+
+00000004 <ic_set_ptk_alg>:
+   4:	742020        	extui	a2, a2, 0, 8
+   7:	fffe41        	l32r	a4, 0 <ic_set_ptk_alg-0x4>
+			7: R_XTENSA_SLOT0_OP	.text2.20
+   a:	1122c0        	slli	a2, a2, 4
+   d:	242a      	add.n	a2, a4, a2
+   f:	0c4232        	s8i	a3, a2, 12
+  12:	f00d      	ret.n
+
+Disassembly of section .text2.21:
+
+00000000 <ic_set_gtk_alg-0x4>:
+   0:	00 00 00 00 	
+			0: R_XTENSA_32	if_ctrl
+
+00000004 <ic_set_gtk_alg>:
+   4:	742020        	extui	a2, a2, 0, 8
+   7:	fffe41        	l32r	a4, 0 <ic_set_gtk_alg-0x4>
+			7: R_XTENSA_SLOT0_OP	.text2.21
+   a:	1122c0        	slli	a2, a2, 4
+   d:	242a      	add.n	a2, a4, a2
+   f:	0d4232        	s8i	a3, a2, 13
+  12:	f00d      	ret.n
+
+Disassembly of section .text2.24:
+
+00000000 <ic_set_ac_param-0x4>:
+   0:	00 00 00 00 	
+			0: R_XTENSA_32	lmacSetAcParam
+
+00000004 <ic_set_ac_param>:
+   4:	f0c112        	addi	a1, a1, -16
+   7:	f46060        	extui	a6, a6, 0, 16
+   a:	745050        	extui	a5, a5, 0, 8
+   d:	744040        	extui	a4, a4, 0, 8
+  10:	743030        	extui	a3, a3, 0, 8
+  13:	742020        	extui	a2, a2, 0, 8
+  16:	3109      	s32i.n	a0, a1, 12
+  18:	fffa01        	l32r	a0, 0 <ic_set_ac_param-0x4>
+			18: R_XTENSA_SLOT0_OP	.text2.24
+			18: R_XTENSA_ASM_EXPAND	lmacSetAcParam
+  1b:	0000c0        	callx0	a0
+  1e:	3108      	l32i.n	a0, a1, 12
+  20:	10c112        	addi	a1, a1, 16
+  23:	f00d      	ret.n
+
+Disassembly of section .text2.25:
+
+00000000 <ic_set_vif-0x24>:
+   0:	00 00 00 00 	
+			0: R_XTENSA_32	if_ctrl
+   4:	04 00 f2 3f 	
+   8:	00 00 00 80 	
+   c:	ff ff ff 7f 	
+	...
+			10: R_XTENSA_32	wDev_SetMacAddress
+			14: R_XTENSA_32	ic_enable_interface
+  18:	10 00 00 00 	
+			18: R_XTENSA_32	.text2.22
+	...
+			1c: R_XTENSA_32	wDev_SetRxPolicy
+			20: R_XTENSA_32	ic_disable_interface
+
+00000024 <ic_set_vif>:
+  24:	f0c112        	addi	a1, a1, -16
+  27:	21c9      	s32i.n	a12, a1, 8
+  29:	11d9      	s32i.n	a13, a1, 4
+  2b:	01e9      	s32i.n	a14, a1, 0
+  2d:	3109      	s32i.n	a0, a1, 12
+  2f:	743030        	extui	a3, a3, 0, 8
+  32:	04dd      	mov.n	a13, a4
+  34:	05ed      	mov.n	a14, a5
+  36:	74c020        	extui	a12, a2, 0, 8
+  39:	0c2366        	bnei	a3, 2, 49 <ic_set_vif+0x25>
+			39: R_XTENSA_SLOT0_OP	.text2.25+0x49
+  3c:	fff121        	l32r	a2, 0 <ic_set_vif-0x24>
+			3c: R_XTENSA_SLOT0_OP	.text2.25
+  3f:	11ccc0        	slli	a12, a12, 4
+  42:	c2ca      	add.n	a12, a2, a12
+  44:	2c59      	s32i.n	a5, a12, 8
+  46:	001906        	j	ae <ic_set_vif+0x8a>
+			46: R_XTENSA_SLOT0_OP	.text2.25+0xae
+  49:	381366        	bnei	a3, 1, 85 <ic_set_vif+0x61>
+			49: R_XTENSA_SLOT0_OP	.text2.25+0x85
+  4c:	043d      	mov.n	a3, a4
+  4e:	0c2d      	mov.n	a2, a12
+  50:	fff001        	l32r	a0, 10 <ic_set_vif-0x14>
+			50: R_XTENSA_SLOT0_OP	.text2.25+0x10
+			50: R_XTENSA_ASM_EXPAND	wDev_SetMacAddress
+  53:	0000c0        	callx0	a0
+  56:	0e4d      	mov.n	a4, a14
+  58:	203dd0        	or	a3, a13, a13
+  5b:	202cc0        	or	a2, a12, a12
+  5e:	ffed01        	l32r	a0, 14 <ic_set_vif-0x10>
+			5e: R_XTENSA_SLOT0_OP	.text2.25+0x14
+			5e: R_XTENSA_ASM_EXPAND	ic_enable_interface
+  61:	0000c0        	callx0	a0
+  64:	121266        	bnei	a2, 1, 7a <ic_set_vif+0x56>
+			64: R_XTENSA_SLOT0_OP	.text2.25+0x7a
+  67:	ffe731        	l32r	a3, 4 <ic_set_vif-0x20>
+			67: R_XTENSA_SLOT0_OP	.text2.25+0x4
+  6a:	ffe721        	l32r	a2, 8 <ic_set_vif-0x1c>
+			6a: R_XTENSA_SLOT0_OP	.text2.25+0x8
+  6d:	0020c0        	memw
+  70:	0348      	l32i.n	a4, a3, 0
+  72:	202420        	or	a2, a4, a2
+  75:	0020c0        	memw
+  78:	0329      	s32i.n	a2, a3, 0
+  7a:	0c2d      	mov.n	a2, a12
+  7c:	ffe701        	l32r	a0, 18 <ic_set_vif-0xc>
+			7c: R_XTENSA_SLOT0_OP	.text2.25+0x18
+			7c: R_XTENSA_ASM_EXPAND	.text2.22+0x10
+  7f:	0000c0        	callx0	a0
+  82:	000a06        	j	ae <ic_set_vif+0x8a>
+			82: R_XTENSA_SLOT0_OP	.text2.25+0xae
+  85:	040c      	movi.n	a4, 0
+  87:	042d      	mov.n	a2, a4
+  89:	0c3d      	mov.n	a3, a12
+  8b:	ffe401        	l32r	a0, 1c <ic_set_vif-0x8>
+			8b: R_XTENSA_SLOT0_OP	.text2.25+0x1c
+			8b: R_XTENSA_ASM_EXPAND	wDev_SetRxPolicy
+  8e:	0000c0        	callx0	a0
+  91:	0c2d      	mov.n	a2, a12
+  93:	ffe301        	l32r	a0, 20 <ic_set_vif-0x4>
+			93: R_XTENSA_SLOT0_OP	.text2.25+0x20
+			93: R_XTENSA_ASM_EXPAND	ic_disable_interface
+  96:	0000c0        	callx0	a0
+  99:	12dc      	bnez.n	a2, ae <ic_set_vif+0x8a>
+			99: R_XTENSA_SLOT0_OP	.text2.25+0xae
+  9b:	ffda31        	l32r	a3, 4 <ic_set_vif-0x20>
+			9b: R_XTENSA_SLOT0_OP	.text2.25+0x4
+  9e:	ffdb21        	l32r	a2, c <ic_set_vif-0x18>
+			9e: R_XTENSA_SLOT0_OP	.text2.25+0xc
+  a1:	0020c0        	memw
+  a4:	0348      	l32i.n	a4, a3, 0
+  a6:	102420        	and	a2, a4, a2
+  a9:	0020c0        	memw
+  ac:	0329      	s32i.n	a2, a3, 0
+  ae:	3108      	l32i.n	a0, a1, 12
+  b0:	21c8      	l32i.n	a12, a1, 8
+  b2:	11d8      	l32i.n	a13, a1, 4
+  b4:	01e8      	l32i.n	a14, a1, 0
+  b6:	10c112        	addi	a1, a1, 16
+  b9:	f00d      	ret.n
+
+Disassembly of section .text2.26:
+
+00000000 <ic_set_sta-0x28>:
+	...
+			0: R_XTENSA_32	g_ic
+			4: R_XTENSA_32	rc_enable_trc
+			8: R_XTENSA_32	vPortETSIntrLock
+			c: R_XTENSA_32	esp_wifi_try_rate_from_high
+			10: R_XTENSA_32	rcUpdatePhyMode
+			14: R_XTENSA_32	vPortETSIntrUnlock
+			18: R_XTENSA_32	rc_disable_trc
+			1c: R_XTENSA_32	vPortETSIntrUnlock
+			20: R_XTENSA_32	vPortETSIntrLock
+			24: R_XTENSA_32	vPortETSIntrLock
+
+00000028 <ic_set_sta>:
+  28:	f0c112        	addi	a1, a1, -16
+  2b:	21c9      	s32i.n	a12, a1, 8
+  2d:	01e9      	s32i.n	a14, a1, 0
+  2f:	3109      	s32i.n	a0, a1, 12
+  31:	11d9      	s32i.n	a13, a1, 4
+  33:	743030        	extui	a3, a3, 0, 8
+  36:	048d      	mov.n	a8, a4
+  38:	20e770        	or	a14, a7, a7
+  3b:	744050        	extui	a4, a5, 0, 8
+  3e:	74c020        	extui	a12, a2, 0, 8
+  41:	f45060        	extui	a5, a6, 0, 16
+  44:	63bc      	beqz.n	a3, 7e <ic_set_sta+0x56>
+			44: R_XTENSA_SLOT0_OP	.text2.26+0x7e
+  46:	203880        	or	a3, a8, a8
+  49:	0c2d      	mov.n	a2, a12
+  4b:	ffee01        	l32r	a0, 4 <ic_set_sta-0x24>
+			4b: R_XTENSA_SLOT0_OP	.text2.26+0x4
+			4b: R_XTENSA_ASM_EXPAND	rc_enable_trc
+  4e:	0000c0        	callx0	a0
+  51:	20d220        	or	a13, a2, a2
+  54:	05d216        	beqz	a2, b5 <ic_set_sta+0x8d>
+			54: R_XTENSA_SLOT0_OP	.text2.26+0xb5
+  57:	0c62e2        	s32i	a14, a2, 48
+  5a:	ffeb01        	l32r	a0, 8 <ic_set_sta-0x20>
+			5a: R_XTENSA_SLOT0_OP	.text2.26+0x8
+			5a: R_XTENSA_ASM_EXPAND	vPortETSIntrLock
+  5d:	0000c0        	callx0	a0
+  60:	ffeb01        	l32r	a0, c <ic_set_sta-0x1c>
+			60: R_XTENSA_SLOT0_OP	.text2.26+0xc
+			60: R_XTENSA_ASM_EXPAND	esp_wifi_try_rate_from_high
+  63:	0000c0        	callx0	a0
+  66:	132c      	movi.n	a3, 33
+  68:	02cc      	bnez.n	a2, 6c <ic_set_sta+0x44>
+			68: R_XTENSA_SLOT0_OP	.text2.26+0x6c
+  6a:	023d      	mov.n	a3, a2
+  6c:	0d2d      	mov.n	a2, a13
+  6e:	ffe801        	l32r	a0, 10 <ic_set_sta-0x18>
+			6e: R_XTENSA_SLOT0_OP	.text2.26+0x10
+			6e: R_XTENSA_ASM_EXPAND	rcUpdatePhyMode
+  71:	0000c0        	callx0	a0
+  74:	ffe801        	l32r	a0, 14 <ic_set_sta-0x14>
+			74: R_XTENSA_SLOT0_OP	.text2.26+0x14
+			74: R_XTENSA_ASM_EXPAND	vPortETSIntrUnlock
+  77:	0000c0        	callx0	a0
+  7a:	000dc6        	j	b5 <ic_set_sta+0x8d>
+			7a: R_XTENSA_SLOT0_OP	.text2.26+0xb5
+  7d:	00          	.byte 00
+  7e:	083d      	mov.n	a3, a8
+  80:	0c2d      	mov.n	a2, a12
+  82:	ffe501        	l32r	a0, 18 <ic_set_sta-0x10>
+			82: R_XTENSA_SLOT0_OP	.text2.26+0x18
+			82: R_XTENSA_ASM_EXPAND	rc_disable_trc
+  85:	0000c0        	callx0	a0
+  88:	441c66        	bnei	a12, 1, d0 <ic_set_sta+0xa8>
+			88: R_XTENSA_SLOT0_OP	.text2.26+0xd0
+  8b:	000b06        	j	bb <ic_set_sta+0x93>
+			8b: R_XTENSA_SLOT0_OP	.text2.26+0xbb
+  8e:	220b      	addi.n	a2, a2, -1
+  90:	744322        	s8i	a2, a3, 116
+  93:	ffe201        	l32r	a0, 1c <ic_set_sta-0xc>
+			93: R_XTENSA_SLOT0_OP	.text2.26+0x1c
+			93: R_XTENSA_ASM_EXPAND	vPortETSIntrUnlock
+  96:	0000c0        	callx0	a0
+  99:	000cc6        	j	d0 <ic_set_sta+0xa8>
+			99: R_XTENSA_SLOT0_OP	.text2.26+0xd0
+  9c:	00          	.byte 00
+  9d:	00          	.byte 00
+  9e:	ffe001        	l32r	a0, 20 <ic_set_sta-0x8>
+			9e: R_XTENSA_SLOT0_OP	.text2.26+0x20
+			9e: R_XTENSA_ASM_EXPAND	vPortETSIntrLock
+  a1:	0000c0        	callx0	a0
+  a4:	ffd721        	l32r	a2, 0 <ic_set_sta-0x28>
+			a4: R_XTENSA_SLOT0_OP	.text2.26
+  a7:	01d222        	addmi	a2, a2, 0x100
+  aa:	740232        	l8ui	a3, a2, 116
+  ad:	331b      	addi.n	a3, a3, 1
+  af:	744232        	s8i	a3, a2, 116
+  b2:	fff746        	j	93 <ic_set_sta+0x6b>
+			b2: R_XTENSA_SLOT0_OP	.text2.26+0x93
+  b5:	171c66        	bnei	a12, 1, d0 <ic_set_sta+0xa8>
+			b5: R_XTENSA_SLOT0_OP	.text2.26+0xd0
+  b8:	fff886        	j	9e <ic_set_sta+0x76>
+			b8: R_XTENSA_SLOT0_OP	.text2.26+0x9e
+  bb:	ffda01        	l32r	a0, 24 <ic_set_sta-0x4>
+			bb: R_XTENSA_SLOT0_OP	.text2.26+0x24
+			bb: R_XTENSA_ASM_EXPAND	vPortETSIntrLock
+  be:	0000c0        	callx0	a0
+  c1:	ffcf31        	l32r	a3, 0 <ic_set_sta-0x28>
+			c1: R_XTENSA_SLOT0_OP	.text2.26
+  c4:	01d332        	addmi	a3, a3, 0x100
+  c7:	740322        	l8ui	a2, a3, 116
+  ca:	fc0256        	bnez	a2, 8e <ic_set_sta+0x66>
+			ca: R_XTENSA_SLOT0_OP	.text2.26+0x8e
+  cd:	fff086        	j	93 <ic_set_sta+0x6b>
+			cd: R_XTENSA_SLOT0_OP	.text2.26+0x93
+  d0:	3108      	l32i.n	a0, a1, 12
+  d2:	21c8      	l32i.n	a12, a1, 8
+  d4:	11d8      	l32i.n	a13, a1, 4
+  d6:	01e8      	l32i.n	a14, a1, 0
+  d8:	10c112        	addi	a1, a1, 16
+  db:	f00d      	ret.n
+
+Disassembly of section .text2.27:
+
+00000000 <ic_bss_info_update-0x8>:
+   0:	00 00 00 00 	
+			0: R_XTENSA_32	wDev_SetRxPolicy
+   4:	10 00 00 00 	
+			4: R_XTENSA_32	.text2.22
+
+00000008 <ic_bss_info_update>:
+   8:	f0c112        	addi	a1, a1, -16
+   b:	3109      	s32i.n	a0, a1, 12
+   d:	f44040        	extui	a4, a4, 0, 16
+  10:	742020        	extui	a2, a2, 0, 8
+  13:	1a2466        	bnei	a4, 2, 31 <ic_bss_info_update+0x29>
+			13: R_XTENSA_SLOT0_OP	.text2.27+0x31
+  16:	e58c      	beqz.n	a5, 28 <ic_bss_info_update+0x20>
+			16: R_XTENSA_SLOT0_OP	.text2.27+0x28
+  18:	034d      	mov.n	a4, a3
+  1a:	023d      	mov.n	a3, a2
+  1c:	220c      	movi.n	a2, 2
+  1e:	fff801        	l32r	a0, 0 <ic_bss_info_update-0x8>
+			1e: R_XTENSA_SLOT0_OP	.text2.27
+			1e: R_XTENSA_ASM_EXPAND	wDev_SetRxPolicy
+  21:	0000c0        	callx0	a0
+  24:	0003c6        	j	37 <ic_bss_info_update+0x2f>
+			24: R_XTENSA_SLOT0_OP	.text2.27+0x37
+  27:	00          	.byte 00
+  28:	fff701        	l32r	a0, 4 <ic_bss_info_update-0x4>
+			28: R_XTENSA_SLOT0_OP	.text2.27+0x4
+			28: R_XTENSA_ASM_EXPAND	.text2.22+0x10
+  2b:	0000c0        	callx0	a0
+  2e:	000146        	j	37 <ic_bss_info_update+0x2f>
+			2e: R_XTENSA_SLOT0_OP	.text2.27+0x37
+  31:	f31466        	bnei	a4, 1, 28 <ic_bss_info_update+0x20>
+			31: R_XTENSA_SLOT0_OP	.text2.27+0x28
+  34:	fff806        	j	18 <ic_bss_info_update+0x10>
+			34: R_XTENSA_SLOT0_OP	.text2.27+0x18
+  37:	3108      	l32i.n	a0, a1, 12
+  39:	10c112        	addi	a1, a1, 16
+  3c:	f00d      	ret.n
+
+Disassembly of section .text2.28:
+
+00000000 <ic_set_key-0xc>:
+	...
+			0: R_XTENSA_32	if_ctrl
+			4: R_XTENSA_32	wDev_Insert_KeyEntry
+			8: R_XTENSA_32	wDev_Crypto_Conf
+
+0000000c <ic_set_key>:
+   c:	e0c112        	addi	a1, a1, -32
+   f:	61c9      	s32i.n	a12, a1, 24
+  11:	51d9      	s32i.n	a13, a1, 20
+  13:	74c030        	extui	a12, a3, 0, 8
+  16:	74d020        	extui	a13, a2, 0, 8
+  19:	fff931        	l32r	a3, 0 <ic_set_key-0xc>
+			19: R_XTENSA_SLOT0_OP	.text2.28
+  1c:	41e9      	s32i.n	a14, a1, 16
+  1e:	112dc0        	slli	a2, a13, 4
+  21:	7109      	s32i.n	a0, a1, 28
+  23:	746060        	extui	a6, a6, 0, 8
+  26:	744040        	extui	a4, a4, 0, 8
+  29:	200182        	l8ui	a8, a1, 32
+  2c:	2401e2        	l8ui	a14, a1, 36
+  2f:	232a      	add.n	a2, a3, a2
+  31:	0766b6        	bltui	a6, 6, 3c <ic_set_key+0x30>
+			31: R_XTENSA_SLOT0_OP	.text2.28+0x3c
+  34:	0c42c2        	s8i	a12, a2, 12
+  37:	000246        	j	44 <ic_set_key+0x38>
+			37: R_XTENSA_SLOT0_OP	.text2.28+0x44
+  3a:	00          	.byte 00
+  3b:	00          	.byte 00
+  3c:	1ccc      	bnez.n	a12, 41 <ic_set_key+0x35>
+			3c: R_XTENSA_SLOT0_OP	.text2.28+0x41
+  3e:	0c42c2        	s8i	a12, a2, 12
+  41:	0d42c2        	s8i	a12, a2, 13
+  44:	0189      	s32i.n	a8, a1, 0
+  46:	0d3d      	mov.n	a3, a13
+  48:	0c2d      	mov.n	a2, a12
+  4a:	ffee01        	l32r	a0, 4 <ic_set_key-0x8>
+			4a: R_XTENSA_SLOT0_OP	.text2.28+0x4
+			4a: R_XTENSA_ASM_EXPAND	wDev_Insert_KeyEntry
+  4d:	0000c0        	callx0	a0
+  50:	0e4d      	mov.n	a4, a14
+  52:	0c3d      	mov.n	a3, a12
+  54:	0d2d      	mov.n	a2, a13
+  56:	ffec01        	l32r	a0, 8 <ic_set_key-0x4>
+			56: R_XTENSA_SLOT0_OP	.text2.28+0x8
+			56: R_XTENSA_ASM_EXPAND	wDev_Crypto_Conf
+  59:	0000c0        	callx0	a0
+  5c:	7108      	l32i.n	a0, a1, 28
+  5e:	61c8      	l32i.n	a12, a1, 24
+  60:	51d8      	l32i.n	a13, a1, 20
+  62:	41e8      	l32i.n	a14, a1, 16
+  64:	20c112        	addi	a1, a1, 32
+  67:	f00d      	ret.n
+
+Disassembly of section .text2.29:
+
+00000000 <ic_get_key-0x4>:
+   0:	00 00 00 00 	
+			0: R_XTENSA_32	wDev_Get_KeyEntry
+
+00000004 <ic_get_key>:
+   4:	e0c112        	addi	a1, a1, -32
+   7:	038d      	mov.n	a8, a3
+   9:	200132        	l8ui	a3, a1, 32
+   c:	746060        	extui	a6, a6, 0, 8
+   f:	0139      	s32i.n	a3, a1, 0
+  11:	023d      	mov.n	a3, a2
+  13:	082d      	mov.n	a2, a8
+  15:	7109      	s32i.n	a0, a1, 28
+  17:	fffa01        	l32r	a0, 0 <ic_get_key-0x4>
+			17: R_XTENSA_SLOT0_OP	.text2.29
+			17: R_XTENSA_ASM_EXPAND	wDev_Get_KeyEntry
+  1a:	0000c0        	callx0	a0
+  1d:	7108      	l32i.n	a0, a1, 28
+  1f:	20c112        	addi	a1, a1, 32
+  22:	f00d      	ret.n
+
+Disassembly of section .text2.30:
+
+00000000 <ic_remove_key-0x4>:
+   0:	00 00 00 00 	
+			0: R_XTENSA_32	wDev_remove_KeyEntry
+
+00000004 <ic_remove_key>:
+   4:	f0c112        	addi	a1, a1, -16
+   7:	742020        	extui	a2, a2, 0, 8
+   a:	3109      	s32i.n	a0, a1, 12
+   c:	fffd01        	l32r	a0, 0 <ic_remove_key-0x4>
+			c: R_XTENSA_SLOT0_OP	.text2.30
+			c: R_XTENSA_ASM_EXPAND	wDev_remove_KeyEntry
+   f:	0000c0        	callx0	a0
+  12:	3108      	l32i.n	a0, a1, 12
+  14:	10c112        	addi	a1, a1, 16
+  17:	f00d      	ret.n
+
+Disassembly of section .text2.31:
+
+00000000 <ic_get_rssi-0x4>:
+   0:	00 00 00 00 	
+			0: R_XTENSA_32	rc_get_trc
+
+00000004 <ic_get_rssi>:
+   4:	f0c112        	addi	a1, a1, -16
+   7:	742020        	extui	a2, a2, 0, 8
+   a:	3109      	s32i.n	a0, a1, 12
+   c:	fffd01        	l32r	a0, 0 <ic_get_rssi-0x4>
+			c: R_XTENSA_SLOT0_OP	.text2.31
+			c: R_XTENSA_ASM_EXPAND	rc_get_trc
+   f:	0000c0        	callx0	a0
+  12:	023d      	mov.n	a3, a2
+  14:	f21c      	movi.n	a2, 31
+  16:	738c      	beqz.n	a3, 21 <ic_get_rssi+0x1d>
+			16: R_XTENSA_SLOT0_OP	.text2.31+0x21
+  18:	030322        	l8ui	a2, a3, 3
+  1b:	a0c222        	addi	a2, a2, -96
+  1e:	742020        	extui	a2, a2, 0, 8
+  21:	3108      	l32i.n	a0, a1, 12
+  23:	10c112        	addi	a1, a1, 16
+  26:	f00d      	ret.n
+
+Disassembly of section .text2.32:
+
+00000000 <ic_register_tx_cb-0x4>:
+   0:	00 00 00 00 	
+			0: R_XTENSA_32	ppRegisterTxCallback
+
+00000004 <ic_register_tx_cb>:
+   4:	f0c112        	addi	a1, a1, -16
+   7:	743030        	extui	a3, a3, 0, 8
+   a:	3109      	s32i.n	a0, a1, 12
+   c:	fffd01        	l32r	a0, 0 <ic_register_tx_cb-0x4>
+			c: R_XTENSA_SLOT0_OP	.text2.32
+			c: R_XTENSA_ASM_EXPAND	ppRegisterTxCallback
+   f:	0000c0        	callx0	a0
+  12:	3108      	l32i.n	a0, a1, 12
+  14:	10c112        	addi	a1, a1, 16
+  17:	f00d      	ret.n

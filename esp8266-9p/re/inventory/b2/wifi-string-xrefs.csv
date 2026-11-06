@@ -1,0 +1,149 @@
+function,string_addr,string
+40105fd8,3ffe9520,%s %u 
+40105fd8,4025bec8,wdev.c
+40105fd8,4025bec8,wdev.c
+40105fd8,4025bec8,wdev.c
+401060b0,3ffe9520,%s %u 
+401060b0,4025bec8,wdev.c
+401060b0,4025bec8,wdev.c
+401060b0,4025bec8,wdev.c
+40106200,4025bec8,wdev.c
+40106200,4025bec8,wdev.c
+4021d170,3ffe9520,%s %u 
+4021d170,3ffe9520,%s %u 
+4021d3e8,4025bd30,force slp disable
+4021d3e8,4025bd50,force slp enable
+4021d3e8,4025bd70, type: %d
+4021d4f4,4025bd10,pm_for_bcn_only_mode.c
+4021d4f4,4025bd90,fpm close %d  
+4021d584,4025bd10,pm_for_bcn_only_mode.c
+4021d584,4025bda0,fpm_err flash_tmp alloc fail 
+4021d584,4025bdc0,fpm open type:%d %d 
+4021d668,3ffe9520,%s %u 
+4021d668,3ffe9520,%s %u 
+4021d7c0,3ffe9520,%s %u 
+4021d7c0,3ffe9520,%s %u 
+4021d8bc,3ffe9520,%s %u 
+4021d940,3ffe9520,%s %u 
+4021d9ec,3ffe9520,%s %u 
+4021db0c,3ffe9520,%s %u 
+4021dbe0,3ffe9520,%s %u 
+4021dbe0,3ffe9520,%s %u 
+4021dbe0,4025bde0,list_null 
+4021de24,3ffe9520,%s %u 
+4021de24,3ffe9520,%s %u 
+4021e048,4025be40,LmacRxBlk:%d 
+4021e048,4025be50,LmacTxBlk:%d 
+4021e5e4,3ffe9520,%s %u 
+4021e5e4,4025be60,map fail 
+4021ec8c,4025be70,chg_B1:%d 
+4021ec8c,4025be80,chg_B2:%d 
+4021f3c8,3ffe9520,%s %u 
+4021faf0,4025bea0,add mismatch 
+4021faf0,4025beb0,add %d 
+4021fbdc,4025beb8,rm %d 
+4021fbdc,4025bec0,rm mis 
+40220924,4025bed0,esf_buf.c
+40220924,4025bed0,esf_buf.c
+40220924,4025bed0,esf_buf.c
+40220924,4025bed0,esf_buf.c
+40220924,4025bed0,esf_buf.c
+40220924,4025bed0,esf_buf.c
+40220924,4025bed0,esf_buf.c
+40220924,4025bed0,esf_buf.c
+40220b0c,4025bed0,esf_buf.c
+40220b0c,4025bed0,esf_buf.c
+40220b0c,4025bed0,esf_buf.c
+40220b0c,4025bed0,esf_buf.c
+40220b0c,4025bed0,esf_buf.c
+40220b0c,4025bed0,esf_buf.c
+40220b0c,4025bed0,esf_buf.c
+40220b0c,4025bed0,esf_buf.c
+40220fac,4025bee0,ieee80211.c
+40220fac,4025bee0,ieee80211.c
+40220fac,4025bee0,ieee80211.c
+40220fac,4025bee0,ieee80211.c
+40220fac,4025bee0,ieee80211.c
+40220fac,4025bee0,ieee80211.c
+40220fac,4025bee0,ieee80211.c
+40220fac,4025bee0,ieee80211.c
+40220fac,4025bee0,ieee80211.c
+40220fac,4025bee0,ieee80211.c
+40220fac,4025bef8,mode : 
+40220fac,4025bf10,(%02x:%02x:%02x:%02x:%02x:%02x)
+40220fac,4025bf38,softAP
+40220fac,4025bf40,(%02x:%02x:%02x:%02x:%02x:%02x)
+402216b0,4025bf70,ieee80211_hostap.c
+402216b0,4025bf70,ieee80211_hostap.c
+402216b0,4025bf70,ieee80211_hostap.c
+402216b0,4025bf70,ieee80211_hostap.c
+402216b0,4025bf70,ieee80211_hostap.c
+402216b0,4025bf70,ieee80211_hostap.c
+402216b0,4025bf70,ieee80211_hostap.c
+402216b0,4025bf70,ieee80211_hostap.c
+40221810,4025bf70,ieee80211_hostap.c
+40221810,4025bf70,ieee80211_hostap.c
+40221810,4025bf70,ieee80211_hostap.c
+40221810,4025bf70,ieee80211_hostap.c
+40221810,4025bf70,ieee80211_hostap.c
+40221810,4025bf70,ieee80211_hostap.c
+40221810,4025bf70,ieee80211_hostap.c
+40221f1c,4025bf70,ieee80211_hostap.c
+40222040,4025bf70,ieee80211_hostap.c
+40222040,4025bf70,ieee80211_hostap.c
+40222af8,4025bf70,ieee80211_hostap.c
+40222af8,4025bf70,ieee80211_hostap.c
+40223574,4025bfc0,no buf for action frame 
+402238bc,4025bfe0,ieee80211_input.c
+40224250,4025c000,ieee80211_mesh_quick.c
+40224e98,4025c050,ieee80211_output.c
+40224efc,4025c070,no buf for probe  ie len %d 
+4022630c,4025c090,ieee80211_phy.c
+4022630c,4025c090,ieee80211_phy.c
+40226680,4025c270,ieee80211_regdomain.c
+402266a8,4025c270,ieee80211_regdomain.c
+4022678c,4025c290,update rd 
+40226980,4025c2c0,f -180  
+40226980,4025c2d0,f 0  
+40226980,4025c2d8,f 0  
+40226980,4025c2e0,f r%d  
+40226d18,4025c2f0,scandone 
+40227118,4025c2a0,ieee80211_scan.c
+40227118,4025c310,Invalid WEP key %s 
+402272c4,4025c2a0,ieee80211_scan.c
+402272c4,4025c2a0,ieee80211_scan.c
+40227350,4025c2a0,ieee80211_scan.c
+40227350,4025c2a0,ieee80211_scan.c
+40227350,4025c2a0,ieee80211_scan.c
+402274b8,4025c330,ap_loss 
+402278f4,4025c340,ieee80211_sta.c
+402278f4,4025c340,ieee80211_sta.c
+402278f4,4025c340,ieee80211_sta.c
+402278f4,4025c340,ieee80211_sta.c
+402278f4,4025c340,ieee80211_sta.c
+402278f4,4025c350,state: %d -> %d (%x) 
+402280e8,4025c340,ieee80211_sta.c
+40228fb8,4025c380,reconnect 
+402290dc,4025c370,wl_cnx.c
+402290dc,4025c370,wl_cnx.c
+402290dc,4025c390,no %s found  reconnect after 1s 
+40229a54,4025c370,wl_cnx.c
+40229a54,4025c370,wl_cnx.c
+40229c40,4025c370,wl_cnx.c
+40229c40,4025c370,wl_cnx.c
+40229c40,4025c370,wl_cnx.c
+40229e08,4025c400,ap_probe_send over  rest wifi status to disassoc 
+40229fdc,4025c370,wl_cnx.c
+4022a050,4025c370,wl_cnx.c
+4022a050,4025c370,wl_cnx.c
+4022a158,4025c370,wl_cnx.c
+4022a158,4025c370,wl_cnx.c
+4022a158,4025c440,station: %02x:%02x:%02x:%02x:%02x:%02x leave  AID = %d 
+4022a158,4025c480,max connection! 
+4022a2bc,4025c370,wl_cnx.c
+4022a2bc,4025c370,wl_cnx.c
+4022a2bc,4025c370,wl_cnx.c
+4022a2bc,4025c4a0,max connection! 
+4022a2bc,4025c4c0,err already associed! 
+4022a2bc,4025c4e0,station: %02x:%02x:%02x:%02x:%02x:%02x join  AID = %d 
+4022ab90,4025c5c0,ieee80211_action_vendor_spec_attach register recv call back error 

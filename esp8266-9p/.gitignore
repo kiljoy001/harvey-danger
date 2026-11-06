@@ -1,0 +1,25 @@
+.venv/
+backup/*.bin
+__pycache__/
+tools/*.tar.gz
+tools/xtensa-lx106-elf/
+re/sdk/*.tar.gz
+re/sdk/nonos-2.0.0/
+firmware/libpp/build-xtensa/
+firmware/sdkbuild/testapp/.output/
+firmware/sdkbuild/testapp/bin/
+firmware/sdkbuild/testapp/eagle.app.v6.*.bin
+re/ghidra/
+
+# Vendor SDK checkout: cloned, not ours, and carries its own .git.
+rtos/
+# Prebuilt cross toolchains are reproducible artifacts, like
+# tools/xtensa-lx106-elf/ above; the tarball is the record.
+tools/xtensa-lx106-elf-rtos/
+# Build outputs and compiled host helpers.
+firmware/*/build/
+firmware/sdkbuild/*/bin/
+firmware/sdkbuild/bin/
+firmware/sdkbuild/*/.output/
+mock9p/mock9p
+

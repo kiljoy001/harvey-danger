@@ -1,0 +1,11 @@
+program=user1.elf
+language=Xtensa:LE:32:default
+entry=3ffe8000
+block .dram0.data 3ffe8000-3ffe888b size=2188 init=true exec=false
+block .dram0.bss_like 3ffe8890-3ffeab27 size=8856 init=true exec=false
+block .iram0.text 40100000-40107b53 size=31572 init=true exec=true
+block .irom0.text 40201010-4025ea3f size=383536 init=true exec=true
+block .shstrtab .shstrtab::00000000-.shstrtab::0000003e size=63 init=true exec=false
+block _elfHeader _elfHeader::00000000-_elfHeader::00000033 size=52 init=true exec=false
+block _elfProgramHeaders _elfProgramHeaders::00000000-_elfProgramHeaders::0000007f size=128 init=true exec=false
+block _elfSectionHeaders _elfSectionHeaders::00000000-_elfSectionHeaders::000000ef size=240 init=true exec=false
