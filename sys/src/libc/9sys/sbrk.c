@@ -42,3 +42,20 @@ sbrk(u32 n)
 	bloc = (char*)bl + n;
 	return (void*)bl;
 }
+
+/*
+ * Set the break to an absolute address, keeping bloc in sync.  The APEX
+ * allocator uses this to extend a large allocation in place at the top of
+ * the heap instead of allocating a new bucket and retaining the old one.
+ */
+void*
+sbrkbrk(void *p)
+{
+	usize bl;
+
+	bl = ((usize)p + Round) & ~Round;
+	if(brk_((void*)bl) < 0)
+		return (void*)-1;
+	bloc = (char*)bl;
+	return (void*)bl;
+}
