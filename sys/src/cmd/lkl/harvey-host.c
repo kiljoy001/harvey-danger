@@ -775,7 +775,7 @@ hwatchdog(void *arg)
 
 		int h, n;
 
-		sleep(1);
+		sleep(1000);
 		if(!hostdebug)
 			continue;
 		USED(k);
@@ -1124,6 +1124,21 @@ spinthread(void *x)
 	hsem_up((struct lkl_sem*)x);
 }
 
+/*
+ * jmp_buf_set/longjmp is the primitive LKL's host-thread switch is built on:
+ * jmp_buf_set calls f() with a jump-back point; a callee longjmps back and
+ * setjmp returns nonzero.  Exercise it directly.
+ */
+static struct lkl_jmp_buf gjb;
+static int jmp_ok;
+
+static void
+jmp_target(void)
+{
+	jmp_ok = 1;
+	hjmp_longjmp(&gjb, 1);
+}
+
 void
 lklhost_selftest(void)
 {
@@ -1135,6 +1150,10 @@ lklhost_selftest(void)
 	struct lkl_mutex *m;
 	vlong t0, dt;
 	int i, n = 20000;
+
+	jmp_ok = 0;
+	hjmp_set(&gjb, jmp_target);
+	lkl_printf("hostselftest: jmp_buf %s\n", jmp_ok ? "PASS" : "FAIL");
 
 	t0 = nsec();
 	sleep(1000);

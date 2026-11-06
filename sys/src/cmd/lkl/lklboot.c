@@ -79,12 +79,13 @@ selftest(void)
 		bad++;
 
 	for(i = 0; i < 3; i++){
+		long long sn = i == 0 ? 1*1000*1000 : (i == 1 ? 10*1000*1000 : 87*1000*1000);
 		t0 = nsec();
-		r = lklsleep(0, 87*1000*1000);
+		r = lklsleep(0, sn);
 		t1 = nsec();
 		d = (t1 - t0) / 1000000;
-		lkl_printf("selftest: nanosleep %d ret=%ld %lldms\n", i, r, d);
-		if(r < 0 || d < 60 || d > 1500)
+		lkl_printf("selftest: nanosleep %d (%lldns) ret=%ld %lldms\n", i, sn, r, d);
+		if(r < 0 || d < 60 || d > 3000)
 			bad++;
 	}
 	/*

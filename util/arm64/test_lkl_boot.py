@@ -21,7 +21,7 @@ main(void)
 {
 	char cons[] = "#c/cons", dev[] = "/dev", consdev[] = "#c";
 	char log[] = "#c/lkllog", path[] = "/boot/lklboot", debug[] = "-d";
-	char *av[] = {path, HOST_ARG DEBUG_ARG nil};
+	char *av[] = {path, HOST_ARG KT_ARG DEBUG_ARG nil};
 	char buf[4096];
 	int fd, n, pid, i;
 
@@ -63,10 +63,12 @@ main(void)
 
 
 def make_archive(out: Path, elf: Path, libc: Path, debug: bool,
-                 settle_ms: int = 5000, hosttest: bool = False) -> Path:
+                 settle_ms: int = 5000, hosttest: bool = False,
+                 kerneltest: bool = False) -> Path:
     out.mkdir(parents=True, exist_ok=True)
     source = LAUNCHER.replace("DEBUG_ARG", "debug," if debug else "")
     source = source.replace("HOST_ARG", '"-s",' if hosttest else "")
+    source = source.replace("KT_ARG", '"-t",' if kerneltest else "")
     source = source.replace("SETTLE_MS", str(settle_ms))
     launcher, _ = build_userland.build_program(out, "init", source,
                                               0x200000, libc)
@@ -95,6 +97,8 @@ def main() -> None:
     ap.add_argument("--debug", action="store_true")
     ap.add_argument("--hosttest", action="store_true",
                     help="run the host-layer selftest (-s) instead of LKL")
+    ap.add_argument("--kerneltest", action="store_true",
+                    help="run the kernel-side nanosleep selftest (-t) after boot")
     ap.add_argument("--archive-only", action="store_true")
     ap.add_argument("--cpu", default="cortex-a55")
     ap.add_argument("--deadline", type=float, default=40)
@@ -106,7 +110,7 @@ def main() -> None:
     if not 0 <= args.settle_ms <= 300000:
         ap.error("--settle-ms must be between 0 and 300000")
     archive = make_archive(args.out, args.elf, args.libc, args.debug,
-                           args.settle_ms, args.hosttest)
+                           args.settle_ms, args.hosttest, args.kerneltest)
     if args.archive_only:
         print(archive)
         return
