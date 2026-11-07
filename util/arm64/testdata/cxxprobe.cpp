@@ -40,6 +40,7 @@
 #include <numbers>
 #include <bit>
 #include <bitset>
+#include <coroutine>
 #include <print>
 #include <ctime>
 #include <iomanip>
@@ -50,6 +51,17 @@ static void ok(const char *n, const char *d = "") {
 static void bad(const char *n, const char *d = "") {
     std::printf("CXXPROBE %-24s FAIL %s\n", n, d);
 }
+
+struct probe_task {
+    struct promise_type {
+        probe_task get_return_object() { return {}; }
+        std::suspend_never initial_suspend() { return {}; }
+        std::suspend_never final_suspend() noexcept { return {}; }
+        void return_void() {}
+        void unhandled_exception() {}
+    };
+};
+static probe_task probe_coro() { co_await std::suspend_never{}; co_return; }
 
 int main() {
     /* The kernel starts the first process with no descriptors. */
@@ -319,6 +331,20 @@ int main() {
     } catch (...) {
         std::printf("CXXPROBE filesystem_space         SKIP\n");
     }
+
+    try {
+        probe_coro();
+        ok("coroutine");
+    } catch (...) { bad("coroutine"); }
+
+    try {
+        using namespace std::chrono;
+        sys_days d = year{2024} / January / 2;
+        std::string s = std::format("{:%Y-%m-%d}", d);
+        if (s == "2024-01-02") ok("format_chrono");
+        else bad("format_chrono", s.c_str());
+    } catch (const std::exception &e) { bad("format_chrono", e.what()); }
+    catch (...) { bad("format_chrono"); }
 
     std::printf("CXXPROBE-DONE\n");
     return 0;
