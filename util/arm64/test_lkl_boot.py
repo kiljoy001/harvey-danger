@@ -16,22 +16,18 @@ from test_virt import boot_until
 LAUNCHER = r'''#include <u.h>
 #include <libc.h>
 
+/*
+ * lklrun: start the LKL driver server as a child of the shell (it is a
+ * boot file, not init), then stream /dev/lkllog to the console.
+ */
 void
 main(void)
 {
-	char cons[] = "#c/cons", dev[] = "/dev", consdev[] = "#c";
-	char log[] = "#c/lkllog", path[] = "/boot/lklboot", debug[] = "-d";
+	char log[] = "/dev/lkllog", path[] = "/boot/lklboot", debug[] = "-d";
 	char *av[] = {path, HOST_ARG KT_ARG DEBUG_ARG nil};
 	char buf[4096];
 	int fd, n, pid, i;
 
-	open(cons, OREAD);
-	open(cons, OWRITE);
-	open(cons, OWRITE);
-	if(bind(consdev, dev, MREPL) < 0){
-		print("LKL-TEST bind failed: %r\n");
-		exits("bind");
-	}
 	pid = rfork(RFPROC|RFFDG);
 	if(pid == 0){
 		exec(path, av);
@@ -70,9 +66,9 @@ def make_archive(out: Path, elf: Path, libc: Path, debug: bool,
     source = source.replace("HOST_ARG", '"-s",' if hosttest else "")
     source = source.replace("KT_ARG", '"-t",' if kerneltest else "")
     source = source.replace("SETTLE_MS", str(settle_ms))
-    launcher, _ = build_userland.build_program(out, "init", source,
+    launcher, _ = build_userland.build_program(out, "lklrun", source,
                                               0x200000, libc)
-    files = [("init", launcher), ("lklboot", elf.read_bytes())]
+    files = [("lklrun", launcher), ("lklboot", elf.read_bytes())]
     offset = 24 + 48 * len(files)
     table, body = bytearray(), bytearray()
     for name, data in files:
@@ -118,8 +114,12 @@ def main() -> None:
                "-m", "768M", "-nographic", "-monitor", "none", "-kernel",
                str(args.kernel), "-device",
                f"loader,file={archive},addr=0x50000000"]
+    # LKL is a boot file started from the shell (not init): give the guest
+    # time to reach rc, then type "lklrun".
+    send = [(25.0, "lklrun\n")]
     transcript = boot_until(command, "lklboot: halted", idle=args.deadline,
-                            total=args.deadline, limit=4 * 1024 * 1024)
+                            total=max(args.deadline, 120),
+                            limit=4 * 1024 * 1024, send=send)
     log = args.out / "boot.log"
     log.write_text(transcript)
     markers = ("Linux version", "lklboot: kernel up", "lklboot: halted")

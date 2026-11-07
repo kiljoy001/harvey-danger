@@ -16,22 +16,47 @@ IMAGE = ROOT / "build/arm64/harvey-virt.img"
 
 def boot_until(command: list[str], marker: str, idle: float = 8,
                limit: int = 1024 * 1024, total: float = 0,
-               log=None) -> str:
-    guest = subprocess.Popen(command, stdout=subprocess.PIPE,
+               log=None, send=None) -> str:
+    # send: optional list of (seconds_since_start, text) typed into the
+    # guest's stdin, used to drive a shell (e.g. start a service) after boot.
+    guest = subprocess.Popen(command,
+                             stdin=subprocess.PIPE if send else None,
+                             stdout=subprocess.PIPE,
                              stderr=subprocess.STDOUT)
     output = bytearray()
     start = time.monotonic()
     deadline = start + idle
+    pending = list(send or [])
     try:
         while marker.encode() not in output and len(output) < limit:
-            if total and time.monotonic() - start > total:
+            now = time.monotonic()
+            if total and now - start > total:
                 break
-            remaining = deadline - time.monotonic()
+            while pending and now - start >= pending[0][0]:
+                _, text = pending.pop(0)
+                try:
+                    guest.stdin.write(text.encode())
+                    guest.stdin.flush()
+                except (BrokenPipeError, ValueError):
+                    pass
+                deadline = time.monotonic() + idle
+                now = time.monotonic()
+            remaining = deadline - now
             if total:
-                left = total - (time.monotonic() - start)
+                left = total - (now - start)
                 if left < remaining:
                     remaining = left
-            if remaining <= 0 or not select.select([guest.stdout], [], [], remaining)[0]:
+            if pending:
+                nxt = pending[0][0] - (now - start)
+                if nxt < remaining:
+                    remaining = nxt
+            if remaining <= 0:
+                if pending:
+                    continue
+                break
+            if not select.select([guest.stdout], [], [], remaining)[0]:
+                if pending:
+                    continue
                 break
             chunk = os.read(guest.stdout.fileno(), 4096)
             if not chunk:
