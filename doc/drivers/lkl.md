@@ -394,7 +394,13 @@ bisecting:
 * `timer_free` could free the `Timer` while the timer thread was still
   using it.  The thread now owns the object and frees it on exit.
 
-## Root cause (final): guest ktime_get() is frozen while nsec advances
+## Root cause: guest ktime_get() frozen (superseded, see fair-server section below)
+
+This diagnosis was reached before the fair-server hrtimer was identified.
+The ktime/jiffies freeze it describes is a *symptom*: the guest stops
+delivering the clockevent because the idle wakeup path stalls, not because
+timekeeping itself is broken (mult/shift are identity and ktime advances
+during boot).  See "Root cause (final): the fair-server defer hrtimer".
 
 Fully traced with per-stage probes.  The IRQ delivery is correct end to
 end (run_irq gets irq 1, timer_irq_handler runs, dev->event_handler is
@@ -601,6 +607,54 @@ infrastructure, much faster bring-up -- but it is on hold until this is
 understood.  The lean kernel remains the working base, and the 9P
 boundary is unchanged, so the choice can be made later without a
 redesign.
+
+## Root cause (final): the fair-server defer hrtimer wedges the idle wakeup
+
+Bounded in-memory tracing (a guest ring dumped by the host watchdog, no
+printk on the hot path) pinned the freeze to a single call chain.  When
+the guest blocks in `nanosleep` and the idle host task is woken, the last
+records before the stall are:
+
+```text
+wake_up_process(idle_host_task)
+  try_to_wake_up -> ttwu_do_activate -> activate_task
+  enqueue_task_fair -> enqueue_entity          (completes: rb_add, on_rq=1)
+  dl_server_start -> enqueue_dl_entity -> start_dl_timer
+  hrtimer_start -> lock_hrtimer_base
+  raw_spin_lock_irqsave -> local_irq_save      <- stall; never reaches
+                                                  set_next_event / the host
+```
+
+`enqueue_task_fair` starts the **fair server** (`dl_server_start`) whenever
+the CFS runqueue goes 0->1, i.e. on every idle wakeup.  The fair server is
+`SCHED_DEADLINE`'s reservation for the CFS class; it exists to stop real
+DL tasks from starving CFS tasks.  On a single-CPU guest with no DL tasks
+it is pure overhead, but it still applies the server params and arms a
+"defer" hrtimer through `enqueue_dl_entity() -> start_dl_timer()`, and it
+does so from inside `try_to_wake_up()` with the rq lock held and IRQs off.
+
+That hrtimer arm is what wedges the handoff: the clockevent is never
+reprogrammed, `jiffies`/`ktime` freeze (the symptom the earlier sections
+mis-attributed to timekeeping), and `nanosleep` never returns.
+
+**Fix.** `dl_server_start()` returns early when there are no DL tasks on
+the runqueue:
+
+```c
+if (!rq->dl.dl_nr_running)
+        return;
+```
+
+`dl_nr_running` counts only real DL tasks at this point (a deferred server
+is never actually enqueued), so on `!SCHED_DEADLINE` builds the server is a
+no-op and no defer hrtimer is armed.  `dl_server_stop()` already returns
+early on `!dl_runtime`, so the server stays consistent.  Committed as
+`lkl: do not start the fair server when no DL tasks are running`
+(LKL tree, `kernel/sched/deadline.c`).
+
+**Verification.** `lklboot --kerneltest` (nanosleep payload) passes
+repeatedly where it previously froze every time; the default M1 image still
+reaches `lklboot: kernel up` and `lklboot: halted`.
 
 ## M2: what the eMMC driver needs
 
