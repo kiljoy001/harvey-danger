@@ -49,7 +49,7 @@ main(void)
 	char *compile[] = {
 		cc, "--no-default-config",
 		"--config=/initramfs/sdk/bin/clang++.cfg",
-		"-std=c++20", "/initramfs/t/cxxprobe.cpp",
+		"-std=c++23", "/initramfs/t/cxxprobe.cpp",
 		"-o", "/initramfs/bin/cxxprobe", 0,
 	};
 	char *probe[] = { "/initramfs/bin/cxxprobe", 0 };

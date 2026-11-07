@@ -35,6 +35,8 @@
 #include <tuple>
 #include <optional>
 #include <variant>
+#include <fstream>
+#include <print>
 
 static void ok(const char *n, const char *d = "") {
     std::printf("CXXPROBE %-24s OK %s\n", n, d);
@@ -234,6 +236,35 @@ int main() {
             bad("ranges_span_variant");
     } catch (const std::exception &e) { bad("ranges_span_variant", e.what()); }
     catch (...) { bad("ranges_span_variant"); }
+
+    try {
+        namespace fs = std::filesystem;
+        fs::path dir("/initramfs");
+        if (!fs::exists(dir)) {
+            std::printf("CXXPROBE fstream_filesystem     SKIP (no writable /initramfs)\n");
+        } else {
+            fs::path f = dir / "cxxprobe.tmp";
+            {
+                std::ofstream o(f, std::ios::trunc);
+                o << "hello " << 42;
+            }
+            std::string a;
+            int b = 0;
+            {
+                std::ifstream in(f);
+                in >> a >> b;
+            }
+            fs::remove(f);
+            if (a == "hello" && b == 42) ok("fstream_filesystem");
+            else bad("fstream_filesystem", a.c_str());
+        }
+    } catch (const std::exception &e) { bad("fstream_filesystem", e.what()); }
+    catch (...) { bad("fstream_filesystem"); }
+
+    try {
+        std::println("CXXPROBE print                    OK");
+    } catch (const std::exception &e) { bad("print", e.what()); }
+    catch (...) { bad("print"); }
 
     std::printf("CXXPROBE-DONE\n");
     return 0;

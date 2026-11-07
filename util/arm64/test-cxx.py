@@ -11,6 +11,7 @@ runtime, static constructors, printf floats, and the SDK headers.
 from pathlib import Path
 import argparse
 import shutil
+import struct
 import subprocess
 import sys
 
@@ -22,6 +23,7 @@ EXPECT = [
     "regex", "regex_replace", "chrono_sleep", "threads", "random",
     "filesystem", "format_charconv", "smart_ptr", "locale_facet",
     "latch_semaphore", "barrier_jthread", "path_ops", "ranges_span_variant",
+    "fstream_filesystem", "print",
 ]
 
 
@@ -96,13 +98,27 @@ def main() -> None:
 
     stage.mkdir(parents=True, exist_ok=True)
     elf = stage / "cxxprobe.elf"
-    cmd = [str(HERE / "aarch64-clang++"), "-std=c++20",
+    cmd = [str(HERE / "aarch64-clang++"), "-std=c++23",
            str(HERE / "testdata" / "cxxprobe.cpp"), "-o", str(elf)]
     print("+", " ".join(cmd))
     subprocess.run(cmd, check=True)
 
+    # A writable /initramfs is needed for the fstream/filesystem test.
+    boot = stage / "small.boot"
+    blob = b"\0" * 1024
+    header = struct.pack("<8sIIII", b"O9BOOT01", 1, 1, 24 + 48 + len(blob), 0)
+    entry = struct.pack("<32sIIII", b"sdk.tar", 24 + 48, len(blob), 0o555, 0)
+    boot.write_bytes(header + entry + blob)
+    runner = stage / "runner.elf"
+    cmd = [sys.executable, str(HERE / "mkrun.py"), str(elf),
+           "--untar", "/boot/sdk.tar:/initramfs",
+           "--suffix", "", "--output", str(runner)]
+    print("+", " ".join(cmd))
+    subprocess.run(cmd, check=True)
+
     cmd = [sys.executable, str(HERE / "test_apex_boot.py"),
-           "--elf", str(elf), "--marker", "CXXPROBE-DONE",
+           "--elf", str(runner), "--archive", str(boot),
+           "--marker", "CXXPROBE-DONE",
            "--timeout", "60", "--mem", str(args.mem),
            "--smp", str(args.smp), "--dump", args.dump]
     print("+", " ".join(cmd))
