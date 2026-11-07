@@ -493,7 +493,7 @@ MDIO commands out of the common kernel.
 The APEX SDK self-build is delivered as two TFTP files.  The first is an
 Image whose `/boot/init` is the tblgen runner; the second is an `O9BOOT01`
 archive holding `/boot/sdk.tar` (the base SDK plus the `sdk/l` TableGen
-overlay, about 390 MiB).  Build the overlay with
+overlay, about 395 MiB).  Build the overlay with
 `test-selfbuild-tblgen.py --stage-only --boot <archive>`; the plain
 `install-sdk.py --boot-archive` output has no `tg.list` and the runner will
 report `TGEN no manifest`.  The kernel reads the archive at
@@ -515,7 +515,7 @@ self-build; the second bank is not yet used.
 
 The two-file layout was validated in QEMU virt exactly as U-Boot will load
 it: `aspera-tblgen.img` was built with `ARM64_PIN_USER=1` and a runner as
-`/boot/init`, the 390 MiB overlay archive was loaded at `0x50000000`, and
+`/boot/init`, the 395 MiB overlay archive was loaded at `0x50000000`, and
 all 77 TUs compiled on four vCPUs with `TGEN VT-MATCH 46644 bytes`.  The
 image build is `test_apex_boot.py --elf <runner.elf> --image-out <Image>`
 with `ARM64_PIN_USER=1` in the environment; the archive comes from
