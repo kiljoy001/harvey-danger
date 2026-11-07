@@ -394,43 +394,33 @@ bisecting:
 * `timer_free` could free the `Timer` while the timer thread was still
   using it.  The thread now owns the object and frees it on exit.
 
-## Root cause (corrected again): jiffies freezes in hrtimer_interrupt
+## Root cause (final): guest ktime_get() is frozen while nsec advances
 
-Two earlier diagnoses were wrong, both from misreading the host note
-trace:
-
-* "a Harvey timer wakeup is lost" -- the frozen "beat" counter was only
-  the host debug-print budget, not a lost timer.  The `CLKP` probe shows
-  the Harvey clock advancing the whole run.
-* "run_irq receives a corrupted irq" -- the note op `U` collided: the
-  host layer's `hsem_up` uses `U` for the cpu-semaphore *pointer*
-  (0x10cf5868) while the `run_irq` probe uses `U` for the irq.  `run_irq`
-  actually receives the correct irq (1) every time; adjacent `R`/`U`
-  pairs all match.
-
-The real chain, now fully traced through the guest:
+Fully traced with per-stage probes.  The IRQ delivery is correct end to
+end (run_irq gets irq 1, timer_irq_handler runs, dev->event_handler is
+hrtimer_interrupt).  The stall is in timekeeping:
 
 ```text
-timer_fn             irq = 1
-run_irq              irq = 1          (correct)
-handle_simple_irq    -> handle_irq_event   (irq_may_run ok, action ok)
-__handle_irq_event_percpu -> action->handler = timer_irq_handler
-timer_irq_handler    called 34 times; dev->event_handler = hrtimer_interrupt
-hrtimer_interrupt    called 34 times
-BUT jiffies is frozen at -29988 (12 ticks after INITIAL_JIFFIES = -300*HZ)
-AND the clockevent is never reprogrammed ("arm" stops after the first few)
+hrtimer_interrupt     called 34x
+now  = ktime_get()    frozen at 161.12ms  (constant across all calls)
+raw  = lkl_ops->time()= nsec() = 476ms     (the host clock advances)
+jiffies               frozen at -29988 (12 ticks)
+expires_next          160ms (stale, in the past)
+tick_program_event    -> -ETIME (delta <= 0), never reprograms clockevent
 ```
 
-So the guest is in highres mode and `hrtimer_interrupt` runs, but it
-neither advances `jiffies` nor reprograms the clockevent.  Guest time
-freezes, the nanosleep hrtimer never expires, and the task blocks
-forever.
+`ktime_get()` stays 161ms while `nsec()` runs to 476ms, so the guest's
+timekeeping is not accumulating the raw clock.  hrtimers therefore never
+expire, the clockevent is never reprogrammed, `jiffies` stops, and any
+timer-based sleep blocks forever.  This is a clocksource/timekeeping
+defect on the aarch64 port (the same time.c passes on x86_64 with the
+POSIX host), not a Harvey timer issue and not an IRQ-delivery issue.
 
-Open question: whether `hrtimer_interrupt` sees an empty hrtimer queue
-(expires_next == KTIME_MAX, so the tick_sched timer was never enqueued)
-or a stale `now` (so reprogramming always returns -ETIME).  Both point
-into the hrtimer/tick-sched setup on this host, not the Harvey timer and
-not the IRQ delivery path.
+Most likely culprit to check next: the `lkl` clocksource mult/shift
+(from clocksource_register_khz(..., 1000000) with clock_read returning
+nanoseconds) and whether timekeeping_advance is actually updating
+cycle_last/base -- i.e. whether ktime_get() is reading the clock fresh or
+returning a frozen base.
 
 ## Root cause: a Harvey kernel timer wakeup is lost (superseded)
 
