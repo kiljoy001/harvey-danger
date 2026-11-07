@@ -394,37 +394,43 @@ bisecting:
 * `timer_free` could free the `Timer` while the timer thread was still
   using it.  The thread now owns the object and frees it on exit.
 
-## Root cause (corrected): the guest clockevent IRQ is never delivered
+## Root cause (corrected again): jiffies freezes in hrtimer_interrupt
 
-The earlier "Harvey timer wakeup is lost" diagnosis was wrong.  A
-per-second kernel probe (`CLKP` in `hzclock`) shows the Harvey clock is
-healthy for the entire run: `arm64ticks`, `intrcount` and `fcallcount`
-all keep advancing, and `tadd0` stays 0 (no zero-delta timers).  The
-"beat" counter that appeared to freeze was only the host debug-print
-budget being exhausted.
+Two earlier diagnoses were wrong, both from misreading the host note
+trace:
 
-Instrumenting the LKL guest instead gives the real picture:
+* "a Harvey timer wakeup is lost" -- the frozen "beat" counter was only
+  the host debug-print budget, not a lost timer.  The `CLKP` probe shows
+  the Harvey clock advancing the whole run.
+* "run_irq receives a corrupted irq" -- the note op `U` collided: the
+  host layer's `hsem_up` uses `U` for the cpu-semaphore *pointer*
+  (0x10cf5868) while the `run_irq` probe uses `U` for the irq.  `run_irq`
+  actually receives the correct irq (1) every time; adjacent `R`/`U`
+  pairs all match.
+
+The real chain, now fully traced through the guest:
 
 ```text
-q (defer)      68   timer fires, cpu is busy, IRQ marked pending
-Q (pending)    34   cpu.irqs_pending=1, irqs_disabled=0  -> drain SHOULD run
-r (run_irqs)   35   drain runs, pending index = 1
-R (deliver_irq)68   computed irq = 0/1  (correct)
-U (run_irq)   102   received irq = 0x10cf5868 (68x!) or 1 (34x)
-T (timer handler) 0  timer_irq_handler NEVER runs
-n (nanosleep exit) 0  do_nanosleep loop never exits
+timer_fn             irq = 1
+run_irq              irq = 1          (correct)
+handle_simple_irq    -> handle_irq_event   (irq_may_run ok, action ok)
+__handle_irq_event_percpu -> action->handler = timer_irq_handler
+timer_irq_handler    called 34 times; dev->event_handler = hrtimer_interrupt
+hrtimer_interrupt    called 34 times
+BUT jiffies is frozen at -29988 (12 ticks after INITIAL_JIFFIES = -300*HZ)
+AND the clockevent is never reprogrammed ("arm" stops after the first few)
 ```
 
-`timer_fn` always passes the correct `timer_irq` (1), and `deliver_irq`
-computes the right irq, but `run_irq()` receives a heap pointer
-(`0x10cf5868`, in the libc sbrk region) instead of the irq number for 68
-of its 102 calls.  `timer_irq_handler` therefore never runs, the hrtimer
-never fires, and the nanosleep task blocks in `schedule()` forever.
+So the guest is in highres mode and `hrtimer_interrupt` runs, but it
+neither advances `jiffies` nor reprograms the clockevent.  Guest time
+freezes, the nanosleep hrtimer never expires, and the task blocks
+forever.
 
-This is a guest-side (LKL aarch64) corruption in the interrupt delivery
-path -- the irq argument is clobbered between `deliver_irq` and
-`run_irq` -- independent of the Harvey timer and of the host-layer
-primitives, both of which check out.
+Open question: whether `hrtimer_interrupt` sees an empty hrtimer queue
+(expires_next == KTIME_MAX, so the tick_sched timer was never enqueued)
+or a stale `now` (so reprogramming always returns -ETIME).  Both point
+into the hrtimer/tick-sched setup on this host, not the Harvey timer and
+not the IRQ delivery path.
 
 ## Root cause: a Harvey kernel timer wakeup is lost (superseded)
 
