@@ -696,7 +696,18 @@ SELFBUILD-DONE
 ```
 
 `install-sdk.py --with-ar` also ships the cross-built `llvm-ar` and
-`llvm-ranlib` as ready-to-run guest tools.
+`llvm-ranlib` as ready-to-run guest tools.  `test-tools.py` exercises the
+shipped set: it compiles `testdata/x.c` with the SDK `clang`, creates and
+lists `libx.a` with `llvm-ar`, and runs `llvm-ranlib`:
+
+```text
+ART cc OK
+ART ar-create OK
+ART ar-list OK
+ART ranlib OK
+ART-DONE
+toolchain tools PASS
+```
 
 The 32 MiB heap limit noted above is gone: `qmalloc.c` draws new chunks from
 the physical allocator, doubling up to 64 MiB, and ramfs block maps grow on
