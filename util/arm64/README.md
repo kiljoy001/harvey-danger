@@ -114,10 +114,15 @@ make that set pass:
 ```text
 CXXPROBE containers               OK
 ...
-CXXPROBE smart_ptr                OK
+CXXPROBE ranges_span_variant      OK
 CXXPROBE-DONE
 C++ runtime probe PASS
 ```
+
+`test-cxx.py --guest` stages `aspera-tblgen-sdk.boot` and compiles the same
+probe with the SDK's own `clang++` inside the guest; it also passes all 18
+features.  This is the end-to-end check for the shipped C++ headers,
+libraries and linker script, as opposed to the host cross driver.
 
 ### SMP
 
