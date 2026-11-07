@@ -29,13 +29,13 @@ asm_only=0
 for arg in "$@"; do
 	case "$arg" in
 		*.s|*.S|*.sx) asm_only=1 ;;
-		-c|-E|-S|-M|-MM|-fsyntax-only|--version|-dumpversion|-dumpmachine|--help|-print-*)
+		-c|-E|-S|-M|-MM|-fsyntax-only|--version|-dumpversion|-dumpmachine|--help|-print-*|c-header|c++-header)
 			compile_only=1 ;;
 	esac
 done
 
 FLAGS="$CXXFLAGS --target=aarch64-unknown-linux-elf -nostdlibinc -mstrict-align -mno-outline-atomics \
--fno-stack-protector -fno-threadsafe-statics \
+-fno-stack-protector -fno-threadsafe-statics -static \
 -D_SUSV2_SOURCE -D_POSIX_SOURCE -D_LIMITS_EXTENSION -D_GNU_SOURCE -DHARVEY $WCHAR \
 -I$HARVEY/util/arm64/include \
 -I$HARVEY/util/clang-harvey/target-include \

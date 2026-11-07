@@ -55,27 +55,53 @@ def run_guest(args, stage: Path) -> None:
            "-o", str(driver)]
     print("+", " ".join(cmd))
     subprocess.run(cmd, check=True)
-    shutil.copy2(HERE / "testdata" / "cxxprobe.cpp", tdir / "cxxprobe.cpp")
+
+    env = ["--env", "TMPDIR=/initramfs/sdk/tmp"]
+    marker = "CXX-GUEST-DONE"
+    if args.lto:
+        env += ["--env", "CXX_EXTRA=-flto"]
+    if args.fmt:
+        fmt_src = Path(args.fmt_src)
+        if not (fmt_src / "include" / "fmt" / "format.h").is_file():
+            sys.exit(f"missing {fmt_src}/include/fmt/format.h; download fmt")
+        shutil.copy2(HERE / "testdata" / "fmtprobe.cpp", tdir / "fmtprobe.cpp")
+        env += ["--env", "CXX_SRC=/initramfs/t/fmtprobe.cpp",
+                "--env", "CXX_STD=-std=c++17",
+                "--env", "CXX_INC=-I/initramfs/fmt/include",
+                "--env", "CXX_OUT=/initramfs/bin/fmtprobe"]
+        extra = ["--tree", f"{fmt_src / 'include'}:/initramfs/fmt/include"]
+    else:
+        shutil.copy2(HERE / "testdata" / "cxxprobe.cpp", tdir / "cxxprobe.cpp")
+        extra = []
+
     runner = stage / "runner.elf"
     cmd = [sys.executable, str(HERE / "mkrun.py"),
            str(ROOT / "build" / "arm64-apex" / "hello.elf"),
            "--in-tree", "/initramfs/bin/cxx",
            "--untar", "/boot/sdk.tar:/initramfs",
-           "--env", "TMPDIR=/initramfs/sdk/tmp",
+           *env,
            "--tree", f"{bindir}:/initramfs/bin",
            "--tree", f"{tdir}:/initramfs/t",
+           *extra,
            "--suffix", "", "--output", str(runner)]
     print("+", " ".join(cmd))
     subprocess.run(cmd, check=True)
     dump = Path(args.dump)
     cmd = [sys.executable, str(HERE / "test_apex_boot.py"),
            "--elf", str(runner), "--archive", args.sdk_archive,
-           "--marker", "CXX-GUEST-DONE", "--timeout", "300",
+           "--marker", marker, "--timeout", "300",
            "--deadline", "2400", "--mem", str(args.mem),
            "--smp", str(args.smp), "--dump", str(dump)]
     print("+", " ".join(cmd))
     subprocess.run(cmd, check=True)
-    check(dump, "CXX-GUEST-DONE")
+    if args.fmt:
+        text = dump.read_text(errors="replace")
+        print(text[-1200:])
+        if "harvey 042 3.50 [1, 2, 3]" not in text or marker not in text:
+            sys.exit("fmt probe FAIL")
+        print("fmt probe PASS")
+    else:
+        check(dump, marker)
 
 
 def main() -> None:
@@ -89,6 +115,12 @@ def main() -> None:
     ap.add_argument("--sdk-archive",
                     default="/home/scott/tftp/aspera-tblgen-sdk.boot",
                     help="boot archive holding /boot/sdk.tar for --guest")
+    ap.add_argument("--fmt", action="store_true",
+                    help="with --guest, build the header-only fmt probe")
+    ap.add_argument("--lto", action="store_true",
+                    help="with --guest, add -flto to the SDK compile")
+    ap.add_argument("--fmt-src", default="/tmp/opencode/fmt-src",
+                    help="fmt checkout for --fmt")
     args = ap.parse_args()
 
     stage = Path(args.stage)

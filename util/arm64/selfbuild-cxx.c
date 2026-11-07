@@ -1,9 +1,14 @@
-/* Guest driver: compile and run the C++ runtime probe with the SDK clang++. */
+/*
+ * Guest driver: compile and run a C++ probe with the SDK clang++.
+ *
+ * CXX_SRC, CXX_STD, CXX_INC, CXX_DEF and CXX_OUT override the defaults, so
+ * the same driver runs the self-contained cxxprobe.cpp and a header-only
+ * library probe such as fmt.
+ */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
-#include <fcntl.h>
 #include <unistd.h>
 #include <sys/wait.h>
 
@@ -46,16 +51,42 @@ int
 main(void)
 {
 	char *cc = "/initramfs/sdk/bin/clang++";
-	char *compile[] = {
-		cc, "--no-default-config",
-		"--config=/initramfs/sdk/bin/clang++.cfg",
-		"-std=c++23", "/initramfs/t/cxxprobe.cpp",
-		"-o", "/initramfs/bin/cxxprobe", 0,
-	};
-	char *probe[] = { "/initramfs/bin/cxxprobe", 0 };
+	char *src = getenv("CXX_SRC");
+	char *std = getenv("CXX_STD");
+	char *inc = getenv("CXX_INC");
+	char *def = getenv("CXX_DEF");
+	char *extra = getenv("CXX_EXTRA");
+	char *out = getenv("CXX_OUT");
+	char *compile[16];
+	char *probe[2];
+	int n = 0;
+
+	if(src == 0)
+		src = "/initramfs/t/cxxprobe.cpp";
+	if(std == 0)
+		std = "-std=c++23";
+	if(out == 0)
+		out = "/initramfs/bin/cxxprobe";
+
+	compile[n++] = cc;
+	compile[n++] = "--no-default-config";
+	compile[n++] = "--config=/initramfs/sdk/bin/clang++.cfg";
+	compile[n++] = std;
+	if(inc != 0)
+		compile[n++] = inc;
+	if(def != 0)
+		compile[n++] = def;
+	if(extra != 0)
+		compile[n++] = extra;
+	compile[n++] = src;
+	compile[n++] = "-o";
+	compile[n++] = out;
+	compile[n] = 0;
 
 	if(run("compile", compile) != 0)
 		return 1;
+	probe[0] = out;
+	probe[1] = 0;
 	if(run("probe", probe) != 0)
 		return 1;
 	printf("CXX-GUEST-DONE\n");

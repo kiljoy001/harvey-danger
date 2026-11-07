@@ -125,6 +125,19 @@ C++ runtime probe PASS
 probe with the SDK's own `clang++` inside the guest; it also passes all 22
 features.  This is the end-to-end check for the shipped C++ headers,
 libraries and linker script, as opposed to the host cross driver.
+`--guest --fmt` builds the header-only fmt 11 probe in
+`testdata/fmtprobe.cpp` (C++17) and prints
+
+```text
+harvey 042 3.50 [1, 2, 3]
+FMT-DONE
+```
+
+`--guest --lto` adds `-flto`; the SDK's clang++ and ld.lld are both LLVM 23,
+so LTO works there even though the host cross driver's `ld.lld` may be an
+older release.  PCH generation works as well (`-x c++-header`); the wrapper
+passes `-static` in compile mode too so the `__STATIC__` macro matches the
+link.
 
 ### SMP
 
