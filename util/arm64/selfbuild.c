@@ -145,12 +145,15 @@ main(void)
 {
 	char *cc = "/initramfs/sdk/bin/clang++";
 	char *tool = getenv("SB_TOOL");
+	char *src2 = getenv("SB_SRC2");
+	char *obj2 = getenv("SB_OBJ2");
 	char src[128], obj[128], bin[128], guest[128], host[128];
-	int r, isdis;
+	int r, isdis, isar;
 
 	if(tool == 0)
 		tool = "llvm-as";
 	isdis = strcmp(tool, "llvm-dis") == 0;
+	isar = strcmp(tool, "llvm-ar") == 0;
 	snprintf(src, sizeof src, "/initramfs/sdk/l/src/%s.cpp", tool);
 	snprintf(obj, sizeof obj, "/initramfs/%s.o", tool);
 	snprintf(bin, sizeof bin, "/initramfs/bin/%s", tool);
@@ -165,19 +168,32 @@ main(void)
 		    "-c", src, "-o", obj, 0 };
 		r = run("compile", a);
 	}
+	if(r == 0 && src2 != 0){
+		char *a[] = { cc, "--no-default-config",
+		    "--config=/initramfs/etc/compile.cfg",
+		    "-c", src2, "-o", obj2, 0 };
+		r = run("compile2", a);
+	}
 	if(r == 0){
 		char *a[] = { cc, "--no-default-config",
 		    "--config=/initramfs/etc/link.cfg",
 		    "-o", bin, 0 };
 		r = run("link", a);
 	}
-	if(r == 0){
+	if(r == 0 && isar){
+		char *a[] = { bin, "rcs", "/initramfs/libtest.a", obj, 0 };
+		r = run("ar-create", a);
+		if(r == 0){
+			char *b[] = { bin, "t", "/initramfs/libtest.a", 0 };
+			r = run("ar-list", b);
+		}
+	} else if(r == 0){
 		char *a[] = { bin,
 		    isdis ? "/initramfs/sdk/l/test.bc" : "/initramfs/sdk/l/test.ll",
 		    "-o", guest, 0 };
 		r = run(tool, a);
 	}
-	if(r == 0)
+	if(r == 0 && !isar)
 		compare(guest, host);
 	printf("SELFBUILD-DONE\n");
 	fflush(stdout);

@@ -676,15 +676,23 @@ closer to the host figure.
 
 `--tool llvm-dis` builds `llvm/tools/llvm-dis/llvm-dis.cpp` and compares the
 disassembly output (the `; ModuleID =` path line is ignored because the host
-and guest input paths differ).  Both tools pass:
+and guest input paths differ).  `--tool llvm-ar` builds both
+`llvm-ar.cpp` and the generated `llvm-ar-driver.cpp`, links the
+DlltoolDriver/LibDriver/AArch64 libraries, and then creates and lists an
+archive.  All three pass:
 
 ```text
 SB compile EXIT 0
 SB link EXIT 0
 SB MATCH 1852 bytes        # llvm-as
 SB MATCH 261 bytes         # llvm-dis
+SB ar-create EXIT 0        # llvm-ar
+SB ar-list EXIT 0
 SELFBUILD-DONE
 ```
+
+`install-sdk.py --with-ar` also ships the cross-built `llvm-ar` and
+`llvm-ranlib` as ready-to-run guest tools.
 
 The 32 MiB heap limit noted above is gone: `qmalloc.c` draws new chunks from
 the physical allocator, doubling up to 64 MiB, and ramfs block maps grow on

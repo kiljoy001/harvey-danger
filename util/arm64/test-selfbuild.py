@@ -70,7 +70,7 @@ def main() -> None:
                     default="/tmp/opencode/llvm-host/bin/llvm-as",
                     help="host llvm-as from the same revision")
     ap.add_argument("--tool", default="llvm-as",
-                    choices=["llvm-as", "llvm-dis"],
+                    choices=["llvm-as", "llvm-dis", "llvm-ar"],
                     help="LLVM tool to self-build")
     ap.add_argument("--host-tool", default="",
                     help="host reference for --tool (default: "
@@ -111,14 +111,29 @@ def main() -> None:
     (l / "src").mkdir()
     shutil.copytree(llvm / "llvm" / "include", l / "include")
     shutil.copytree(build / "include", l / "include-gen")
-    shutil.copy2(llvm / "llvm" / "tools" / tool / f"{tool}.cpp", l / "src")
-    for name in ARCHIVES:
-        shutil.copy2(build / "lib" / f"libLLVM{name}.a", l / "lib")
+    sources = [(llvm / "llvm" / "tools" / tool / f"{tool}.cpp",
+                f"{tool}.cpp")]
+    if tool == "llvm-ar":
+        sources.append((build / "tools" / "llvm-ar" / "llvm-ar-driver.cpp",
+                        "llvm-ar-driver.cpp"))
+    for src, name in sources:
+        shutil.copy2(src, l / "src" / name)
+    archives = list(ARCHIVES)
+    if tool == "llvm-ar":
+        archives += ["DlltoolDriver", "LibDriver", "AArch64AsmParser",
+                     "AArch64Desc", "AArch64Info", "AArch64Utils",
+                     "CodeGenTypes", "Option"]
+    for name in archives:
+        src = build / "lib" / f"libLLVM{name}.a"
+        if src.is_file():
+            shutil.copy2(src, l / "lib")
     (l / "test.ll").write_text(TEST_LL)
     run([str(host_as), str(l / "test.ll"), "-o", str(l / "host.bc")])
     if tool == "llvm-dis":
         shutil.copy2(l / "host.bc", l / "test.bc")
         run([str(host_tool), str(l / "test.bc"), "-o", str(l / "host.ll")])
+    elif tool == "llvm-ar":
+        shutil.copy2(l / "host.bc", l / "test.bc")
 
     # The guest runner's ustar parser reads the 100-byte name field and the
     # 155-byte prefix; a name of exactly 100 bytes would lose its NUL.
@@ -155,7 +170,26 @@ def main() -> None:
     etc.mkdir()
     shutil.copy2(HERE / "selfbuild-compile.cfg", etc / "compile.cfg")
     linkcfg = (HERE / "selfbuild-link.cfg").read_text()
-    linkcfg = linkcfg.replace("/initramfs/llvm-as.o", f"/initramfs/{tool}.o")
+    objs = f"/initramfs/{tool}.o"
+    if tool == "llvm-ar":
+        objs += "\n/initramfs/llvm-ar-driver.o"
+        extra = """\
+/initramfs/sdk/l/lib/libLLVMDlltoolDriver.a
+/initramfs/sdk/l/lib/libLLVMLibDriver.a
+/initramfs/sdk/l/lib/libLLVMAArch64AsmParser.a
+/initramfs/sdk/l/lib/libLLVMAArch64Desc.a
+/initramfs/sdk/l/lib/libLLVMAArch64Info.a
+/initramfs/sdk/l/lib/libLLVMAArch64Utils.a
+/initramfs/sdk/l/lib/libLLVMCodeGenTypes.a
+/initramfs/sdk/l/lib/libLLVMOption.a
+/initramfs/sdk/l/lib/libLLVMIRReader.a
+/initramfs/sdk/l/lib/libLLVMAsmParser.a
+/initramfs/sdk/l/lib/libLLVMTextAPI.a
+/initramfs/sdk/l/lib/libLLVMMCParser.a
+/initramfs/sdk/l/lib/libLLVMMC.a
+"""
+        linkcfg = linkcfg.replace("-Wl,--end-group", extra + "-Wl,--end-group")
+    linkcfg = linkcfg.replace("/initramfs/llvm-as.o", objs)
     (etc / "link.cfg").write_text(linkcfg)
 
     runner = stage / "runner.elf"
@@ -164,6 +198,9 @@ def main() -> None:
          "--in-tree", "/initramfs/bin/selfbuild",
          "--untar", "/boot/sdk.tar:/initramfs",
          "--env", f"SB_TOOL={tool}",
+         *(["--env", "SB_SRC2=/initramfs/sdk/l/src/llvm-ar-driver.cpp",
+            "--env", "SB_OBJ2=/initramfs/llvm-ar-driver.o"]
+           if tool == "llvm-ar" else []),
          "--tree", f"{bindir}:/initramfs/bin",
          "--tree", f"{etc}:/initramfs/etc",
          "--suffix", "", "--output", str(runner)])
@@ -179,7 +216,11 @@ def main() -> None:
     for line in text.splitlines():
         if line.startswith("SB ") or line.startswith("SELFBUILD"):
             print(line)
-    if "SB MATCH" not in text:
+    if tool == "llvm-ar":
+        if not ("SB ar-create EXIT 0" in text and
+                "SB ar-list EXIT 0" in text and "llvm-ar.o" in text):
+            sys.exit("llvm-ar self-build did not create/list an archive")
+    elif "SB MATCH" not in text:
         sys.exit(f"{tool} self-build did not produce matching output")
     print("self-build PASS")
     if not args.keep:
