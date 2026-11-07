@@ -37,6 +37,8 @@
 #include <variant>
 #include <fstream>
 #include <print>
+#include <ctime>
+#include <iomanip>
 
 static void ok(const char *n, const char *d = "") {
     std::printf("CXXPROBE %-24s OK %s\n", n, d);
@@ -265,6 +267,28 @@ int main() {
         std::println("CXXPROBE print                    OK");
     } catch (const std::exception &e) { bad("print", e.what()); }
     catch (...) { bad("print"); }
+
+    try {
+        std::locale loc("");
+        std::ostringstream os;
+        os.imbue(loc);
+        os << 1234567.25;
+        if (!os.str().empty()) ok("locale_env", os.str().c_str());
+        else bad("locale_env");
+    } catch (const std::exception &e) { bad("locale_env", e.what()); }
+    catch (...) { bad("locale_env"); }
+
+    try {
+        std::tm tm{};
+        tm.tm_year = 124;
+        tm.tm_mon = 0;
+        tm.tm_mday = 2;
+        std::ostringstream os;
+        os << std::put_time(&tm, "%Y-%m-%d");
+        if (os.str() == "2024-01-02") ok("put_time");
+        else bad("put_time", os.str().c_str());
+    } catch (const std::exception &e) { bad("put_time", e.what()); }
+    catch (...) { bad("put_time"); }
 
     std::printf("CXXPROBE-DONE\n");
     return 0;

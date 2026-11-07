@@ -96,7 +96,8 @@ exceptions, `exception_ptr`, iostreams, `std::locale` and a custom
 `numpunct` facet, regex, chrono and threads, `latch`/`barrier`/`jthread`/
 `counting_semaphore`, random, filesystem paths plus writable
 `fstream`/`filesystem` in `/initramfs`, `charconv`/`format`,
-`ranges`/`span`/`variant`, `std::print`, and smart pointers.  Three fixes
+`ranges`/`span`/`variant`, `std::print`, `std::locale("")`, `std::put_time`,
+and smart pointers.  Three fixes
 were needed to make that set pass:
 
 - `apex.ld` now emits `.init_array` and defines
@@ -121,7 +122,7 @@ C++ runtime probe PASS
 ```
 
 `test-cxx.py --guest` stages `aspera-tblgen-sdk.boot` and compiles the same
-probe with the SDK's own `clang++` inside the guest; it also passes all 20
+probe with the SDK's own `clang++` inside the guest; it also passes all 22
 features.  This is the end-to-end check for the shipped C++ headers,
 libraries and linker script, as opposed to the host cross driver.
 
