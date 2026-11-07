@@ -1,0 +1,68 @@
+/*
+ * Trimmed device tree for the LKL eMMC bring-up (Orange Pi 3B, RK3566).
+ *
+ * Only what sdhci + sdhci-of-dwcmshc need to bind and probe: the eMMC
+ * controller, its clock inputs (fixed, because U-Boot has already enabled
+ * and rate-set them), and an interrupt controller so the DT interrupt
+ * specifier can be parsed.  Memory and the command line come from LKL's
+ * own mem= parameter, not from here.
+ */
+/dts-v1/;
+
+/ {
+	compatible = "rockchip,rk3566";
+	#address-cells = <2>;
+	#size-cells = <2>;
+
+	gic: interrupt-controller@fd400000 {
+		compatible = "arm,gic-v3";
+		reg = <0x0 0xfd400000 0x0 0x10000>,
+		      <0x0 0xfd460000 0x0 0x80000>;
+		interrupt-controller;
+		#interrupt-cells = <3>;
+		#address-cells = <0>;
+	};
+
+	mmc@fe310000 {
+		compatible = "rockchip,rk3568-dwcmshc";
+		reg = <0x0 0xfe310000 0x0 0x10000>;
+		interrupt-parent = <&gic>;
+		interrupts = <0 19 4>;		/* GIC_SPI 19, LEVEL_HIGH */
+		clocks = <&core_clk>, <&bus_clk>, <&axi_clk>,
+			 <&block_clk>, <&timer_clk>;
+		clock-names = "core", "bus", "axi", "block", "timer";
+		bus-width = <8>;
+		non-removable;
+		status = "okay";
+	};
+
+	core_clk: core-clk {
+		compatible = "fixed-clock";
+		#clock-cells = <0>;
+		clock-frequency = <200000000>;
+	};
+
+	bus_clk: bus-clk {
+		compatible = "fixed-clock";
+		#clock-cells = <0>;
+		clock-frequency = <100000000>;
+	};
+
+	axi_clk: axi-clk {
+		compatible = "fixed-clock";
+		#clock-cells = <0>;
+		clock-frequency = <200000000>;
+	};
+
+	block_clk: block-clk {
+		compatible = "fixed-clock";
+		#clock-cells = <0>;
+		clock-frequency = <200000000>;
+	};
+
+	timer_clk: timer-clk {
+		compatible = "fixed-clock";
+		#clock-cells = <0>;
+		clock-frequency = <24000000>;
+	};
+};

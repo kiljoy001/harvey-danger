@@ -53,6 +53,16 @@ def build(out: Path, lkl_o: Path, lkl_inc: Path, libc: Path) -> Path:
          "-o", str(obj)])
     objects.append(obj)
 
+    # Trimmed device tree for the eMMC bring-up, embedded into the image.
+    # lkl-dtb.S does .incbin "lkl-emmc.dtb", resolved through -I <out>.
+    dtb = out / "lkl-emmc.dtb"
+    run(["dtc", "-I", "dts", "-O", "dtb", "-o", str(dtb),
+         str(ROOT / "util/arm64/lkl-emmc.dts")])
+    obj = out / "lkl-dtb.o"
+    run([CC, "--target=aarch64-none-elf", "-c", "-I", str(out),
+         str(ROOT / "util/arm64/lkl-dtb.S"), "-o", str(obj)])
+    objects.append(obj)
+
     script = out / "lkl.ld"
     script.write_text(f"""ENTRY(_main)
 PHDRS {{

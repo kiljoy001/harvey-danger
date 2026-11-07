@@ -17,6 +17,8 @@ extern struct lkl_host_operations lkl_harvey_ops;
 
 extern int	lkl_init(struct lkl_host_operations*);
 extern int	lkl_start_kernel(const char *fmt, ...);
+extern void	lkl_set_dtb(void*, unsigned long);
+extern char	lkl_dtb_blob[], lkl_dtb_end[];
 extern long	lkl_sys_halt(void);
 extern void	lkl_cleanup(void);
 extern void	lklhost_setout(int);
@@ -140,6 +142,35 @@ probe(char *node)
 		lkl_printf("probe: read version failed\n");
 }
 
+/*
+ * Claim the eMMC node and map its register window into the shared mmio[]
+ * table.  The embedded DTB carries the same reg address, so when
+ * sdhci-of-dwcmshc ioremaps its resource through lkl_ops->ioremap() it
+ * lands on this window.
+ */
+static int
+mapeMMC(char *node)
+{
+	char path[80];
+	u64 base, size;
+	int fd;
+
+	snprint(path, sizeof path, "#P/%s/claim", node);
+	if((fd = open(path, OWRITE)) < 0){
+		lkl_printf("lklboot: claim %s: %r\n", node);
+		return -1;
+	}
+	write(fd, "lkld", 4);
+	close(fd);
+	if(lklhost_mapdev(node, &base, &size) < 0){
+		lkl_printf("lklboot: map %s: %r\n", node);
+		return -1;
+	}
+	lkl_printf("lklboot: %s mapped reg %#llux size %#llux\n",
+		   node, base, size);
+	return 0;
+}
+
 void
 main(int argc, char **argv)
 {
@@ -201,6 +232,8 @@ main(int argc, char **argv)
 		exits("init");
 	}
 	say("lklboot: init ok\n");
+	mapeMMC("mmc@fe310000");
+	lkl_set_dtb(lkl_dtb_blob, lkl_dtb_end - lkl_dtb_blob);
 	if(lkl_start_kernel("mem=128M") < 0){
 		say("lklboot: lkl_start_kernel failed\n");
 		exits("start");
