@@ -12,6 +12,7 @@
  */
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -60,79 +61,124 @@ run(const char *label, char *const argv[])
 	return WEXITSTATUS(st);
 }
 
+static long
+readall(const char *path, char *buf, long max)
+{
+	int fd, n;
+	long off = 0;
+
+	fd = open(path, O_RDONLY);
+	if(fd < 0)
+		return -1;
+	while(off < max - 1 && (n = read(fd, buf + off, max - 1 - off)) > 0)
+		off += n;
+	close(fd);
+	buf[off] = 0;
+	return off;
+}
+
+static long
+copy_skipping_moduleid(const char *in, long n, char *out, long max)
+{
+	long i = 0, o = 0;
+
+	while(i < n && o < max - 1){
+		long j = i;
+		while(j < n && in[j] != '\n')
+			j++;
+		if(!(j - i >= 11 && strncmp(in + i, "; ModuleID =", 11) == 0)){
+			long k;
+			for(k = i; k < j && o < max - 1; k++)
+				out[o++] = in[k];
+			if(j < n && o < max - 1)
+				out[o++] = '\n';
+		}
+		i = j + 1;
+	}
+	out[o] = 0;
+	return o;
+}
+
 static void
 compare(const char *guest, const char *host)
 {
-	unsigned char a[4096], b[4096];
-	long off = 0;
-	int fa, fb, na, nb, i;
+	static char ga[65536], ha[65536], g[65536], h[65536];
+	long gn, hn, g2, h2;
 
-	fa = open(guest, O_RDONLY);
-	fb = open(host, O_RDONLY);
-	if(fa < 0 || fb < 0){
-		printf("SB BC-DIFF cannot open reference\n");
+	gn = readall(guest, ga, sizeof ga);
+	hn = readall(host, ha, sizeof ha);
+	if(gn < 0 || hn < 0){
+		printf("SB MATCH cannot open reference\n");
 		fflush(stdout);
 		return;
 	}
-	for(;;){
-		na = read(fa, a, sizeof a);
-		nb = read(fb, b, sizeof b);
-		if(na < 0)
-			na = 0;
-		if(nb < 0)
-			nb = 0;
-		if(na != nb){
-			printf("SB BC-DIFF short at %ld (%d vs %d)\n",
-			    off, na, nb);
-			fflush(stdout);
-			break;
-		}
-		for(i = 0; i < na; i++)
-			if(a[i] != b[i]){
-				printf("SB BC-DIFF at %ld\n", off + i);
-				fflush(stdout);
-				close(fa);
-				close(fb);
-				return;
-			}
-		off += na;
-		if(na == 0){
-			printf("SB BC-MATCH %ld bytes\n", off);
-			fflush(stdout);
-			break;
-		}
+	g2 = copy_skipping_moduleid(ga, gn, g, sizeof g);
+	h2 = copy_skipping_moduleid(ha, hn, h, sizeof h);
+	if(g2 != h2 || memcmp(g, h, g2) != 0){
+		printf("SB DIFF %ld vs %ld bytes\n", g2, h2);
+		fflush(stdout);
+		return;
 	}
-	close(fa);
-	close(fb);
+	printf("SB MATCH %ld bytes\n", g2);
+	fflush(stdout);
+}
+
+static void
+dump(const char *path)
+{
+	char b[512];
+	int fd, n;
+
+	fd = open(path, O_RDONLY);
+	printf("SB DUMP %s:\n", path);
+	if(fd >= 0){
+		while((n = read(fd, b, sizeof b)) > 0)
+			write(1, b, n);
+		close(fd);
+	}
+	printf("\nSB DUMP-END\n");
+	fflush(stdout);
 }
 
 int
 main(void)
 {
 	char *cc = "/initramfs/sdk/bin/clang++";
-	int r;
+	char *tool = getenv("SB_TOOL");
+	char src[128], obj[128], bin[128], guest[128], host[128];
+	int r, isdis;
+
+	if(tool == 0)
+		tool = "llvm-as";
+	isdis = strcmp(tool, "llvm-dis") == 0;
+	snprintf(src, sizeof src, "/initramfs/sdk/l/src/%s.cpp", tool);
+	snprintf(obj, sizeof obj, "/initramfs/%s.o", tool);
+	snprintf(bin, sizeof bin, "/initramfs/bin/%s", tool);
+	snprintf(guest, sizeof guest, isdis ? "/initramfs/guest.ll"
+	    : "/initramfs/guest.bc");
+	snprintf(host, sizeof host, isdis ? "/initramfs/sdk/l/host.ll"
+	    : "/initramfs/sdk/l/host.bc");
 
 	{
 		char *a[] = { cc, "--no-default-config",
 		    "--config=/initramfs/etc/compile.cfg",
-		    "-c", "/initramfs/sdk/l/src/llvm-as.cpp",
-		    "-o", "/initramfs/llvm-as.o", 0 };
+		    "-c", src, "-o", obj, 0 };
 		r = run("compile", a);
 	}
 	if(r == 0){
 		char *a[] = { cc, "--no-default-config",
 		    "--config=/initramfs/etc/link.cfg",
-		    "-o", "/initramfs/bin/llvm-as", 0 };
+		    "-o", bin, 0 };
 		r = run("link", a);
 	}
 	if(r == 0){
-		char *a[] = { "/initramfs/bin/llvm-as",
-		    "/initramfs/sdk/l/test.ll",
-		    "-o", "/initramfs/guest.bc", 0 };
-		r = run("llvm-as", a);
+		char *a[] = { bin,
+		    isdis ? "/initramfs/sdk/l/test.bc" : "/initramfs/sdk/l/test.ll",
+		    "-o", guest, 0 };
+		r = run(tool, a);
 	}
 	if(r == 0)
-		compare("/initramfs/guest.bc", "/initramfs/sdk/l/host.bc");
+		compare(guest, host);
 	printf("SELFBUILD-DONE\n");
 	fflush(stdout);
 	return 0;

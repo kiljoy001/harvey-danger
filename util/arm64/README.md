@@ -669,6 +669,18 @@ costs roughly 16x for this workload.  A Cortex-A55 is much slower than the
 host core and the board has four of them, so board builds should be far
 closer to the host figure.
 
+`--tool llvm-dis` builds `llvm/tools/llvm-dis/llvm-dis.cpp` and compares the
+disassembly output (the `; ModuleID =` path line is ignored because the host
+and guest input paths differ).  Both tools pass:
+
+```text
+SB compile EXIT 0
+SB link EXIT 0
+SB MATCH 1852 bytes        # llvm-as
+SB MATCH 261 bytes         # llvm-dis
+SELFBUILD-DONE
+```
+
 The 32 MiB heap limit noted above is gone: `qmalloc.c` draws new chunks from
 the physical allocator, doubling up to 64 MiB, and ramfs block maps grow on
 demand.
