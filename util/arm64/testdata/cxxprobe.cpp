@@ -25,6 +25,16 @@
 #include <charconv>
 #include <fcntl.h>
 #include <unistd.h>
+#include <latch>
+#include <barrier>
+#include <semaphore>
+#include <ranges>
+#include <algorithm>
+#include <source_location>
+#include <span>
+#include <tuple>
+#include <optional>
+#include <variant>
 
 static void ok(const char *n, const char *d = "") {
     std::printf("CXXPROBE %-24s OK %s\n", n, d);
@@ -162,6 +172,68 @@ int main() {
         std::unique_ptr<int> q(new int(8));
         if (*p == 7 && *q == 8) ok("smart_ptr"); else bad("smart_ptr");
     } catch (...) { bad("smart_ptr"); }
+
+    try {
+        struct comma_punct : std::numpunct<char> {
+            char do_thousands_sep() const override { return ','; }
+            std::string do_grouping() const override { return "\3"; }
+        };
+        std::ostringstream os;
+        os.imbue(std::locale(std::locale::classic(), new comma_punct));
+        os << 1234567;
+        if (os.str() == "1,234,567") ok("locale_facet");
+        else bad("locale_facet", os.str().c_str());
+    } catch (const std::exception &e) { bad("locale_facet", e.what()); }
+    catch (...) { bad("locale_facet"); }
+
+    try {
+        std::latch l(1);
+        l.count_down();
+        l.wait();
+        std::counting_semaphore<1> sem(0);
+        sem.release();
+        sem.acquire();
+        ok("latch_semaphore");
+    } catch (const std::exception &e) { bad("latch_semaphore", e.what()); }
+    catch (...) { bad("latch_semaphore"); }
+
+    try {
+        std::barrier b(2);
+        std::thread t([&] { b.arrive_and_wait(); });
+        b.arrive_and_wait();
+        t.join();
+        std::jthread jt([] {});
+        jt.join();
+        if (jt.joinable()) bad("barrier_jthread"); else ok("barrier_jthread");
+    } catch (const std::exception &e) { bad("barrier_jthread", e.what()); }
+    catch (...) { bad("barrier_jthread"); }
+
+    try {
+        namespace fs = std::filesystem;
+        fs::path p("/a/b.txt");
+        if (p.filename() == "b.txt" && p.extension() == ".txt" &&
+            p.parent_path() == "/a" && p.lexically_normal() == "/a/b.txt")
+            ok("path_ops");
+        else
+            bad("path_ops", p.lexically_normal().c_str());
+    } catch (const std::exception &e) { bad("path_ops", e.what()); }
+    catch (...) { bad("path_ops"); }
+
+    try {
+        std::vector<int> v{3, 1, 2};
+        std::ranges::sort(v);
+        std::span<int> sp(v);
+        auto [a, b] = std::make_tuple(1, 2);
+        std::optional<int> o = 7;
+        std::variant<int, const char *> var = "x";
+        auto loc = std::source_location::current();
+        if (v[0] == 1 && sp.size() == 3 && a == 1 && b == 2 && *o == 7 &&
+            std::get<const char *>(var) != nullptr && loc.line() > 0)
+            ok("ranges_span_variant");
+        else
+            bad("ranges_span_variant");
+    } catch (const std::exception &e) { bad("ranges_span_variant", e.what()); }
+    catch (...) { bad("ranges_span_variant"); }
 
     std::printf("CXXPROBE-DONE\n");
     return 0;

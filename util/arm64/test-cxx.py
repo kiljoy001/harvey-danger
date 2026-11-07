@@ -19,7 +19,8 @@ ROOT = HERE.parents[1]
 EXPECT = [
     "containers", "exceptions", "exception_ptr", "iostream", "locale",
     "regex", "regex_replace", "chrono_sleep", "threads", "random",
-    "filesystem", "format_charconv", "smart_ptr",
+    "filesystem", "format_charconv", "smart_ptr", "locale_facet",
+    "latch_semaphore", "barrier_jthread", "path_ops", "ranges_span_variant",
 ]
 
 

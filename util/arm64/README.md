@@ -92,9 +92,11 @@ LIBCXX-ARM64-OK
 
 `test-cxx.py` is the fast C++ runtime regression: it compiles
 `testdata/cxxprobe.cpp` and boots it as init.  It covers containers,
-exceptions, `exception_ptr`, iostreams, `std::locale`, regex, chrono and
-threads, condition variables, random, filesystem, `charconv`/`format` and
-smart pointers.  Three fixes were needed to make that set pass:
+exceptions, `exception_ptr`, iostreams, `std::locale` and a custom
+`numpunct` facet, regex, chrono and threads, `latch`/`barrier`/`jthread`/
+`counting_semaphore`, random, filesystem paths, `charconv`/`format`,
+`ranges`/`span`/`variant`, and smart pointers.  Three fixes were needed to
+make that set pass:
 
 - `apex.ld` now emits `.init_array` and defines
   `__init_array_start`/`__init_array_end`.  Without them no C++ static
