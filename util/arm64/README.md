@@ -709,6 +709,21 @@ ART-DONE
 toolchain tools PASS
 ```
 
+`test-fmtlib.py` goes one step further: it compiles `fmt/src/format.cc` and
+a probe as separate objects with the guest `clang++`, archives `format.o`
+with the shipped `llvm-ar`, links the probe against `libfmt.a` and the SDK
+runtime, and runs it:
+
+```text
+FMTLIB compile-format OK
+FMTLIB compile-probe OK
+FMTLIB archive OK
+FMTLIB link OK
+harvey 042 3.50 [1, 2, 3]
+FMTLIB-DONE
+fmt library build PASS
+```
+
 The 32 MiB heap limit noted above is gone: `qmalloc.c` draws new chunks from
 the physical allocator, doubling up to 64 MiB, and ramfs block maps grow on
 demand.
