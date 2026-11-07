@@ -216,7 +216,11 @@ reference/lifetime race, so the default SMP build stays pinned or
 uniprocessor; `build_kernel.py` accepts `ARM64_PIN_USER=1` to pin the init
 process (and therefore the user tree) to CPU0 on a 4-core board.
 `test-selfbuild.py --smp 4` compiles, links and runs the guest `llvm-as`
-with byte-identical bitcode.
+with byte-identical bitcode, and `--tool llvm-dis` / `--tool llvm-ar` build
+those tools as well.  The C++ runtime probe passes all 25 features with the
+SDK's own `clang++`; fmt 11, guest LTO and PCH also pass.  The SDK ships
+`llvm-ar` and `llvm-ranlib`, so a guest can compile objects, archive them and
+link without host helpers.
 
 The heap tail accounting in `qmalloc` was wrong: after installing a new
 physical chunk, `morecore()` added only the requested units to `tailsize`
