@@ -24,6 +24,7 @@ EXPECT = [
     "filesystem", "format_charconv", "smart_ptr", "locale_facet",
     "latch_semaphore", "barrier_jthread", "path_ops", "ranges_span_variant",
     "fstream_filesystem", "print", "locale_env", "put_time",
+    "filesystem_iter_chrono",
 ]
 
 

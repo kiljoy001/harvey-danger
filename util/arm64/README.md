@@ -97,7 +97,8 @@ exceptions, `exception_ptr`, iostreams, `std::locale` and a custom
 `counting_semaphore`, random, filesystem paths plus writable
 `fstream`/`filesystem` in `/initramfs`, `charconv`/`format`,
 `ranges`/`span`/`variant`, `std::print`, `std::locale("")`, `std::put_time`,
-and smart pointers.  Three fixes
+directory iteration/canonical paths, the C++20 calendar, `std::expected`,
+`std::numbers`/`bit_cast`, and smart pointers.  Three fixes
 were needed to make that set pass:
 
 - `apex.ld` now emits `.init_array` and defines
@@ -122,7 +123,7 @@ C++ runtime probe PASS
 ```
 
 `test-cxx.py --guest` stages `aspera-tblgen-sdk.boot` and compiles the same
-probe with the SDK's own `clang++` inside the guest; it also passes all 22
+probe with the SDK's own `clang++` inside the guest; it also passes all 23
 features.  This is the end-to-end check for the shipped C++ headers,
 libraries and linker script, as opposed to the host cross driver.
 `--guest --fmt` builds the header-only fmt 11 probe in
@@ -133,6 +134,9 @@ harvey 042 3.50 [1, 2, 3]
 FMT-DONE
 ```
 
+`std::filesystem::space` is reported as `SKIP`: APEX has no
+`statvfs`/`statfs`, so libc++ throws `Function not implemented`.  That is a
+known gap rather than a probe failure.
 `--guest --lto` adds `-flto`; the SDK's clang++ and ld.lld are both LLVM 23,
 so LTO works there even though the host cross driver's `ld.lld` may be an
 older release.  PCH generation works as well (`-x c++-header`); the wrapper

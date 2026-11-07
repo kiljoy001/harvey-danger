@@ -36,6 +36,10 @@
 #include <optional>
 #include <variant>
 #include <fstream>
+#include <expected>
+#include <numbers>
+#include <bit>
+#include <bitset>
 #include <print>
 #include <ctime>
 #include <iomanip>
@@ -289,6 +293,32 @@ int main() {
         else bad("put_time", os.str().c_str());
     } catch (const std::exception &e) { bad("put_time", e.what()); }
     catch (...) { bad("put_time"); }
+
+    try {
+        namespace fs = std::filesystem;
+        int n = 0;
+        for (auto &e : fs::directory_iterator("/initramfs")) { (void)e; n++; }
+        fs::path canon = fs::weakly_canonical("/initramfs");
+        using namespace std::chrono;
+        year_month_day ymd{year{2024}, month{1}, day{2}};
+        std::expected<int, const char *> ex = 7;
+        if (n > 0 && canon == "/initramfs" && (unsigned)ymd.month() == 1 &&
+            *ex == 7 && std::numbers::pi > 3.14 &&
+            std::bit_cast<unsigned>(1.0f) == 0x3f800000u)
+            ok("filesystem_iter_chrono");
+        else
+            bad("filesystem_iter_chrono");
+    } catch (const std::exception &e) { bad("filesystem_iter_chrono", e.what()); }
+    catch (...) { bad("filesystem_iter_chrono"); }
+
+    try {
+        auto sp = std::filesystem::space("/initramfs");
+        ok("filesystem_space", std::to_string(sp.available).c_str());
+    } catch (const std::filesystem::filesystem_error &e) {
+        std::printf("CXXPROBE filesystem_space         SKIP (%s)\n", e.what());
+    } catch (...) {
+        std::printf("CXXPROBE filesystem_space         SKIP\n");
+    }
 
     std::printf("CXXPROBE-DONE\n");
     return 0;
