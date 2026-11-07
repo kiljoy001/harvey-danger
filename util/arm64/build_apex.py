@@ -34,6 +34,10 @@ BUILTINS = ["addtf3.c", "subtf3.c", "multf3.c", "divtf3.c",
             "comparetf2.c", "extenddftf2.c", "extendsftf2.c",
             "trunctfdf2.c", "trunctfsf2.c", "fixtfsi.c",
             "fixunstfsi.c", "floatsitf.c", "floatunsitf.c",
+            # i64 <-> binary128 conversions (long double on aarch64)
+            "floatditf.c", "floatunditf.c",
+            "fixtfdi.c", "fixunstfdi.c",
+            "fixdfti.c", "fixunsdfti.c",
             "aarch64/fp_mode.c"]
 
 HELLO = r"""

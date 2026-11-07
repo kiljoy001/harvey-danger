@@ -90,6 +90,33 @@ cxx-libcxx harvey arm64 sum=6 tls=7 shared=42 int=1 what=boom
 LIBCXX-ARM64-OK
 ```
 
+`test-cxx.py` is the fast C++ runtime regression: it compiles
+`testdata/cxxprobe.cpp` and boots it as init.  It covers containers,
+exceptions, `exception_ptr`, iostreams, `std::locale`, regex, chrono and
+threads, condition variables, random, filesystem, `charconv`/`format` and
+smart pointers.  Three fixes were needed to make that set pass:
+
+- `apex.ld` now emits `.init_array` and defines
+  `__init_array_start`/`__init_array_end`.  Without them no C++ static
+  constructor ran, so `std::cout` and `std::locale` were left
+  zero-initialized.
+- `libbuiltins.a` includes the i64/binary128 compiler-rt routines
+  (`__floatditf`, `__floatunditf`, `__fixtfdi`, `__fixunstfdi`,
+  `__fixdfti`, `__fixunsdfti`).
+- `apex/aarch64/include/float.h` described the x87 80-bit long double
+  (`LDBL_MANT_DIG 64`); aarch64 long double is binary128
+  (`LDBL_MANT_DIG 113`).  The wrong value made `frexpl` take its
+  subnormal path forever and overflow the stack on the first
+  floating-point `printf`.
+
+```text
+CXXPROBE containers               OK
+...
+CXXPROBE smart_ptr                OK
+CXXPROBE-DONE
+C++ runtime probe PASS
+```
+
 ### SMP
 
 `test_apex_boot.py --smp N` starts N QEMU vCPUs (the default is still one).

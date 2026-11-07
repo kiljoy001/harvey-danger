@@ -22,6 +22,12 @@ SECTIONS {
   .eh_frame_hdr : { *(.eh_frame_hdr) } :text :eh_frame_hdr
   . = ALIGN(0x200000);
   .data : { *(.data .data.*) *(.data.rel.ro*) } :data
+  .init_array : ALIGN(8) {
+    __init_array_start = .;
+    KEEP(*(SORT_BY_INIT_PRIORITY(.init_array.*)))
+    KEEP(*(.init_array .ctors .ctors.*))
+    __init_array_end = .;
+  } :data
   .tdata : { *(.tdata .tdata.*) } :data :tls
   .tbss : { *(.tbss .tbss.*) } :data :tls
   .bss : { *(.bss .bss.* COMMON) } :data
