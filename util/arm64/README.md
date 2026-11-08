@@ -215,8 +215,11 @@ dereferences the stale object.  The remaining work is the Segment
 reference/lifetime race, so the default SMP build stays pinned or
 uniprocessor.  `ARM64_PIN_USER=1` pins the init process (and the whole user
 tree) to CPU0; `ARM64_AFFINITY=1` instead wires each new user process to
-`pid % nmach` and avoids migration, which lets a
-`--smp 4 --jobs 4 --mem 3072` 20-TU run complete.
+`pid % nmach` and avoids migration.  With that kernel,
+`--smp 4 --jobs 4 --mem 6144` completes the full 77-TU build and reports
+`TGEN VT-MATCH 46644 bytes`.  At 3 GiB the same four-way build fails around
+25/77 under memory pressure; the board's first bank is only ~3.8 GiB, so a
+two-way build at 3 GiB is the board target.
 `test-selfbuild.py --smp 4` compiles, links and runs the guest `llvm-as`
 with byte-identical bitcode, and `--tool llvm-dis` / `--tool llvm-ar` build
 those tools as well.  The C++ runtime probe passes all 25 features with the
