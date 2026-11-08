@@ -39,7 +39,7 @@
 		snps,dis_u2_susphy_quirk;
 		phys = <&usb2phy0_otg>;
 		phy-names = "usb2-phy";
-		vbus-supply = <&vcc5v0>;
+		vbus-supply = <&vbus_reg>;
 		status = "okay";
 	};
 
@@ -97,11 +97,19 @@
 		regulator-always-on;
 	};
 
-	vcc5v0: regulator-5v0 {
-		compatible = "regulator-fixed";
-		regulator-name = "vcc_5v0";
-		regulator-min-microvolt = <5000000>;
-		regulator-max-microvolt = <5000000>;
+	/*
+	 * VBUS is not a fixed rail: the native usbpower service owns the
+	 * GPIOs and PMU/CRU/PHY state.  The guest regulator forwards
+	 * enable/disable to that service, so LKL is the control surface
+	 * without the guest touching PMU/CRU registers.
+	 */
+	vbus_reg: regulator-vbus@0 {
+		compatible = "harvey,regulator";
+		reg = <0x0 0x0 0x0 0x0>;
+		regulator-name = "vbus";
+		harvey,path = "/srv/usbpower/ctl";
+		harvey,status = "/srv/usbpower/status";
 		regulator-always-on;
+		regulator-boot-on;
 	};
 };
