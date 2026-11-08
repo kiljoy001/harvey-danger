@@ -26,6 +26,8 @@ extern void	lklhost_debug(int);
 extern void	lklhost_selftest(void);
 extern int	lklhost_mapdev(char*, u64*, u64*);
 extern int	lklhost_iomem(u64, void*, int, int);
+extern int	lklhost_irqthread(char*, int);
+extern void	lklhost_raminit(void);
 extern int	lkl_printf(const char*, ...);
 
 #define say(s) lkl_printf("%s", s)
@@ -149,6 +151,75 @@ probe(char *node)
  * lands on this window.
  */
 static int
+nodeirq(char *node)
+{
+	char path[80], buf[32];
+	int fd, n;
+
+	snprint(path, sizeof path, "#P/%s/irq", node);
+	if((fd = open(path, OREAD)) < 0)
+		return -1;
+	n = read(fd, buf, sizeof buf - 1);
+	close(fd);
+	if(n <= 0)
+		return -1;
+	buf[n] = 0;
+	return atoi(buf);
+}
+
+/*
+ * The eMMC controller's card clock comes from the CRU, outside the
+ * controller's register block.  Boot-critical clocks stay native: release
+ * the controller resets and put cclk_emmc on the oscillator-derived
+ * identify clock (parent 5), which is what the working vendor sequence
+ * uses.  The LKL driver divides it further for 400 kHz.
+ */
+static void
+setemmcclock(void)
+{
+	char *node = "clock-controller@fdd20000";
+	u64 base, size;
+	u32 v;
+
+	if(lklhost_mapdev(node, &base, &size) < 0){
+		lkl_printf("lklboot: map %s: %r\n", node);
+		return;
+	}
+	/*
+	 * The controller has five CRU resets (SRST_A/H/B/C/T_EMMC) in
+	 * SOFTRST_CON(7) bits 5-9.  U-Boot leaves them asserted when it
+	 * boots over the network; the register block still answers, but
+	 * the card interface is held in reset and no command completes.
+	 */
+	v = (0x3e0u<<16) | 0;
+	lklhost_iomem(base + 0x41c, &v, 4, 1);
+	/*
+	 * Identify clock: parent 5 is clk_osc0_div_375k.  Its divider is
+	 * CLKSEL_CON(82) bits 8-13 and only the clock framework normally
+	 * programs it, so program 24 MHz / 32 = 750 kHz and enable its
+	 * gate here; the controller then divides it down further.
+	 */
+	v = (0x3fu<<8)<<16 | (0x1fu<<8);
+	lklhost_iomem(base + 0x248, &v, 4, 1);
+	v = (1u<<15)<<16 | 0;
+	lklhost_iomem(base + 0x38c, &v, 4, 1);
+	v = (7u<<12)<<16 | (5u<<12);	/* select parent 5 */
+	lklhost_iomem(base + 0x170, &v, 4, 1);
+	v = (1u<<8)<<16 | 0;		/* enable the clock gate */
+	lklhost_iomem(base + 0x324, &v, 4, 1);
+	{
+		u32 sr, sel, gate;
+
+		sr = sel = gate = 0;
+		lklhost_iomem(base + 0x41c, &sr, 4, 0);
+		lklhost_iomem(base + 0x170, &sel, 4, 0);
+		lklhost_iomem(base + 0x324, &gate, 4, 0);
+		lkl_printf("lklboot: cru 375k resets %#ux sel %#ux gate %#ux\n",
+			   sr, sel, gate);
+	}
+}
+
+static int
 mapeMMC(char *node)
 {
 	char path[80];
@@ -174,10 +245,11 @@ mapeMMC(char *node)
 void
 main(int argc, char **argv)
 {
-	int fd, hosttest, kerneltest;
+	int fd, hosttest, kerneltest, console;
 
 	hosttest = 0;
 	kerneltest = 0;
+	console = 0;
 	ARGBEGIN{
 	case 'd':
 		lklhost_debug(1);
@@ -188,8 +260,11 @@ main(int argc, char **argv)
 	case 't':
 		kerneltest = 1;
 		break;
+	case 'c':
+		console = 1;
+		break;
 	default:
-		fprint(2, "usage: lklboot [-d] [-s] [-t] [platform-node]\n");
+		fprint(2, "usage: lklboot [-c] [-d] [-s] [-t] [platform-node]\n");
 		exits("usage");
 	}ARGEND
 	/*
@@ -208,7 +283,7 @@ main(int argc, char **argv)
 		char path[32];
 
 		snprint(path, sizeof path, "%s", "/dev/lkllog");
-		fd = open(path, OWRITE);
+		fd = console ? 2 : open(path, OWRITE);
 	}
 	if(fd < 0){
 		char eb[160];
@@ -227,11 +302,13 @@ main(int argc, char **argv)
 		probe(argv[0]);
 
 	say("lklboot: start\n");
+	lklhost_raminit();
 	if(lkl_init(&lkl_harvey_ops) < 0){
 		say("lklboot: lkl_init failed\n");
 		exits("init");
 	}
 	say("lklboot: init ok\n");
+	setemmcclock();
 	mapeMMC("mmc@fe310000");
 	lkl_set_dtb(lkl_dtb_blob, lkl_dtb_end - lkl_dtb_blob);
 	if(lkl_start_kernel("mem=128M") < 0){
@@ -239,16 +316,40 @@ main(int argc, char **argv)
 		exits("start");
 	}
 	say("lklboot: kernel up\n");
-	if(kerneltest)
+	/*
+	 * Route the controller's GIC line into the guest.  Opening the
+	 * #P wait file enables the line; the controller keeps it asserted
+	 * until its driver clears the status, so nothing is lost if the
+	 * first command completed before the watcher started.
+	 */
+	{
+		int irq;
+
+		irq = nodeirq("mmc@fe310000");
+		if(irq > 0 && lklhost_irqthread("mmc@fe310000", irq) == 0)
+			lkl_printf("lklboot: irq %d watched\n", irq);
+		else
+			lkl_printf("lklboot: irq watch failed\n");
+	}
+	if(kerneltest){
 		selftest();
+		/*
+		 * lkl_sys_halt() runs the reboot syscall and unwinds the
+		 * kernel: it stops the idle task, joins the kernel threads
+		 * and frees the arena.
+		 */
+		if(lkl_sys_halt() < 0)
+			say("lklboot: halt failed\n");
+		lkl_cleanup();
+		say("lklboot: halted\n");
+		exits(nil);
+	}
 
 	/*
-	 * lkl_sys_halt() runs the reboot syscall and unwinds the kernel: it
-	 * stops the idle task, joins the kernel threads and frees the arena.
+	 * A driver server runs until it is stopped.  Halting here would
+	 * race device probe workqueues (the mmc block device attaches
+	 * asynchronously) against teardown.
 	 */
-	if(lkl_sys_halt() < 0)
-		say("lklboot: halt failed\n");
-	lkl_cleanup();
-	say("lklboot: halted\n");
-	exits(nil);
+	for(;;)
+		sleep(1000);
 }
