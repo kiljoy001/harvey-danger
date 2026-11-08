@@ -68,7 +68,10 @@ def make_archive(out: Path, elf: Path, libc: Path, debug: bool,
     source = source.replace("SETTLE_MS", str(settle_ms))
     launcher, _ = build_userland.build_program(out, "lklrun", source,
                                               0x200000, libc)
-    files = [("lklrun", launcher), ("lklboot", elf.read_bytes())]
+    # The LKL guest owns the eMMC controller in this bring-up; tell init
+    # not to start the native emmcfs/gefs stack on the same device.
+    files = [("lklrun", launcher), ("lklboot", elf.read_bytes()),
+             ("noemmc", b"1\n")]
     offset = 24 + 48 * len(files)
     table, body = bytearray(), bytearray()
     for name, data in files:
