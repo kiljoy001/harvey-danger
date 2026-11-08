@@ -268,6 +268,12 @@ startuserprocess(void)
 		p->wired = MACHP(0);
 	}
 #endif
+#ifdef ARM64_AFFINITY
+	if(sys->nmach > 1){
+		p->mp = MACHP(0);
+		p->wired = MACHP(0);
+	}
+#endif
 	kprocchild(p, userprocess, nil);
 	ready(p);
 }
@@ -364,6 +370,12 @@ startinitprocess(void)
 	kunmap(stackva);
 	procpriority(p, PriNormal, 0);
 #ifdef ARM64_PIN_USER
+	if(sys->nmach > 1){
+		p->mp = MACHP(0);
+		p->wired = MACHP(0);
+	}
+#endif
+#ifdef ARM64_AFFINITY
 	if(sys->nmach > 1){
 		p->mp = MACHP(0);
 		p->wired = MACHP(0);
@@ -627,9 +639,6 @@ arm64kernelstart(Fdtinfo *info)
 	arm64pnpinit(info);
 	addbootfile("init", (u8 *)arm64initelf, sizeof(arm64initelf));
 	addbootfile("o9drvman", (u8 *)arm64o9drvmanelf, sizeof(arm64o9drvmanelf));
-	addbootfile("o9display", (u8 *)arm64o9displayelf, sizeof(arm64o9displayelf));
-	addbootfile("o9aspera-screen", (u8 *)arm64o9asperascreenelf,
-		    sizeof(arm64o9asperascreenelf));
 	addbootfile("o9xhci", (u8 *)arm64o9xhcielf, sizeof(arm64o9xhcielf));
 	addbootfile("test-xhci", (u8 *)arm64testxhcielf,
 		    sizeof(arm64testxhcielf));

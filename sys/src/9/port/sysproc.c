@@ -257,6 +257,10 @@ sysrfork(Ar0 *ar0, ...)
 	wm = up->wired;
 	if(wm)
 		procwired(p, wm->machno);
+#ifdef ARM64_AFFINITY
+	else if(up->kp == 0 && sys->nmach > 1)
+		procwired(p, p->pid % sys->nmach);
+#endif
 	p->color = up->color;
 	ready(p);
 	sched();
