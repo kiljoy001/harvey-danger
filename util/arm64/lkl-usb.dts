@@ -1,10 +1,14 @@
 /*
  * Trimmed device tree for the LKL USB family (Orange Pi 3B, RK3566).
  *
- * Start with the USB2 OTG controller at fcc00000, which is the port that
- * needs only the USB2 PHY.  The USB3 host at fd000000 also needs the
- * Naneng combphy and the vendor dwc3-rockchip glue; add it once that
- * glue is in the LKL tree.
+ * Two controller groups are described:
+ *
+ *   fcc00000  USB2 OTG (dwc3) on usb2phy0_otg -- the Type-C port.
+ *   fd800000  EHCI + OHCI on usb2phy1_otg      -- USB2 Type-A host 0.
+ *   fd880000  EHCI + OHCI on usb2phy1_host     -- USB2 Type-A host 1.
+ *
+ * The USB3 host at fd000000 also needs the Naneng combphy and the vendor
+ * dwc3-rockchip glue; add it once that glue is in the LKL tree.
  *
  * The PHYs and PD_PIPE are handed over already powered by the native
  * side (U-Boot / board init); this tree only describes the windows the
@@ -41,6 +45,84 @@
 		phy-names = "usb2-phy";
 		vbus-supply = <&vbus_reg>;
 		status = "okay";
+	};
+
+	/*
+	 * The two USB2 host controllers drive the Type-A ports.  They are
+	 * EHCI/OHCI pairs behind the usb2phy1 PHY; usbpower has already
+	 * powered the PHY and the CRU gates, so the guest only needs the
+	 * controller windows and the PHY node for the generic PHY lookup.
+	 */
+	usb@fd800000 {
+		compatible = "generic-ehci";
+		reg = <0x0 0xfd800000 0x0 0x40000>;
+		interrupt-parent = <&gic>;
+		interrupts = <0 130 4>;		/* GIC_SPI 130 */
+		clocks = <&clk_bus>, <&clk_bus>, <&clk_bus>;
+		phys = <&usb2phy1_otg>;
+		phy-names = "usb";
+		status = "okay";
+	};
+
+	usb@fd840000 {
+		compatible = "generic-ohci";
+		reg = <0x0 0xfd840000 0x0 0x40000>;
+		interrupt-parent = <&gic>;
+		interrupts = <0 131 4>;		/* GIC_SPI 131 */
+		clocks = <&clk_bus>, <&clk_bus>, <&clk_bus>;
+		phys = <&usb2phy1_otg>;
+		phy-names = "usb";
+		status = "okay";
+	};
+
+	usb@fd880000 {
+		compatible = "generic-ehci";
+		reg = <0x0 0xfd880000 0x0 0x40000>;
+		interrupt-parent = <&gic>;
+		interrupts = <0 133 4>;		/* GIC_SPI 133 */
+		clocks = <&clk_bus>, <&clk_bus>, <&clk_bus>;
+		phys = <&usb2phy1_host>;
+		phy-names = "usb";
+		status = "okay";
+	};
+
+	usb@fd8c0000 {
+		compatible = "generic-ohci";
+		reg = <0x0 0xfd8c0000 0x0 0x40000>;
+		interrupt-parent = <&gic>;
+		interrupts = <0 134 4>;		/* GIC_SPI 134 */
+		clocks = <&clk_bus>, <&clk_bus>, <&clk_bus>;
+		phys = <&usb2phy1_host>;
+		phy-names = "usb";
+		status = "okay";
+	};
+
+	usb2phy1: usb2phy@fe8b0000 {
+		compatible = "rockchip,rk3568-usb2phy";
+		reg = <0x0 0xfe8b0000 0x0 0x10000>;
+		clocks = <&clk_phy>;
+		clock-names = "phyclk";
+		clock-output-names = "clk_usbphy1_480m";
+		#clock-cells = <0>;
+		rockchip,usbgrf = <&usb2phy1_grf>;
+		status = "okay";
+
+		usb2phy1_otg: otg-port {
+			#phy-cells = <0>;
+			phy-supply = <&vbus_reg>;
+			status = "okay";
+		};
+
+		usb2phy1_host: host-port {
+			#phy-cells = <0>;
+			phy-supply = <&vbus_reg>;
+			status = "okay";
+		};
+	};
+
+	usb2phy1_grf: syscon@fdca8000 {
+		compatible = "rockchip,rk3568-usb2phy-grf", "syscon";
+		reg = <0x0 0xfdca8000 0x0 0x8000>;
 	};
 
 	usb2phy0: usb2phy@fe8a0000 {

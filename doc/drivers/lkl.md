@@ -158,10 +158,23 @@ not used for hot paths (the driver uses `readl`/`writel` on the mapping).
 | Instance | Owns | Exposes | RAM |
 | --- | --- | --- | --- |
 | `lklemc` | dwcmshc + mmc core + block | `/srv/emmc` block device | 512 MiB |
-| `lklusb` | xhci + usb core + hubs + hid + storage | `/srv/input`, `/srv/usbN` | 256 MiB |
+| `lklusb` | dwc3/xhci (OTG) + ehci/ohci (USB2 host) + usb core + hubs + hid + storage | `/srv/input`, `/srv/usbN` | 256 MiB |
 | `lklnet` | stmmac or sdio + wifi | raw frames / 9P net | 256 MiB |
 | `lklmedia` | vpu/vepu/rga | codec devices | 256 MiB |
 | `lklmisc` | thermal, wdt, crypto, rng, pcie | `/srv/misc` | 128 MiB |
+
+USB topology on the Orange Pi 3B:
+
+| Controller | PHY | Ports |
+| --- | --- | --- |
+| `usb@fcc00000` dwc3 OTG | `usb2phy0_otg` | Type-C |
+| `usb@fd800000` EHCI + `usb@fd840000` OHCI | `usb2phy1_otg` | USB2 Type-A 0 |
+| `usb@fd880000` EHCI + `usb@fd8c0000` OHCI | `usb2phy1_host` | USB2 Type-A 1 |
+| `usb@fd000000` dwc3 USB3 | `usb2phy0_host` + combphy1 | USB3 Type-A |
+
+`usbpower` powers both PHYs, the CRU host gates and VBUS before the guest
+starts, so the guest DTB describes the controller windows and the PHY nodes
+without touching PMU/CRU.
 
 Native stays: boot, console, GIC/timer/MMU/PSCI, `#P`, GPIO/I2C/PMIC/UART,
 VOP2/HDMI/rio, `#l` + IP, USB PHY/port power.
@@ -203,6 +216,13 @@ make -C /home/scott/Repo/lkl ARCH=lkl O=/tmp/lkl-build \
 # defconfig detected the host format; override for the target
 /home/scott/Repo/lkl/scripts/config --file /tmp/lkl-build/.config \
      --set-str OUTPUT_FORMAT elf64-littleaarch64
+make -C /home/scott/Repo/lkl ARCH=lkl O=/tmp/lkl-build \
+     LLVM=/tmp/lkl-tools/ CLANG_TARGET_FLAGS_lkl=aarch64-linux-gnu \
+     LD="/tmp/lkl-tools/ld.lld -m aarch64elf" olddefconfig
+
+# USB2 host controllers for the Type-A ports (EHCI/OHCI platform glue)
+/home/scott/Repo/lkl/scripts/config --file /tmp/lkl-build/.config \
+     -e USB_EHCI_HCD_PLATFORM -e USB_OHCI_HCD_PLATFORM
 make -C /home/scott/Repo/lkl ARCH=lkl O=/tmp/lkl-build \
      LLVM=/tmp/lkl-tools/ CLANG_TARGET_FLAGS_lkl=aarch64-linux-gnu \
      LD="/tmp/lkl-tools/ld.lld -m aarch64elf" olddefconfig

@@ -2,14 +2,26 @@
 	"emmc": {
 		"program": "lklemc",
 		"mem": "128M",
-		"devices": ["mmc@fe310000"],
+		"devices": [
+			"mmc@fe310000"
+		],
 		"dtb": "lkl-emmc.dtb",
 		"setup": "emmc"
 	},
 	"usb": {
 		"program": "lklusb",
 		"mem": "256M",
-		"devices": ["usb@fcc00000", "usb2phy@fe8a0000", "syscon@fdca0000"],
+		"devices": [
+			"usb@fcc00000",
+			"usb@fd800000",
+			"usb@fd840000",
+			"usb@fd880000",
+			"usb@fd8c0000",
+			"usb2phy@fe8a0000",
+			"usb2phy@fe8b0000",
+			"syscon@fdca0000",
+			"syscon@fdca8000"
+		],
 		"dtb": "lkl-usb.dtb",
 		"setup": "usb"
 	}
