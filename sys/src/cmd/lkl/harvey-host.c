@@ -1269,6 +1269,89 @@ hmunmap(void *addr, unsigned long size)
 	return 0;
 }
 
+/*
+ * Board resource control.  The guest's regulator/clk/reset/gpio/power
+ * drivers call this with a native service path; the service owns the
+ * hardware and executes the request.  The guest decides when, the
+ * native side decides how.
+ */
+/*
+ * /srv/<name> is a 9P server file, not a directory.  A resource path of
+ * the form /srv/<name>/<file> is mounted once at /mnt/lkl-<name> and the
+ * remaining path is opened there.  #P paths are opened directly.
+ */
+enum { Nresmnt = 8 };
+static Lock reslk;
+static char resmnt[Nresmnt][32];
+static int nresmnt;
+
+static int
+resourcepath(char *path, char *out, int outlen)
+{
+	char svc[32], *rest, *slash;
+	int i, fd;
+
+	if(strncmp(path, "/srv/", 5) != 0)
+		return 0;
+	rest = path + 5;
+	slash = strchr(rest, '/');
+	if(slash == nil)
+		return 0;
+	*slash = 0;
+	snprint(svc, sizeof svc, "%s", rest);
+	rest = slash + 1;
+	lock(&reslk);
+	for(i = 0; i < nresmnt; i++)
+		if(strcmp(resmnt[i], svc) == 0)
+			break;
+	if(i == nresmnt && nresmnt < Nresmnt){
+		char mp[64], srv[64];
+
+		snprint(mp, sizeof mp, "/mnt/lkl-%s", svc);
+		snprint(srv, sizeof srv, "/srv/%s", svc);
+		create(mp, OREAD, DMDIR|0755);
+		fd = open(srv, ORDWR);
+		if(fd >= 0){
+			mount(fd, -1, mp, MREPL|MCREATE, "");
+			close(fd);
+		}
+		snprint(resmnt[nresmnt++], sizeof resmnt[0], "%s", svc);
+		i = nresmnt - 1;
+	}
+	unlock(&reslk);
+	if(i >= nresmnt)
+		return -1;
+	snprint(out, outlen, "/mnt/lkl-%s/%s", svc, rest);
+	return 0;
+}
+
+static int
+hresource(const char *path, int wr, const char *cmd, char *buf, int len)
+{
+	char pbuf[128], rpath[160];
+	int fd, n;
+
+	if(path == nil)
+		return -1;
+	snprint(pbuf, sizeof pbuf, "%s", (char*)path);
+	if(resourcepath(pbuf, rpath, sizeof rpath) < 0)
+		return -1;
+	if(rpath[0] != 0)
+		snprint(pbuf, sizeof pbuf, "%s", rpath);
+	print("host: resource %s %s\n", pbuf, wr ? cmd : "read");
+	if((fd = open(pbuf, wr ? OWRITE : OREAD)) < 0){
+		print("host: resource open %s: %r\n", pbuf);
+		return -1;
+	}
+	if(wr){
+		n = strlen(cmd);
+		n = write(fd, (void*)cmd, n);
+	}else
+		n = read(fd, buf, len);
+	close(fd);
+	return n;
+}
+
 /* ---- host-layer self-test ------------------------------------------- */
 
 /*
@@ -1533,6 +1616,8 @@ struct lkl_host_operations lkl_harvey_ops = {
 
 	.shmem_init		= nil,
 	.shmem_mmap		= nil,
+
+	.resource		= hresource,
 
 	.pci_ops		= nil,
 };
