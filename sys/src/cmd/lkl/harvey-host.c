@@ -9,6 +9,7 @@
 #include <u.h>
 #include <libc.h>
 #include <lkl/asm/host_ops.h>
+#include <lkl/asm/irq.h>
 
 enum {
 	Page		= 4096,
@@ -512,6 +513,57 @@ hthread_create(void (*f)(void*), void *arg)
 	return (lkl_thread_t)id;
 }
 
+/*
+ * Host interrupt source.  A #P device node has a "wait" file: opening it
+ * routes the GIC line to this process, and each read blocks until the
+ * device raises it.  Forward every edge to the LKL guest through
+ * lkl_trigger_irq(); the guest's driver reads and clears the controller's
+ * status, which deasserts the level line.
+ */
+typedef struct Irqsrc Irqsrc;
+struct Irqsrc {
+	char	node[64];
+	int	irq;
+};
+
+static void
+irqwatch(void *x)
+{
+	Irqsrc *s = x;
+	char path[96], buf[32], msg[128];
+	int fd, n;
+
+	for(;;){
+		snprint(path, sizeof path, "#P/%s/wait", s->node);
+		if((fd = open(path, OREAD)) < 0){
+			n = snprint(msg, sizeof msg, "lklhost: irq %d: open %s: %r\n",
+				    s->irq, path);
+			write(2, msg, n);
+			sleep(100);
+			continue;
+		}
+		while((n = read(fd, buf, sizeof buf)) > 0)
+			lkl_trigger_irq(s->irq);
+		close(fd);
+	}
+}
+
+int
+lklhost_irqthread(char *node, int irq)
+{
+	Irqsrc *s;
+
+	if((s = mallocz(sizeof *s, 1)) == nil)
+		return -1;
+	snprint(s->node, sizeof s->node, "%s", node);
+	s->irq = irq;
+	if(hthread_create(irqwatch, s) == 0){
+		free(s);
+		return -1;
+	}
+	return 0;
+}
+
 static void
 hthread_detach(void)
 {
@@ -683,12 +735,99 @@ hmem_free(void *p)
 	free(p);
 }
 
+/*
+ * Guest RAM arena.  LKL takes its whole mem= region from page_alloc once,
+ * and every DMA buffer is inside that region.  Use the physically
+ * contiguous #P/dma segment so a guest pointer can be translated to a real
+ * device address.  The kernel maps the "dma" physseg uncached, so the DMA
+ * path needs no cache maintenance.
+ */
+static uchar *lklram;
+static u64 lklrampa, lklramsize, lklramoff;
+
+static u64 pnpnum(char*, char*);
+unsigned long lkl_host_dma_pa(void*, unsigned long);
+
+static void
+raminit(void)
+{
+	u64 base, size;
+	void *va;
+
+	if(lklram != nil)
+		return;
+	base = pnpnum("dma", "base");
+	size = pnpnum("dma", "size");
+	if(base == ~0ULL || size == ~0ULL || size < 64*1024*1024){
+		print("host: no dma arena (base %#llux size %#llux)\n",
+		      base, size);
+		return;
+	}
+	va = segattach(0, "dma", 0, size);
+	if(va == (void*)-1){
+		print("host: segattach dma %#llux: %r\n", size);
+		return;
+	}
+	lklram = va;
+	lklrampa = base;
+	lklramsize = size;
+	print("host: arena va %p pa %#llux size %#llux\n", va, base, size);
+}
+
+/*
+ * Cache maintenance for the guest's DMA buffers.  op 0=clean (CPU wrote),
+ * 1=invalidate (device wrote), 2=both.
+ */
+void
+lkl_host_dma_sync(unsigned long pa, unsigned long size, int op)
+{
+	static char *name[] = { "clean", "inval", "cleaninval" };
+	static int fd[3] = { -1, -1, -1 };
+	char buf[64], path[32];
+
+	if(size == 0 || op < 0 || op > 2)
+		return;
+	if(fd[op] < 0){
+		snprint(path, sizeof path, "#P/dma/%s", name[op]);
+		if((fd[op] = open(path, OWRITE)) < 0)
+			return;
+	}
+	snprint(buf, sizeof buf, "0x%lux 0x%lux\n", pa, size);
+	pwrite(fd[op], buf, strlen(buf), 0);
+}
+
+/*
+ * Map the guest arena before any host thread exists, so every RFMEM
+ * child inherits the segment.  A segattach done later, from a child,
+ * is not visible in the main process's segment table.
+ */
+void
+lklhost_raminit(void)
+{
+	raminit();
+}
+
 static void*
 hpage_alloc(unsigned long size)
 {
 	uchar *p, *a;
 
 	HDBG("host: page_alloc %lud\n", size);
+	raminit();
+	if(lklram != nil){
+		u64 off = (lklramoff + Page - 1) & ~(u64)(Page - 1);
+
+		if(off + size <= lklramsize){
+			p = lklram + off;
+			lklramoff = off + size;
+			print("host: guest ram va %p dma %#llux size %lud\n",
+			      p, lkl_host_dma_pa(p, size), size);
+			memset(p, 0, size);
+			return p;
+		}
+		print("host: dma arena full: want %lud, used %llud\n",
+		      size, lklramoff);
+	}
 	if((p = mallocz(size + Page + 16, 1)) == nil){
 		print("host: page_alloc %lud failed\n", size);
 		return nil;
@@ -702,8 +841,26 @@ static void
 hpage_free(void *p, unsigned long size)
 {
 	USED(size);
-	if(p != nil)
-		free((void*)((uintptr*)p)[-1]);
+	if(p == nil)
+		return;
+	if(lklram != nil && (uchar*)p >= lklram &&
+	   (uchar*)p < lklram + lklramsize)
+		return;		/* arena is bump-allocated, never freed */
+	free((void*)((uintptr*)p)[-1]);
+}
+
+/*
+ * Device address of a guest buffer, for arch/lkl's platform DMA path.
+ */
+unsigned long
+lkl_host_dma_pa(void *va, unsigned long size)
+{
+	uintptr p = (uintptr)va;
+
+	if(lklram != nil && p >= (uintptr)lklram &&
+	   p + size <= (uintptr)lklram + lklramsize)
+		return lklrampa + (p - (uintptr)lklram);
+	return p;
 }
 
 static unsigned long long
@@ -974,10 +1131,40 @@ hiomem_access(const volatile void *addr, void *val, int size, int write)
 
 	for(i = 0; i < nmmio; i++){
 		if(p >= mmio[i].va && p + size <= mmio[i].va + mmio[i].len){
-			if(write)
-				memmove((void*)p, val, size);
-			else
-				memmove(val, (void*)p, size);
+			/*
+			 * Use a single volatile store/load of the access
+			 * width.  A memmove may split a 16-bit register into
+			 * two byte accesses; the SDHCI command register is
+			 * triggered by the 16-bit write and a split write
+			 * never starts the command.
+			 */
+			if(write){
+				switch(size){
+				case 1: *(volatile u8*)p = *(u8*)val; break;
+				case 2: *(volatile u16*)p = *(u16*)val; break;
+				case 4: *(volatile u32*)p = *(u32*)val; break;
+				case 8: *(volatile u64*)p = *(u64*)val; break;
+				default: memmove((void*)p, val, size); break;
+				}
+			}else{
+				switch(size){
+				case 1: *(u8*)val = *(volatile u8*)p; break;
+				case 2: *(u16*)val = *(volatile u16*)p; break;
+				case 4: *(u32*)val = *(volatile u32*)p; break;
+				case 8: *(u64*)val = *(volatile u64*)p; break;
+				default: memmove(val, (void*)p, size); break;
+				}
+			}
+			/*
+			 * LKL's readl/writel go through this function rather
+			 * than a volatile load/store, so the compiler and the
+			 * normal-memory copy are not ordered with respect to
+			 * the device.  Order every access before the guest
+			 * continues; the eMMC controller latches the command
+			 * register and needs the argument and transfer mode
+			 * to have arrived first.
+			 */
+			__asm__ volatile("dsb sy" ::: "memory");
 			return 0;
 		}
 	}
