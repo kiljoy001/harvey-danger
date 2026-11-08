@@ -748,10 +748,37 @@ static u64 lklrampa, lklramsize, lklramoff;
 static u64 pnpnum(char*, char*);
 unsigned long lkl_host_dma_pa(void*, unsigned long);
 
-static void
-raminit(void)
+/*
+ * Allocate a chunk of the arena from the kernel's bump allocator and
+ * return its physical base.  Each LKL family instance takes a disjoint
+ * chunk so two guests can run at once.
+ */
+static int
+dmaalloc(u64 size, u64 align, u64 *pa)
 {
-	u64 base, size;
+	char buf[64];
+	int fd, n;
+
+	if((fd = open("#P/dma/alloc", ORDWR)) < 0)
+		return -1;
+	snprint(buf, sizeof buf, "%llud %llud\n", size, align);
+	if(write(fd, buf, strlen(buf)) != strlen(buf)){
+		close(fd);
+		return -1;
+	}
+	n = pread(fd, buf, sizeof buf - 1, 0);
+	close(fd);
+	if(n <= 0)
+		return -1;
+	buf[n] = 0;
+	*pa = strtoull(buf, nil, 0);
+	return 0;
+}
+
+static void
+raminit(unsigned long want)
+{
+	u64 base, size, pa;
 	void *va;
 
 	if(lklram != nil)
@@ -763,15 +790,32 @@ raminit(void)
 		      base, size);
 		return;
 	}
+	/*
+	 * Map the whole segment so any allocated chunk has a virtual
+	 * address; use only [pa, pa+want) of it.
+	 */
 	va = segattach(0, "dma", 0, size);
 	if(va == (void*)-1){
 		print("host: segattach dma %#llux: %r\n", size);
 		return;
 	}
-	lklram = va;
-	lklrampa = base;
-	lklramsize = size;
-	print("host: arena va %p pa %#llux size %#llux\n", va, base, size);
+	pa = base;
+	if(want != 0 && want < size){
+		if(dmaalloc(want, 0x200000, &pa) < 0 ||
+		   pa < base || pa + want > base + size){
+			print("host: dma alloc %lud failed; using whole arena\n",
+			      want);
+			pa = base;
+			want = 0;
+		}
+	}
+	if(want == 0)
+		want = size;
+	lklram = va + (pa - base);
+	lklrampa = pa;
+	lklramsize = want;
+	print("host: arena va %p pa %#llux size %#llux%s\n",
+	      lklram, pa, want, pa == base ? "" : " (chunk)");
 }
 
 /*
@@ -802,9 +846,9 @@ lkl_host_dma_sync(unsigned long pa, unsigned long size, int op)
  * is not visible in the main process's segment table.
  */
 void
-lklhost_raminit(void)
+lklhost_raminit(unsigned long want)
 {
-	raminit();
+	raminit(want);
 }
 
 static void*
@@ -813,7 +857,7 @@ hpage_alloc(unsigned long size)
 	uchar *p, *a;
 
 	HDBG("host: page_alloc %lud\n", size);
-	raminit();
+	raminit(0);
 	if(lklram != nil){
 		u64 off = (lklramoff + Page - 1) & ~(u64)(Page - 1);
 
@@ -1036,7 +1080,7 @@ htimer_free(void *timer)
  * both hooks out of the mapping.  The window is device memory, mapped by
  * the kernel; the guest touches it through these two entry points only.
  */
-enum { Nmmio = 8 };
+enum { Nmmio = 32 };
 static struct {
 	u64	pa;
 	u64	len;
