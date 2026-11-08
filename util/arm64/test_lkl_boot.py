@@ -79,7 +79,7 @@ main(void)
 
 def make_archive(out: Path, elf: Path, libc: Path, debug: bool,
                  settle_ms: int = 5000, hosttest: bool = False,
-                 kerneltest: bool = False) -> Path:
+                 kerneltest: bool = False, noemmc: bool = False) -> Path:
     out.mkdir(parents=True, exist_ok=True)
     source = LAUNCHER.replace("DEBUG_ARG", "debug," if debug else "")
     source = source.replace("HOST_ARG", '"-s",' if hosttest else "")
@@ -92,11 +92,13 @@ def make_archive(out: Path, elf: Path, libc: Path, debug: bool,
         src = FAMILY_LAUNCHER.replace("FAMILY", fam)
         fams[fam], _ = build_userland.build_program(
             out, "lkl" + fam, src, 0x200000, libc)
-    # The LKL guest owns the eMMC controller in this bring-up; tell init
-    # not to start the native emmcfs/gefs stack on the same device.
+    # The LKL eMMC family is a validation harness: only its archive asks
+    # init to skip the native emmcfs/gefs stack.  A production archive
+    # keeps native eMMC and starts lklusb (or another family) alongside it.
     files = [("lklrun", launcher), ("lklboot", elf.read_bytes()),
-             ("lklemc", fams["emmc"]), ("lklusb", fams["usb"]),
-             ("noemmc", b"1\n")]
+             ("lklemc", fams["emmc"]), ("lklusb", fams["usb"])]
+    if noemmc:
+        files.append(("noemmc", b"1\n"))
     offset = 24 + 48 * len(files)
     table, body = bytearray(), bytearray()
     for name, data in files:
@@ -123,6 +125,9 @@ def main() -> None:
                     help="run the host-layer selftest (-s) instead of LKL")
     ap.add_argument("--kerneltest", action="store_true",
                     help="run the kernel-side nanosleep selftest (-t) after boot")
+    ap.add_argument("--noemmc", action="store_true",
+                    help="let the LKL emmc family own the controller "
+                         "(skip native emmcfs/gefs)")
     ap.add_argument("--archive-only", action="store_true")
     ap.add_argument("--cpu", default="cortex-a55")
     ap.add_argument("--deadline", type=float, default=40)
@@ -134,7 +139,8 @@ def main() -> None:
     if not 0 <= args.settle_ms <= 300000:
         ap.error("--settle-ms must be between 0 and 300000")
     archive = make_archive(args.out, args.elf, args.libc, args.debug,
-                           args.settle_ms, args.hosttest, args.kerneltest)
+                           args.settle_ms, args.hosttest, args.kerneltest,
+                           args.noemmc)
     if args.archive_only:
         print(archive)
         return
