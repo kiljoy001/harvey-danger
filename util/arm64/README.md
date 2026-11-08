@@ -548,12 +548,29 @@ tftpboot 0x48000000 orangepi-3b-v1.1.dtb
 booti 0x40080000 - 0x48000000
 ```
 
-`host:/home/scott/tftp` is served on port 6969 by `tftpd.py`; the 80 MiB
-parts come from `split -b 80000000 aspera-tblgen-sdk.boot sdk.part.`.  This
-worked on the v1.1 board: the image and all six parts loaded, and the
-kernel printed `HARVEY-ARM64 BOOT-ARCHIVE PASS` for the SDK.  The board then
-reset during driver init (after the HDMI I2C timeouts), before the runner
-could unpack the SDK; that is the next board-specific issue to chase.
+`host:/home/scott/tftp` is served on port 6969 by `tftpd.py`; the parts are
+80 MiB so each load address is a clean 0x05000000 step (five parts):
+
+```text
+split -b 83886080 aspera-tblgen-sdk.boot sdk.part.
+```
+
+Do not use a round 80,000,000-byte split: the 0x003b4c00 gap between parts
+shows up as a `bad tar header` in the runner.
+
+U-Boot leaves the RK3566 watchdog running, and it resets the board in the
+middle of the multi-part TFTP load.  At the U-Boot prompt, clear it before
+loading:
+
+```text
+mw.l 0xfe60000c 0x76; mw.l 0xfe600000 0
+```
+
+With the watchdog stopped, all five parts loaded on the v1.1 board and the
+kernel reached the runner: it printed `HARVEY-ARM64 BOOT-ARCHIVE PASS`,
+untarred the SDK from `0x50000000` and started `/initramfs/bin/tblgen`.  The
+board reports `no PSCI cpu_on, staying uniprocessor`, so that build runs the
+self-build on one CPU.
 
 This uses QEMU's direct ARM64 Image loading. No UEFI or Limine is involved.
 The Image header and x0 device tree handoff also match U-Boot's `booti`
