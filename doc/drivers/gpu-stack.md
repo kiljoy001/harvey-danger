@@ -118,7 +118,7 @@ shim for that is larger and less useful than a native seam.
 Build the same *seams* with Harvey pieces:
 
 ```text
-libdraw / o9display                  frontend: 2D ops, surfaces, views
+libdraw / native display             frontend: 2D ops, surfaces, views
         |
 libgpu                               winsys/state: BOs, VA, command list,
         |                            fences, pipeline objects
@@ -162,7 +162,7 @@ The split is deliberately asymmetric:
 3. **A textured blit.** One surface BO, one sampler, a precompiled blit
    pipeline; GPU copies/composites a surface into the scanout buffer. This is
    the first useful "GPU into the display" operation.
-4. **`o9display` on GPU buffers.** Surfaces become GPU BOs (or are uploaded to
+4. **`the display service` on GPU buffers.** Surfaces become GPU BOs (or are uploaded to
    them), `commit` submits a composition job and waits on its fence. Keep the
    CPU path as the fallback for text, paths, and unsupported formats.
 

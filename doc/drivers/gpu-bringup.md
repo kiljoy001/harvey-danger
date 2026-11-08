@@ -582,9 +582,9 @@ write the scanout.
    end-of-job cache clean and invalidate, so completion means the pixels
    are in DRAM.
 2. **GPU-backed display surfaces.**  `gpufs` can now present any
-   DMA surface full-screen.  The remaining piece is `o9display` allocating
-   its composited surface from the same DMA pool, calling `blit`, and
-   keeping the CPU memdraw path as the fallback when submission fails.
+   DMA surface full-screen.  The remaining piece is the display compositor
+   allocating its surface from the same DMA pool, calling `blit`, and
+   keeping the CPU path as the fallback when submission fails.
 3. **An arbitrary-rect blit.**  The blit maps the whole screen onto the
    source surface, which is what a full-frame present needs.  Drawing a
    surface into a sub-rectangle needs either a uniform buffer (rect origin

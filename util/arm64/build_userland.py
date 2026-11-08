@@ -53,9 +53,7 @@ EMMC_BASE = 0x5200000
 EMMCFS_BASE = 0x4600000
 GMAC_BASE = 0x4A00000
 GMACFS_BASE = 0x7A00000
-O9DISPLAY_BASE = 0x3A00000
 DISPLAYTEST_BASE = 0x4200000
-O9ASPERA_SCREEN_BASE = 0x4E00000
 O9XHCI_BASE = 0x5600000
 TESTXHCI_BASE = 0x5E00000
 TESTXHCI1_BASE = 0x6600000
@@ -1220,19 +1218,7 @@ main(int argc, char **argv)
 		}else
 			say("HARVEY-ARM64 EMMCFS FAIL\n");
 	}
-	{
-		char *dispargv[] = { "/boot/o9display", nil };
-		pid = rfork(RFPROC|RFNOWAIT|RFFDG|RFENVG|RFREND|RFNOTEG);
-		if(pid == 0){
-			exec(dispargv[0], dispargv);
-			say("HARVEY-ARM64 DISPLAY-SERVICE EXEC FAIL\n");
-			_exits("exec");
-		}
-		if(pid < 0)
-			say("HARVEY-ARM64 DISPLAY-SERVICE FAIL\n");
-		else
-			say("HARVEY-ARM64 DISPLAY-SERVICE LAUNCHED\n");
-	}
+
 	{
 		char ctl[256];
 		int fd, m;
@@ -1373,10 +1359,6 @@ main(int argc, char **argv)
 }
 ''', INIT_BASE, libc)
     o9drvman, _ = validate_elf(ROOT / "build/arm64-o9/o9drvman", O9DRVMAN_BASE)
-    o9display, _ = validate_elf(ROOT / "build/arm64-o9/o9display",
-                                O9DISPLAY_BASE)
-    asperascreen, _ = validate_elf(ROOT / "build/arm64-o9/o9aspera-screen",
-                                   O9ASPERA_SCREEN_BASE)
     o9xhci, _ = validate_elf(ROOT / "build/arm64-o9/o9xhci", O9XHCI_BASE)
     testxhci, _ = validate_elf(ROOT / "build/arm64-o9/test-xhci", TESTXHCI_BASE)
     testxhci1, _ = validate_elf(ROOT / "build/arm64-o9/test-xhci1", TESTXHCI1_BASE)
@@ -2041,8 +2023,6 @@ main(int argc, char **argv)
     emit_array(lines, "arm64execstubelf", stub)
     emit_array(lines, "arm64initelf", init)
     emit_array(lines, "arm64o9drvmanelf", o9drvman)
-    emit_array(lines, "arm64o9displayelf", o9display)
-    emit_array(lines, "arm64o9asperascreenelf", asperascreen)
     emit_array(lines, "arm64o9xhcielf", o9xhci)
     emit_array(lines, "arm64testxhcielf", testxhci)
     emit_array(lines, "arm64testxhci1elf", testxhci1)
@@ -2091,8 +2071,6 @@ main(int argc, char **argv)
     args.output.write_text("\n".join(lines))
     programs = {
         "o9drvman": o9drvman,
-        "o9display": o9display,
-        "o9aspera-screen": asperascreen,
         "o9xhci": o9xhci,
         "test-xhci": testxhci,
         "test-xhci1": testxhci1,
