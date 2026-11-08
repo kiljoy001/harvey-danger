@@ -282,7 +282,7 @@ unlock(Lock *l)
 		print("unlock: not locked: pc %#p\n", getcallerpc());
 	if(l->isilock)
 		print("unlock of ilock: pc %#p, held by %#p\n", getcallerpc(), l->_pc);
-	if(l->p != up)
+	if(up != nil && l->p != up)
 		print("unlock: up changed: pc %#p, acquired at pc %#p, lock p %#p, unlock up %#p\n", getcallerpc(), l->_pc, l->p, up);
 	l->m = nil;
 	coherence();

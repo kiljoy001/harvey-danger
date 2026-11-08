@@ -160,7 +160,7 @@ fixfault(Segment *s, usize addr, int ftype, int dommuput, int color)
 	case SG_STACK:
 		if(*pg == 0){
 			new = newpage(1, &s, addr, pgsz, color);
-			if(s == 0)
+			if(new == 0)
 				return -1;
 
 			*pg = new;
@@ -174,7 +174,7 @@ fixfault(Segment *s, usize addr, int ftype, int dommuput, int color)
 		} else {
 			if(*pg == 0){
 				new = newpage(1, &s, addr, pgsz, color);
-				if(s == 0)
+				if(new == 0)
 					return -1;
 				*pg = new;
 			}
@@ -236,7 +236,7 @@ fixfault(Segment *s, usize addr, int ftype, int dommuput, int color)
 				// No need to zero here as it is copied
 				// over.
 				new = newpage(0, &s, addr, pgsz, color);
-				if(s == 0)
+				if(new == 0)
 					return -1;
 				*pg = new;
 				copypage(lkp, *pg);

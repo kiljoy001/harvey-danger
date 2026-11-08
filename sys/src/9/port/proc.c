@@ -139,6 +139,16 @@ schedinit(void) /* never returns */
 		 * after which the next psalloc() may hand it to a new process.
 		 */
 		updatecpu(up);
+		/*
+		 * Clear the per-CPU current process before ready() queues it
+		 * or psrelease() puts it back on the free list.  Another CPU
+		 * may then dispatch (or reuse) the Proc, and a timer or IPI
+		 * on this CPU must not still consider it current: that path
+		 * would run two CPUs with the same Proc, double-queue it, and
+		 * fault on segments the other CPU has already replaced.
+		 */
+		machp()->externup = nil;
+		coherence();
 		up->mach = nil;
 		switch(up->state){
 		case Running:
@@ -164,7 +174,6 @@ schedinit(void) /* never returns */
 			unlock(&procalloc.l);
 			break;
 		}
-		machp()->externup = nil;
 	}
 	sched();
 }
