@@ -91,6 +91,7 @@ struct Fdtinfo {
 	u32 ncpu;
 	u32 psci_method;	/* 1 = HVC, 2 = SMC */
 	u32 psci_cpuon;
+	u32 psci_std;		/* 0.2+/1.0 standard function ids */
 	u64 cpumpidr[Fdtmaxcpu];
 	u32 nmemory;
 	Fdtmemory memory[Maxfdtmemory];

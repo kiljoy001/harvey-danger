@@ -69,7 +69,8 @@ arm64smpinit(Fdtinfo *info)
 		ncpu = 1;
 	if(ncpu > MACHMAX)
 		ncpu = MACHMAX;
-	if(ncpu > 1 && (info->psci_method == 0 || info->psci_cpuon == 0)){
+	if(ncpu > 1 && (info->psci_method == 0 ||
+	   (info->psci_cpuon == 0 && info->psci_std == 0))){
 		print("ARM64 smp: no PSCI cpu_on, staying uniprocessor\n");
 		ncpu = 1;
 	}
@@ -95,7 +96,8 @@ arm64smpinit(Fdtinfo *info)
 		b->mach = (u64)&arm64machs[i];
 		b->root = arm64mmukernelroot();
 		r = psci(info->psci_method,
-		    info->psci_cpuon ? info->psci_cpuon : 0x84000003,
+		    info->psci_cpuon ? info->psci_cpuon :
+		    (info->psci_std ? 0xC4000003 : 0x84000003),
 		    info->cpumpidr[i] ? info->cpumpidr[i] : (u64)i,
 		    (u64)arm64cpuentry, (u64)b);
 		if(r != 0)

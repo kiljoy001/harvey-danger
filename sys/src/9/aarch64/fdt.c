@@ -28,7 +28,7 @@ struct Fdtnode {
 	u32 compatlen, pathlen, uarttype, gicversion;
 	u32 clas;
 	int memory, uart, gic, timer, virtio;
-	int cpu, psci;
+	int cpu, psci, psci_std;
 	u32 method, cpuon;
 	int reservedir, reserve, enabled;
 };
@@ -481,6 +481,11 @@ fdtparse(void *blob, usize bytes, Fdtinfo *out)
 				node->psci = hascompat(value, len, "arm,psci-1.0") ||
 				             hascompat(value, len, "arm,psci-0.2") ||
 				             hascompat(value, len, "arm,psci");
+				/* PSCI 0.2 and later define CPU_ON in the
+				 * specification, so the node need not carry
+				 * the legacy cpu_on property. */
+				node->psci_std = hascompat(value, len, "arm,psci-1.0") ||
+				                 hascompat(value, len, "arm,psci-0.2");
 			}else if(same((char *)str+off, "interrupts")){
 				node->intr = value;
 				node->intrlen = len;
@@ -504,6 +509,8 @@ fdtparse(void *blob, usize bytes, Fdtinfo *out)
 					out->psci_method = node->method;
 				if(node->cpuon != 0)
 					out->psci_cpuon = node->cpuon;
+				if(node->psci_std)
+					out->psci_std = 1;
 			}
 			if(node->reserve && node->reg != nil){
 				if(node->parentaddr == 0 || node->parentaddr > 2 ||
