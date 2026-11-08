@@ -66,8 +66,8 @@ def build(out: Path, lkl_o: Path, lkl_inc: Path, libc: Path) -> Path:
         run(["dtc", "-I", "dts", "-O", "dtb", "-o", str(dst), str(dtssrc)])
         dtbs.append((fam, spec["dtb"]))
     asm = out / "lkl-dtb.S"
-    asm.write_text(".section .rodata\n.balign 8\n" + "".join(
-        f".global lkl_dtb_{fam}\n.global lkl_dtb_{fam}_end\n"
+    asm.write_text(".section .rodata\n" + "".join(
+        f".balign 8\n.global lkl_dtb_{fam}\n.global lkl_dtb_{fam}_end\n"
         f"lkl_dtb_{fam}:\n\t.incbin \"{name}\"\n"
         f"lkl_dtb_{fam}_end:\n"
         for fam, name in dtbs))
