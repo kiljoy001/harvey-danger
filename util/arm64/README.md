@@ -533,6 +533,28 @@ with `ARM64_AFFINITY=1` in the environment and a `--jobs 2` stage; the
 archive comes from
 `test-selfbuild-tblgen.py --stage-only --boot <archive>`.
 
+On the board, the vendor/router TFTP root (`/tmp/aspera-tftp`) is too small
+for the archive.  Point U-Boot at the host instead and split the archive
+into parts below the 16-bit TFTP block limit (65,535 blocks of 1468 bytes,
+about 96 MiB):
+
+```text
+setenv serverip 192.168.2.2; setenv tftpdstp 6969
+tftpboot 0x40080000 aspera-tblgen.img
+tftpboot 0x50000000 sdk.part.00
+tftpboot 0x55000000 sdk.part.01
+...
+tftpboot 0x48000000 orangepi-3b-v1.1.dtb
+booti 0x40080000 - 0x48000000
+```
+
+`host:/home/scott/tftp` is served on port 6969 by `tftpd.py`; the 80 MiB
+parts come from `split -b 80000000 aspera-tblgen-sdk.boot sdk.part.`.  This
+worked on the v1.1 board: the image and all six parts loaded, and the
+kernel printed `HARVEY-ARM64 BOOT-ARCHIVE PASS` for the SDK.  The board then
+reset during driver init (after the HDMI I2C timeouts), before the runner
+could unpack the SDK; that is the next board-specific issue to chase.
+
 This uses QEMU's direct ARM64 Image loading. No UEFI or Limine is involved.
 The Image header and x0 device tree handoff also match U-Boot's `booti`
 interface. The early parser supports root-level 1- or 2-cell
