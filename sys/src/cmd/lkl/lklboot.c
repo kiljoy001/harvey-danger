@@ -12,13 +12,13 @@
 #include <libc.h>
 #include <lkl/asm/host_ops.h>
 #include <lkl/asm/unistd.h>
+#include "lklfamily.h"
 
 extern struct lkl_host_operations lkl_harvey_ops;
 
 extern int	lkl_init(struct lkl_host_operations*);
 extern int	lkl_start_kernel(const char *fmt, ...);
 extern void	lkl_set_dtb(void*, unsigned long);
-extern char	lkl_dtb_blob[], lkl_dtb_end[];
 extern long	lkl_sys_halt(void);
 extern void	lkl_cleanup(void);
 extern void	lklhost_setout(int);
@@ -27,7 +27,7 @@ extern void	lklhost_selftest(void);
 extern int	lklhost_mapdev(char*, u64*, u64*);
 extern int	lklhost_iomem(u64, void*, int, int);
 extern int	lklhost_irqthread(char*, int);
-extern void	lklhost_raminit(void);
+extern void	lklhost_raminit(unsigned long);
 extern int	lkl_printf(const char*, ...);
 
 #define say(s) lkl_printf("%s", s)
@@ -220,9 +220,36 @@ setemmcclock(void)
 }
 
 static int
-mapeMMC(char *node)
+findfamily(char *name)
 {
-	char path[80];
+	int i;
+
+	for(i = 0; i < nlklfamilies; i++)
+		if(strcmp(lklfamilies[i].name, name) == 0)
+			return i;
+	return -1;
+}
+
+static Dtb*
+finddtb(char *name)
+{
+	int i;
+
+	for(i = 0; i < nlkldtbs; i++)
+		if(strcmp(lkldtbs[i].name, name) == 0)
+			return &lkldtbs[i];
+	return nil;
+}
+
+/*
+ * Claim and map one #P device window.  Every driver's ioremap() resolves
+ * through lklhost_mapdev()'s mmio[] table, so the family manifest lists
+ * every window its drivers touch, not only the controller.
+ */
+static int
+mapdevice(char *node)
+{
+	char path[96];
 	u64 base, size;
 	int fd;
 
@@ -237,19 +264,90 @@ mapeMMC(char *node)
 		lkl_printf("lklboot: map %s: %r\n", node);
 		return -1;
 	}
-	lkl_printf("lklboot: %s mapped reg %#llux size %#llux\n",
-		   node, base, size);
+	lkl_printf("lklboot: %s reg %#llux size %#llux\n", node, base, size);
 	return 0;
+}
+
+static int
+mapfamily(Family *f)
+{
+	char devs[256], *p, *q;
+	int bad;
+
+	snprint(devs, sizeof devs, "%s", f->devices);
+	bad = 0;
+	for(p = devs; *p != 0; p = q){
+		while(*p == ',' || *p == ' ')
+			p++;
+		if(*p == 0)
+			break;
+		for(q = p; *q != 0 && *q != ',' && *q != ' '; q++)
+			;
+		if(*q != 0)
+			*q++ = 0;
+		if(mapdevice(p) < 0)
+			bad = 1;
+	}
+	return bad ? -1 : 0;
+}
+
+static void
+watchfamily(Family *f)
+{
+	char devs[256], *p, *q;
+	int irq;
+
+	snprint(devs, sizeof devs, "%s", f->devices);
+	for(p = devs; *p != 0; p = q){
+		while(*p == ',' || *p == ' ')
+			p++;
+		if(*p == 0)
+			break;
+		for(q = p; *q != 0 && *q != ',' && *q != ' '; q++)
+			;
+		if(*q != 0)
+			*q++ = 0;
+		irq = nodeirq(p);
+		if(irq <= 0)
+			continue;	/* no interrupt on this node */
+		if(lklhost_irqthread(p, irq) == 0)
+			lkl_printf("lklboot: %s irq %d watched\n", p, irq);
+		else
+			lkl_printf("lklboot: %s irq %d watch failed\n", p, irq);
+	}
+}
+
+static void
+setupfamily(Family *f)
+{
+	switch(f->setup){
+	case FamEmmc:
+		setemmcclock();
+		break;
+	case FamUsb:
+		/*
+		 * The USB PHYs and PD_PIPE are still native responsibilities;
+		 * the vendor dwc3-rockchip glue is not in the 6.12 tree.
+		 */
+		lkl_printf("lklboot: usb family: native PHY handoff assumed\n");
+		break;
+	default:
+		break;
+	}
 }
 
 void
 main(int argc, char **argv)
 {
-	int fd, hosttest, kerneltest, console;
+	int fd, hosttest, kerneltest, console, famidx;
+	char *fname;
+	Family *f;
+	Dtb *dtb;
 
 	hosttest = 0;
 	kerneltest = 0;
 	console = 0;
+	fname = "emmc";
 	ARGBEGIN{
 	case 'd':
 		lklhost_debug(1);
@@ -263,8 +361,12 @@ main(int argc, char **argv)
 	case 'c':
 		console = 1;
 		break;
+	case 'f':
+		fname = ARGF();
+		break;
 	default:
-		fprint(2, "usage: lklboot [-c] [-d] [-s] [-t] [platform-node]\n");
+		fprint(2, "usage: lklboot [-c] [-d] [-f family] [-s] [-t] "
+			  "[platform-node]\n");
 		exits("usage");
 	}ARGEND
 	/*
@@ -301,36 +403,39 @@ main(int argc, char **argv)
 	if(argc > 0)
 		probe(argv[0]);
 
-	say("lklboot: start\n");
-	lklhost_raminit();
+	famidx = findfamily(fname);
+	if(famidx < 0){
+		fprint(2, "lklboot: no family %s\n", fname);
+		exits("family");
+	}
+	f = &lklfamilies[famidx];
+	dtb = finddtb(f->dtbname);
+	if(dtb == nil){
+		fprint(2, "lklboot: no dtb %s\n", f->dtbname);
+		exits("dtb");
+	}
+
+	lkl_printf("lklboot: family %s (%s), %s\n", f->name, f->program,
+		   f->mem);
+	lklhost_raminit(f->memsz + 16*1024*1024);
 	if(lkl_init(&lkl_harvey_ops) < 0){
 		say("lklboot: lkl_init failed\n");
 		exits("init");
 	}
 	say("lklboot: init ok\n");
-	setemmcclock();
-	mapeMMC("mmc@fe310000");
-	lkl_set_dtb(lkl_dtb_blob, lkl_dtb_end - lkl_dtb_blob);
-	if(lkl_start_kernel("mem=128M") < 0){
+	setupfamily(f);
+	if(mapfamily(f) < 0){
+		say("lklboot: device map failed\n");
+		exits("map");
+	}
+	lkl_set_dtb(dtb->start, dtb->end - dtb->start);
+	if(lkl_start_kernel("mem=%s", f->mem) < 0){
 		say("lklboot: lkl_start_kernel failed\n");
 		exits("start");
 	}
 	say("lklboot: kernel up\n");
-	/*
-	 * Route the controller's GIC line into the guest.  Opening the
-	 * #P wait file enables the line; the controller keeps it asserted
-	 * until its driver clears the status, so nothing is lost if the
-	 * first command completed before the watcher started.
-	 */
-	{
-		int irq;
+	watchfamily(f);
 
-		irq = nodeirq("mmc@fe310000");
-		if(irq > 0 && lklhost_irqthread("mmc@fe310000", irq) == 0)
-			lkl_printf("lklboot: irq %d watched\n", irq);
-		else
-			lkl_printf("lklboot: irq watch failed\n");
-	}
 	if(kerneltest){
 		selftest();
 		/*

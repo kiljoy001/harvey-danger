@@ -1,0 +1,107 @@
+/*
+ * Trimmed device tree for the LKL USB family (Orange Pi 3B, RK3566).
+ *
+ * Start with the USB2 OTG controller at fcc00000, which is the port that
+ * needs only the USB2 PHY.  The USB3 host at fd000000 also needs the
+ * Naneng combphy and the vendor dwc3-rockchip glue; add it once that
+ * glue is in the LKL tree.
+ *
+ * The PHYs and PD_PIPE are handed over already powered by the native
+ * side (U-Boot / board init); this tree only describes the windows the
+ * guest drivers touch.
+ */
+/dts-v1/;
+
+/ {
+	compatible = "rockchip,rk3566";
+	#address-cells = <2>;
+	#size-cells = <2>;
+
+	gic: interrupt-controller@fd400000 {
+		compatible = "arm,gic-v3";
+		reg = <0x0 0xfd400000 0x0 0x10000>,
+		      <0x0 0xfd460000 0x0 0x80000>;
+		interrupt-controller;
+		#interrupt-cells = <3>;
+		#address-cells = <0>;
+	};
+
+	usb@fcc00000 {
+		compatible = "snps,dwc3";
+		reg = <0x0 0xfcc00000 0x0 0x400000>;
+		interrupt-parent = <&gic>;
+		interrupts = <0 169 4>;		/* GIC_SPI 169, LEVEL_HIGH */
+		clocks = <&clk_ref>, <&clk_bus>, <&clk_suspend>;
+		clock-names = "ref", "bus", "suspend";
+		dr_mode = "host";
+		maximum-speed = "high-speed";
+		phy_type = "utmi_wide";
+		snps,dis_u2_susphy_quirk;
+		phys = <&usb2phy0_otg>;
+		phy-names = "usb2-phy";
+		vbus-supply = <&vcc5v0>;
+		status = "okay";
+	};
+
+	usb2phy0: usb2phy@fe8a0000 {
+		compatible = "rockchip,rk3568-usb2phy";
+		reg = <0x0 0xfe8a0000 0x0 0x10000>;
+		clocks = <&clk_phy>;
+		clock-names = "phyclk";
+		clock-output-names = "clk_usbphy0_480m";
+		#clock-cells = <0>;
+		rockchip,usbgrf = <&usb2phy0_grf>;
+		status = "okay";
+
+		usb2phy0_otg: otg-port {
+			#phy-cells = <0>;
+			phy-supply = <&vcc3v3>;
+			status = "okay";
+		};
+	};
+
+	usb2phy0_grf: syscon@fdca0000 {
+		compatible = "rockchip,rk3568-usb2phy-grf", "syscon";
+		reg = <0x0 0xfdca0000 0x0 0x8000>;
+	};
+
+	clk_ref: ref-clk {
+		compatible = "fixed-clock";
+		#clock-cells = <0>;
+		clock-frequency = <24000000>;
+	};
+
+	clk_suspend: suspend-clk {
+		compatible = "fixed-clock";
+		#clock-cells = <0>;
+		clock-frequency = <24000000>;
+	};
+
+	clk_bus: bus-clk {
+		compatible = "fixed-clock";
+		#clock-cells = <0>;
+		clock-frequency = <100000000>;
+	};
+
+	clk_phy: phy-clk {
+		compatible = "fixed-clock";
+		#clock-cells = <0>;
+		clock-frequency = <480000000>;
+	};
+
+	vcc3v3: regulator-3v3 {
+		compatible = "regulator-fixed";
+		regulator-name = "vcc_3v3";
+		regulator-min-microvolt = <3300000>;
+		regulator-max-microvolt = <3300000>;
+		regulator-always-on;
+	};
+
+	vcc5v0: regulator-5v0 {
+		compatible = "regulator-fixed";
+		regulator-name = "vcc_5v0";
+		regulator-min-microvolt = <5000000>;
+		regulator-max-microvolt = <5000000>;
+		regulator-always-on;
+	};
+};

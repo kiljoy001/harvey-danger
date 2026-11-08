@@ -58,6 +58,25 @@ main(void)
 '''
 
 
+FAMILY_LAUNCHER = r'''#include <u.h>
+#include <libc.h>
+
+/*
+ * lkl<family>: one LKL instance per driver family.  The family tables
+ * and device tree are inside /boot/lklboot.
+ */
+void
+main(void)
+{
+	char *av[] = {"/boot/lklboot", "-f", "FAMILY", nil};
+
+	exec("/boot/lklboot", av);
+	print("LKL-FAMILY exec failed: %r\n");
+	exits("exec");
+}
+'''
+
+
 def make_archive(out: Path, elf: Path, libc: Path, debug: bool,
                  settle_ms: int = 5000, hosttest: bool = False,
                  kerneltest: bool = False) -> Path:
@@ -68,9 +87,15 @@ def make_archive(out: Path, elf: Path, libc: Path, debug: bool,
     source = source.replace("SETTLE_MS", str(settle_ms))
     launcher, _ = build_userland.build_program(out, "lklrun", source,
                                               0x200000, libc)
+    fams = {}
+    for fam in ("emmc", "usb"):
+        src = FAMILY_LAUNCHER.replace("FAMILY", fam)
+        fams[fam], _ = build_userland.build_program(
+            out, "lkl" + fam, src, 0x200000, libc)
     # The LKL guest owns the eMMC controller in this bring-up; tell init
     # not to start the native emmcfs/gefs stack on the same device.
     files = [("lklrun", launcher), ("lklboot", elf.read_bytes()),
+             ("lklemc", fams["emmc"]), ("lklusb", fams["usb"]),
              ("noemmc", b"1\n")]
     offset = 24 + 48 * len(files)
     table, body = bytearray(), bytearray()

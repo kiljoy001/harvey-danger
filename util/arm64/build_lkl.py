@@ -15,6 +15,7 @@ fixed there (KPTR), so a binary at 0x40000000 faults into kernel space.
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import shutil
 import struct
@@ -26,6 +27,8 @@ CC = os.environ.get("ARM64_CC") or shutil.which("clang-23") or "clang"
 LD = os.environ.get("ARM64_LD", "ld.lld")
 BASE = 0x10000000          # below the 0x40000000 kernel boundary
 BIG_PAGE = 0x200000
+FAMILIES = json.loads((ROOT / "util/arm64/lkl-families.json").read_text())
+SETUP_IDS = {"emmc": 1, "usb": 2}
 
 
 def run(cmd: list[str]) -> None:
@@ -53,14 +56,55 @@ def build(out: Path, lkl_o: Path, lkl_inc: Path, libc: Path) -> Path:
          "-o", str(obj)])
     objects.append(obj)
 
-    # Trimmed device tree for the eMMC bring-up, embedded into the image.
-    # lkl-dtb.S does .incbin "lkl-emmc.dtb", resolved through -I <out>.
-    dtb = out / "lkl-emmc.dtb"
-    run(["dtc", "-I", "dts", "-O", "dtb", "-o", str(dtb),
-         str(ROOT / "util/arm64/lkl-emmc.dts")])
+    # One trimmed device tree per driver family.  The family tables and
+    # the .incbin stubs are generated here so adding a family is a JSON
+    # entry plus a .dts file.
+    dtbs = []
+    for fam, spec in FAMILIES.items():
+        dtssrc = ROOT / "util/arm64" / spec["dtb"].replace(".dtb", ".dts")
+        dst = out / spec["dtb"]
+        run(["dtc", "-I", "dts", "-O", "dtb", "-o", str(dst), str(dtssrc)])
+        dtbs.append((fam, spec["dtb"]))
+    asm = out / "lkl-dtb.S"
+    asm.write_text(".section .rodata\n.balign 8\n" + "".join(
+        f".global lkl_dtb_{fam}\n.global lkl_dtb_{fam}_end\n"
+        f"lkl_dtb_{fam}:\n\t.incbin \"{name}\"\n"
+        f"lkl_dtb_{fam}_end:\n"
+        for fam, name in dtbs))
     obj = out / "lkl-dtb.o"
     run([CC, "--target=aarch64-none-elf", "-c", "-I", str(out),
-         str(ROOT / "util/arm64/lkl-dtb.S"), "-o", str(obj)])
+         str(asm), "-o", str(obj)])
+    objects.append(obj)
+
+    tables = out / "lkl-tables.c"
+    entries = []
+    dtb_entries = []
+    for fam, spec in FAMILIES.items():
+        memsz = 0
+        m = spec["mem"].strip().upper()
+        if m.endswith("M"):
+            memsz = int(m[:-1]) * 1024 * 1024
+        elif m.endswith("G"):
+            memsz = int(m[:-1]) * 1024 * 1024 * 1024
+        else:
+            memsz = int(m)
+        sid = SETUP_IDS[spec["setup"]]
+        entries.append(
+            f'\t{{"{fam}", "{spec["program"]}", "{spec["mem"]}", '
+            f'{memsz}UL, "{",".join(spec["devices"])}", '
+            f'"{spec["dtb"]}", {sid}}},')
+        dtb_entries.append(
+            f'\t{{"{spec["dtb"]}", lkl_dtb_{fam}, lkl_dtb_{fam}_end}},')
+    tables.write_text(
+        "#include <u.h>\n#include \"lklfamily.h\"\n" +
+        "".join(f"extern uchar lkl_dtb_{fam}[], lkl_dtb_{fam}_end[];\n"
+                for fam, _ in dtbs) +
+        "Family lklfamilies[] = {\n" + "\n".join(entries) + "\n};\n"
+        f"int nlklfamilies = {len(entries)};\n"
+        "Dtb lkldtbs[] = {\n" + "\n".join(dtb_entries) + "\n};\n"
+        f"int nlkldtbs = {len(dtb_entries)};\n")
+    obj = out / "lkl-tables.o"
+    run(cflags + ["-I", str(src), "-c", str(tables), "-o", str(obj)])
     objects.append(obj)
 
     script = out / "lkl.ld"

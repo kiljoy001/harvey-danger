@@ -1,0 +1,16 @@
+{
+	"emmc": {
+		"program": "lklemc",
+		"mem": "128M",
+		"devices": ["mmc@fe310000"],
+		"dtb": "lkl-emmc.dtb",
+		"setup": "emmc"
+	},
+	"usb": {
+		"program": "lklusb",
+		"mem": "256M",
+		"devices": ["usb@fcc00000", "usb2phy@fe8a0000", "syscon@fdca0000"],
+		"dtb": "lkl-usb.dtb",
+		"setup": "usb"
+	}
+}
