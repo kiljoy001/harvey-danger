@@ -213,8 +213,10 @@ full run still fails in the fault path: `fixfault()` is entered with a
 Segment pointer that has already been recycled, and `segppn()` then
 dereferences the stale object.  The remaining work is the Segment
 reference/lifetime race, so the default SMP build stays pinned or
-uniprocessor; `build_kernel.py` accepts `ARM64_PIN_USER=1` to pin the init
-process (and therefore the user tree) to CPU0 on a 4-core board.
+uniprocessor.  `ARM64_PIN_USER=1` pins the init process (and the whole user
+tree) to CPU0; `ARM64_AFFINITY=1` instead wires each new user process to
+`pid % nmach` and avoids migration, which lets a
+`--smp 4 --jobs 4 --mem 3072` 20-TU run complete.
 `test-selfbuild.py --smp 4` compiles, links and runs the guest `llvm-as`
 with byte-identical bitcode, and `--tool llvm-dis` / `--tool llvm-ar` build
 those tools as well.  The C++ runtime probe passes all 25 features with the
