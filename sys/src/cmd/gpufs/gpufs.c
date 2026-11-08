@@ -170,6 +170,10 @@ struct Gpu {
 	u64	heappa;
 	void	*srcbuf;		/* blit source surface */
 	u64	srcpa;
+	u64	blitsrcpa;		/* external blit source, 0 = test source */
+	u32	blitw, blith;
+	void	*presentbuf;		/* full-screen test source */
+	u64	presentpa;
 	void	*data;
 	int	jobok;
 	u64	jobval;
@@ -1212,6 +1216,9 @@ gpudraw(Gpu *g, int mode)
 	}
 	if(mode == 8){
 		u32 *src;
+		u64 srcpa;
+		u32 sw, sh;
+
 		/* Descriptors live in the page that used to hold the test
 		 * render target: surf at 0xa004000, texture at 0xa004100,
 		 * sampler at 0xa004200. */
@@ -1219,34 +1226,50 @@ gpudraw(Gpu *g, int mode)
 		memmove(pool + 0x4100, shader_tex, sizeof shader_tex);
 		memmove(pool + 0x4200, shader_samp, sizeof shader_samp);
 
-		if(g->srcbuf == nil){
-			g->srcbuf = drvdma(&g->d, 0x4000, 4096, &g->srcpa);
+		if(g->blitsrcpa != 0){
+			/* A caller-supplied surface: present it full-screen. */
+			srcpa = g->blitsrcpa;
+			sw = g->blitw;
+			sh = g->blith;
+		}else{
+			/* Self-contained test: 64x64 quadrant source. */
+			srcpa = g->srcpa;
+			sw = sh = 64;
 			if(g->srcbuf == nil){
-				print("gpufs: draw: no source surface\n");
-				return;
+				g->srcbuf = drvdma(&g->d, 0x4000, 4096,
+						   &g->srcpa);
+				if(g->srcbuf == nil){
+					print("gpufs: draw: no source surface\n");
+					return;
+				}
+				srcpa = g->srcpa;
 			}
+			src = g->srcbuf;
+			for(u32 y = 0; y < 64; y++)
+				for(u32 x = 0; x < 64; x++)
+					src[y * 64 + x] = (x < 32) ?
+						(y < 32 ? 0xffff0000 : 0xff00ff00) :
+						(y < 32 ? 0xff0000ff : 0xffffffff);
+			drvdmacache(DrvClean, srcpa, 0x4000);
 		}
-		src = g->srcbuf;
-		for(u32 y = 0; y < 64; y++)
-			for(u32 x = 0; x < 64; x++)
-				src[y * 64 + x] = (x < 32) ?
-					(y < 32 ? 0xffff0000 : 0xff00ff00) :
-					(y < 32 ? 0xff0000ff : 0xffffffff);
-		drvdmacache(DrvClean, g->srcpa, 0x4000);
-		if(mapgpu(g, SrcVa, g->srcpa, 0x4000) < 0){
+		if(mapgpu(g, SrcVa, srcpa, (u64)sw*sh*4) < 0){
 			print("gpufs: draw: cannot map the source\n");
 			return;
 		}
 		*(u32 *)(pool + 0x4000) = (u32)SrcVa;	/* surface pointer */
 		*(u32 *)(pool + 0x4004) = 0;
+		*(u32 *)(pool + 0x4008) = sw * 4;	/* row stride */
+		*(u32 *)(pool + 0x400c) = sw * sh * 4;	/* surface stride */
+		*(u16 *)(pool + 0x4104) = sw - 1;	/* texture width */
+		*(u16 *)(pool + 0x4106) = sh - 1;	/* texture height */
 		*(u32 *)(pool + 0x4110) = 0xa004000;	/* texture surfaces */
 		*(u32 *)(pool + 0x4114) = 0;
 		d[0x380/4 + 8] = 0xa004100;		/* fragment Textures */
 		d[0x380/4 + 9] = 0;
 		d[0x380/4 + 10] = 0xa004200;		/* fragment Samplers */
 		d[0x380/4 + 11] = 0;
-		print("gpufs: draw blit src %#llux tex 0xa004100 samp 0xa004200\n",
-		      SrcVa);
+		print("gpufs: draw blit src %#llux %ud x %ud va %#llux\n",
+		      srcpa, sw, sh, SrcVa);
 	}
 	drvdmacache(DrvClean, poolpa, 0x1a000);
 	drvdmacache(DrvClean, g->heappa, Heapsize);
@@ -1263,10 +1286,17 @@ gpudraw(Gpu *g, int mode)
 	      drd(&g->d, ASOFF(0, 0x1c)),
 	      ((u64)drd(&g->d, ASOFF(0, 0x24)) << 32) | drd(&g->d, ASOFF(0, 0x20)));
 
-	drvdmacache(DrvInval, poolpa + 0x4000, 0x4000);
-	rt = (u32 *)(pool + 0x4000);
-	print("gpufs: draw pixel %#ux %#ux (row 1 %#ux, row 63 %#ux)\n",
-	      rt[0], rt[1], rt[64], rt[63 * 64]);
+	/*
+	 * The 64x64 test target lives in the pool; modes 6 and up render
+	 * into the scanout, which is read back through /dev/display/data
+	 * (the peek verb), not from the pool.
+	 */
+	if(mode < 6){
+		drvdmacache(DrvInval, poolpa + 0x4000, 0x4000);
+		rt = (u32 *)(pool + 0x4000);
+		print("gpufs: draw pixel %#ux %#ux (row 1 %#ux, row 63 %#ux)\n",
+		      rt[0], rt[1], rt[64], rt[63 * 64]);
+	}
 }
 
 /*
@@ -1326,6 +1356,33 @@ fbpeek(u64 off)
 	close(fd);
 	print("gpufs: peek %llud n %d: %#ux %#ux %#ux %#ux\n",
 	      off, n, v[0], v[1], v[2], v[3]);
+}
+
+/*
+ * A full-screen source for the blit test: a gradient that makes the
+ * presentation direction and the scaling obvious on the panel.
+ */
+static int
+blittest(Gpu *g, u64 *pa, u32 *w, u32 *h)
+{
+	u32 x, y;
+
+	if(g->presentbuf == nil){
+		g->presentbuf = drvdma(&g->d, 1920*1080*4, 4096,
+				       &g->presentpa);
+		if(g->presentbuf == nil)
+			return -1;
+	}
+	for(y = 0; y < 1080; y++)
+		for(x = 0; x < 1920; x++)
+			((u32 *)g->presentbuf)[y*1920 + x] =
+				0xff000000 | ((x*255/1919) << 16) |
+				((y*255/1079) << 8);
+	drvdmacache(DrvClean, g->presentpa, 1920*1080*4);
+	*pa = g->presentpa;
+	*w = 1920;
+	*h = 1080;
+	return 0;
 }
 
 static void
@@ -2210,6 +2267,36 @@ fswrite(Req *r, void *aux)
 		print("gpufs: ctl fill %d,%d %ud x %ud %#ux\n", fx, fy, fw, fh, color);
 		if(g->powered || pmuon(g) == 0){
 			gpuclr(g, color, fw, fh, 0, 0, 0, fx, fy);
+			r->ofcall.count = r->ifcall.count;
+			respond(r, nil);
+		}else
+			respond(r, g->why);
+		qunlock(&g->lk);
+		return;
+	}
+	if(strncmp(cmd, "blit", 4) == 0){
+		u64 srcpa = 0;
+		u32 w = 1920, h = 1080;
+		char *q;
+
+		if(cmd[4] == ' '){
+			srcpa = strtoull(cmd + 5, &q, 0);
+			w = strtoul(q, &q, 0);
+			h = strtoul(q, &q, 0);
+		}
+		print("gpufs: ctl blit src %#llux %ud x %ud\n", srcpa, w, h);
+		if(g->powered || pmuon(g) == 0){
+			if(srcpa == 0 && blittest(g, &srcpa, &w, &h) < 0){
+				respond(r, "no blit source");
+				qunlock(&g->lk);
+				return;
+			}
+			g->blitsrcpa = srcpa;
+			g->blitw = w;
+			g->blith = h;
+			gpudraw(g, 8);
+			g->blitsrcpa = 0;
+			g->blitw = g->blith = 0;
 			r->ofcall.count = r->ifcall.count;
 			respond(r, nil);
 		}else

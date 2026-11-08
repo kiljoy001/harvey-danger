@@ -542,16 +542,49 @@ draw 7  ->  0xffbf8040 at the sampled pixel
 draw 8  ->  TL 0xffff0000  TR 0xff0000ff  BL 0xff00ff00  BR 0xffffffff
 ```
 
+## Presenting an arbitrary surface
+
+`blit` turns the full-screen textured path into a present operation:
+
+```text
+blit                     a 1920x1080 gradient, allocated by gpufs
+blit <pa> <width> <height>   a caller-supplied 4K-aligned DMA surface
+```
+
+The source is mapped at `SrcVa` (0xb000000), and the texture descriptor is
+retargeted at submit time: surface pointer, row and surface stride, and the
+`width - 1` / `height - 1` fields.  The fragment shader still samples with
+`gl_FragCoord`, so the source is scaled across the panel; a 1920x1080
+source is a 1:1 copy.  The source is cleaned before submit, and the job's
+`JS_CONFIG` invalidates on completion.
+
+```text
+gpufs: ctl blit src 0x0 1920 x 1080
+gpufs: draw target scanout 0x20000000 stride 7680 full
+gpufs: draw blit src 0xd0011000 1920 x 1080 va 0xb000000
+gpufs: draw tiler PASS raw 0x2 js 0x0(ok) as 0x0 addr 0x0
+gpufs: draw frag PASS raw 0x1 js 0x0(ok) as 0x0 addr 0x0
+peek 0       0xff000000
+peek 4147200 0xff007f00
+peek 8294384 0xfffeff00
+```
+
+That is the display-present half of the GPU stack: the display service can
+hand `gpufs` the physical address of its composited surface and let the GPU
+write the scanout.
+
 ## What is next
 
-1. **A real submit interface.**  `clear` is a debug verb.  The display
-   service needs a buffered submission path: a shared surface, a job that
-   fills/copies it, and a fence to wait on before the CPU path touches the
-   same pixels.  `JS_CONFIG` already asks for end-of-job cache clean and
-   invalidate, so completion means the pixels are in DRAM.
-2. **GPU-backed display surfaces.**  Have `o9display` allocate its
-   composited surface from the same DMA pool the GPU can map, blit with the
-   GPU, and keep the CPU memdraw path as the fallback when submission fails.
+1. **A real submit interface.**  `clear` and `blit` are debug verbs.  The
+   display service needs a buffered submission path: a shared surface, a
+   fence to wait on before the CPU path touches the same pixels, and a
+   queue rather than one synchronous submit.  `JS_CONFIG` already asks for
+   end-of-job cache clean and invalidate, so completion means the pixels
+   are in DRAM.
+2. **GPU-backed display surfaces.**  `gpufs` can now present any
+   DMA surface full-screen.  The remaining piece is `o9display` allocating
+   its composited surface from the same DMA pool, calling `blit`, and
+   keeping the CPU memdraw path as the fallback when submission fails.
 3. **An arbitrary-rect blit.**  The blit maps the whole screen onto the
    source surface, which is what a full-frame present needs.  Drawing a
    surface into a sub-rectangle needs either a uniform buffer (rect origin
