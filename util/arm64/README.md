@@ -218,8 +218,9 @@ tree) to CPU0; `ARM64_AFFINITY=1` instead wires each new user process to
 `pid % nmach` and avoids migration.  With that kernel,
 `--smp 4 --jobs 4 --mem 6144` completes the full 77-TU build and reports
 `TGEN VT-MATCH 46644 bytes`.  At 3 GiB the same four-way build fails around
-25/77 under memory pressure; the board's first bank is only ~3.8 GiB, so a
-two-way build at 3 GiB is the board target.
+25/77 under memory pressure.  `--smp 4 --jobs 2 --mem 3072` also completes
+the full 77 TUs, which is the configuration the board uses: the first RAM
+bank is only ~3.8 GiB, so two concurrent compiles fit while four do not.
 `test-selfbuild.py --smp 4` compiles, links and runs the guest `llvm-as`
 with byte-identical bitcode, and `--tool llvm-dis` / `--tool llvm-ar` build
 those tools as well.  The C++ runtime probe passes all 25 features with the
@@ -523,11 +524,13 @@ Image.  On the 8 GiB board that is the ~3.8 GiB lower bank, which holds the
 self-build; the second bank is not yet used.
 
 The two-file layout was validated in QEMU virt exactly as U-Boot will load
-it: `aspera-tblgen.img` was built with `ARM64_PIN_USER=1` and a runner as
-`/boot/init`, the 395 MiB overlay archive was loaded at `0x50000000`, and
+it: `aspera-tblgen.img` was built with `ARM64_AFFINITY=1` and a
+`TGEN_JOBS=2` runner as `/boot/init`, the 395 MiB overlay archive was loaded
+at `0x50000000`, and
 all 77 TUs compiled on four vCPUs with `TGEN VT-MATCH 46644 bytes`.  The
 image build is `test_apex_boot.py --elf <runner.elf> --image-out <Image>`
-with `ARM64_PIN_USER=1` in the environment; the archive comes from
+with `ARM64_AFFINITY=1` in the environment and a `--jobs 2` stage; the
+archive comes from
 `test-selfbuild-tblgen.py --stage-only --boot <archive>`.
 
 This uses QEMU's direct ARM64 Image loading. No UEFI or Limine is involved.
