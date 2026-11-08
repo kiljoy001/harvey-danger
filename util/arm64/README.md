@@ -520,8 +520,8 @@ booti 0x40080000 - 0x48000000
 
 The kernel currently manages only the contiguous RAM bank containing the
 Image.  On the 8 GiB board that is the ~3.8 GiB lower bank, which holds the
-256 MiB kernel/archive window and is enough for a sequential SDK
-self-build; the second bank is not yet used.
+256 MiB kernel/archive window and is enough for a two-way (`TGEN_JOBS=2`)
+SDK self-build; the second bank is not yet used.
 
 The two-file layout was validated in QEMU virt exactly as U-Boot will load
 it: `aspera-tblgen.img` was built with `ARM64_AFFINITY=1` and a
