@@ -193,10 +193,13 @@ The per-CPU HZ timers used to be heap allocations immediately below the
 init process's kernel stack; a stack underflow corrupted `tmode`/`tf`/`tt`
 and `timerintr()` paniced.  They now live in a static BSS array, and every
 kernel stack has an unused 8 KiB gap below its base.  A 150 s GICv3 boot
-reaches `RC START` with `IPI PASS` and no timer panic.  A separate
-Page/segment COW race in `fixfault` still appears when several RFMEM
-threads fault the same image pages across CPUs, and an unpinned full
-self-build still dies in that path.
+reaches `RC START` with `IPI PASS` and no timer panic.  The last unpinned
+SMP failure was neither a Segment nor a Page lifetime problem: `schedinit`
+readied a preempted Proc (or released a dead one to the free list) while
+`machp()->externup` still pointed at it, so another CPU could dispatch or
+reuse the same Proc while a timer or IPI on the old CPU still treated it as
+current.  Clearing `externup` before `ready()`/`psrelease()` fixes it; the
+unpinned four-vCPU `--jobs 4 --mem 6144` build now completes all 77 TUs.
 
 User FP/SIMD state is now part of the context switch.  The kernel is built
 with `-mgeneral-regs-only`, so `procsave`/`procrestore` use `fpu.S` to save
@@ -207,20 +210,16 @@ and passes after it.
 
 Status: 1, 2 and 4 vCPU boots pass.  The full 77-TU `llvm-tblgen`
 self-build compiles, links and matches the host byte for byte
-(`TGEN VT-MATCH 46644 bytes`) on one vCPU and on a 4-vCPU kernel with user
-work pinned to CPU0.  The unpinned 4-vCPU build passes the 20-TU gate but a
-full run still fails in the fault path: `fixfault()` is entered with a
-Segment pointer that has already been recycled, and `segppn()` then
-dereferences the stale object.  The remaining work is the Segment
-reference/lifetime race, so the default SMP build stays pinned or
-uniprocessor.  `ARM64_PIN_USER=1` pins the init process (and the whole user
-tree) to CPU0; `ARM64_AFFINITY=1` instead wires each new user process to
-`pid % nmach` and avoids migration.  With that kernel,
-`--smp 4 --jobs 4 --mem 6144` completes the full 77-TU build and reports
-`TGEN VT-MATCH 46644 bytes`.  At 3 GiB the same four-way build fails around
-25/77 under memory pressure.  `--smp 4 --jobs 2 --mem 3072` also completes
+(`TGEN VT-MATCH 46644 bytes`) on one vCPU, on a 4-vCPU kernel with user work
+pinned to CPU0, and on an unpinned 4-vCPU kernel at
+`--smp 4 --jobs 4 --mem 6144`.  At 3 GiB the unpinned four-way build can
+fail under memory pressure.  `--smp 4 --jobs 2 --mem 3072` also completes
 the full 77 TUs, which is the configuration the board uses: the first RAM
 bank is only ~3.8 GiB, so two concurrent compiles fit while four do not.
+`ARM64_PIN_USER=1` still pins the init process (and the whole user tree) to
+CPU0 and `ARM64_AFFINITY=1` wires each new user process to `pid % nmach`;
+both remain available, but the default build no longer needs either.
+The v1.1 board now brings all four cores online (`CPU1/2/3-TIMER PASS`).
 `test-selfbuild.py --smp 4` compiles, links and runs the guest `llvm-as`
 with byte-identical bitcode, and `--tool llvm-dis` / `--tool llvm-ar` build
 those tools as well.  The C++ runtime probe passes all 25 features with the
@@ -566,11 +565,13 @@ loading:
 mw.l 0xfe60000c 0x76; mw.l 0xfe600000 0
 ```
 
-With the watchdog stopped, all five parts loaded on the v1.1 board and the
-kernel reached the runner: it printed `HARVEY-ARM64 BOOT-ARCHIVE PASS`,
-untarred the SDK from `0x50000000` and started `/initramfs/bin/tblgen`.  The
-board reports `no PSCI cpu_on, staying uniprocessor`, so that build runs the
-self-build on one CPU.
+With the watchdog stopped, all five parts load on the v1.1 board and the
+kernel reaches the runner: it prints `HARVEY-ARM64 BOOT-ARCHIVE PASS`,
+untars the SDK from `0x50000000` and starts `/initramfs/bin/tblgen`.  The
+kernel now brings all four cores online (`ARM64 cpu1/2/3 online`, then
+`CPU1/2/3-TIMER PASS`), and a `TGEN_JOBS=2` run completes all 77 TUs in
+1,884,316 ms with `TGEN VT-MATCH 46644 bytes`.  A uniprocessor build of the
+same tree takes 3,111,312 ms.
 
 This uses QEMU's direct ARM64 Image loading. No UEFI or Limine is involved.
 The Image header and x0 device tree handoff also match U-Boot's `booti`
