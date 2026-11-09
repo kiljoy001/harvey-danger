@@ -829,6 +829,7 @@ newproc(void)
 	kstrdup(&p->text, "*notext");
 	kstrdup(&p->args, "");
 	p->nargs = 0;
+	p->execargc = 0;
 	p->setargs = 0;
 	memset(&p->Timer, 0, sizeof p->Timer);
 	memset(p->seg, 0, sizeof p->seg);

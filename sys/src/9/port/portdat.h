@@ -743,6 +743,7 @@ struct Proc {
 	char *user;
 	char *args;
 	int nargs;    /* number of bytes of args */
+	int execargc; /* argv count held across sysexecstack/sysexecregs */
 	Proc *rnext;  /* next process in run queue */
 	Proc *qnext;  /* next process on queue for a QLock */
 	QLock *qlock; /* addr of qlock being queued for DEBUG */

@@ -12,8 +12,10 @@ extern void arm64enterureg(Ureg *) __attribute__((noreturn));
 
 /* argc saved by sysexecstack: after the exec stack is relocated and the
  * mmu is flushed, the argument count is no longer readable from the stack,
- * so it is captured here for sysexecregs. */
-static int execargc;
+ * so it is kept on the Proc for sysexecregs.  A static does not work under
+ * SMP: two CPUs (or a preempted syscall) executing a program at the same
+ * time overwrite each other's count, and the victim then loses its last
+ * argv entry. */
 
 _Static_assert(__builtin_offsetof(Ureg, sp) == 248, "ARM64 SP frame offset");
 _Static_assert(__builtin_offsetof(Ureg, psr) == 264, "ARM64 PSR frame offset");
@@ -99,9 +101,11 @@ dumpgpr(Ureg *r)
 usize
 sysexecstack(usize stack, int argc)
 {
+	Proc *p;
 	usize sp;
 
-	execargc = argc;
+	p = externup();
+	p->execargc = argc;
 	/* sysproc pushes argc, argv pointers, and a nil after this point. */
 	sp = stack & ~(usize)15;
 	if(argc & 1)
@@ -125,12 +129,12 @@ sysexecregs(usize entry, u32 ssize, void *tos)
 	r->sp = sp;
 	r->pc = entry;
 	r->psr = 0x340; /* EL0t, IRQ unmasked, FP disabled. */
-	r->x0 = execargc;
+	r->x0 = p->execargc;
 	r->x1 = sp + sizeof(usize);
 	r->x2 = (usize)tos;
 	/* Return argc so the generic syscall return (u.x0 = ar0.p) keeps the
 	 * argc value in x0 instead of clobbering it with the tos address. */
-	return (void *)(usize)execargc;
+	return (void *)(usize)p->execargc;
 }
 
 void
