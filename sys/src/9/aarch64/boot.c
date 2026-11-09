@@ -268,6 +268,12 @@ startuserprocess(void)
 		p->wired = MACHP(0);
 	}
 #endif
+#ifdef ARM64_AFFINITY
+	if(sys->nmach > 1){
+		p->mp = MACHP(0);
+		p->wired = MACHP(0);
+	}
+#endif
 	kprocchild(p, userprocess, nil);
 	ready(p);
 }
@@ -375,12 +381,12 @@ startinitprocess(void)
 		p->wired = MACHP(0);
 	}
 #endif
-	/*
-	 * Do not wire the init process under ARM64_AFFINITY: a wired parent
-	 * hands its Mach to every child in fork, so wiring init to CPU0 would
-	 * pin the entire user tree and defeat the per-pid distribution in
-	 * sysproc.c.  ARM64_PIN_USER still pins the tree deliberately.
-	 */
+#ifdef ARM64_AFFINITY
+	if(sys->nmach > 1){
+		p->mp = MACHP(0);
+		p->wired = MACHP(0);
+	}
+#endif
 	kprocchild(p, initprocess, nil);
 	ready(p);
 }

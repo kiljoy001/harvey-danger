@@ -217,8 +217,10 @@ fail under memory pressure.  `--smp 4 --jobs 2 --mem 3072` also completes
 the full 77 TUs, which is the configuration the board uses: the first RAM
 bank is only ~3.8 GiB, so two concurrent compiles fit while four do not.
 `ARM64_PIN_USER=1` still pins the init process (and the whole user tree) to
-CPU0 and `ARM64_AFFINITY=1` wires each new user process to `pid % nmach`;
-both remain available, but the default build no longer needs either.
+CPU0.  `ARM64_AFFINITY=1` also wires the init to CPU0 and fork passes that
+Mach to every child, so it runs the tree on one CPU as well; use the
+default build for parallel work.  Both remain available as single-CPU test
+knobs.
 The v1.1 board now brings all four cores online (`CPU1/2/3-TIMER PASS`).
 `test-selfbuild.py --smp 4` compiles, links and runs the guest `llvm-as`
 with byte-identical bitcode, and `--tool llvm-dis` / `--tool llvm-ar` build
@@ -548,21 +550,20 @@ Image.  On the 8 GiB board that is the ~3.8 GiB lower bank, which holds the
 SDK self-build; the second bank is not yet used.
 
 The two-file layout was validated in QEMU virt exactly as U-Boot will load
-it: `aspera-tblgen.img` was built with `ARM64_AFFINITY=1` and a
-`TGEN_JOBS=2` runner as `/boot/init`, the 395 MiB overlay archive was loaded
-at `0x50000000`, and
+it: `aspera-tblgen.img` was built with a `TGEN_JOBS=2` runner as
+`/boot/init`, the 395 MiB overlay archive was loaded at `0x50000000`, and
 all 77 TUs compiled on four vCPUs with `TGEN VT-MATCH 46644 bytes`.  The
 image build is `test_apex_boot.py --elf <runner.elf> --image-out <Image>`
-with `ARM64_AFFINITY=1` in the environment and a `--jobs 2` stage; the
-archive comes from
-`test-selfbuild-tblgen.py --stage-only --boot <archive>`.  The same image
-and the 404 MiB board archive completed 77/77 on the v1.1 board with
-`TGEN VT-MATCH 46644 bytes`.  The first concurrent board run failed at TU
-42 with `clang++: error: argument to '-o' is missing`: exec had kept the
-argument count in a global, so two simultaneous execs overwrote each
-other's value and one program lost its last argv entry.  The count now
-lives on the Proc, and `ARM64_AFFINITY` leaves the init process unwired so
-its children are spread by pid instead of inheriting CPU0.
+with a `--jobs 2` stage; the archive comes from
+`test-selfbuild-tblgen.py --stage-only --boot <archive>`.  Build the board
+image **without** `ARM64_AFFINITY`: a wired init passes its Mach to every
+child, so an affinity build pins the whole user tree to CPU0 and runs at
+the single-CPU rate.  The same image and the 404 MiB board archive
+completed 77/77 on the v1.1 board with `TGEN VT-MATCH 46644 bytes`.  The
+first concurrent board run failed at TU 42 with `clang++: error: argument
+to '-o' is missing`: exec had kept the argument count in a global, so two
+simultaneous execs overwrote each other's value and one program lost its
+last argv entry.  The count now lives on the Proc.
 
 On the board, the vendor/router TFTP root (`/tmp/aspera-tftp`) is too small
 for the archive.  Point U-Boot at the host instead and split the archive
