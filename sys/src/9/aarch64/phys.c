@@ -266,7 +266,12 @@ seprintphysstats(char *s, char *e)
 	for(i = 0; i < nfreeext; i++)
 		bytes += freeext[i].size;
 	iunlock(&physlock);
-	return seprint(s, e, "%lluK physical memory free\n", bytes/KiB);
+	/*
+	 * The guest namespace is RAM-backed, so statvfs reports the managed
+	 * physical range.  Print both numbers for userspace.
+	 */
+	return seprint(s, e, "%lluK physical memory free %lluK physical memory total\n",
+	    bytes/KiB, (ramend - managedstart)/KiB);
 }
 
 u64

@@ -282,7 +282,7 @@ arm64main(usize dtb)
 		   ap[4]=='O' && ap[5]=='T' && ap[6]=='0' && ap[7]=='1')
 			total = (u32)ap[16] | (u32)ap[17]<<8 |
 			        (u32)ap[18]<<16 | (u32)ap[19]<<24;
-		if(total < 24 || total > 768u*1024*1024 ||
+		if(total < 24 || total > 1280u*1024*1024 ||
 		   BootarchiveAddr < (u64)__image_end ||
 		   BootarchiveAddr+total > info.rambase+info.ramsize)
 			total = 0;

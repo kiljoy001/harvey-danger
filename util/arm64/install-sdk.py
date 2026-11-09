@@ -58,11 +58,50 @@ ${root}/lib/libbuiltins.a
 """
 
 
+CLANG_TOOLS = ("clang-tidy", "clang-check", "clang-format",
+               "clang-apply-replacements", "clang-query", "clang-doc",
+               "clang-include-cleaner", "clang-include-fixer",
+               "clang-move", "clang-reorder-fields", "modularize",
+               "pp-trace")
+
+EXTRAS = {"clang-doc", "clang-include-cleaner", "clang-include-fixer",
+          "clang-move", "clang-reorder-fields", "modularize", "pp-trace"}
+
+# LLVM tools that are not part of the multicall driver in this version.
+STANDALONE_TOOLS = ("llvm-as", "llvm-dis", "llc", "opt", "llvm-link",
+                    "llvm-lto", "llvm-mc", "llvm-dwarfdump",
+                    "llvm-strings", "llvm-profdata", "llvm-cov",
+                    "llvm-extract", "llvm-diff", "llvm-bcanalyzer")
+
+# Tools whose installed name does not carry the llvm- prefix.
+BARE_TOOLS = {"clang", "clang++", "clang-cl", "clang-cpp",
+              "clang-scan-deps", "clang-installapi", "lld", "ld.lld",
+              "lld-link", "ld64.lld", "wasm-ld", "ld", "dsymutil"}
+
+
+def driver_tools(llvm: Path):
+    """Names the llvm multicall binary dispatches on (argv[0])."""
+    names = []
+    defs = llvm / "tools" / "llvm-driver" / "LLVMDriverTools.def"
+    if defs.is_file():
+        for line in defs.read_text().splitlines():
+            if not line.startswith('LLVM_DRIVER_TOOL("'):
+                continue
+            tool = line.split('"')[1]
+            names.append(tool if tool in BARE_TOOLS else "llvm-" + tool)
+    if not names:
+        names = ["llvm-ar", "llvm-ranlib", "llvm-nm", "llvm-objcopy",
+                 "llvm-strip", "llvm-objdump", "llvm-readobj",
+                 "llvm-readelf", "llvm-size", "llvm-strings",
+                 "llvm-symbolizer", "llvm-cxxfilt", "llvm-addr2line"]
+    return names
+
+
 def strip_binary(path: Path) -> None:
-    """Drop debug sections from a shipped tool; the guest does not need them."""
+    """Strip a shipped tool; the guest does not debug the tools themselves."""
     if LLVM_STRIP is None:
         return
-    subprocess.run([str(LLVM_STRIP), "--strip-debug", str(path)], check=True)
+    subprocess.run([str(LLVM_STRIP), "--strip-all", str(path)], check=True)
 
 
 def copy_tree(src: Path, dst: Path, pattern="*") -> int:
@@ -89,6 +128,15 @@ def main() -> None:
                          "instead; saves a second copy of the binary)")
     ap.add_argument("--with-ar", action="store_true",
                     help="also ship llvm-ar and llvm-ranlib")
+    ap.add_argument("--with-tools", action="store_true",
+                    help="ship the llvm multicall driver and the "
+                         "clang-tools-extra utilities")
+    ap.add_argument("--driver-only", action="store_true",
+                    help="ship only the multicall driver for clang and "
+                         "lld instead of standalone copies of both")
+    ap.add_argument("--no-extras", action="store_true",
+                    help="skip the clang-tools-extra utilities that are not "
+                         "part of a normal compile/format/tidy workflow")
     ap.add_argument("--tar", default="",
                     help="also write a ustar archive of the tree (as "
                          "sdk/...)")
@@ -104,9 +152,11 @@ def main() -> None:
     lld = llvm / "bin" / "lld"
     global LLVM_STRIP
     if not args.no_strip:
-        for candidate in (llvm / "bin" / "llvm-strip",
-                          Path(shutil.which("llvm-strip") or "")):
-            if candidate.is_file():
+        # The build tree's llvm-strip is the guest multicall driver (an
+        # ARM64 binary), so only the host tool can strip the shipped ELFs.
+        for candidate in (Path(shutil.which("llvm-strip") or ""),
+                          llvm / "bin" / "llvm-strip"):
+            if candidate.is_file() and os.access(candidate, os.X_OK):
                 LLVM_STRIP = candidate
                 break
     for path in (clang, lld):
@@ -120,19 +170,85 @@ def main() -> None:
     (out / "include").mkdir()
     (out / "tmp").mkdir()
 
-    tools = [("clang", clang), ("ld.lld", lld)]
-    if not args.no_cxx_alias:
-        tools.append(("clang++", clang))
-    if args.with_ar:
-        # llvm-ar is another copy of a large static binary; only the
-        # compilers are needed to prove a compile on a small guest.
-        tools += [("llvm-ar", llvm / "bin" / "llvm-ar"),
-                  ("llvm-ranlib", llvm / "bin" / "llvm-ar")]
+    # One real copy of each large binary, with symlinks for the aliases the
+    # driver selects on argv[0].  Copying clang three times wasted a
+    # quarter of the archive.
+    tools = [] if args.driver_only else [("clang-22", clang), ("lld", lld)]
     for name, src in tools:
         if src.is_file():
             shutil.copyfile(src, out / "bin" / name)
             os.chmod(out / "bin" / name, 0o755)
             strip_binary(out / "bin" / name)
+    # The guest has no symbolic links, so aliases are tiny shims that
+    # re-exec the multicall driver with argv[0] preserved.
+    root = args.root.rstrip("/")
+    shim = None
+    driver = llvm / "bin" / "llvm"
+    if args.with_tools and driver.is_file():
+        shutil.copyfile(driver, out / "bin" / "llvm")
+        os.chmod(out / "bin" / "llvm", 0o755)
+        strip_binary(out / "bin" / "llvm")
+        shim = out / "bin" / "llvm-shim"
+        shim_src = out / "bin" / "llvm-shim.c"
+        text = (HERE / "llvm-shim.c").read_text()
+        text = text.replace('#define SDK_ROOT "/initramfs/sdk"',
+                            f'#define SDK_ROOT "{root}"')
+        shim_src.write_text(text)
+        subprocess.run([str(HERE / "aarch64-clang"), "-O2",
+                        str(shim_src), "-o", str(shim)], check=True)
+        shim_src.unlink()
+        strip_binary(shim)
+
+    aliases = [("clang", "clang-22"), ("clang-cpp", "clang-22"),
+               ("clang-cl", "clang-22")]
+    if not args.no_cxx_alias:
+        aliases.append(("clang++", "clang-22"))
+    aliases += [("ld.lld", "lld"), ("lld-link", "lld"),
+                ("ld64.lld", "lld"), ("wasm-ld", "lld"), ("ld", "lld")]
+    for name, target in aliases:
+        link = out / "bin" / name
+        if link.exists() or link.is_symlink():
+            link.unlink()
+        if shim is not None:
+            shutil.copyfile(shim, link)
+            os.chmod(link, 0o755)
+        else:
+            os.symlink(target, link)
+
+    if shim is not None:
+        for name in driver_tools(llvm):
+            if name in ("clang", "clang++", "clang-cl", "clang-cpp",
+                        "ld.lld", "lld-link", "ld64.lld", "wasm-ld", "ld"):
+                continue
+            dst = out / "bin" / name
+            if dst.exists():
+                continue
+            shutil.copyfile(shim, dst)
+            os.chmod(dst, 0o755)
+        shim.unlink(missing_ok=True)
+
+    if args.with_ar:
+        # llvm-ar/ranlib came from the driver above when it is available.
+        ar = llvm / "bin" / "llvm-ar"
+        if ar.is_file() and not (out / "bin" / "llvm-ar").exists():
+            tools += [("llvm-ar", ar), ("llvm-ranlib", ar)]
+            for name, src in tools[-2:]:
+                shutil.copyfile(src, out / "bin" / name)
+                os.chmod(out / "bin" / name, 0o755)
+                strip_binary(out / "bin" / name)
+
+    if args.with_tools:
+        names = list(STANDALONE_TOOLS) + list(CLANG_TOOLS)
+        if args.no_extras:
+            names = [n for n in names if n not in EXTRAS]
+        for name in names:
+            src = llvm / "bin" / name
+            if not src.is_file():
+                continue
+            dst = out / "bin" / name
+            shutil.copyfile(src, dst)
+            os.chmod(dst, 0o755)
+            strip_binary(dst)
 
     headers = llvm / "lib" / "clang" / CLANG_VERSION / "include"
     if not headers.is_dir():
@@ -170,7 +286,6 @@ def main() -> None:
                     out / "lib" / "libc.a")
     shutil.copyfile(HERE / "apex.ld", out / "apex.ld")
 
-    root = args.root.rstrip("/")
     (out / "bin" / "clang.cfg").write_text(CONFIG.format(
         root=root, extra="") + LINK.format(root=root))
     (out / "bin" / "clang++.cfg").write_text(CONFIG.format(
@@ -184,7 +299,13 @@ def main() -> None:
                           format=tarfile.USTAR_FORMAT) as tar:
             for path in sorted(out.rglob("*")):
                 rel = "sdk/" + path.relative_to(out).as_posix()
-                if path.is_dir():
+                if path.is_symlink():
+                    info = tarfile.TarInfo(rel)
+                    info.type = tarfile.SYMTYPE
+                    info.linkname = os.readlink(path)
+                    info.mode = 0o755
+                    tar.addfile(info)
+                elif path.is_dir():
                     info = tarfile.TarInfo(rel)
                     info.type = tarfile.DIRTYPE
                     info.mode = 0o755

@@ -119,17 +119,6 @@ extern "C" int getpagesize(void) {
     return 4096;
 }
 
-extern "C" int statfs(const char *path, struct statfs *fs) {
-    (void)path; (void)fs;
-    errno = 38 /* ENOSYS */;
-    return -1;
-}
-
-extern "C" int fstatfs(int fd, struct statfs *fs) {
-    (void)fd; (void)fs;
-    errno = 38 /* ENOSYS */;
-    return -1;
-}
 
 extern "C" int poll(struct pollfd *fds, nfds_t n, int timeout) {
     (void)fds; (void)n; (void)timeout;
@@ -304,17 +293,6 @@ extern "C" int sigaltstack(const stack_t *ss, stack_t *old) {
     return 0;
 }
 
-extern "C" int statvfs(const char *path, struct statvfs *vfs) {
-    (void)path; (void)vfs;
-    errno = 38 /* ENOSYS */;
-    return -1;
-}
-
-extern "C" int fstatvfs(int fd, struct statvfs *vfs) {
-    (void)fd; (void)vfs;
-    errno = 38 /* ENOSYS */;
-    return -1;
-}
 
 /*
  * POSIX *at() family.  Harvey has no dirfd-relative lookup, so resolve the
