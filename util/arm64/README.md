@@ -559,11 +559,13 @@ with a `--jobs 2` stage; the archive comes from
 image **without** `ARM64_AFFINITY`: a wired init passes its Mach to every
 child, so an affinity build pins the whole user tree to CPU0 and runs at
 the single-CPU rate.  The same image and the 404 MiB board archive
-completed 77/77 on the v1.1 board with `TGEN VT-MATCH 46644 bytes`.  The
-first concurrent board run failed at TU 42 with `clang++: error: argument
-to '-o' is missing`: exec had kept the argument count in a global, so two
-simultaneous execs overwrote each other's value and one program lost its
-last argv entry.  The count now lives on the Proc.
+completed 77/77 on the v1.1 board with `TGEN VT-MATCH 46644 bytes` in
+1,874,559 ms on four vCPUs with `TGEN_JOBS=2` (the earlier 1,884,316 ms
+run used the same default scheduler).  The first concurrent board run
+failed at TU 42 with `clang++: error: argument to '-o' is missing`: exec
+had kept the argument count in a global, so two simultaneous execs
+overwrote each other's value and one program lost its last argv entry.
+The count now lives on the Proc.
 
 On the board, the vendor/router TFTP root (`/tmp/aspera-tftp`) is too small
 for the archive.  Point U-Boot at the host instead and split the archive
