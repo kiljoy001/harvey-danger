@@ -43,6 +43,7 @@ LS_BASE = 0x3600000
 RTC_BASE = 0x3E00000
 PING_BASE = 0x8200000
 SDPROBE_BASE = 0x8600000
+SDCARD_BASE = 0xB600000
 KEYROOT_PROBE_BASE = 0x8A00000
 DP9IKTEST_BASE = 0x8E00000
 FACTOTUM_BASE = 0x9600000
@@ -1864,6 +1865,8 @@ main(int argc, char **argv)
                         ROOT / "sys/src/cmd/gmac/gmac.c", GMAC_BASE, [])
     sdprobe, _ = build_elf(out, libc, "sdprobe",
                            ROOT / "sys/src/cmd/sdio/sdprobe.c", SDPROBE_BASE, [])
+    sdcard, _ = build_elf(out, libc, "sdcard",
+                          ROOT / "sys/src/cmd/sdcard/sdcard.c", SDCARD_BASE, [])
     keyrootprobe, _ = build_elf(out, libc, "opteeprobe",
                                 ROOT / "sys/src/cmd/auth/keyroot/opteeprobe.c",
                                 KEYROOT_PROBE_BASE, build_pq_objs(out))
@@ -2123,6 +2126,7 @@ main(int argc, char **argv)
         **({"gefs": gefs} if os.environ.get("ARM64_BUILD_GEFS") == "1" else {}),
         "gmac": gmac,
         "sdprobe": sdprobe,
+        "sdcard": sdcard,
         "opteeprobe": keyrootprobe,
         "dp9iktest": dp9iktest,
         "factotum": factotum,
