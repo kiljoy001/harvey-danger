@@ -584,6 +584,28 @@ The kernel accepts boot archives up to 1280 MiB.  A ten-part load places
 `sdk.part.00`..`08` at 0x50000000 through 0x78000000 (0x05000000 steps) and
 the 11 MiB tail at 0x7d000000.
 
+The board also boots from the SD card, which removes TFTP from the boot
+path.  U-Boot sees the card as `mmc 1` (the v1.1 unit has a 58.2 GiB
+SD 3.0 card, high speed 50 MHz, 4-bit).  `util/arm64/mk-sdimg.py` builds a
+457 MiB image with an MBR, one FAT32 partition and `Image`, `board.dtb` and
+`sdk.tar`.  Write it once from U-Boot (load the 80 MiB parts at
+0x50000000 + i*0x05000000 first):
+
+```text
+mmc dev 1
+mmc write 0x50000000 0 0xDA000
+fatload mmc 1:1 0x40080000 Image
+fatload mmc 1:1 0x48000000 board.dtb
+fatload mmc 1:1 0x50000000 sdk.tar
+booti 0x40080000 - 0x48000000
+```
+
+The card reads at about 11.5 MiB/s, so the 404 MiB board SDK loads in
+34 s; the kernel then prints `BOOT-ARCHIVE PASS` and runs the same
+self-build.  U-Boot reports `Loading Environment from nowhere`, so a
+`setenv bootcmd ...; saveenv` may not persist until an environment
+location is configured.
+
 The RK3566 eMMC works from user space.  `#P` grants the
 `mmc@fe310000` node, `/boot/emmcfs` serves it as a 9P tree (`ctl`, `data`,
 `partN`, `flush`), and the card comes up as HS200 200 MHz 8-bit:
