@@ -86,6 +86,14 @@ arm64smpinit(Fdtinfo *info)
 	}
 	if(ncpu < 2)
 		return;
+	/*
+	 * The secondaries start with caches off and read the boot record,
+	 * Mach structures, scheduler queues, timers and Proc arena from the
+	 * point of coherency.  Push everything this CPU has written since
+	 * boot out to memory before the first CPU_ON.
+	 */
+	{ extern char etext[], end[]; dcacheclean(etext, (usize)end - (usize)etext); }
+	dcachecleanall();
 	for(i = 1; i < ncpu; i++){
 		b = &cpuboot[i];
 		b->sp = STACKALIGN((u64)cpustack[i] + KSTACK);
@@ -95,6 +103,15 @@ arm64smpinit(Fdtinfo *info)
 		b->vbar = (u64)arm64vectors;
 		b->mach = (u64)&arm64machs[i];
 		b->root = arm64mmukernelroot();
+		/*
+		 * The secondary starts with its MMU and caches off, so it
+		 * reads the boot record from the point of coherency.  Push
+		 * the record out of this CPU's write-back cache first, or the
+		 * new core sees stale (usually zero) stack, MAIR, TCR, SCTLR
+		 * and root values.
+		 */
+		dcacheclean((void*)b, sizeof *b);
+		__asm__ volatile("dsb sy; sev" ::: "memory");
 		r = psci(info->psci_method,
 		    info->psci_cpuon ? info->psci_cpuon :
 		    (info->psci_std ? 0xC4000003 : 0x84000003),
@@ -102,6 +119,8 @@ arm64smpinit(Fdtinfo *info)
 		    (u64)arm64cpuentry, (u64)b);
 		if(r != 0)
 			print("ARM64 cpu%d start failed: %#llx\n", i, r);
+		else
+			print("ARM64 cpu%d start requested\n", i);
 	}
 }
 

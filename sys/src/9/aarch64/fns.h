@@ -73,6 +73,7 @@ void mmuprocinit(Proc *);
 void idlehands(void);
 void coherence(void);
 void dcacheclean(void *, usize);
+void dcachecleanall(void);
 int corecolor(int);
 void cycles(u64 *);
 int infected_with_std(void);

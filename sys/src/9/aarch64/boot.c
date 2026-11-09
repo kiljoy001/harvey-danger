@@ -294,14 +294,20 @@ initprocess(void *arg)
 	devtabinit();
 	consoleuartinit(bootinfo);
 	if(useruartbase == 0xfe660000ULL){
+		/* U-Boot may leave the RK3566 watchdog running; a long SDK
+		 * unpack would reset the board.  Disable it. */
+		*(volatile u32 *)0xfe600000 = 0;	/* WDT_CR */
+		*(volatile u32 *)0xfe60000c = 0x76;	/* WDT_CRR */
 		if(rk3566pipepoweron() < 0)
 			arm64uartputs("HARVEY-ARM64 PD_PIPE FAIL\n");
 		else
 			arm64uartputs("HARVEY-ARM64 PD_PIPE PASS\n");
+#ifndef ARM64_NO_GMAC
 		ethergmacinit();
 		ethermediumlink();
 		etherdevtab.reset();
 		ipdevtab.reset();
+#endif
 	}
 	kproc("alarm", alarmkproc, nil);
 	arm64uartputs("HARVEY-ARM64 FILE-EXEC START\n");

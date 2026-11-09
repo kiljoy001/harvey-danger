@@ -111,6 +111,43 @@ dcacheclean(void *va, usize len)
 	__asm__ volatile("dsb sy" ::: "memory");
 }
 
+/*
+ * Clean and invalidate the whole data cache by set/way.  Used before the
+ * first PSCI CPU_ON: the secondaries start with their MMU and caches off
+ * and read the boot record, Mach structures and scheduler queues from the
+ * point of coherency, so this CPU's dirty lines must reach memory first.
+ */
+void
+dcachecleanall(void)
+{
+	u64 clidr, ccsidr, x;
+	u32 l, levels, type, sets, ways, w, s, shift, log2ways;
+
+	__asm__ volatile("dsb sy" ::: "memory");
+	__asm__ volatile("mrs %0, clidr_el1" : "=r"(clidr));
+	levels = (clidr >> 24) & 7;
+	for(l = 0; l < levels; l++){
+		type = (clidr >> (3*l)) & 7;
+		if(type < 2)
+			continue;
+		__asm__ volatile("msr csselr_el1, %0" :: "r"((u64)l << 1) : "memory");
+		__asm__ volatile("mrs %0, ccsidr_el1" : "=r"(ccsidr));
+		sets = ((ccsidr >> 13) & 0x7fff) + 1;
+		ways = ((ccsidr >> 3) & 0x3ff) + 1;
+		shift = (ccsidr & 7) + 4;
+		log2ways = 0;
+		while((1U << log2ways) < ways)
+			log2ways++;
+		for(w = 0; w < ways; w++)
+			for(s = 0; s < sets; s++){
+				x = ((u64)w << (32 - log2ways)) |
+				    ((u64)s << shift) | ((u64)l << 1);
+				__asm__ volatile("dc cisw, %0" :: "r"(x) : "memory");
+			}
+	}
+	__asm__ volatile("dsb sy; isb" ::: "memory");
+}
+
 void
 timerset(u64 when)
 {
