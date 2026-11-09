@@ -602,7 +602,10 @@ server rooted at `/overlay/aspera-serve`; put `aspera-tblgen.img`,
 `orangepi-3b-v1.1.dtb` and the 80 MiB parts there.  The vendor U-Boot still
 needs the 100 Mb/s PHY workaround above before the first transfer.  Note
 that the router's `/tmp` tmpfs is only 242 MiB and remains full after files
-are removed, so keep the TFTP root on `/overlay`.
+are removed, so keep the TFTP root on `/overlay`.  `util/arm64/push-tftp.py`
+publishes the Image, DTB and an 80 MiB-split SDK archive to
+`root@192.168.2.1:/overlay/aspera-serve` and prints the matching U-Boot
+load sequence.
 
 The SD card also carries the bootloader on this unit: the Rockchip SPL
 reads the FIT at sector 0x4000 (byte 8 MiB) and the idbloader area starts
