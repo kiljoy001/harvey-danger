@@ -555,7 +555,14 @@ all 77 TUs compiled on four vCPUs with `TGEN VT-MATCH 46644 bytes`.  The
 image build is `test_apex_boot.py --elf <runner.elf> --image-out <Image>`
 with `ARM64_AFFINITY=1` in the environment and a `--jobs 2` stage; the
 archive comes from
-`test-selfbuild-tblgen.py --stage-only --boot <archive>`.
+`test-selfbuild-tblgen.py --stage-only --boot <archive>`.  The same image
+and the 404 MiB board archive completed 77/77 on the v1.1 board with
+`TGEN VT-MATCH 46644 bytes`.  The first concurrent board run failed at TU
+42 with `clang++: error: argument to '-o' is missing`: exec had kept the
+argument count in a global, so two simultaneous execs overwrote each
+other's value and one program lost its last argv entry.  The count now
+lives on the Proc, and `ARM64_AFFINITY` leaves the init process unwired so
+its children are spread by pid instead of inheriting CPU0.
 
 On the board, the vendor/router TFTP root (`/tmp/aspera-tftp`) is too small
 for the archive.  Point U-Boot at the host instead and split the archive
@@ -629,6 +636,24 @@ The card reads at about 11.5 MiB/s, so the 404 MiB board SDK loads in
 self-build.  U-Boot reports `Loading Environment from nowhere`, so a
 `setenv bootcmd ...; saveenv` may not persist until an environment
 location is configured.
+
+If the card's bootloader area is damaged, it can be restored from the
+running vendor U-Boot without a card reader: the recovery image is the
+same 457 MiB image with `u-boot-rockchip.bin` at sector 0x40 and the FAT
+partition at 16 MiB.  Under the vendor numbering the card is `mmc 0`:
+
+```text
+mmc dev 0; mmc info          # confirm the 58.2 GiB card, not the eMMC
+mw.l 0xfe60000c 0x76; mw.l 0xfe600000 0
+tftp 0x50000000 sd-recovery.img
+mmc write 0x50000000 0 0xDA000
+```
+
+The user-space `sdcard` driver does not re-initialise the card; like the
+eMMC driver it takes over the controller U-Boot already configured.  Run
+`mmc dev 0; mmc info` at the vendor prompt before `booti`, then
+`/boot/sdcard probe` (or `sdcard read <lba> [n]`) reads the card through
+the DesignWare FIFO path.
 
 The RK3566 eMMC works from user space.  `#P` grants the
 `mmc@fe310000` node, `/boot/emmcfs` serves it as a 9P tree (`ctl`, `data`,
