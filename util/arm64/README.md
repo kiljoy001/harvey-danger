@@ -584,6 +584,16 @@ The kernel accepts boot archives up to 1280 MiB.  A ten-part load places
 `sdk.part.00`..`08` at 0x50000000 through 0x78000000 (0x05000000 steps) and
 the 11 MiB tail at 0x7d000000.
 
+The RK3566 eMMC works from user space.  `#P` grants the
+`mmc@fe310000` node, `/boot/emmcfs` serves it as a 9P tree (`ctl`, `data`,
+`partN`, `flush`), and the card comes up as HS200 200 MHz 8-bit:
+488554496 blocks (250 GB) with a 128 MiB system partition and a 200 GiB
+data partition.  `util/arm64/test-emmc.py` starts the server, mounts it and
+reads the MBR (`--setup` provisions the data partition as ext2 and writes a
+test file; `--install` is the SDK install path).  Note the libc mount
+convention: a 5-argument `mount()` expands to `mount_()` through
+`<libc.h>`; code that declares its own `mount` must call `mount_`.
+
 The full 766 MiB SDK does not fit on the board: the kernel manages only the
 ~3.8 GiB bank that holds the archive, and the archive plus its unpacked copy
 (another 766 MiB) leave too little for two concurrent compiles — the board

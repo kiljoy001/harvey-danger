@@ -80,6 +80,16 @@ static const char *envs[] = {
 %s
 };
 
+static const char *servers[] = {
+%s
+};
+
+static const char *waits[] = {
+%s
+};
+
+static const char bootfs[] = %s;
+
 static int
 mkdirs(char *path)
 {
@@ -287,7 +297,8 @@ main(void)
 		bind("#e", "/env", MREPL);
 		if(bind("#@", "/initramfs", MREPL | MCREATE) < 0)
 			fprintf(stderr, "runner: bind: %%s\n", strerror(errno));
-		if(untar(untar_name, untar_dest) < 0)
+		if(strcmp(untar_name, "-") != 0 &&
+		    untar(untar_name, untar_dest) < 0)
 			return 1;
 	}else{
 		if(bind("#@", "/", MREPL | MCREATE) < 0)
@@ -296,6 +307,19 @@ main(void)
 		bind("#e", "/env", MREPL | MCREATE);
 		mkdir("/dev", 0777);
 		bind("#c", "/dev", MREPL | MCREATE);
+	}
+
+	if(bootfs[0] != 0){
+		mkdir(bootfs, 0777);
+		if(bind("#@", bootfs, MREPL) < 0)
+			fprintf(stderr, "runner: bind %%s: %%s\n", bootfs,
+			    strerror(errno));
+	}
+
+	if(servers[0] != 0 || waits[0] != 0){
+		mkdir("/srv", 0777);
+		bind("#s", "/srv", MREPL | MCREATE);
+		mkdir("/mnt", 0777);
 	}
 
 	if(have_image){
@@ -340,6 +364,39 @@ main(void)
 		memcpy(name, envs[i], n);
 		name[n] = 0;
 		setenv(name, eq + 1, 1);
+	}
+
+	for(i = 0; servers[i] != 0; i++){
+		pid_t pid = fork();
+
+		if(pid == 0){
+			char *av[2];
+
+			av[0] = (char *)servers[i];
+			av[1] = 0;
+			execv((char *)servers[i], av);
+			fprintf(stderr, "runner: server %%s: %%s\n", servers[i],
+			    strerror(errno));
+			_exit(127);
+		}
+		if(pid < 0)
+			fprintf(stderr, "runner: server fork: %%s\n",
+			    strerror(errno));
+	}
+	for(i = 0; waits[i] != 0; i++){
+		int k, ok = 0, fd;
+
+		for(k = 0; k < 1000; k++){
+			fd = open((char *)waits[i], O_RDONLY);
+			if(fd >= 0){
+				close(fd);
+				ok = 1;
+				break;
+			}
+			sleep(10);
+		}
+		if(!ok)
+			fprintf(stderr, "runner: wait %%s: timeout\n", waits[i]);
 	}
 
 	fprintf(stderr, "runner: wrote %%d files, exec %%s\n", i, args[0]);
@@ -456,6 +513,18 @@ def main() -> None:
                     metavar="BOOTFILE:DEST",
                     help="unpack the ustar archive at BOOTFILE (a boot "
                          "file, e.g. /boot/sdk.tar) into DEST before running")
+    ap.add_argument("--bootfs", default="",
+                    metavar="PATH",
+                    help="bind the boot filesystem at PATH so a boot "
+                         "archive file stays reachable")
+    ap.add_argument("--server", action="append", default=[],
+                    metavar="PATH",
+                    help="program to start in the background before the "
+                         "target (repeatable)")
+    ap.add_argument("--wait", action="append", default=[],
+                    metavar="PATH",
+                    help="file to wait for after starting servers "
+                         "(repeatable)")
     ap.add_argument("--then", action="append", default=[],
                     help="program to run after the first one succeeds; "
                          "repeatable, executed in order")
@@ -498,7 +567,12 @@ def main() -> None:
         1 if not opts.in_tree else 0, c_string(opts.in_tree),
         c_string(untar_name), c_string(untar_dest),
         (",\n".join("\t" + c_string(e) for e in opts.env) + ",\n\t0")
-        if opts.env else "\t0"))
+        if opts.env else "\t0",
+        (",\n".join("\t" + c_string(v) for v in opts.server) + ",\n\t0")
+        if opts.server else "\t0",
+        (",\n".join("\t" + c_string(v) for v in opts.wait) + ",\n\t0")
+        if opts.wait else "\t0",
+        c_string(opts.bootfs)))
 
     # Link with the Plan 9 libc ahead of the APEX archive: APEX's BSD socket
     # layer also defines bind(); the namespace bind() is the one a runner
