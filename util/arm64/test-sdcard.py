@@ -1,9 +1,16 @@
 #!/usr/bin/env python3
 """Probe the RK3566 SD slot from user space.
 
-Runs the guest `sdcard probe`, which takes over the SDHCI controller that
-U-Boot already initialised when it loaded the kernel from the card, sends
-CMD13 for the card status and reads block 0 (the MBR).
+Runs the guest `sdcard probe`, which takes over the DesignWare MSHC
+controller (mmc@fe2b0000) that U-Boot already initialised, sends CMD13 for
+the card status and reads block 0 (the MBR).  The driver does not
+re-initialise the card, so at the vendor U-Boot prompt run
+
+    mmc dev 0; mmc info
+
+first (vendor numbering: 0 = SD, 1 = eMMC), then load this board image and
+the DTB and `booti`.  Without that step the controller may never have seen
+the card.
 
     python3 util/arm64/test-sdcard.py --board-image out.img
 """
