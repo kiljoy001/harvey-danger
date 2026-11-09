@@ -223,9 +223,34 @@ The v1.1 board now brings all four cores online (`CPU1/2/3-TIMER PASS`).
 `test-selfbuild.py --smp 4` compiles, links and runs the guest `llvm-as`
 with byte-identical bitcode, and `--tool llvm-dis` / `--tool llvm-ar` build
 those tools as well.  The C++ runtime probe passes all 25 features with the
-SDK's own `clang++`; fmt 11, guest LTO and PCH also pass.  The SDK ships
-`llvm-ar` and `llvm-ranlib`, so a guest can compile objects, archive them and
-link without host helpers.
+SDK's own `clang++`; fmt 11, guest LTO and PCH also pass.  All 26 probe
+features now pass, including `std::filesystem::space`, which reports the
+guest's page pool (APEX gained `statvfs`/`statfs` and `sysconf`
+`_SC_PHYS_PAGES`, and the kernel prints free/total physical memory in
+`#c/swap`).
+
+The SDK ships a complete LLVM/Clang tool set, not just a compiler:
+
+- one `llvm` multicall driver providing `clang`, `clang++`, `clang-cl`,
+  `ld.lld`, `lld-link`, `wasm-ld`, `dsymutil` and the binutils set
+  (`llvm-nm`, `objcopy`, `strip`, `readobj`, `readelf`, `objdump`, `size`,
+  `strings`, `symbolizer`, `addr2line`, `cxxfilt`, `ar`, `ranlib`, `dwp`,
+  `gsymutil`, `lipo`, `rc`, `windres`, `ml`, `ifs`, ...);
+- the standalone IR tools the driver does not carry: `llc`, `opt`,
+  `llvm-as`, `llvm-dis`, `llvm-link`, `llvm-lto`, `llvm-mc`,
+  `llvm-dwarfdump`, `llvm-profdata`, `llvm-cov`, `llvm-extract`,
+  `llvm-diff`, `llvm-bcanalyzer`;
+- clang-tools-extra: `clang-tidy`, `clang-check`, `clang-format`,
+  `clang-apply-replacements`, `clang-query`, `clang-doc`,
+  `clang-include-cleaner`, `clang-include-fixer`, `clang-move`,
+  `clang-reorder-fields`, `modularize`, `pp-trace`.
+
+Plan 9 has no symbolic links, so every name the driver dispatches on is a
+~10 KiB shim that re-execs `…/bin/llvm <subcommand>` with the original
+arguments (see `util/arm64/llvm-shim.c`); the standalone tools are real
+binaries.  `util/arm64/test-tools.py` exercises the set inside the guest
+(compile, archive, nm, objcopy, strip, readelf, objdump, size, strings,
+cxxfilt, clang-format, clang-tidy, clang-check and `llvm --help`).
 
 The heap tail accounting in `qmalloc` was wrong: after installing a new
 physical chunk, `morecore()` added only the requested units to `tailsize`
@@ -548,11 +573,16 @@ booti 0x40080000 - 0x48000000
 ```
 
 `host:/home/scott/tftp` is served on port 6969 by `tftpd.py`; the parts are
-80 MiB so each load address is a clean 0x05000000 step (five parts):
+80 MiB so each load address is a clean 0x05000000 step.  The full tool set
+makes the overlay 766 MiB, so there are ten parts:
 
 ```text
 split -b 83886080 aspera-tblgen-sdk.boot sdk.part.
 ```
+
+The kernel accepts boot archives up to 1280 MiB.  A ten-part load places
+`sdk.part.00`..`08` at 0x50000000 through 0x78000000 (0x05000000 steps) and
+the 11 MiB tail at 0x7d000000.
 
 Do not use a round 80,000,000-byte split: the 0x003b4c00 gap between parts
 shows up as a `bad tar header` in the runner.
@@ -565,7 +595,7 @@ loading:
 mw.l 0xfe60000c 0x76; mw.l 0xfe600000 0
 ```
 
-With the watchdog stopped, all five parts load on the v1.1 board and the
+With the watchdog stopped, the parts load on the v1.1 board and the
 kernel reaches the runner: it prints `HARVEY-ARM64 BOOT-ARCHIVE PASS`,
 untars the SDK from `0x50000000` and starts `/initramfs/bin/tblgen`.  The
 kernel now brings all four cores online (`ARM64 cpu1/2/3 online`, then
