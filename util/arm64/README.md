@@ -584,6 +584,14 @@ The kernel accepts boot archives up to 1280 MiB.  A ten-part load places
 `sdk.part.00`..`08` at 0x50000000 through 0x78000000 (0x05000000 steps) and
 the 11 MiB tail at 0x7d000000.
 
+The full 766 MiB SDK does not fit on the board: the kernel manages only the
+~3.8 GiB bank that holds the archive, and the archive plus its unpacked copy
+(another 766 MiB) leave too little for two concurrent compiles — the board
+panics with `kickpager(): no physical memory`.  Build the board archive with
+`install-sdk.py --board-sdk` (driver, all standalone IR tools,
+clang-format and clang-apply-replacements; 355 MiB, 404 MiB with the
+TableGen overlay) and keep the full SDK for QEMU and host distribution.
+
 Do not use a round 80,000,000-byte split: the 0x003b4c00 gap between parts
 shows up as a `bad tar header` in the runner.
 

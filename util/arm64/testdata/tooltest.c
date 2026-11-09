@@ -105,7 +105,8 @@ main(void)
 	char *cxv[] = { cxx, "_Z3foov", 0 };
 	char *lvh[] = { lv, "--help", 0 };
 	char *tdv[] = { tidy, "--help", 0 };
-	char *ckv[] = { chk, "/initramfs/t/x.c", "--", "-fsyntax-only", 0 };
+	char *ckv[] = { chk, "/initramfs/t/x.c", "--",
+	    "--target=aarch64-unknown-linux-elf", "-fsyntax-only", 0 };
 
 	if(run("cc", cc, 0, 0) != 0 ||
 	   run("ar-create", ac, 0, 0) != 0 ||

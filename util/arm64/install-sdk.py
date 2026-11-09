@@ -137,6 +137,10 @@ def main() -> None:
     ap.add_argument("--no-extras", action="store_true",
                     help="skip the clang-tools-extra utilities that are not "
                          "part of a normal compile/format/tidy workflow")
+    ap.add_argument("--board-sdk", action="store_true",
+                    help="leave out the large analysis binaries; the board "
+                         "has to hold the archive and its unpacked copy in "
+                         "the same RAM bank")
     ap.add_argument("--tar", default="",
                     help="also write a ustar archive of the tree (as "
                          "sdk/...)")
@@ -239,8 +243,11 @@ def main() -> None:
 
     if args.with_tools:
         names = list(STANDALONE_TOOLS) + list(CLANG_TOOLS)
-        if args.no_extras:
+        if args.no_extras or args.board_sdk:
             names = [n for n in names if n not in EXTRAS]
+        if args.board_sdk:
+            names = [n for n in names
+                     if n not in ("clang-tidy", "clang-check", "clang-query")]
         for name in names:
             src = llvm / "bin" / name
             if not src.is_file():
