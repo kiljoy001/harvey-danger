@@ -22,7 +22,9 @@ import subprocess
 import sys
 
 SECTOR = 512
-PART_START = 2048          # 1 MiB alignment
+PART_START = 2048          # 1 MiB alignment, no bootloader
+UBOOT_PART_START = 0x8000  # 16 MiB, after the Rockchip bootloader area
+UBOOT_OFFSET = 0x40        # idbloader starts here; the FIT follows at 0x4000
 CHUNK = 83886080           # 80 MiB, the U-Boot TFTP part size
 
 
@@ -32,6 +34,10 @@ def main() -> None:
     ap.add_argument("--dtb", default="/home/scott/tftp/orangepi-3b-v1.1.dtb")
     ap.add_argument("--sdk", default="/tmp/opencode/sdk-board.boot")
     ap.add_argument("--out", default="/tmp/opencode/sd.img")
+    ap.add_argument("--uboot", default="",
+                    help="u-boot-rockchip.bin to place at sector 0x40; the "
+                         "FAT partition then starts at 16 MiB so the FIT at "
+                         "sector 0x4000 is preserved")
     ap.add_argument("--size-mb", type=int, default=0,
                     help="image size (default: files + 10%)")
     ap.add_argument("--parts-dir", default="",
@@ -58,16 +64,25 @@ def main() -> None:
     with open(out, "wb") as f:
         f.truncate(size)
 
+    part_start = UBOOT_PART_START if args.uboot else PART_START
     sectors = size // SECTOR
-    part_sectors = sectors - PART_START
+    part_sectors = sectors - part_start
     subprocess.run(["sfdisk", "-q", "--no-reread", str(out)], check=True,
-                   input=f"label: dos\nstart={PART_START}, "
+                   input=f"label: dos\nstart={part_start}, "
                          f"size={part_sectors}, type=0c\n".encode())
+    if args.uboot:
+        ublob = Path(args.uboot).read_bytes()
+        end = UBOOT_OFFSET * SECTOR + len(ublob)
+        if end > part_start * SECTOR:
+            sys.exit("u-boot image overlaps the FAT partition")
+        with open(out, "r+b") as f:
+            f.seek(UBOOT_OFFSET * SECTOR)
+            f.write(ublob)
     subprocess.run(["mkfs.vfat", "-F", "32", "-n", "HARVEY",
-                    "--offset", str(PART_START), str(out)], check=True,
+                    "--offset", str(part_start), str(out)], check=True,
                    stdout=subprocess.DEVNULL)
 
-    offset = PART_START * SECTOR
+    offset = part_start * SECTOR
     for path, name in ((image, "Image"), (dtb, "board.dtb"),
                        (sdk, "sdk.tar")):
         subprocess.run(["mcopy", "-i", f"{out}@@{offset}", str(path),
@@ -81,7 +96,7 @@ def main() -> None:
 
     blocks = size // SECTOR
     print(f"sd image: {out} ({size} bytes, {blocks} blocks)")
-    print(f"  partition 1 at sector {PART_START}, {part_sectors} sectors")
+    print(f"  partition 1 at sector {part_start}, {part_sectors} sectors")
     print()
     print("U-Boot write (after loading the parts at 0x50000000 + i*0x05000000):")
     print(f"  mmc dev 1")

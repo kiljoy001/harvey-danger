@@ -584,6 +584,14 @@ The kernel accepts boot archives up to 1280 MiB.  A ten-part load places
 `sdk.part.00`..`08` at 0x50000000 through 0x78000000 (0x05000000 steps) and
 the 11 MiB tail at 0x7d000000.
 
+The SD card also carries the bootloader on this unit: the Rockchip SPL
+reads the FIT at sector 0x4000 (byte 8 MiB) and the idbloader area starts
+at sector 0x40.  Never write an image at LBA 0 that puts a partition over
+those sectors — the board then falls back to the eMMC's vendor U-Boot,
+which has `bootdelay=0` and no boot target.  `mk-sdimg.py --uboot` places
+`u-boot-rockchip.bin` at 0x40, keeps the FAT partition at 16 MiB and
+verifies that nothing overlaps.
+
 The board also boots from the SD card, which removes TFTP from the boot
 path.  U-Boot sees the card as `mmc 1` (the v1.1 unit has a 58.2 GiB
 SD 3.0 card, high speed 50 MHz, 4-bit).  `util/arm64/mk-sdimg.py` builds a
