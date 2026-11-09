@@ -584,6 +584,16 @@ The kernel accepts boot archives up to 1280 MiB.  A ten-part load places
 `sdk.part.00`..`08` at 0x50000000 through 0x78000000 (0x05000000 steps) and
 the 11 MiB tail at 0x7d000000.
 
+The installed vendor U-Boot ignores `tftpdstp` and always talks to UDP port
+69; the `serverip=192.168.2.2; tftpdstp=6969` path above is an extension of
+the Aspera U-Boot.  With the vendor U-Boot, serve the files from a port-69
+server.  On this LAN the OpenWrt router at 192.168.2.1 runs dnsmasq's TFTP
+server rooted at `/overlay/aspera-serve`; put `aspera-tblgen.img`,
+`orangepi-3b-v1.1.dtb` and the 80 MiB parts there.  The vendor U-Boot still
+needs the 100 Mb/s PHY workaround above before the first transfer.  Note
+that the router's `/tmp` tmpfs is only 242 MiB and remains full after files
+are removed, so keep the TFTP root on `/overlay`.
+
 The SD card also carries the bootloader on this unit: the Rockchip SPL
 reads the FIT at sector 0x4000 (byte 8 MiB) and the idbloader area starts
 at sector 0x40.  Never write an image at LBA 0 that puts a partition over
@@ -594,7 +604,13 @@ verifies that nothing overlaps.
 
 The board also boots from the SD card, which removes TFTP from the boot
 path.  U-Boot sees the card as `mmc 1` (the v1.1 unit has a 58.2 GiB
-SD 3.0 card, high speed 50 MHz, 4-bit).  `util/arm64/mk-sdimg.py` builds a
+SD 3.0 card, high speed 50 MHz, 4-bit).  That is the Aspera U-Boot's
+numbering, which follows the Linux aliases (`mmc 0` = eMMC,
+`mmc 1` = SD).  The installed vendor U-Boot numbers the same slots the
+other way round: `mmc 0` = SD and `mmc 1` = eMMC.  Run `mmc list` and
+check the capacity before every `mmc write`; a recovery image written to
+`mmc 1` under the vendor U-Boot lands on the eMMC instead of the card.
+`util/arm64/mk-sdimg.py` builds a
 457 MiB image with an MBR, one FAT32 partition and `Image`, `board.dtb` and
 `sdk.tar`.  Write it once from U-Boot (load the 80 MiB parts at
 0x50000000 + i*0x05000000 first):
