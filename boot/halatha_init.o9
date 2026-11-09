@@ -1,6 +1,29 @@
 function raw_shell() int64 {
     c {
+        char buf[64];
+        int fd, n, pid;
         char *argv[] = {"rc", "-i", nil};
+
+        /*
+         * Guest liveness probe: rewrite /n/host/hb once a second.  This
+         * has to be a real process, not a libthread task: the exec below
+         * replaces the process image and would take a task with it.  The
+         * child inherits the 9P root mount from initcode.
+         */
+        pid = rfork(RFPROC|RFNAMEG);
+        if(pid == 0){
+            for(;;){
+                fd = open("/n/host/hb", OWRITE);
+                if(fd >= 0){
+                    n = snprint(buf, sizeof buf, "%lld\n", nsec());
+                    write(fd, buf, n);
+                    close(fd);
+                }
+                sleep(1000);
+            }
+            _exits(nil);
+        }
+
         bind("#c", "/dev", MAFTER);
         bind("#d", "/dev", MAFTER);
         bind("#p", "/proc", MREPL);
