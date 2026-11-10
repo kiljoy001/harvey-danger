@@ -58,7 +58,7 @@ ${root}/lib/libbuiltins.a
 """
 
 
-CLANG_TOOLS = ("clang-tidy", "clang-check", "clang-format",
+CLANG_TOOLS = ("clangd", "clang-tidy", "clang-check", "clang-format",
                "clang-apply-replacements", "clang-query", "clang-doc",
                "clang-include-cleaner", "clang-include-fixer",
                "clang-move", "clang-reorder-fields", "modularize",
