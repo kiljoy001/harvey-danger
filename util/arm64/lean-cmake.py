@@ -11,7 +11,7 @@ error.
 
 The source tree is modified in place (the stubs are copied to
 Utilities/cmstub and util/arm64/cmake/lean.diff is applied).  The build
-lands in <source>/../cmake-lean.
+lands in <source>/../<source-name>-lean unless --build is given.
 """
 from pathlib import Path
 import argparse
@@ -32,7 +32,7 @@ def main() -> None:
     args = ap.parse_args()
 
     src = args.source.resolve()
-    build = (args.build or (src.parent / "cmake-lean")).resolve()
+    build = (args.build or (src.parent / (src.name + "-lean"))).resolve()
     if not (src / "Source" / "cmake.cxx").is_file():
         sys.exit(f"{src} does not look like a CMake source tree")
 

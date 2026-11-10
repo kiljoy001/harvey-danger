@@ -41,7 +41,8 @@ def main() -> None:
     elif args.source:
         subprocess.run([sys.executable, str(HERE / "lean-cmake.py"),
                         "--source", str(args.source)], check=True)
-        binary = (args.source.resolve().parent / "cmake-lean" / "bin" / "cmake")
+        binary = (args.source.resolve().parent /
+                  (args.source.resolve().name + "-lean") / "bin" / "cmake")
     else:
         sys.exit("give --source or --binary")
     if not binary.is_file():
