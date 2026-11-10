@@ -96,6 +96,7 @@ apex
 /mnt/o9/
 /boot/boot
 /boot/gefsinit
+/boot/vpsinit
 /util/9vm/9vm
 /util/9vm/netfs
 /util/9vm/test_payload.elf
