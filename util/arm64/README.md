@@ -956,3 +956,35 @@ fmt library build PASS
 The 32 MiB heap limit noted above is gone: `qmalloc.c` draws new chunks from
 the physical allocator, doubling up to 64 MiB, and ramfs block maps grow on
 demand.
+
+## CMake
+
+`harvey-aarch64-toolchain.cmake` lets the host's CMake cross-build a Harvey
+project:
+
+```sh
+cmake -S . -B build -G Ninja \
+  -DCMAKE_TOOLCHAIN_FILE=util/arm64/harvey-aarch64-toolchain.cmake
+ninja -C build
+```
+
+`test-cmake.py` builds a C library plus a C++20 executable (`<ranges>`),
+checks the generated `compile_commands.json` (so clangd can consume it), and
+boots the result in QEMU:
+
+```text
+CMAKE-PROJECT CMake-Harvey 12 3
+CMAKE-PROJECT-DONE
+CMake cross-build PASS
+```
+
+The wrapper defines `_PLAN9_SOURCE`, `_BSD_EXTENSION`, `_REENTRANT_SOURCE`
+and `HAVE_SOCK_OPTS` and suppresses `-Wunused-command-line-argument`, because
+CMake treats any warning in a `try_compile` feature probe as "unsupported".
+
+A *native* CMake (running on Harvey itself) configures but does not yet
+build: its bundled cURL, libarchive and libuv need the remaining POSIX
+surface.  The known gaps are descriptor-readiness (`select()` currently
+handles only a pure timeout), the `*at()` family beyond `AT_FDCWD`, and the
+Linux-specific libuv layer (`eventfd`, `sendfile`, `accept4`, `net/if.h`).
+Those are user-space ports, not kernel changes.
