@@ -588,6 +588,16 @@ int pthread_getcpuclockid(pthread_t t, clockid_t *id) {
     return 0;
 }
 
+int pthread_getaffinity_np(pthread_t t, size_t size, cpu_set_t *set) {
+    (void)t;
+    return sched_getaffinity(0, size, set);
+}
+
+int pthread_setaffinity_np(pthread_t t, size_t size, const cpu_set_t *set) {
+    (void)t;
+    return sched_setaffinity(0, size, set);
+}
+
 int sem_init(sem_t *sem, int pshared, unsigned int value) {
     if (sem == nullptr || pshared != 0 || value > SEM_VALUE_MAX) {
         errno = EINVAL;

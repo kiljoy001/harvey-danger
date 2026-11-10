@@ -117,6 +117,8 @@ int pthread_setspecific(pthread_key_t, const void *);
 
 int pthread_sigmask(int, const sigset_t *, sigset_t *);
 int pthread_getcpuclockid(pthread_t, clockid_t *);
+int pthread_getaffinity_np(pthread_t, size_t, cpu_set_t *);
+int pthread_setaffinity_np(pthread_t, size_t, const cpu_set_t *);
 
 #ifdef __cplusplus
 }

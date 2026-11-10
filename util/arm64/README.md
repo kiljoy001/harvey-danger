@@ -982,9 +982,23 @@ The wrapper defines `_PLAN9_SOURCE`, `_BSD_EXTENSION`, `_REENTRANT_SOURCE`
 and `HAVE_SOCK_OPTS` and suppresses `-Wunused-command-line-argument`, because
 CMake treats any warning in a `try_compile` feature probe as "unsupported".
 
-A *native* CMake (running on Harvey itself) configures but does not yet
-build: its bundled cURL, libarchive and libuv need the remaining POSIX
-surface.  The known gaps are descriptor-readiness (`select()` currently
-handles only a pure timeout), the `*at()` family beyond `AT_FDCWD`, and the
-Linux-specific libuv layer (`eventfd`, `sendfile`, `accept4`, `net/if.h`).
-Those are user-space ports, not kernel changes.
+A *native* CMake is built in "lean" mode: `lean-cmake.py` applies
+`util/arm64/cmake/lean.diff` to a CMake 3.28 source tree and replaces the
+bundled cURL, libarchive and libuv with the stubs in `util/arm64/cmake/`.
+The result is a 9 MB static `cmake` that runs on Harvey:
+
+```text
+cmake version 3.28.3
+CMake suite maintained and supported by Kitware (kitware.com/cmake).
+```
+
+`test-cmake-native.py` installs it as `/initramfs/cmake/bin/cmake` with
+`share/cmake-3.28/Modules`, then runs `cmake --version` and a `cmake -P`
+script in QEMU (`CMSCRIPT-OK 3.28.3`).  Downloads, archive extraction and
+`cmake --workflow` are not available in lean mode and report a clean error.
+
+The `-S/-B` configure/generate path currently hangs when CMake spawns its
+process checks: KWSys uses non-blocking pipe polling (select cannot wait on
+Harvey descriptors yet), and the child's output/exit pipe never wakes the
+parent.  The next piece is APEX descriptor readiness (or a KWSys backend on
+Plan 9's fork/wait) so `execute_process` and generator checks work.
