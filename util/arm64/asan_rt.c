@@ -408,6 +408,22 @@ __asan_on_error(void)
 {
 }
 
+#define SETSHADOW(name, value) \
+	void __asan_set_shadow_##name(uptr addr, uptr size) \
+	{ poison_range(addr, size, value); }
+
+SETSHADOW(f1, 0xf1)
+SETSHADOW(f2, 0xf2)
+SETSHADOW(f3, 0xf3)
+SETSHADOW(f5, 0xf5)
+SETSHADOW(f8, 0xf8)
+
+void
+__asan_set_shadow_00(uptr addr, uptr size)
+{
+	unpoison_range(addr, size);
+}
+
 void
 __sanitizer_annotate_contiguous_container(const void *beg, const void *end,
     const void *old_mid, const void *new_mid)
@@ -416,6 +432,19 @@ __sanitizer_annotate_contiguous_container(const void *beg, const void *end,
 	(void)end;
 	(void)old_mid;
 	(void)new_mid;
+}
+
+void
+__sanitizer_annotate_double_ended_contiguous_container(const void *beg,
+    const void *end, const void *old_mid1, const void *old_mid2,
+    const void *new_mid1, const void *new_mid2)
+{
+	(void)beg;
+	(void)end;
+	(void)old_mid1;
+	(void)old_mid2;
+	(void)new_mid1;
+	(void)new_mid2;
 }
 
 void *

@@ -13,6 +13,7 @@ import argparse
 import shutil
 import struct
 import subprocess
+import tarfile
 import sys
 
 HERE = Path(__file__).resolve().parent
@@ -121,6 +122,8 @@ def main() -> None:
                     help="with --guest, build the header-only fmt probe")
     ap.add_argument("--lto", action="store_true",
                     help="with --guest, add -flto to the SDK compile")
+    ap.add_argument("--asan", action="store_true",
+                    help="build the non-guest probe with -fsanitize=address")
     ap.add_argument("--fmt-src", default="/tmp/opencode/fmt-src",
                     help="fmt checkout for --fmt")
     args = ap.parse_args()
@@ -132,21 +135,37 @@ def main() -> None:
 
     stage.mkdir(parents=True, exist_ok=True)
     elf = stage / "cxxprobe.elf"
-    cmd = [str(HERE / "aarch64-clang++"), "-std=c++23",
-           str(HERE / "testdata" / "cxxprobe.cpp"), "-o", str(elf)]
+    cmd = [str(HERE / "aarch64-clang++"), "-std=c++23"]
+    if args.asan:
+        cmd += ["-fsanitize=address",
+                f"-resource-dir={ROOT / 'build' / 'arm64-sdk' / 'lib' / 'clang' / '22'}"]
+    cmd += [str(HERE / "testdata" / "cxxprobe.cpp"), "-o", str(elf)]
     print("+", " ".join(cmd))
     subprocess.run(cmd, check=True)
 
     # A writable /initramfs is needed for the fstream/filesystem test.
     boot = stage / "small.boot"
-    blob = b"\0" * 1024
+    if args.asan:
+        # The ASan probe is too large to embed in the kernel init image.
+        # Put it in the boot archive and exec it from there.
+        tar = stage / "asan.tar"
+        with tarfile.open(tar, "w", format=tarfile.USTAR_FORMAT) as t:
+            t.add(str(elf), arcname="prog")
+        blob = tar.read_bytes()
+        runner = stage / "runner.elf"
+        cmd = [sys.executable, str(HERE / "mkrun.py"), str(elf),
+               "--in-tree", "/initramfs/prog",
+               "--untar", "/boot/sdk.tar:/initramfs",
+               "--suffix", "", "--output", str(runner)]
+    else:
+        blob = b"\0" * 1024
+        runner = stage / "runner.elf"
+        cmd = [sys.executable, str(HERE / "mkrun.py"), str(elf),
+               "--untar", "/boot/sdk.tar:/initramfs",
+               "--suffix", "", "--output", str(runner)]
     header = struct.pack("<8sIIII", b"O9BOOT01", 1, 1, 24 + 48 + len(blob), 0)
     entry = struct.pack("<32sIIII", b"sdk.tar", 24 + 48, len(blob), 0o555, 0)
     boot.write_bytes(header + entry + blob)
-    runner = stage / "runner.elf"
-    cmd = [sys.executable, str(HERE / "mkrun.py"), str(elf),
-           "--untar", "/boot/sdk.tar:/initramfs",
-           "--suffix", "", "--output", str(runner)]
     print("+", " ".join(cmd))
     subprocess.run(cmd, check=True)
 
@@ -159,6 +178,10 @@ def main() -> None:
     subprocess.run(cmd, check=True)
 
     check(Path(args.dump), "CXXPROBE-DONE")
+    if args.asan:
+        text = Path(args.dump).read_text(errors="replace")
+        if "AddressSanitizer:" in text:
+            sys.exit("ASan reported on the valid C++ probe")
 
 
 if __name__ == "__main__":
