@@ -56,6 +56,9 @@ def main() -> None:
         (CC, HERE / "ubsan_standalone.c",
          "libclang_rt.ubsan_standalone.a",
          ["-fno-sanitize=all"]),
+        (CC, HERE / "asan_rt.c",
+         "libclang_rt.asan.a",
+         ["-fno-sanitize=all"]),
     ]
 
     for compiler, src, archive, flags in builds:
@@ -69,6 +72,14 @@ def main() -> None:
         out.unlink(missing_ok=True)
         subprocess.run([AR, "rcs", str(out), str(obj)], check=True)
         print(f"built {out}")
+
+    # The driver links the static runtime archive first.  The minimal
+    # Harvey runtime has no separate static part; an empty archive keeps the
+    # driver's link line satisfied.
+    static = libdir / "libclang_rt.asan_static.a"
+    static.unlink(missing_ok=True)
+    subprocess.run([AR, "rcs", str(static)], check=True)
+    print(f"built {static}")
 
 
 if __name__ == "__main__":
