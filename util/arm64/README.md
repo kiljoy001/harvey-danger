@@ -264,6 +264,18 @@ diagnostics and the index without an LSP client.  `test-clangd.py` builds a
 small project, runs that check in QEMU, and writes a board Image with
 `--board-image`; the v1.1 board reported `All checks completed, 0 errors`.
 
+`install-sdk.py --with-sanitizers` (or `build_sanitizers.py`) builds two
+UBSan runtimes into the clang resource directory.  The normal
+`-fsanitize=undefined` links `libclang_rt.ubsan_standalone.a`, implemented
+in `util/arm64/ubsan_standalone.c`: it reads the compiler's handler
+descriptors directly and prints `file:line:col: runtime error: <check>`
+without sanitizer_common's Linux syscall layer.  The minimal variant,
+`-fsanitize=undefined -fsanitize-minimal-runtime`, links compiler-rt's
+`libclang_rt.ubsan_minimal.a` and prints the check and caller PC.  Both
+were verified in QEMU with signed-overflow and out-of-bounds programs.
+ASan is not built yet: its fixed shadow mapping needs a guest address-space
+decision and a port of the Linux syscall/interceptor layer.
+
 The heap tail accounting in `qmalloc` was wrong: after installing a new
 physical chunk, `morecore()` added only the requested units to `tailsize`
 and kept the previous chunk's residue, so a later allocation could walk
