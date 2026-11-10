@@ -18,6 +18,7 @@ enum
 	Qwdir,
 	Qwinid,
 	Qwinname,
+	Qwinrect,
 	Qlabel,
 	Qkbd,
 	Qmouse,
@@ -82,6 +83,7 @@ struct  Button
 struct Buffer
 {
 	int 	id;
+	int owner;	/* window id; undo state must not be shared across windows */
 	char	*dir, *file;
 	uint 	q0, q1;
 	Rune 	*r;

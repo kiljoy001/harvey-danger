@@ -118,6 +118,14 @@ supplies extra editing features and a scroll bar
 (see
 .IR rio (1)).
 .TP
+.B winrect
+contains four decimal coordinates describing the drawable client rectangle,
+excluding the border and the bottom window controls.
+Libdraw reads this alongside
+.B winname
+when attaching or reattaching a window.
+Older window servers without this file retain the standard border inset.
+.TP
 .B consctl
 controls interpretation of keyboard input.
 Writing strings to it sets these modes:
@@ -251,7 +259,11 @@ a new rio editor window.
 The entire remainder after the command separator is the path, without shell
 quoting, so embedded spaces and apostrophes are preserved.
 This command is also available on a windowless attachment.
-Files larger than four megabytes and files with binary headers are rejected.
+Files larger than four megabytes, binary/non-UTF-8 contents, and failed reads
+are rejected before creating an editor window. Reads have a five-second
+deadline and run outside the UI process.
+.IR rio-open (1)
+presents these failures or a read-only preview in a separate window.
 The
 .B top
 and

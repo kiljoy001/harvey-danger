@@ -873,19 +873,22 @@ iconinit(void)
 	Rectangle r;
 	Image *tmp;
 
-	/* Blue */
-	tagcols[BACK] = allocimagemix(display, DPalebluegreen, DWhite);
-	tagcols[HIGH] = allocimage(display, Rect(0,0,1,1), screen->chan, 1, DPalegreygreen);
-	tagcols[BORD] = allocimage(display, Rect(0,0,1,1), screen->chan, 1, DPurpleblue);
-	tagcols[TEXT] = display->black;
-	tagcols[HTEXT] = display->black;
+	/* Sanzo Wada Combination #190:
+	 * Ivory Buff (#F5EBD7), English Red (#D96629), Sumi Black (#111314) */
 
-	/* Yellow */
-	textcols[BACK] = allocimagemix(display, DPaleyellow, DWhite);
-	textcols[HIGH] = allocimage(display, Rect(0,0,1,1), screen->chan, 1, DDarkyellow);
-	textcols[BORD] = allocimage(display, Rect(0,0,1,1), screen->chan, 1, DYellowgreen);
-	textcols[TEXT] = display->black;
-	textcols[HTEXT] = display->black;
+	/* Tag / Column Header: Warm Parchment Tab */
+	tagcols[BACK] = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0xE4D4B7FF);
+	tagcols[HIGH] = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0xD96629FF); /* English Red tag selection */
+	tagcols[BORD] = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0x8C7C66FF); /* Muted slate border */
+	tagcols[TEXT] = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0x111314FF); /* Deep Sumi Black */
+	tagcols[HTEXT] = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0xFFFFFFFF); /* White over English Red */
+
+	/* Text Editing Canvas: Ivory Buff washi paper */
+	textcols[BACK] = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0xF5EBD7FF);
+	textcols[HIGH] = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0xD5C29FFF); /* Warm sand text selection */
+	textcols[BORD] = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0xDDD0B8FF); /* Soft scrollbar gutter rail */
+	textcols[TEXT] = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0x111314FF); /* Deep Sumi Black */
+	textcols[HTEXT] = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0x111314FF);
 
 	if(button){
 		freeimage(button);
@@ -905,15 +908,15 @@ iconinit(void)
 	r.max.x -= 2;
 	border(modbutton, r, 2, tagcols[BORD], ZP);
 	r = insetrect(r, 2);
-	tmp = allocimage(display, Rect(0,0,1,1), screen->chan, 1, DMedblue);
+	tmp = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0xD96629FF); /* English Red modified dot */
 	draw(modbutton, r, tmp, nil, ZP);
 	freeimage(tmp);
 
 	r = button->r;
-	colbutton = allocimage(display, r, screen->chan, 0, DPurpleblue);
+	colbutton = allocimage(display, r, screen->chan, 0, 0x48423AFF); /* Sumi slate handle for columns */
 
-	but2col = allocimage(display, r, screen->chan, 1, 0xAA0000FF);
-	but3col = allocimage(display, r, screen->chan, 1, 0x006600FF);
+	but2col = allocimage(display, r, screen->chan, 1, 0xD96629FF); /* English Red execute flash */
+	but3col = allocimage(display, r, screen->chan, 1, 0x437742FF); /* Bamboo green search flash */
 }
 
 /*

@@ -189,55 +189,53 @@ char riotheme[512];
 void
 iconinit(void)
 {
-	ulong back, text, bord, high, titleback, channel;
-	int shift;
+	ulong back, text, bord, high, titleback;
 
-	back = 0xFFFFFFFF^reverse;
-	text = 0x000000FF^reverse;
-	bord = 0x999999FF^reverse;
-	high = reverse ? DPurpleblue : 0xCCCCCCFF;
-	/* Match allocimagemix's 63/255 tint over white on true-color displays. */
-	titleback = 0;
-	for(shift = 8; shift <= 24; shift += 8){
-		channel = (((DPalegreygreen >> shift) & 0xff)*63 + 255*192 + 127)/255;
-		titleback |= channel << shift;
-	}
+	/* Sanzo Wada Combination #190:
+	 * Ivory Buff (#EBD3A2), English Red (#D96629), Sumi Black (#111314) */
+	back = 0xF5EBD7FF^reverse;       /* Warm Ivory Buff rice paper canvas */
+	text = 0x111314FF^reverse;       /* Deep Sumi Black ink */
+	bord = 0x48423AFF^reverse;       /* Muted sumi inactive border */
+	high = reverse ? 0xD96629FF : 0xD5C29FFF; /* Subtle selection highlight */
+	titleback = 0xE4D4B7FF;          /* Distinct warm parchment title tab */
+
 	/* Shared RGB palette for draw clients, including vdir. */
 	snprint(riotheme, sizeof riotheme,
 		"back %06lux\ntext %06lux\nborder %06lux\nhigh %06lux\n"
-		"htext 000000\ndir 5555ff\nexec 55ff55\n"
-		"link 55ffff\ndev ffff55\npipe ffff55\nbroken ff5555\n"
-		"socket ff55ff\ntitleback %06lux\n",
+		"htext 111314\ndir d96629\nexec 437742\n"
+		"link e2b540\ndev d96629\npipe d96629\nbroken a62c37\n"
+		"socket d96629\ntitleback %06lux\n",
 		back >> 8, text >> 8, bord >> 8, high >> 8, titleback >> 8);
-	background = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0x777777FF);
 
-	/* Blue */
-	/* The title must erase old text; DNofill leaves the blend uninitialized. */
-	tagcols[BACK] = allocimagemix(display, DPalegreygreen, DWhite);
-	tagcols[HIGH] = allocimage(display, Rect(0,0,1,1), screen->chan, 1, DPalegreygreen);
-	tagcols[BORD] = allocimage(display, Rect(0,0,1,1), screen->chan, 1, DPurpleblue);
-	tagcols[TEXT] = display->black;
-	tagcols[HTEXT] = display->black;
+	/* Desktop workspace: deep warm sumi slate desk surface */
+	background = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0x22201EFF);
 
-	/* greys are multiples of 0x11111100+0xFF, 14* being palest */
-	cols[BACK] = allocimage(display, Rect(0,0,1,1), CMAP8, 1, back);
-	cols[BORD] = allocimage(display, Rect(0,0,1,1), CMAP8, 1, bord);
-	cols[TEXT] = allocimage(display, Rect(0,0,1,1), CMAP8, 1, text);
-	cols[HTEXT] = allocimage(display, Rect(0,0,1,1), CMAP8, 1, 0x000000FF);
+	/* Window Title Tabs */
+	tagcols[BACK] = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0xE4D4B7FF);
+	tagcols[HIGH] = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0xD96629FF);
+	tagcols[BORD] = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0x8C7C66FF);
+	tagcols[TEXT] = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0x111314FF);
+	tagcols[HTEXT] = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0xFFFFFFFF);
+
+	/* Window Canvas & Body */
+	cols[BACK] = allocimage(display, Rect(0,0,1,1), screen->chan, 1, back);
+	cols[BORD] = allocimage(display, Rect(0,0,1,1), screen->chan, 1, bord);
+	cols[TEXT] = allocimage(display, Rect(0,0,1,1), screen->chan, 1, text);
+	cols[HTEXT] = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0x111314FF);
+	cols[HIGH] = allocimage(display, Rect(0,0,1,1), screen->chan, 1, high);
+
 	if(!reverse) {
-		cols[HIGH] = allocimage(display, Rect(0,0,1,1), CMAP8, 1, high);
-		titlecol = allocimage(display, Rect(0,0,1,1), CMAP8, 1, DGreygreen);
-		lighttitlecol = allocimage(display, Rect(0,0,1,1), CMAP8, 1, DPalegreygreen);
+		titlecol = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0xD96629FF);      /* English Red active border */
+		lighttitlecol = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0x48423AFF); /* Muted sumi inactive border */
 	} else {
-		cols[HIGH] = allocimage(display, Rect(0,0,1,1), CMAP8, 1, high);
-		titlecol = allocimage(display, Rect(0,0,1,1), CMAP8, 1, DPurpleblue);
-		lighttitlecol = allocimage(display, Rect(0,0,1,1), CMAP8, 1, 0x222222FF);
+		titlecol = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0xD96629FF);
+		lighttitlecol = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0x222222FF);
 	}
-	dholdcol = allocimage(display, Rect(0,0,1,1), CMAP8, 1, DMedblue);
-	lightholdcol = allocimage(display, Rect(0,0,1,1), CMAP8, 1, DGreyblue);
-	paleholdcol = allocimage(display, Rect(0,0,1,1), CMAP8, 1, DPalegreyblue);
-	paletextcol = allocimage(display, Rect(0,0,1,1), CMAP8, 1, 0x666666FF^reverse);
-	sizecol = allocimage(display, Rect(0,0,1,1), CMAP8, 1, DRed);
+	dholdcol = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0xD96629FF);
+	lightholdcol = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0x8C7C66FF);
+	paleholdcol = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0xE4D4B7FF);
+	paletextcol = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0x5C554AFF);
+	sizecol = allocimage(display, Rect(0,0,1,1), screen->chan, 1, DRed);
 
 	if(reverse == 0)
 		holdcol = dholdcol;

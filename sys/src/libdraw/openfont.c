@@ -53,6 +53,6 @@ opendefaultfont(Display *d)
 
 	fnt = openfont(d, getenv("font"));
 	if(fnt == nil)
-		openfont(d, "/lib/font/bit/pelm/latin1.8.font");
+		fnt = openfont(d, "/lib/font/bit/pelm/latin1.8.font");
 	return fnt;
 }

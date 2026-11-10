@@ -1,5 +1,6 @@
 # rcmain: Plan 9 version
 if(~ $#home 0) home=/
+if(~ $#font 0) font=/lib/font/bit/pelm/latin1.8.font
 if(~ $#ifs 0) ifs=' 	
 '
 switch($#prompt){

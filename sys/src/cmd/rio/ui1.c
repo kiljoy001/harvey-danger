@@ -83,7 +83,7 @@ void wredo(Window *w);
 Buffer* buffer_find(int id);
 void buffer_save(Window *w, Buffer *buf);
 void buffer_restore(Window *w, Buffer *buf);
-Buffer* buffer_locate(char *dir, char *file);
+Buffer* buffer_locate(Window *w, char *dir, char *file);
 void pulseline(Window *w, ulong src, ulong dst);
 void keymap_reset(void);
 Keymap* keymap_new(int n);
@@ -704,75 +704,70 @@ void fopen(Window *w) {
   fload(w, w1->run, w1->nr);
 }
 
-void fload(Window *w, Rune *fs, int ns) {
-  Dir *d;
-  char buf[4096], *s;
-  int n;
-  Rune r;
-  Buffer *b;
+/* Install a complete, validated file in one insertion, preserving UTF-8. */
+void
+floadtext(Window *w, char *path, Rune *text, int nr)
+{
+	Buffer *b;
+	Rune *name;
+	int nb, nn;
 
-  s = smprint("%.*S", ns, fs);
-  d = dirstat(s);
-  if(d == nil) return;
-
-  /* Save old one if it's a file buffer */
-  b = buffer_find(w->bufid);
-  if (b) buffer_save(w, b);
-
-  w->undo = nil;
-  w->bufid = 0;
-  clear(w);
-  undoaddfile(w->hfile, fs, ns);
-  if(d->mode & DMDIR) {
-	/* Change to dir and list content */
-	winsert(w, L"cd ", 3, w->nr);
-	winsert(w, fs, ns, w->nr);
-	/* Single \n causes segfault on delcharl */
-	winsert(w, L" && lc\n", 7, w->nr);
-	w->file = nil;
-	w->undo = w->scratch;
-  } else {
-	int fd;
-	fd = open(s, OREAD);
-	if (fd < 0) {
-	  winsert(w, fs, ns, w->nr);
-	  winsert(w, L"\n", 2, w->nr);
-	  w->undo = w->scratch;
-	} else {
-	  char *p, *end;
-	  w->file = basename(s);
-	  /* free(w->dir); */
-	  w->dir  = dirname(s);
-	  if ((b = buffer_locate(w->dir, w->file))) {
+	b = buffer_find(w->bufid);
+	if(b != nil)
+		buffer_save(w, b);
+	w->undo = nil;
+	w->bufid = 0;
+	clear(w);
+	name = runemalloc(strlen(path)+1);
+	cvttorunes(path, strlen(path), name, &nb, &nn, nil);
+	undoaddfile(w->hfile, name, nn);
+	free(name);
+	w->file = estrdup(basename(path));
+	w->dir = dirname(path);
+	w->mode = M_TEXT;
+	b = buffer_locate(w, w->dir, w->file);
+	if(b != nil)
 		buffer_restore(w, b);
-		/* fprint(2, "%d ", w->bufid); */
-	  } else {
-	  /* fprint(2, "a%sb", basename(s)); */
-	  while ((n = read(fd, buf, sizeof(buf))) > 0) {
-		p = buf;
-        end = buf + n;
-
-        while(p < end){
-		  n = chartorune(&r, p);
-		  if(n <= 0)
-			sysfatal("bad UTF-8");
-
-		  winsert(w, &r, 1, w->nr);
-		  p += n;
-        }
-	  }
-	  setmodified(w, 0);
-	  close(fd);
-	  w->mode = M_TEXT;
-	  w->bufid = ++nbuf;
-	  buffer_save(w, nil);
-	  }
-	  w->prev_mode = w->mode;
+	else{
+		winsert(w, text, nr, 0);
+		setmodified(w, 0);
+		w->bufid = ++nbuf;
+		buffer_save(w, nil);
 	}
+	w->prev_mode = w->mode;
 	w->qh = w->nr;
-  }
+}
 
-  free(d);
+void fload(Window *w, Rune *fs, int ns) {
+	Dir *d;
+	Rune *text;
+	char *path, *fullpath, err[ERRMAX];
+	int nr;
+
+	path = smprint("%.*S", ns, fs);
+	if(path[0] != '/'){
+		fullpath = smprint("%s/%s", w->dir, path);
+		free(path);
+		path = fullpath;
+	}
+	cleanname(path);
+	incref(w);
+	if(wreadfile(path, &d, &text, &nr, err) == 0){
+		if(!w->deleted){
+			if(d->mode & DMDIR){
+				/* Keep the document intact; open directories in vdir. */
+				rioopenpath(path, nil);
+			}else
+				floadtext(w, path, text, nr);
+		}
+		free(d);
+		free(text);
+	}else if(!w->deleted){
+		/* rio-open presents the failure/preview in a separate window. */
+		rioopenpath(path, err);
+	}
+	wclose(w);
+	free(path);
 }
 
 void fsave(Window *w) {
@@ -1382,7 +1377,7 @@ Buffer* buffer_find(int id) {
   return buf;
 }
 
-Buffer* buffer_locate(char *dir, char *file) {
+Buffer* buffer_locate(Window *w, char *dir, char *file) {
 	Buflist *bl, *prev, *next;
 	Buffer *buf;
 
@@ -1403,7 +1398,7 @@ Buffer* buffer_locate(char *dir, char *file) {
 			free(bl->buf);
 			free(bl);
 		} else {
-			if (strcmp(bl->buf->file, file) == 0 &&
+			if (bl->buf->owner == w->id && strcmp(bl->buf->file, file) == 0 &&
 				strcmp(bl->buf->dir, dir) == 0) {
 				buf = bl->buf;
 				break;
@@ -1434,6 +1429,7 @@ void buffer_save(Window *w, Buffer *buf) {
 	}
   } else
   buf->id = w->bufid;
+  buf->owner = w->id;
   buf->q0 = w->q0;
   buf->q1 = w->q1;
   /* buf->r  = w->run; */
@@ -1484,6 +1480,7 @@ void buffer_close(Window *w) {
   setmodified(w, 0);
   w->undo = w->scratch;
   undostackfree(buf->undo);
+  buf->undo = nil;
   cleanreg(buf->id);
   buf->id = -1;
   if (w->enable_title)
@@ -1492,6 +1489,41 @@ void buffer_close(Window *w) {
   /* free(buf); */
   /* if (w->enable_title) */
   /* 	wtagrepaint(w); */
+}
+
+static void
+buffer_free(Buffer *buf)
+{
+	Buflist *bl, *next;
+
+	for(bl=buf->narrow; bl!=nil; bl=next){
+		next = bl->next;
+		buffer_free(bl->buf);
+		free(bl);
+	}
+	undostackfree(buf->undo);
+	free(buf->r);
+	free(buf);
+}
+
+/* Cached buffers own their undo stacks; window teardown retires both together. */
+void
+buffer_dispose(Window *w)
+{
+	Buflist **link, *bl;
+
+	for(link=&buffers; (bl=*link)!=nil; ){
+		if(bl->buf->owner != w->id){
+			link = &bl->next;
+			continue;
+		}
+		*link = bl->next;
+		cleanreg(bl->buf->id);
+		buffer_free(bl->buf);
+		free(bl);
+	}
+	undostackfree(w->scratch);
+	w->undo = w->scratch = nil;
 }
 
 void buffer_close_all(void) {

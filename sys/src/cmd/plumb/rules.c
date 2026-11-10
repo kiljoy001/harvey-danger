@@ -638,6 +638,70 @@ readrules(char *name, int fd)
 	return rules;
 }
 
+int
+appendrulesfile(char *name, int fd, Ruleset ***rulesp, int *nrule)
+{
+	Ruleset *rs;
+
+	parsing = 1;
+	pushinput(name, fd, nil);
+	if(setjmp(parsejmp)){
+		popinput();
+		parsing = 0;
+		return -1;
+	}
+	while((rs=readruleset()) != nil){
+		*rulesp = erealloc(*rulesp, (*nrule + 2)*sizeof(Ruleset*));
+		(*rulesp)[*nrule] = rs;
+		(*nrule)++;
+		(*rulesp)[*nrule] = nil;
+	}
+	popinput();
+	parsing = 0;
+	return 0;
+}
+
+static int
+dircmp(const void *a, const void *b)
+{
+	return strcmp(((Dir*)a)->name, ((Dir*)b)->name);
+}
+
+int
+appendrulesdir(char *dir, Ruleset ***rulesp, int *nrule)
+{
+	int fd, fdf, i, loaded;
+	long n;
+	Dir *d;
+	char path[512];
+
+	fd = open(dir, OREAD);
+	if(fd < 0)
+		return 0;
+	n = dirreadall(fd, &d);
+	close(fd);
+	if(n <= 0)
+		return 0;
+
+	qsort(d, n, sizeof(Dir), dircmp);
+	loaded = 0;
+	for(i=0; i<n; i++){
+		if(d[i].mode & DMDIR)
+			continue;
+		if(strlen(d[i].name) > 6 && strcmp(d[i].name + strlen(d[i].name) - 6, ".rules") == 0){
+			snprint(path, sizeof path, "%s/%s", dir, d[i].name);
+			fdf = open(path, OREAD);
+			if(fdf >= 0){
+				if(appendrulesfile(path, fdf, rulesp, nrule) == 0)
+					loaded++;
+				close(fdf);
+			}
+		}
+	}
+	free(d);
+	return loaded;
+}
+
 char*
 concat(char *s, char *t)
 {

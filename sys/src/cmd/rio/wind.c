@@ -341,70 +341,74 @@ wsetselect(Window *w, uint q0, uint q1)
 	frsetcol(&w->Frame, fg, bg);
 }
 
+/* Keep application drawing and terminal text above the window controls. */
+Rectangle
+wclientrect(Window *w)
+{
+	Rectangle r;
+
+	r = insetrect(w->i->r, Selborder);
+	if(Dy(r) >= 50)
+		r.max.y -= font->height + 10;
+	return r;
+}
+
+static Rectangle
+wctrlbar(Window *w)
+{
+	Rectangle r;
+
+	if(Dy(w->i->r) < 50)
+		return ZR;
+	r = insetrect(w->i->r, Selborder);
+	r.min.y = wclientrect(w).max.y;
+	return r;
+}
+
 Rectangle
 wctrlrect(Window *w)
 {
 	Rectangle r;
-	int w_btn = 16;
-	int h_btn = 14;
-	int total_w = 3 * w_btn;
+	int width;
 
-	if(w == nil || w->i == nil)
+	if(w == nil || w->i == nil || Dy(w->i->r) < 50)
 		return ZR;
-	if(Dx(w->screenr) < 120 || Dy(w->screenr) < 60)
-		return ZR;
-	r.max = Pt(w->screenr.max.x - Selborder, w->screenr.max.y - Selborder);
-	r.min = Pt(r.max.x - total_w, r.max.y - h_btn);
+	r = wctrlbar(w);
+	width = stringwidth(font, "Maximize") + 16;
+	if(3*width > Dx(r))
+		width = Dx(r)/3;
+	r.min.x = r.max.x - 3*width;
 	return r;
 }
 
 void
 wdrawctrl(Window *w, int type)
 {
-	Rectangle r, b0, b1, b2;
-	Image *bg, *fg, *bcol;
-	int w_btn = 16;
-	int cy;
+	Rectangle r, b;
+	Point p;
+	char *label;
+	int k, width;
 
-	if(w == nil || w->i == nil)
+	USED(type);
+	if(w == nil || w->i == nil || Dy(w->i->r) < 50)
 		return;
+	r = wctrlbar(w);
+	draw(w->i, r, tagcols[BACK], nil, ZP);
+	draw(w->i, Rect(r.min.x, r.min.y, r.max.x, r.min.y+1), display->black, nil, ZP);
 	r = wctrlrect(w);
-	if(eqrect(r, ZR))
-		return;
-
-	b0 = Rect(r.min.x, r.min.y, r.min.x + w_btn, r.max.y);
-	b1 = Rect(r.min.x + w_btn, r.min.y, r.min.x + 2*w_btn, r.max.y);
-	b2 = Rect(r.min.x + 2*w_btn, r.min.y, r.max.x, r.max.y);
-
-	if(type == Selborder){
-		bg = tagcols[BACK];
-		fg = tagcols[TEXT];
-		bcol = titlecol;
-	}else{
-		bg = cols[BACK];
-		fg = lighttitlecol;
-		bcol = lighttitlecol;
-	}
-
-	/* Box background & outer border */
-	draw(w->i, r, bg, nil, ZP);
-	border(w->i, r, 1, bcol, ZP);
-
-	/* Dividers between buttons */
-	draw(w->i, Rect(b1.min.x, r.min.y, b1.min.x+1, r.max.y), bcol, nil, ZP);
-	draw(w->i, Rect(b2.min.x, r.min.y, b2.min.x+1, r.max.y), bcol, nil, ZP);
-
-	/* Button 0: Minimize / Hide (horizontal bar) */
-	cy = b0.min.y + Dy(b0)/2;
-	draw(w->i, Rect(b0.min.x + 4, cy, b0.max.x - 4, cy + 2), fg, nil, ZP);
-
-	/* Button 1: Maximize / Restore (square outline) */
-	border(w->i, insetrect(b1, 3), 1, fg, ZP);
-
-	/* Button 2: Close / Delete (diagonal X) */
-	for(cy = 0; cy < 6; cy++){
-		draw(w->i, Rect(b2.min.x + 5 + cy, b2.min.y + 4 + cy, b2.min.x + 7 + cy, b2.min.y + 5 + cy), fg, nil, ZP);
-		draw(w->i, Rect(b2.min.x + 5 + cy, b2.max.y - 5 - cy, b2.min.x + 7 + cy, b2.max.y - 4 - cy), fg, nil, ZP);
+	width = Dx(r)/3;
+	for(k=0; k<3; k++){
+		b = Rect(r.min.x+k*width, r.min.y+2, r.min.x+(k+1)*width, r.max.y-2);
+		b = insetrect(b, 1);
+		/* Fixed contrast also keeps inactive controls legible. */
+		draw(w->i, b, display->white, nil, ZP);
+		border(w->i, b, 1, display->black, ZP);
+		label = k == 0 ? "Hide" : k == 1 ? (w->maximized ? "Restore" : "Maximize") : "Close";
+		if(stringwidth(font, label)+8 > Dx(b))
+			label = k == 0 ? "_" : k == 1 ? "[]" : "X";
+		p = Pt(b.min.x+(Dx(b)-stringwidth(font, label))/2,
+			b.min.y+(Dy(b)-font->height)/2);
+		string(w->i, p, display->black, ZP, font, label);
 	}
 }
 
@@ -420,17 +424,25 @@ wtogglemax(Window *w)
 	if(w->maximized){
 		r = w->normr;
 		if(!goodrect(r))
-			r = Rect(screen->clipr.min.x + 20, screen->clipr.min.y + 20,
+			r = Rect(screen->clipr.min.x + 20, screen->clipr.min.y + 36,
 			         screen->clipr.min.x + 640, screen->clipr.min.y + 480);
-		w->maximized = 0;
 	}else{
-		w->normr = w->screenr;
-		w->maximized = 1;
+		/* Fullscreen desktop workspace:
+		 * Preserve the top HUD bar (y: 36) and keep bottom margin
+		 * so bottom window controls ([Hide], [Restore], [Close]) are always visible. */
 		r = screen->clipr;
+		r.min.x = screen->clipr.min.x + 4;
+		r.max.x = screen->clipr.max.x - 4;
+		r.min.y = screen->clipr.min.y + 36;
+		r.max.y = screen->clipr.max.y - 6;
 	}
 	im = allocwindow(wscreen, r, Refbackup, DNofill);
 	if(im != nil){
+		if(!w->maximized)
+			w->normr = w->screenr;
+		w->maximized = !w->maximized;
 		wcurrent(w);
+		wtopme(w);
 		wsendctlmesg(w, Reshaped, r, im);
 	}
 }
@@ -439,7 +451,7 @@ void
 wclickctrl(Window *w, Point p, int buttons)
 {
 	Rectangle r, b0, b1, b2, hitcell;
-	int w_btn = 16;
+	int w_btn;
 	int btn;
 
 	if(w == nil || w->deleted)
@@ -449,16 +461,9 @@ wclickctrl(Window *w, Point p, int buttons)
 	if(!ptinrect(p, r))
 		return;
 
-	/* If Right Click (button 3 / bit 4) or Middle Click (button 2 / bit 2):
-	 * open Button 2 window edit menu (Cut, Paste, Snarf, Send, Scroll) */
-	if(buttons & (2 | 4)){
-		if(!w->deleted && !w->mouseopen){
-			incref(w);
-			button2menu(w);
-			wclose(w);
-		}
+	if(!(buttons & 1))
 		return;
-	}
+	w_btn = Dx(r)/3;
 
 	b0 = Rect(r.min.x, r.min.y, r.min.x + w_btn, r.max.y);
 	b1 = Rect(r.min.x + w_btn, r.min.y, r.min.x + 2*w_btn, r.max.y);
@@ -487,8 +492,8 @@ wclickctrl(Window *w, Point p, int buttons)
 	wdrawctrl(w, Selborder);
 	flushimage(display, 1);
 
-	/* If released within the hit cell, trigger action */
-	if(ptinrect(mousectl->xy, hitcell)){
+	/* If released, trigger action */
+	if(!w->deleted){
 		switch(btn){
 		case 0:
 			whide(w);
@@ -601,10 +606,9 @@ void wtagrepaint(Window *w) {
   }
 
   wdelete(w1, 0, w1->nr);
-  user = getenv("user");
+  user = getuser();
   host = getenv("sysname");
   snprint(sfmt, sizeof(sfmt), "%s %s@%s", s, user ? user : "", host ? host : "");
-  free(user);
   free(host);
   n = stringwidth(w->font, sfmt);
   draw(w1->i, r1, tagcols[BACK], nil, ZP); // Start a clean slate
@@ -635,6 +639,9 @@ static Rectangle wtagresize(Window *w, Image *i) {
   Window *w1;
   Rectangle r, r1;
 
+  if(Dy(i->r) < 50)
+    return insetrect(i->r, Selborder+1);
+
   if (w->title) {
 	w1 = w->title;
 	undoclear(w1->undo);
@@ -647,6 +654,8 @@ static Rectangle wtagresize(Window *w, Image *i) {
   r1.max.y = r1.min.y + font->height + 2 * Selborder;
   r = insetrect(i->r, Selborder+1);
   r.min.y = r1.max.y;
+  if (r.min.y > r.max.y)
+    r.min.y = r.max.y;
   /* w1->i = allocwindow(wscreen, r1, Refnone, DNofill); */
   w1->i = i;
   w1->screenr = r1;
@@ -673,10 +682,14 @@ wresize(Window *w, Image *i)
 
 	w->i = i;
 	w->mc.image = i;
+	w->enable_title = (Dy(i->r) >= 50) ? title : 0;
 	if (w->enable_title)
 	  r = wtagresize(w, i);
 	else
 	  r = insetrect(i->r, Selborder+1);
+	r.max.y = wclientrect(w).max.y;
+	if (r.max.y < r.min.y)
+	  r.max.y = r.min.y;
 	if (w->overlay) {
 	  if(saved) {
 		freeimage(saved);
@@ -743,10 +756,6 @@ wrefresh(Window *w)
 {
 	Rectangle r;
 
-	if(w == input)
-		wborder(w, Selborder);
-	else
-		wborder(w, Unselborder);
 	r = insetrect(w->i->r, Selborder);
 	draw(w->i, r, w->cols[BACK], nil, w->entire.min);
 	wfill(w);
@@ -758,6 +767,7 @@ wrefresh(Window *w)
 	frdrawsel(&w->Frame, frptofchar(&w->Frame, w->p0), w->p0, w->p1, 1);
 	w->lastsr = ZR;
 	wscrdraw(w);
+	wborder(w, w == input ? Selborder : Unselborder);
 }
 
 /*
@@ -1973,12 +1983,15 @@ wmk(Image *i, Mousectl *mc, Channel *ck, Channel *cctl, int scrolling)
 	w->hfile = undostackcreate(100);
 	w->hcmd = undostackcreate(100);
 	w->hsearch = undostackcreate(100);
-	w->enable_title = title;
+	w->enable_title = (Dy(i->r) >= 50) ? title : 0;
 	w->title = nil;
 	if (w->enable_title)
 	  r = wtagresize(w, i);
 	else
 	  r = insetrect(i->r, Selborder+1);
+	r.max.y = wclientrect(w).max.y;
+	if (r.max.y < r.min.y)
+	  r.max.y = r.min.y;
 	w->conswrite = chancreate(sizeof(Conswritemesg), 0);
 	w->consread =  chancreate(sizeof(Consreadmesg), 0);
 	w->kbdread =  chancreate(sizeof(Consreadmesg), 0);
@@ -2179,7 +2192,7 @@ wctlmesg(Window *w, int m, Rectangle r, void *p)
 		flushimage(display, 1);
 		if(w->notefd >= 0)
 			close(w->notefd);
-		undostackfree(w->undo);
+		buffer_dispose(w);
 		undostackfree(w->hfile);
 		undostackfree(w->hcmd);
 		chanfree(w->mc.c);
@@ -2530,6 +2543,7 @@ winctl(void *arg)
 				wshow(w, w->qh);
 			wsetselect(w, w->q0, w->q1);
 			wscrdraw(w);
+			wtagrepaint(w);
 			free(rp);
 			break;
 		case WCread:

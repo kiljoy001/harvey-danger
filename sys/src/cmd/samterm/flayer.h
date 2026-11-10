@@ -7,14 +7,6 @@
  * in the LICENSE file.
  */
 
-// Plan9 types
-typedef unsigned char uchar;
-typedef unsigned short ushort;
-typedef u64 uvlong;
-typedef u32 ulong;
-typedef i64 vlong;
-
-
 typedef enum Vis{
 	None=0,
 	Some,

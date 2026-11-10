@@ -124,3 +124,57 @@ three-button Plan 9 conventions:
    - Resizing by dragging the outer corner border remains fully intact.
 2. **Keyboard modifier emulation**: Holding `Shift` while right-clicking translates
    Button 3 into Button 2 (Middle Click) across all Rio windows and Plan 9 tools.
+
+## Persistent window controls
+
+The bottom bar reserves `font->height + 10` pixels independently of terminal
+frames. `/dev/winrect` publishes the remaining graphical client rectangle;
+libdraw's `gengetwindow` reads it on every attach/resize, falling back to the
+usual border inset on older servers. Rebuild graphical clients with this
+libdraw (the Halatha guest build does this for vdir). Existing statically linked
+clients that do not read `winrect` can still draw over the bar.
+
+Buttons use black text and outlines on white, including inactive windows.
+Labels become compact symbols only in narrow windows. Hit testing uses the
+visible window under the pointer, so inactive controls work on the first click.
+`util/9vm/test-rio-controls.mjs` checks redraws, resizing, maximize/restore,
+inactive controls, canceled clicks, hide, and close in the browser guest.
+
+## Bounded file opening
+
+`wreadfile` runs filesystem I/O in a separate process with a private descriptor
+table, a five-second deadline, and a 4 MiB limit that also bounds streams with
+no EOF. A separate UI timer enforces the deadline even when a transport ignores
+interrupts. At most eight reads can remain outstanding; late results are discarded
+and freed when the server returns. It validates complete UTF-8 before handing
+the document to the UI.
+`floadtext` inserts the document in one batch, avoiding per-character drawing
+and preserving multibyte sequences across read boundaries. Failed loads leave
+existing documents intact; cached-buffer paths no longer leak read descriptors.
+
+The Halatha plumbing rule resolves `$file` without synchronous `isfile`/`isdir`
+checks. `rio-open` presents errors in a visible window and provides a bounded,
+read-only byte preview for binary, non-UTF-8, and oversized files. This is a
+fallback inspector, not an image/PDF renderer. `test-rio-plumbing.mjs` exercises
+large/empty/repeated text opens, UTF-8 boundaries and exact saves, fallback
+previews, missing paths, and a 9P read that never replies (but honors flush).
+
+Cached documents now belong to a specific window. Window teardown disposes
+of those buffers and their undo stacks together, preventing the dangling undo
+pointer that crashed Rio after reopening a file. Two live windows on the same
+path no longer share undo ownership.
+
+
+## VPS plumber startup
+
+The GEFS/VPS guest enters through `boot/vps_init.o9`, not Halatha's standalone
+`aspera_init.o9`. Both boot paths must start the plumber before Rio, provide
+`$home` and `/mnt/plumb`, and share their namespace and environment. In
+particular, the VPS Rio fork must not use RFENVG: the already-running plumber
+needs Rio's subsequently published `$wsys` when launching `rio-open`.
+
+`util/9vm/test-rio-vps-plumber.mjs URL` boots the actual VPS browser page,
+checks `/mnt/plumb/send`, then opens a filename containing
+spaces and an apostrophe from vdir and verifies an exact edit/save. The VPS
+kernel must be rebuilt and its deployed cache version changed for boot fixes;
+rebuilding the standalone rootfs alone cannot update that boot path.

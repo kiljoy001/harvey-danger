@@ -31,8 +31,13 @@ makeports(Ruleset *rules[])
 {
 	int i;
 
-	for(i=0; rules[i]; i++)
-		addport(rules[i]->port);
+	addport("notice");
+	addport("edit");
+	addport("vdir");
+	if(rules != nil){
+		for(i=0; rules[i]; i++)
+			addport(rules[i]->port);
+	}
 }
 
 void
@@ -51,7 +56,8 @@ void
 threadmain(int argc, char *argv[])
 {
 	char buf[512];
-	int fd;
+	int fd, nrules, loaded;
+	Dir *d;
 	Channel *c;
 
 	progname = "plumber";
@@ -66,19 +72,61 @@ threadmain(int argc, char *argv[])
 	home = getenv("home");
 	if(user==nil || home==nil)
 		error("can't initialize $user or $home: %r");
-	if(plumbfile == nil){
-		sprint(buf, "%s/lib/plumbing", home);
-		plumbfile = estrdup(buf);
+
+	rules = emalloc(sizeof(Ruleset*));
+	rules[0] = nil;
+	nrules = 0;
+	loaded = 0;
+
+	/* 1. Load modular drop-in rules directory /lib/plumb/rules.d */
+	loaded += appendrulesdir("/lib/plumb/rules.d", &rules, &nrules);
+
+	/* 2. If plumbfile specified, append it (or scan if it is a directory) */
+	if(plumbfile != nil){
+		d = dirstat(plumbfile);
+		if(d != nil && (d->mode & DMDIR)){
+			loaded += appendrulesdir(plumbfile, &rules, &nrules);
+			free(d);
+		}else{
+			if(d != nil)
+				free(d);
+			fd = open(plumbfile, OREAD);
+			if(fd >= 0){
+				if(appendrulesfile(plumbfile, fd, &rules, &nrules) == 0)
+					loaded++;
+				close(fd);
+			}
+		}
 	}
 
-	fd = open(plumbfile, OREAD);
-	if(fd < 0)
-		error("can't open rules file %s: %r", plumbfile);
-	if(setjmp(parsejmp))
-		error("parse error");
+	/* 3. If nothing loaded yet, try $home/lib/plumbing or /lib/aspera/plumbing */
+	if(loaded == 0){
+		sprint(buf, "%s/lib/plumbing", home);
+		fd = open(buf, OREAD);
+		if(fd >= 0){
+			appendrulesfile(buf, fd, &rules, &nrules);
+			close(fd);
+		}else{
+			fd = open("/lib/aspera/plumbing", OREAD);
+			if(fd >= 0){
+				appendrulesfile("/lib/aspera/plumbing", fd, &rules, &nrules);
+				close(fd);
+			}
+		}
+	}
 
-	rules = readrules(plumbfile, fd);
-	close(fd);
+	/* 4. Append local user overrides if present */
+	fd = open("/lib/plumb/rules.local", OREAD);
+	if(fd >= 0){
+		appendrulesfile("/lib/plumb/rules.local", fd, &rules, &nrules);
+		close(fd);
+	}
+	sprint(buf, "%s/lib/plumbing.local", home);
+	fd = open(buf, OREAD);
+	if(fd >= 0){
+		appendrulesfile(buf, fd, &rules, &nrules);
+		close(fd);
+	}
 
 	/*
 	 * Start all processes and threads from other proc

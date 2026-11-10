@@ -26,7 +26,7 @@ colinit(Column *c, Rectangle r)
 	Rectangle r1;
 	Text *t;
 
-	draw(screen, r, display->white, nil, ZP);
+	draw(screen, r, textcols[BACK], nil, ZP);
 	c->r = r;
 	c->w = nil;
 	c->nw = 0;
@@ -39,7 +39,7 @@ colinit(Column *c, Rectangle r)
 	t->what = Columntag;
 	r1.min.y = r1.max.y;
 	r1.max.y += Border;
-	draw(screen, r1, display->black, nil, ZP);
+	draw(screen, r1, tagcols[BORD], nil, ZP);
 	textinsert(t, 0, (Rune*)L"New Cut Paste Snarf Sort Zerox Delcol ", 38, TRUE);
 	textsetselect(t, t->file->Buffer.nc, t->file->Buffer.nc);
 	draw(screen, t->scrollr, colbutton, nil, colbutton->r.min);
@@ -143,7 +143,7 @@ colclose(Column *c, Window *w, int dofree)
 	c->nw--;
 	c->w = realloc(c->w, c->nw*sizeof(Window*));
 	if(c->nw == 0){
-		draw(screen, r, display->white, nil, ZP);
+		draw(screen, r, textcols[BACK], nil, ZP);
 		return;
 	}
 	up = 0;

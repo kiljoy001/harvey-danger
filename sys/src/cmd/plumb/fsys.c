@@ -89,7 +89,7 @@ struct	/* needed because incref() doesn't return value */
 enum
 {
 	DEBUG	= 0,
-	NDIR	= 50,
+	NDIR	= 256,
 	Nhash	= 16,
 
 	Qdir		= 0,
@@ -183,7 +183,7 @@ addport(char *port)
 	ndir++;
 	dir[i].name = estrdup(port);
 	dir[i].qid = i;
-	dir[i].perm = 0400;
+	dir[i].perm = 0666;
 	nports++;
 	ports = erealloc(ports, nports*sizeof(char*));
 	ports[nports-1] = dir[i].name;
@@ -502,6 +502,7 @@ static void
 hold(Plumbmsg *m, Dirtab *d)
 {
 	Holdq *h, *q;
+	int count;
 
 	h = emalloc(sizeof(Holdq));
 	h->msg = m;
@@ -509,9 +510,17 @@ hold(Plumbmsg *m, Dirtab *d)
 	if(d->holdq == nil)
 		d->holdq = h;
 	else{
+		count = 1;
 		for(q=d->holdq; q->next!=nil; q=q->next)
-			;
+			count++;
 		q->next = h;
+		if(count >= 32){
+			/* bound hold queue to 32 messages: drop oldest */
+			q = d->holdq;
+			d->holdq = q->next;
+			plumbfree(q->msg);
+			free(q);
+		}
 	}
 }
 
@@ -547,10 +556,7 @@ dispose(Fcall *t, u8 *buf, Plumbmsg *m, Ruleset *rs, Exec *e)
 			if(strcmp(m->dst, dir[i].name) == 0){
 				if(dir[i].nopen == 0){
 					err = startup(rs, e);
-					if(e!=nil && e->holdforclient)
-						hold(m, &dir[i]);
-					else
-						plumbfree(m);
+					hold(m, &dir[i]);
 				}else{
 					queuesend(&dir[i], m);
 					drainqueue(&dir[i]);
@@ -595,8 +601,14 @@ fsysattach(Fcall *t, u8 *buf, Fid *f)
 	Fcall out;
 
 	if(strcmp(t->uname, user) != 0){
-		fsysrespond(&out, buf, Eperm);
-		return t;
+		char *u = getuser();
+		if(u != nil && strcmp(t->uname, u) == 0){
+			free(user);
+			user = estrdup(u);
+		}else{
+			fsysrespond(&out, buf, Eperm);
+			return t;
+		}
 	}
 	f->busy = 1;
 	f->open = 0;
@@ -687,6 +699,17 @@ fsyswalk(Fcall *t, u8 *buf, Fid *f)
 					dir = d;
 					goto Accept;
 				}
+			/* Auto-create dynamic port if requested */
+			if(t->wname[i][0] != '.' && strcmp(t->wname[i], "rules") != 0 && strcmp(t->wname[i], "send") != 0){
+				addport(t->wname[i]);
+				for(d = dir + NQID; d->name; d++)
+					if(strcmp(t->wname[i], d->name) == 0){
+						type = d->type;
+						path = d->qid;
+						dir = d;
+						goto Accept;
+					}
+			}
 			err = Enoexist;
 			break;
 		}
@@ -876,22 +899,44 @@ fsyswrite(Fcall *t, u8 *buf, Fid *f)
 		}
 		m = plumbunpackpartial(data, count, &n);
 		if(m == nil){
-			if(n == 0){
+			if(n == 0 && count > 0){
+				/* Plain text message on /send */
+				char *text = emalloc(count + 1);
+				char *dst = "notice";
+				memmove(text, data, count);
+				text[count] = '\0';
+				while(count > 0 && (text[count-1] == '\n' || text[count-1] == '\r'))
+					text[--count] = '\0';
+				if(strncmp(text, "notice ", 7) == 0){
+					dst = "notice";
+					text += 7;
+				}else if(strncmp(text, "status ", 7) == 0){
+					dst = "notice";
+				}
+				m = emalloc(sizeof(Plumbmsg));
+				m->src = estrdup("plumb");
+				m->dst = estrdup(dst);
+				m->wdir = estrdup("/");
+				m->type = estrdup("text");
+				m->data = estrdup(text);
+				m->ndata = strlen(text);
+			}else if(n == 0){
 				f->offset = 0;
 				free(f->writebuf);
 				f->writebuf = nil;
 				fsysrespond(t, buf, Ebadmsg);
 				return t;
+			}else{
+				/* can read more... */
+				if(f->offset == 0){
+					f->writebuf = emalloc(t->count);
+					memmove(f->writebuf, t->data, t->count);
+				}
+				/* else buffer has already been grown */
+				f->offset += t->count;
+				fsysrespond(t, buf, nil);
+				return t;
 			}
-			/* can read more... */
-			if(f->offset == 0){
-				f->writebuf = emalloc(t->count);
-				memmove(f->writebuf, t->data, t->count);
-			}
-			/* else buffer has already been grown */
-			f->offset += t->count;
-			fsysrespond(t, buf, nil);
-			return t;
 		}
 		/* release partial buffer */
 		f->offset = 0;
@@ -908,9 +953,33 @@ fsyswrite(Fcall *t, u8 *buf, Fid *f)
 		}
 		fsysrespond(t, buf, "no matching plumb rule");
 		return t;
+	default:
+		/* Direct port write: deliver to this port! */
+		if(f->dir == nil || f->dir->name == nil){
+			fsysrespond(t, buf, "internal error: write to unknown file");
+			return t;
+		}
+		m = plumbunpackpartial(t->data, t->count, &n);
+		if(m == nil){
+			/* Plain text message directly to port */
+			char *text = emalloc(t->count + 1);
+			memmove(text, t->data, t->count);
+			text[t->count] = '\0';
+			while(t->count > 0 && (text[t->count-1] == '\n' || text[t->count-1] == '\r'))
+				text[--t->count] = '\0';
+			m = emalloc(sizeof(Plumbmsg));
+			m->src = estrdup("plumb");
+			m->dst = estrdup(f->dir->name);
+			m->wdir = estrdup("/");
+			m->type = estrdup("text");
+			m->data = text;
+			m->ndata = strlen(text);
+		}else if(m->dst == nil || m->dst[0] == '\0'){
+			m->dst = estrdup(f->dir->name);
+		}
+		dispose(t, buf, m, nil, nil);
+		return nil;
 	}
-	fsysrespond(t, buf, "internal error: write to unknown file");
-	return t;
 }
 
 static Fcall*

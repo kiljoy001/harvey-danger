@@ -375,24 +375,43 @@ mv(char *from, char *to)
 }
 
 int
-plumbfile(char *path, char *name)
+plumbfile(char *dir, char *name)
 {
-	char *f;
-	int e;
+	char *f, *cmd;
+	int fd, ok = 0;
 
-	f = abspath(path, name);
-	e = access(f, 0)==0;
-	if(e)
-		e = sendplumb(path, f);
-	else{
-		char *msg = smprint("Unable to open %s", f);
-		showerrstr(msg);
-		free(msg);
-		loaddirs();
-		redraw();
+	f = abspath(dir, name);
+
+	/* 1. Try plumber */
+	if(plumbfd < 0)
+		plumbfd = plumbopen("send", OWRITE|OCEXEC);
+	if(plumbfd >= 0 && plumbsendtext(plumbfd, "vdir", nil, dir, f) >= 0)
+		ok = 1;
+
+	/* 2. Direct Rio fallback: open file window via /dev/wctl */
+	if(!ok){
+		cmd = smprint("open %s", f);
+		fd = open("/dev/wctl", OWRITE);
+		if(fd >= 0){
+			if(write(fd, cmd, strlen(cmd)) == strlen(cmd))
+				ok = 1;
+			close(fd);
+		}
+		free(cmd);
 	}
+
+	/* 3. Notify HUD top bar */
+	fd = open("/mnt/plumb/notice", OWRITE);
+	if(fd >= 0){
+		fprint(fd, "notice Opened %s\n", name);
+		close(fd);
+	}
+
+	if(!ok)
+		showerrstr("Unable to open file");
+
 	free(f);
-	return e;
+	return ok;
 }
 
 void
@@ -759,10 +778,12 @@ evtmouse(Mouse m)
 			loaddirs();
 			redraw();
 		}
-	}if((m.buttons&4) && oldbuttons == 0){
+	}if((m.buttons&5) && oldbuttons == 0){
 		if(scrolling){
-			dy = 1+nlines*((double)(m.xy.y - scrollr.min.y)/Dy(scrollr));
-			scrolldown(dy);
+			if(m.buttons&4){
+				dy = 1+nlines*((double)(m.xy.y - scrollr.min.y)/Dy(scrollr));
+				scrolldown(dy);
+			}
 		}else if(ptinrect(m.xy, homer)){
 			cd(nil);
 			redraw();

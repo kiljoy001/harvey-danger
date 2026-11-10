@@ -65,6 +65,18 @@ manages asynchronous layers of text, or windows, on a raster display.
 It also serves a variety of files for communicating with
 and controlling windows; these are discussed in section
 .IR rio (4).
+.PP
+Each window has a bottom control bar with left-click buttons:
+.B Hide
+removes the window until selected from the window menu,
+.B Maximize
+fills the screen and changes to
+.B Restore
+to return to the previous size, and
+.B Close
+deletes the window.
+Narrow windows show compact symbols instead of labels.
+The bar is separate from terminal text and graphical client drawing.
 .SS Commands
 The
 .I rio

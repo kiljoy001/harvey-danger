@@ -953,6 +953,12 @@ xfidread(Xfid *x)
 		goto Text;
 
 
+	case Qwinrect:
+		r = wclientrect(w);
+		n = sprint(buf, "%11d %11d %11d %11d ", r.min.x, r.min.y, r.max.x, r.max.y);
+		t = estrdup(buf);
+		goto Text;
+
 	case Qwinname:
 		n = strlen(w->name);
 		if(n == 0){

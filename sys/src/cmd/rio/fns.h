@@ -26,6 +26,7 @@ int idlehandler(void *, char *msg);
 void wrepaint(Window *w);
 int intpcmp(const void *va, const void *vb);
 void buffer_close_all(void);
+void buffer_dispose(Window*);
 ulong blendcolor(ulong c1, ulong c2, double t);
 void multimark(Window *w, int q0);
 void drawmmark(Window *w, int n, int offset);
@@ -34,6 +35,9 @@ void oaction(Window *w);
 Keymap *keymap_load(Keydef key_map[]);
 void execprim(Window *w, char *p);
 void fload(Window *w, Rune *path, int npath);
+void floadtext(Window*, char*, Rune*, int);
+int wreadfile(char*, Dir**, Rune**, int*, char*);
+void rioopenpath(char*, char*);
 char* cwd(void);
 
 /* props.c */
@@ -75,6 +79,7 @@ void		wshow(Window*, uint);
 void		wsnarf(Window*);
 void 		wscrsleep(Window*, uint);
 void 		wtagrepaint(Window*);
+Rectangle	wclientrect(Window*);
 Rectangle	wctrlrect(Window*);
 void		wdrawctrl(Window*, int);
 void		wclickctrl(Window*, Point, int);

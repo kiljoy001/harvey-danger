@@ -33,6 +33,7 @@ Dirtab dirtab[]=
 	{ "cursor",		QTFILE,	Qcursor,		0600 },
 	{ "consctl",	QTFILE,	Qconsctl,		0200 },
 	{ "winid",		QTFILE,	Qwinid,		0400 },
+	{ "winrect",	QTFILE,	Qwinrect,	0400 },
 	{ "winname",	QTFILE,	Qwinname,	0400 },
 	{ "label",		QTFILE,	Qlabel,		0600 },
 	{ "kbd",	QTFILE,	Qkbd,		0600 },
@@ -299,9 +300,15 @@ Xfid*
 filsysattach(Filsys *, Xfid *x, Fid *f)
 {
 	Fcall t;
+	char *u;
 
-	if(strcmp(x->uname, x->fs->user) != 0)
-		return filsysrespond(x->fs, x, &t, Eperm);
+	if(strcmp(x->uname, x->fs->user) != 0){
+		u = getuser();
+		if(u != nil && strcmp(x->uname, u) == 0)
+			x->fs->user = estrdup(u);
+		else
+			return filsysrespond(x->fs, x, &t, Eperm);
+	}
 	f->busy = TRUE;
 	f->open = FALSE;
 	f->qid.path = Qdir;

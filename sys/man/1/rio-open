@@ -3,6 +3,10 @@
 rio-open \- open a path in rio
 .SH SYNOPSIS
 .B rio-open
+[
+.B -d
+.I directory
+]
 .I path
 .SH DESCRIPTION
 .I Rio-open
@@ -10,7 +14,19 @@ opens a directory in vdir or a text file in rio's built-in editor.
 It is used as a plumber start action in the Halatha guest.
 Relative paths are resolved against the working directory.
 If /dev/wctl is absent, it attaches to the rio service named by $wsys.
-Binary files and files larger than four megabytes need another viewer.
+Rio reads files in a separate process with a five-second I/O deadline and a
+four-megabyte editor limit. UTF-8 is validated before the document is installed;
+failed or partial reads do not become editable files.
+.PP
+Binary, non-UTF-8, and oversized files open a read-only hexadecimal and ASCII
+preview in a separate terminal window. The preview reads at most 4096 bytes.
+Missing files and read failures produce a visible error window.
+The original file is not executed or changed by previewing it.
+This fallback does not render image or document formats.
+.PP
+The
+.B -d
+option supplies the working directory for relative paths.
 .SH SOURCE
 .B /sys/src/cmd/rio-open.c
 .SH SEE ALSO

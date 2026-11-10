@@ -81,6 +81,8 @@ void*	emalloc(i32);
 void*	erealloc(void*, i32);
 char*	estrdup(char*);
 Ruleset**	readrules(char*, int);
+int		appendrulesfile(char*, int, Ruleset***, int*);
+int		appendrulesdir(char*, Ruleset***, int*);
 void		startfsys(void);
 Exec*	matchruleset(Plumbmsg*, Ruleset*);
 void		freeexec(Exec*);

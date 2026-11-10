@@ -76,13 +76,16 @@ geninitdraw(char *devdir, void(*error)(Display*, char*),
 	 * If conversion were faster, we'd use 0 and save memory.
 	 */
 	if(fontname == nil){
-		snprint(buf, sizeof buf, "%d %d\n0 %d\t%s\n", df->height, df->ascent,
-			df->n-1, deffontname);
-//BUG: Need something better for this	installsubfont("*default*", df);
-		font = buildfont(display, buf, deffontname);
+		font = openfont(display, "/lib/font/bit/pelm/latin1.8.font");
 		if(font == nil){
-			fprint(2, "imageinit: can't open default font: %r\n");
-			goto Error;
+			snprint(buf, sizeof buf, "%d %d\n0 %d\t%s\n", df->height, df->ascent,
+				df->n-1, deffontname);
+//BUG: Need something better for this	installsubfont("*default*", df);
+			font = buildfont(display, buf, deffontname);
+			if(font == nil){
+				fprint(2, "imageinit: can't open default font: %r\n");
+				goto Error;
+			}
 		}
 	}else{
 		font = openfont(display, fontname);	/* BUG: grey fonts */
@@ -140,9 +143,9 @@ gengetwindow(Display *d, char *winname, Image **winp, Screen **scrp,
 	     int ref)
 {
 	int n, fd;
-	char buf[64+1];
+	char buf[64+1], *rectname, *slash, *field[4];
 	Image *image;
-	Rectangle r;
+	Rectangle r, client;
 
 	fd = open(winname, OREAD);
 	if(fd<0 || (n=read(fd, buf, sizeof buf-1))<=0){
@@ -182,8 +185,30 @@ gengetwindow(Display *d, char *winname, Image **winp, Screen **scrp,
 	}
 
 	r = image->r;
-	if(strncmp(buf, "noborder", 8) != 0)
+	if(strncmp(buf, "noborder", 8) != 0){
 		r = insetrect(image->r, Borderwidth);
+		/* Rio may reserve space for controls outside the client image. */
+		rectname = malloc(strlen(winname)+9);
+		if(rectname != nil){
+			strcpy(rectname, winname);
+			slash = strrchr(rectname, '/');
+			strcpy(slash == nil ? rectname : slash+1, "winrect");
+			fd = open(rectname, OREAD);
+			free(rectname);
+			if(fd >= 0){
+				n = read(fd, buf, sizeof buf-1);
+				close(fd);
+				if(n > 0){
+					buf[n] = 0;
+					if(tokenize(buf, field, nelem(field)) == 4){
+						client = Rect(atoi(field[0]), atoi(field[1]), atoi(field[2]), atoi(field[3]));
+						if(Dx(client)>0 && Dy(client)>0 && rectinrect(client, r))
+							r = client;
+					}
+				}
+			}
+		}
+	}
 	*winp = _allocwindow(*winp, *scrp, r, ref, DWhite);
 	if(*winp == nil){
 		freescreen(*scrp);

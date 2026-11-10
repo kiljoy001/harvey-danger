@@ -31,6 +31,7 @@ enum
 	Hide,
 	Unhide,
 	Delete,
+	Maximize,
 	Color,
 	ECommand,
 	Open,
@@ -49,6 +50,7 @@ static char *cmds[] = {
 	[Hide]	= "hide",
 	[Unhide]	= "unhide",
 	[Delete]	= "delete",
+	[Maximize]	= "maximize",
 	[Color]	= "color",
 	[ECommand]	= "cmd",
 	[Open]	= "open",
@@ -164,11 +166,10 @@ goodrect(Rectangle r)
 	if(Dy(r) > BIG*Dy(screen->r))
 		return 0;
 	/*
-	 * the height has to be big enough to fit one line of text.
-	 * that includes the border on each side with an extra pixel
-	 * so that the text is still drawn
+	 * Fit one line of text, the optional title, the control bar,
+	 * and both borders.
 	 */
-	if(Dx(r) < 100 || Dy(r) < 2*(Borderwidth+1)+font->height)
+	if(Dx(r) < 40 || Dy(r) < 2*(Borderwidth+1)+font->height)
 		return 0;
 	/* window must be on screen */
 	if(!rectXrect(screen->r, r))
@@ -503,6 +504,7 @@ wctlcmd(Window *w, Rectangle r, int cmd, char *err)
 			strcpy(err, Ewalloc);
 			return -1;
 		}
+		w->maximized = 0;
 		wsendctlmesg(w, Reshaped, r, i);
 		return 1;
 	case Scroll:
@@ -556,6 +558,9 @@ wctlcmd(Window *w, Rectangle r, int cmd, char *err)
 	case Delete:
 		wsendctlmesg(w, Deleted, ZR, nil);
 		return 1;
+	case Maximize:
+		wtogglemax(w);
+		return 1;
 	}
 
 	strcpy(err, "invalid wctl message");
@@ -569,43 +574,17 @@ wctlopenfile(char *path, char *err)
 	Image *i;
 	Window *w;
 	Rune *r;
-	char *args[3], buf[4096];
+	char *args[3];
 	void *launch[5];
 	Channel *pidc;
-	int fd, n, nb, nr, pid;
+	int nr, pid;
 
 	if(path[0] != '/'){
 		strcpy(err, "open requires an absolute path");
 		return -1;
 	}
-	d = dirstat(path);
-	if(d == nil){
-		rerrstr(err, ERRMAX);
+	if(wreadfile(path, &d, &r, &nr, err) < 0)
 		return -1;
-	}
-	if(!(d->mode & DMDIR)){
-		if(d->length > 4*1024*1024){
-			free(d);
-			strcpy(err, "file too large for rio's text editor");
-			return -1;
-		}
-		fd = open(path, OREAD);
-		if(fd < 0){
-			free(d);
-			rerrstr(err, ERRMAX);
-			return -1;
-		}
-		n = read(fd, buf, sizeof buf);
-		close(fd);
-		if(n < 0 || memchr(buf, 0, n) != nil){
-			free(d);
-			if(n < 0)
-				rerrstr(err, ERRMAX);
-			else
-				strcpy(err, "binary file: no viewer configured");
-			return -1;
-		}
-	}
 	i = allocwindow(wscreen, rectonscreen(newrect()), Refbackup, DNofill);
 	if(d->mode & DMDIR){
 		args[0] = "vdir";
@@ -616,10 +595,7 @@ wctlopenfile(char *path, char *err)
 		/* Establish file mode before rc can produce its first prompt. */
 		w = new(i, FALSE, scrolling, -1, nil, nil, nil);
 		if(w != nil){
-			r = runemalloc(strlen(path)+1);
-			cvttorunes(path, strlen(path), r, &nb, &nr, nil);
-			fload(w, r, nr);
-			free(r);
+			floadtext(w, path, r, nr);
 			pidc = chancreate(sizeof(int), 0);
 			args[0] = "rc";
 			args[1] = "-i";
@@ -639,6 +615,7 @@ wctlopenfile(char *path, char *err)
 			flushimage(display, 1);
 		}
 	}
+	free(r);
 	free(d);
 	if(w == nil){
 		strcpy(err, "cannot create file window");

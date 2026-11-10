@@ -636,6 +636,20 @@ mousethread(void*)
 		Again:
 			moving = FALSE;
 			winput = input;
+			/* Controls belong to the visible window under the pointer. */
+			if(!sending && (mouse->buttons & 1)){
+				w = wpointto(mouse->xy);
+				if(w != nil && !w->deleted && w->i != nil){
+					xy = addpt(mouse->xy, subpt(w->i->r.min, w->screenr.min));
+					if(ptinrect(xy, wctrlrect(w))){
+						incref(w);
+						wcurrent(w);
+						wclickctrl(w, xy, mouse->buttons);
+						wclose(w);
+						continue;
+					}
+				}
+			}
 			/* override everything for the keyboard window */
 			if(wkeyboard!=nil && ptinrect(mouse->xy, wkeyboard->screenr)){
 				/* make sure it's on top; this call is free if it is */
@@ -656,10 +670,6 @@ mousethread(void*)
 
 				inside = ptinrect(mouse->xy, insetrect(winput->screenr, Selborder));
 				w = winput;
-				if(inside && ptinrect(mouse->xy, wctrlrect(winput)) && (mouse->buttons & 7)){
-					wclickctrl(winput, mouse->xy, mouse->buttons);
-					continue;
-				}
 				if(winput->mouseopen)
 					scrolling = FALSE;
 				else if(scrolling)

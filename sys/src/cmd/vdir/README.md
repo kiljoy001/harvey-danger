@@ -60,3 +60,10 @@ from both `/` and a path with spaces and an apostrophe.
 cannot recurse into the guest root, that plumber is mounted in new windows,
 and that right-clicking a filename with spaces and an apostrophe opens an
 editable document whose saved bytes match exactly. It accepts the same page URL.
+
+
+Text loading and fallback opening are covered by `util/9vm/test-rio-plumbing.mjs`.
+The opener reads text outside Rio's UI process, validates UTF-8, and installs it
+in one batch. Binary/non-UTF-8 files and text over 4 MiB get a read-only byte
+preview; read failures get a visible error window. Slow reads time out after
+five seconds, and the plumber does not stat paths while matching these rules.
