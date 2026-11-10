@@ -190,7 +190,7 @@ def main() -> None:
     root = args.root.rstrip("/")
     shim = None
     driver = llvm / "bin" / "llvm"
-    if args.with_tools and driver.is_file():
+    if (args.with_tools or args.driver_only) and driver.is_file():
         shutil.copyfile(driver, out / "bin" / "llvm")
         os.chmod(out / "bin" / "llvm", 0o755)
         strip_binary(out / "bin" / "llvm")
