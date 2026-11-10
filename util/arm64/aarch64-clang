@@ -36,6 +36,7 @@ done
 
 FLAGS="$CXXFLAGS --target=aarch64-unknown-linux-elf -nostdlibinc -mstrict-align -mno-outline-atomics \
 -fno-stack-protector -fno-threadsafe-statics -static \
+-Wno-unused-command-line-argument \
 -D_SUSV2_SOURCE -D_POSIX_SOURCE -D_LIMITS_EXTENSION -D_GNU_SOURCE -DHARVEY $WCHAR \
 -I$HARVEY/util/arm64/include \
 -I$HARVEY/util/clang-harvey/target-include \
