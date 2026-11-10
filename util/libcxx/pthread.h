@@ -16,6 +16,7 @@
 #include <stdint.h>
 #include <string.h>
 #include <signal.h>
+#include <sched.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -113,27 +114,6 @@ int pthread_key_create(pthread_key_t *, void (*)(void *));
 int pthread_key_delete(pthread_key_t);
 void *pthread_getspecific(pthread_key_t);
 int pthread_setspecific(pthread_key_t, const void *);
-
-int sched_yield(void);
-
-/* CPU affinity: Harvey has no scheduler affinity, but LLVM's threading code
- * asks for it, so provide a single-CPU set that always reports the caller. */
-typedef struct {
-    unsigned long __bits[16];
-} cpu_set_t;
-
-#define CPU_SETSIZE 1024
-#define CPU_ZERO(set) __builtin_memset((set), 0, sizeof(cpu_set_t))
-#define CPU_SET(cpu, set) \
-    ((set)->__bits[(cpu) / (8 * sizeof(unsigned long))] |= \
-     1ul << ((cpu) % (8 * sizeof(unsigned long))))
-#define CPU_ISSET(cpu, set) \
-    (((set)->__bits[(cpu) / (8 * sizeof(unsigned long))] >> \
-      ((cpu) % (8 * sizeof(unsigned long)))) & 1ul)
-#define CPU_COUNT(set) 1
-
-int sched_setaffinity(int, size_t, const cpu_set_t *);
-int sched_getaffinity(int, size_t, cpu_set_t *);
 
 int pthread_sigmask(int, const sigset_t *, sigset_t *);
 int pthread_getcpuclockid(pthread_t, clockid_t *);
