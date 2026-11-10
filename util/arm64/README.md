@@ -242,7 +242,7 @@ The SDK ships a complete LLVM/Clang tool set, not just a compiler:
   `llvm-as`, `llvm-dis`, `llvm-link`, `llvm-lto`, `llvm-mc`,
   `llvm-dwarfdump`, `llvm-profdata`, `llvm-cov`, `llvm-extract`,
   `llvm-diff`, `llvm-bcanalyzer`;
-- clang-tools-extra: `clang-tidy`, `clang-check`, `clang-format`,
+- clang-tools-extra: `clangd`, `clang-tidy`, `clang-check`, `clang-format`,
   `clang-apply-replacements`, `clang-query`, `clang-doc`,
   `clang-include-cleaner`, `clang-include-fixer`, `clang-move`,
   `clang-reorder-fields`, `modularize`, `pp-trace`.
@@ -253,6 +253,14 @@ arguments (see `util/arm64/llvm-shim.c`); the standalone tools are real
 binaries.  `util/arm64/test-tools.py` exercises the set inside the guest
 (compile, archive, nm, objcopy, strip, readelf, objdump, size, strings,
 cxxfilt, clang-format, clang-tidy, clang-check and `llvm --help`).
+
+`clangd` is the one tool that needs a threaded LLVM build.  Configure the
+ARM64 tree with `-DLLVM_ENABLE_THREADS=ON -DCLANG_ENABLE_CLANGD=ON`; the
+affinity API its threading code uses (`cpu_set_t`, `CPU_ALLOC`,
+`CPU_ALLOC_SIZE`, `sched_getaffinity`) is in `util/libcxx/sched.h`.
+`install-sdk.py --with-tools` then ships `clangd`, and
+`clangd --check=<file> --compile-commands-dir=<dir>` exercises parsing,
+diagnostics and the index without an LSP client.
 
 The heap tail accounting in `qmalloc` was wrong: after installing a new
 physical chunk, `morecore()` added only the requested units to `tailsize`
