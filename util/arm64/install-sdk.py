@@ -131,6 +131,8 @@ def main() -> None:
     ap.add_argument("--with-tools", action="store_true",
                     help="ship the llvm multicall driver and the "
                          "clang-tools-extra utilities")
+    ap.add_argument("--with-sanitizers", action="store_true",
+                    help="build and ship the compiler-rt sanitizer runtimes")
     ap.add_argument("--driver-only", action="store_true",
                     help="ship only the multicall driver for clang and "
                          "lld instead of standalone copies of both")
@@ -299,6 +301,13 @@ def main() -> None:
         root=root, extra="-fexceptions -frtti -D_WCHAR_T\n"
                          f"-include {root}/include/compat.h") +
         LINK.format(root=root))
+
+    if args.with_sanitizers:
+        subprocess.run([
+            sys.executable, str(HERE / "build_sanitizers.py"),
+            "--sdk", str(out), "--version-dir", CLANG_VERSION,
+        ], check=True)
+
     blob = None
     if args.tar or args.boot_archive:
         buf = io.BytesIO()
