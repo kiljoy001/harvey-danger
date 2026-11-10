@@ -72,6 +72,17 @@ def main() -> None:
                          f"size={part_sectors}, type=0c\n".encode())
     if args.uboot:
         ublob = Path(args.uboot).read_bytes()
+        # The SPI SPL reads the FIT at sector 0x4000.  The image is written
+        # at sector 0x40, so the FIT must sit at byte 0x7f8000.
+        fit = ublob.find(b"\xd0\x0d\xfe\xed")
+        if fit != 0x7F8000:
+            sys.exit(f"u-boot image has its FIT at {fit:#x}, expected "
+                     "0x7f8000 so the SPI SPL finds it at sector 0x4000")
+        # A FIT without the TF-A loadables starts U-Boot but aborts in the
+        # OP-TEE SMC (flush_shm_dcache) and resets the board.
+        if b"atf-1" not in ublob[fit:fit + 0x8000]:
+            sys.exit("u-boot FIT has no ATF loadables (atf-1); build it "
+                     "with BL31 or the board resets in the OP-TEE SMC")
         end = UBOOT_OFFSET * SECTOR + len(ublob)
         if end > part_start * SECTOR:
             sys.exit("u-boot image overlaps the FAT partition")

@@ -615,6 +615,25 @@ which has `bootdelay=0` and no boot target.  `mk-sdimg.py --uboot` places
 `u-boot-rockchip.bin` at 0x40, keeps the FAT partition at 16 MiB and
 verifies that nothing overlaps.
 
+The FIT must contain the TF-A loadables (`atf-1` through `atf-6`).  A
+`u-boot-rockchip.bin` built without BL31 still starts, then aborts in
+`__arm_smccc_smc` called from `flush_shm_dcache` and resets the board in a
+loop.  `mk-sdimg.py --uboot` now rejects a FIT without `atf-1`, and the
+validated image is `u-boot-rockchip-final.bin` (the `u-boot` image hash is
+`69265f82...`, matching the October 18 boot log).  To repair only a card's
+bootloader without touching its filesystem, load `u-boot-final.itb`
+(1,373,184 bytes) and write the FIT at sector 0x4000:
+
+```text
+tftp 0x50000000 u-boot-final.itb
+mmc write 0x50000000 0x4000 0xA7A
+reset
+```
+
+With the eMMC removed, the SPI SPL tries the SD FIT first; if it is
+missing or invalid, the vendor U-Boot in SPI runs.  That SPI fallback is
+the recovery path when the card itself has no working bootloader.
+
 The board also boots from the SD card, which removes TFTP from the boot
 path.  U-Boot sees the card as `mmc 1` (the v1.1 unit has a 58.2 GiB
 SD 3.0 card, high speed 50 MHz, 4-bit).  That is the Aspera U-Boot's
