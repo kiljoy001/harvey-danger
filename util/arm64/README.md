@@ -286,8 +286,10 @@ does **not** install a `SIGSEGV` handler: the ARM64 kernel currently turns
 an unhandled user fault into `pexit("user fault")`, so wild-pointer and
 stack-guard reports are unavailable without a kernel change.  The
 compiler-instrumented heap, global and use-after-free checks do not need a
-signal.  `test-asan.py` runs the five-case matrix (C and C++); there are no
-stack traces, no stack fake frames, no quarantine and no signal handling.
+signal.  `test-asan.py` runs the five-case matrix (C and C++), and
+`test-cxx.py --asan` runs the 26-feature C++ probe under the runtime with
+no reports.  There are no stack traces, no stack fake frames, no quarantine
+and no signal handling.
 
 The heap tail accounting in `qmalloc` was wrong: after installing a new
 physical chunk, `morecore()` added only the requested units to `tailsize`
