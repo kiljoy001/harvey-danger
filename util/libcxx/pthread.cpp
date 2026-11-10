@@ -13,6 +13,7 @@
  */
 
 #include <pthread.h>
+#include <semaphore.h>
 
 #include <errno.h>
 #include <fcntl.h>
@@ -584,6 +585,108 @@ int pthread_sigmask(int how, const sigset_t *set, sigset_t *old) {
 int pthread_getcpuclockid(pthread_t t, clockid_t *id) {
     (void)t;
     if (id) *id = 0;
+    return 0;
+}
+
+int sem_init(sem_t *sem, int pshared, unsigned int value) {
+    if (sem == nullptr || pshared != 0 || value > SEM_VALUE_MAX) {
+        errno = EINVAL;
+        return -1;
+    }
+    if (pthread_mutex_init(&sem->sem_lock, nullptr) != 0)
+        return -1;
+    if (pthread_cond_init(&sem->sem_cond, nullptr) != 0) {
+        pthread_mutex_destroy(&sem->sem_lock);
+        return -1;
+    }
+    sem->sem_value = value;
+    return 0;
+}
+
+int sem_destroy(sem_t *sem) {
+    if (sem == nullptr) {
+        errno = EINVAL;
+        return -1;
+    }
+    pthread_cond_destroy(&sem->sem_cond);
+    pthread_mutex_destroy(&sem->sem_lock);
+    return 0;
+}
+
+int sem_post(sem_t *sem) {
+    if (sem == nullptr) {
+        errno = EINVAL;
+        return -1;
+    }
+    pthread_mutex_lock(&sem->sem_lock);
+    if (sem->sem_value == SEM_VALUE_MAX) {
+        pthread_mutex_unlock(&sem->sem_lock);
+        errno = EOVERFLOW;
+        return -1;
+    }
+    sem->sem_value++;
+    pthread_cond_signal(&sem->sem_cond);
+    pthread_mutex_unlock(&sem->sem_lock);
+    return 0;
+}
+
+int sem_wait(sem_t *sem) {
+    if (sem == nullptr) {
+        errno = EINVAL;
+        return -1;
+    }
+    pthread_mutex_lock(&sem->sem_lock);
+    while (sem->sem_value == 0)
+        pthread_cond_wait(&sem->sem_cond, &sem->sem_lock);
+    sem->sem_value--;
+    pthread_mutex_unlock(&sem->sem_lock);
+    return 0;
+}
+
+int sem_trywait(sem_t *sem) {
+    if (sem == nullptr) {
+        errno = EINVAL;
+        return -1;
+    }
+    pthread_mutex_lock(&sem->sem_lock);
+    if (sem->sem_value == 0) {
+        pthread_mutex_unlock(&sem->sem_lock);
+        errno = EAGAIN;
+        return -1;
+    }
+    sem->sem_value--;
+    pthread_mutex_unlock(&sem->sem_lock);
+    return 0;
+}
+
+int sem_timedwait(sem_t *sem, const struct timespec *abs_timeout) {
+    if (sem == nullptr || abs_timeout == nullptr) {
+        errno = EINVAL;
+        return -1;
+    }
+    pthread_mutex_lock(&sem->sem_lock);
+    while (sem->sem_value == 0) {
+        int e = pthread_cond_timedwait(&sem->sem_cond, &sem->sem_lock,
+                                       abs_timeout);
+        if (e != 0) {
+            pthread_mutex_unlock(&sem->sem_lock);
+            errno = e;
+            return -1;
+        }
+    }
+    sem->sem_value--;
+    pthread_mutex_unlock(&sem->sem_lock);
+    return 0;
+}
+
+int sem_getvalue(sem_t *sem, int *value) {
+    if (sem == nullptr || value == nullptr) {
+        errno = EINVAL;
+        return -1;
+    }
+    pthread_mutex_lock(&sem->sem_lock);
+    *value = (int)sem->sem_value;
+    pthread_mutex_unlock(&sem->sem_lock);
     return 0;
 }
 

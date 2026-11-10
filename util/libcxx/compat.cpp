@@ -228,7 +228,7 @@ extern "C" int getpwnam_r(const char *name, struct passwd *pwd, char *buf,
     return 0;
 }
 
-extern "C" int getpwuid_r(unsigned int uid, struct passwd *pwd, char *buf,
+extern "C" int getpwuid_r(uid_t uid, struct passwd *pwd, char *buf,
                           size_t len, struct passwd **result) {
     (void)buf; (void)len;
     struct passwd *p = getpwuid((uid_t)uid);
@@ -273,7 +273,7 @@ extern "C" void _Exit(int status) {
     _exit(status);
 }
 
-extern "C" int fchown(int fd, unsigned int uid, unsigned int gid) {
+extern "C" int fchown(int fd, uid_t uid, gid_t gid) {
     (void)fd; (void)uid; (void)gid;
     return 0;
 }

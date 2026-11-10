@@ -37,7 +37,8 @@ done
 FLAGS="$CXXFLAGS --target=aarch64-unknown-linux-elf -nostdlibinc -mstrict-align -mno-outline-atomics \
 -fno-stack-protector -fno-threadsafe-statics -static \
 -Wno-unused-command-line-argument \
--D_SUSV2_SOURCE -D_POSIX_SOURCE -D_LIMITS_EXTENSION -D_GNU_SOURCE -DHARVEY $WCHAR \
+-D_SUSV2_SOURCE -D_POSIX_SOURCE -D_LIMITS_EXTENSION -D_GNU_SOURCE -DHARVEY \
+-D_PLAN9_SOURCE -D_BSD_EXTENSION -D_REENTRANT_SOURCE -DHAVE_SOCK_OPTS $WCHAR \
 -I$HARVEY/util/arm64/include \
 -I$HARVEY/util/clang-harvey/target-include \
 -I$LIBCXX/include/c++/v1 -I$LIBCXX/include \

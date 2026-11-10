@@ -211,6 +211,7 @@ static inline int __harvey_fstat(int fd, struct stat *sb) {
 #define stat(p, s) ::__stat_ap((p), (s))
 #define fstat(f, s) ::__fstat((f), (s))
 
+extern "C" {
 int lstat(const char *, struct stat *);
 int truncate(const char *, off_t);
 
@@ -231,15 +232,17 @@ int truncate(const char *, off_t);
 #define UTIME_OMIT ((1l << 30) - 2l)
 #endif
 int openat(int, const char *, int, ...);
+int fstatat(int, const char *, struct stat *, int);
+DIR *fdopendir(int);
 int unlinkat(int, const char *, int);
+int fchmod(int, mode_t);
+int fchown(int, uid_t, gid_t);
 int mkdirat(int, const char *, mode_t);
 int renameat(int, const char *, int, const char *);
 int symlinkat(const char *, int, const char *);
 ssize_t readlinkat(int, const char *, char *, size_t);
-int fstatat(int, const char *, struct stat *, int);
 int fchmodat(int, const char *, mode_t, int);
 int utimensat(int, const char *, const struct timespec *, int);
-DIR *fdopendir(int);
 int symlink(const char *, const char *);
 ssize_t readlink(const char *, char *, size_t);
 
@@ -248,11 +251,10 @@ int getsid(int);
 
 /* Missing from APEX entirely. */
 void _Exit(int);
-int wait4(int, int *, int, void *);
+struct rusage;
+int wait4(int, int *, int, struct rusage *);
 char *strsignal(int);
 long syscall(long, ...);
-int fchmod(int, unsigned int);
-int fchown(int, unsigned int, unsigned int);
 int msync(void *, size_t, int);
 int madvise(void *, size_t, int);
 int usleep(unsigned int);
@@ -278,7 +280,8 @@ char *realpath(const char *, char *);
 char *strtok_r(char *, const char *, char **);
 struct passwd;
 int getpwnam_r(const char *, struct passwd *, char *, size_t, struct passwd **);
-int getpwuid_r(unsigned int, struct passwd *, char *, size_t, struct passwd **);
+int getpwuid_r(uid_t, struct passwd *, char *, size_t, struct passwd **);
+}
 }
 #endif
 
