@@ -1,18 +1,19 @@
 #!/usr/bin/env python3
 """Build and smoke-test a lean, native Harvey CMake in QEMU.
 
-Runs `cmake --version`, a `cmake -P` script, and a `Unix Makefiles`
+Runs `cmake --version`, a `cmake -P` script, and a `Ninja`
 configure/generate of a `project(... NONE)` from `/initramfs/cmake/bin`, the
-install layout CMake uses to locate its Modules.  The build comes from
-lean-cmake.py, which replaces bundled cURL/libarchive/libuv with stubs.
+install layout CMake uses to locate its Modules.  The Ninja run exercises
+`execute_process` (the version probe), select/poll and waitpid.  The build
+comes from lean-cmake.py, which replaces bundled cURL/libarchive/libuv with
+stubs.
 
     util/arm64/test-cmake-native.py --source /path/to/cmake-3.28.3
 
 `--binary` skips the build and tests an existing lean cmake.
 
-The Ninja generator is not exercised: CMake's `execute_process` path hangs
-inside KWSys' fork/exec plumbing before it reaches select.  Unix Makefiles
-generate without spawning the make program.
+The lean patch teaches KWSys to reap children with waitpid on Harvey
+because Plan 9 does not deliver SIGCHLD.
 """
 from pathlib import Path
 import argparse
@@ -81,11 +82,13 @@ def main() -> None:
     shutil.copyfile(HERE / "cmake" / "Platform-Harvey.cmake",
                     modules / "Platform" / "Harvey.cmake")
 
-    # A no-op make program: Unix Makefiles generation only needs the path.
-    ninja_c = stage / "make.c"
-    ninja_c.write_text('int main(void){return 0;}\n')
+    # A fake ninja: CMake runs `<make> --version` during the generator
+    # check, so it must exit 0 and print a version.
+    ninja_c = stage / "ninja.c"
+    ninja_c.write_text('#include <stdio.h>\n'
+                       'int main(void){printf("1.11.1\\n");return 0;}\n')
     subprocess.run([str(HERE / "aarch64-clang"), str(ninja_c),
-                    "-o", str(install / "bin" / "make")], check=True)
+                    "-o", str(install / "bin" / "ninja")], check=True)
 
     (install / "probe.cmake").write_text(
         'message(STATUS "CMSCRIPT-OK ${CMAKE_VERSION}")\n'
@@ -145,8 +148,8 @@ def main() -> None:
     if args.source:
         generate = run([
             "-S", "/initramfs/cmake/proj", "-B", "/initramfs/cmake/proj/build",
-            "-G", "Unix Makefiles",
-            "-DCMAKE_MAKE_PROGRAM=/initramfs/cmake/bin/make",
+            "-G", "Ninja",
+            "-DCMAKE_MAKE_PROGRAM=/initramfs/cmake/bin/ninja",
         ], "Build files have been written")
         gtext = generate.read_text(errors="replace")
         if "NPROJ-OK" not in gtext:

@@ -995,23 +995,27 @@ CMake suite maintained and supported by Kitware (kitware.com/cmake).
 `test-cmake-native.py` installs it as `/initramfs/cmake/bin/cmake` with a
 minimal `share/cmake-3.28/Modules` (including `Platform/Harvey.cmake`), then
 runs `cmake --version`, a `cmake -P` script (`CMSCRIPT-OK 3.28.3`) and a
-`Unix Makefiles` configure/generate of `project(native NONE)` in QEMU:
+`Ninja` configure/generate of `project(native NONE)` in QEMU:
 
 ```text
 -- NPROJ-OK
--- Configuring done (0.1s)
+-- Configuring done (0.4s)
 -- Generating done (0.0s)
 -- Build files have been written to: /initramfs/cmake/proj/build
 ```
 
+The Ninja run exercises `execute_process` (the `ninja --version` probe),
+select/poll and child reaping, so process spawning works.  The lean patch
+teaches KWSys to poll `waitpid()` because Plan 9 has no SIGCHLD, and
+`mkrun.py` mounts `#p` at `/proc` so `waitpid(WNOHANG)` can peek at
+`/proc/<pid>/wait`.  APEX's `wait4(WNOHANG)` now returns 0 instead of
+blocking when there is no `/proc` or no exited child.
+
 Downloads, archive extraction and `cmake --workflow` are not available in
 lean mode and report a clean error.
 
-The Ninja generator is not exercised yet: CMake's `execute_process` and
-`ninja --version` path hangs inside KWSys' fork/exec plumbing *before* it
-reaches select.  Unix Makefiles generation does not spawn the make program,
-so it works.  Building the generated files still needs a guest make or
-ninja, which pairs with fixing that KWSys spawn path.
+Building the generated files still needs a guest `make` or `ninja`; the
+toolchain now has everything CMake needs to drive one.
 
 ## Descriptor readiness
 

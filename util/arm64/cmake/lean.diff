@@ -356,3 +356,54 @@
  #  include <linux/fs.h>
  #endif
  
+--- a/Source/kwsys/ProcessUNIX.c	2024-02-05 07:28:25.000000000 -0800
++++ b/Source/kwsys/ProcessUNIX.c	2026-11-10 15:44:22.465981974 -0800
+@@ -188,6 +188,7 @@
+ static pid_t kwsysProcessFork(kwsysProcess* cp,
+                               kwsysProcessCreateInformation* si);
+ static void kwsysProcessKill(pid_t process_id);
++static void kwsysProcessDestroy(kwsysProcess* cp);
+ #if defined(__VMS)
+ static int kwsysProcessSetVMSFeature(const char* name, int value);
+ #endif
+@@ -1098,6 +1099,10 @@
+      is not running, cp->PipesLeft will be 0.  */
+   while (cp->PipesLeft > 0 &&
+          !kwsysProcessWaitForPipe(cp, data, length, &wd)) {
++#if defined(HARVEY)
++    /* No SIGCHLD: poll for an exited child ourselves. */
++    kwsysProcessDestroy(cp);
++#endif
+   }
+ 
+   /* Update the user timeout.  */
+@@ -1204,7 +1209,14 @@
+ 
+   /* Setup a timeout if required.  */
+   if (wd->TimeoutTime.tv_sec < 0) {
++#if defined(HARVEY)
++    /* Plan 9 does not deliver SIGCHLD, so the signal pipe never reports
++       a dead child.  Wake up periodically and reap with waitpid. */
++    static kwsysProcessTimeNative harveyTick = { 0, 100000 };
++    timeout = &harveyTick;
++#else
+     timeout = 0;
++#endif
+   } else {
+     timeout = &timeoutLength;
+   }
+@@ -1240,6 +1252,14 @@
+ 
+   /* Check result of select.  */
+   if (numReady == 0) {
++#if defined(HARVEY)
++    /* The 100 ms tick is ours, not the caller's timeout.  Reap any
++       exited child and go around again without reporting expiry. */
++    if (wd->TimeoutTime.tv_sec < 0) {
++      kwsysProcessDestroy(cp);
++      return 0;
++    }
++#endif
+     /* Select's timeout expired.  */
+     wd->Expired = 1;
+     return 1;

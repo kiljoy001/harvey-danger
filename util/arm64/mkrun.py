@@ -309,6 +309,11 @@ main(void)
 		bind("#c", "/dev", MREPL | MCREATE);
 	}
 
+	/* waitpid(WNOHANG) needs /proc/<pid>/wait; mount #p when possible. */
+	mkdir("/proc", 0777);
+	if(bind("#p", "/proc", MREPL) < 0)
+		fprintf(stderr, "runner: bind #p: %%s\n", strerror(errno));
+
 	if(bootfs[0] != 0){
 		mkdir(bootfs, 0777);
 		if(bind("#@", bootfs, MREPL) < 0)
