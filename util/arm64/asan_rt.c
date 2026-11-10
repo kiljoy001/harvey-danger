@@ -165,7 +165,7 @@ report(uptr addr, int fatal)
 	if(n > 0)
 		write(2, buf, n < (int)sizeof buf ? n : (int)sizeof buf - 1);
 	if(fatal)
-		abort();
+		_exit(1);
 }
 
 #define REPORT(name) \
