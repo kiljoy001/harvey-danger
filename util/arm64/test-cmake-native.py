@@ -1,20 +1,22 @@
 #!/usr/bin/env python3
 """Build and smoke-test a lean, native Harvey CMake in QEMU.
 
-Runs `cmake --version` and a `cmake -P` script from `/initramfs/cmake/bin`,
-the install layout CMake uses to locate its Modules.  The build comes from
+Runs `cmake --version`, a `cmake -P` script, and a `Unix Makefiles`
+configure/generate of a `project(... NONE)` from `/initramfs/cmake/bin`, the
+install layout CMake uses to locate its Modules.  The build comes from
 lean-cmake.py, which replaces bundled cURL/libarchive/libuv with stubs.
 
     util/arm64/test-cmake-native.py --source /path/to/cmake-3.28.3
 
 `--binary` skips the build and tests an existing lean cmake.
 
-The configure/generate path is not exercised: CMake's process handling
-currently hangs on APEX pipes (KWSys' non-select polling needs descriptor
-readiness, which `select()` does not provide yet).
+The Ninja generator is not exercised: it runs `ninja --version` through
+KWSys, whose pipe polling needs descriptor readiness that APEX does not
+provide yet.  Unix Makefiles generate without spawning the make program.
 """
 from pathlib import Path
 import argparse
+import shutil
 import struct
 import subprocess
 import sys
@@ -46,18 +48,43 @@ def main() -> None:
         sys.exit(f"missing {binary}")
 
     stage = Path(args.stage)
+    shutil.rmtree(stage, ignore_errors=True)
     install = stage / "install" / "cmake"
     for d in (install / "bin", install / "share" / "cmake-3.28" / "Modules"):
         d.mkdir(parents=True, exist_ok=True)
     (install / "bin" / "cmake").write_bytes(binary.read_bytes())
     (install / "bin" / "cmake").chmod(0o755)
-    for name in ("CMake.cmake", "CMakeSystem.cmake"):
+    # Only the modules a `project(... NONE)` configure needs: the guest
+    # ramfs is backed by the kernel heap, and the full Modules tree (1200
+    # files, 8 MiB) exhausts it during untar.
+    modules = install / "share" / "cmake-3.28" / "Modules"
+    module_files = [
+        "CMake.cmake",
+        "CMakeDetermineSystem.cmake",
+        "CMakeSystem.cmake.in",
+        "CMakeSystemSpecificInitialize.cmake",
+        "CMakeSystemSpecificInformation.cmake",
+        "CMakeGenericSystem.cmake",
+        "CMakeInitializeConfigs.cmake",
+        "CMakePrintSystemInformation.cmake",
+        "Platform/Linux.cmake",
+        "Platform/UnixPaths.cmake",
+    ]
+    for name in module_files:
         src = args.source / "Modules" / name if args.source else None
         if src and src.is_file():
-            (install / "share" / "cmake-3.28" / "Modules" / name).write_bytes(
-                src.read_bytes())
-    (install / "share" / "cmake-3.28" / "Modules" / "CMake.cmake").touch(
-        exist_ok=True)
+            dst = modules / name
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            dst.write_bytes(src.read_bytes())
+    (modules / "CMake.cmake").touch(exist_ok=True)
+    shutil.copyfile(HERE / "cmake" / "Platform-Harvey.cmake",
+                    modules / "Platform" / "Harvey.cmake")
+
+    # A no-op make program: Unix Makefiles generation only needs the path.
+    ninja_c = stage / "make.c"
+    ninja_c.write_text('int main(void){return 0;}\n')
+    subprocess.run([str(HERE / "aarch64-clang"), str(ninja_c),
+                    "-o", str(install / "bin" / "make")], check=True)
 
     (install / "probe.cmake").write_text(
         'message(STATUS "CMSCRIPT-OK ${CMAKE_VERSION}")\n'
@@ -65,6 +92,15 @@ def main() -> None:
         '  message(FATAL_ERROR "version check failed")\n'
         'endif()\n'
         'message(STATUS "CMSCRIPT-DONE")\n')
+
+    if args.source:
+        proj = install / "proj"
+        proj.mkdir(parents=True, exist_ok=True)
+        (proj / "CMakeLists.txt").write_text(
+            "cmake_minimum_required(VERSION 3.20)\n"
+            "project(native NONE)\n"
+            'message(STATUS "NPROJ-OK")\n'
+            "add_custom_target(hello COMMAND ${CMAKE_COMMAND} -E echo hi)\n")
 
     tar = stage / "install.tar"
     with tarfile.open(tar, "w", format=tarfile.USTAR_FORMAT) as t:
@@ -104,6 +140,16 @@ def main() -> None:
     text = script.read_text(errors="replace")
     if "CMSCRIPT-OK 3.28" not in text:
         sys.exit("cmake -P did not run the probe script")
+
+    if args.source:
+        generate = run([
+            "-S", "/initramfs/cmake/proj", "-B", "/initramfs/cmake/proj/build",
+            "-G", "Unix Makefiles",
+            "-DCMAKE_MAKE_PROGRAM=/initramfs/cmake/bin/make",
+        ], "Build files have been written")
+        gtext = generate.read_text(errors="replace")
+        if "NPROJ-OK" not in gtext:
+            sys.exit("native CMake did not parse the project")
     print("native CMake smoke PASS")
 
 

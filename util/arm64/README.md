@@ -992,13 +992,23 @@ cmake version 3.28.3
 CMake suite maintained and supported by Kitware (kitware.com/cmake).
 ```
 
-`test-cmake-native.py` installs it as `/initramfs/cmake/bin/cmake` with
-`share/cmake-3.28/Modules`, then runs `cmake --version` and a `cmake -P`
-script in QEMU (`CMSCRIPT-OK 3.28.3`).  Downloads, archive extraction and
-`cmake --workflow` are not available in lean mode and report a clean error.
+`test-cmake-native.py` installs it as `/initramfs/cmake/bin/cmake` with a
+minimal `share/cmake-3.28/Modules` (including `Platform/Harvey.cmake`), then
+runs `cmake --version`, a `cmake -P` script (`CMSCRIPT-OK 3.28.3`) and a
+`Unix Makefiles` configure/generate of `project(native NONE)` in QEMU:
 
-The `-S/-B` configure/generate path currently hangs when CMake spawns its
-process checks: KWSys uses non-blocking pipe polling (select cannot wait on
-Harvey descriptors yet), and the child's output/exit pipe never wakes the
-parent.  The next piece is APEX descriptor readiness (or a KWSys backend on
-Plan 9's fork/wait) so `execute_process` and generator checks work.
+```text
+-- NPROJ-OK
+-- Configuring done (0.1s)
+-- Generating done (0.0s)
+-- Build files have been written to: /initramfs/cmake/proj/build
+```
+
+Downloads, archive extraction and `cmake --workflow` are not available in
+lean mode and report a clean error.
+
+The Ninja generator is not exercised: it runs `ninja --version` through
+KWSys, whose non-blocking pipe polling needs descriptor readiness that APEX
+does not provide yet.  Unix Makefiles generate without spawning the make
+program.  Building the generated files still needs a guest make or ninja;
+that pairs with the same readiness work (and with `execute_process`).
