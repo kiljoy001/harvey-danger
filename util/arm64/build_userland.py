@@ -54,9 +54,7 @@ EMMC_BASE = 0x5200000
 EMMCFS_BASE = 0x4600000
 GMAC_BASE = 0x4A00000
 GMACFS_BASE = 0x7A00000
-O9DISPLAY_BASE = 0x3A00000
 DISPLAYTEST_BASE = 0x4200000
-O9ASPERA_SCREEN_BASE = 0x4E00000
 O9XHCI_BASE = 0x5600000
 TESTXHCI_BASE = 0x5E00000
 TESTXHCI1_BASE = 0x6600000
@@ -262,8 +260,8 @@ def build_factotum(out: Path, libc: Path) -> tuple[bytes, int]:
     srcdir = ROOT / "sys/src/cmd/auth/factotum"
     names = (
         "apop.c", "chap.c", "confirm.c", "fs.c", "httpdigest.c",
-        "log.c", "p9any.c", "p9cr.c", "p9sk1.c", "dp9ik.c", "pass.c",
-        "rpc.c", "rsa.c", "secstore.c", "util.c", "wep.c",
+        "log.c", "p9any.c", "p9cr.c", "p9sk1.c", "dp9ik.c", "fido.c",
+        "pass.c", "rpc.c", "rsa.c", "secstore.c", "util.c", "wep.c",
     )
     flags = [
         CC, "--target=aarch64-none-elf", "-ffreestanding", "-fno-builtin",
@@ -959,39 +957,6 @@ fail:
 }
 
 /*
- * Serve the ext2 filesystem on the eMMC root partition and mount it.
- * The partition is whatever emmcfs found in the DOS table; the ext2
- * server inherits this namespace so it can open /mnt/emmc/part1.
- */
-static int
-emmcroot(void)
-{
-	char *ext2argv[] = { "/boot/ext2srv", "-F", "-f", "/mnt/emmc/part1",
-			     "ext2", nil };
-	int fd, pid;
-
-	if(access("/mnt/emmc/part1", AEXIST) < 0)
-		return -1;
-	pid = rfork(RFPROC|RFNOWAIT|RFFDG|RFREND);
-	if(pid == 0){
-		exec("/boot/ext2srv", ext2argv);
-		_exits("exec");
-	}
-	if(pid < 0 || waitfor("/srv/ext2", 100) < 0)
-		return -1;
-	create("/mnt/emmcroot", OREAD, DMDIR|0755);
-	fd = open("/srv/ext2", ORDWR);
-	if(fd < 0)
-		return -1;
-	if(mount(fd, -1, "/mnt/emmcroot", MREPL|MCREATE, "") < 0){
-		close(fd);
-		return -1;
-	}
-	close(fd);
-	return 0;
-}
-
-/*
  * Format the data partition once, from the boot archive.  This runs
  * before the re-root so the blob comes from the archive rather than
  * from the ext2 root, where a 14 MiB file crosses the indirect-block
@@ -1036,10 +1001,10 @@ datamount(void)
 	int fd;
 
 	create("/mnt/data", OREAD, DMDIR|0777);
-	fd = open("/srv/data", ORDWR);
+	fd = open("/srv/gefs", ORDWR);
 	if(fd < 0)
 		return -1;
-	if(mount(fd, -1, "/mnt/data", MREPL|MCREATE, "") < 0){
+	if(mount(fd, -1, "/mnt/data", MREPL|MCREATE, "%") < 0){
 		close(fd);
 		return -1;
 	}
@@ -1057,59 +1022,24 @@ datamount(void)
 static int
 dataserve(void)
 {
-	char *dataargv[] = { "/boot/ext2srv", "-F", "-f", "/mnt/emmc/part2",
-			     "data", nil };
+	/*
+	 * The big partition is gefs.  -A allows an unauthenticated
+	 * attach; -S (permissive) lets the admin mount (% spec) bypass
+	 * the permission check on the adm-owned root.
+	 */
+	char *dataargv[] = { "/boot/gefs", "-A", "-S", "-m", "64",
+			     "-f", "/mnt/emmc/part2", nil };
 	int pid;
 
 	if(access("/mnt/emmc/part2", AEXIST) < 0)
 		return -1;
 	pid = rfork(RFPROC|RFNOWAIT|RFFDG|RFREND);
 	if(pid == 0){
-		exec("/boot/ext2srv", dataargv);
+		exec("/boot/gefs", dataargv);
 		_exits("exec");
 	}
-	if(pid < 0 || waitfor("/srv/data", 100) < 0)
+	if(pid < 0 || waitfor("/srv/gefs", 100) < 0)
 		return -1;
-	return 0;
-}
-
-/*
- * Re-root onto the eMMC filesystem.  Everything the old root supplied
- * comes from the image or from a kernel device, so the swap is a single
- * mount on "/" followed by rebinding the per-device trees.  /boot is
- * aliased to /bin so the rest of init keeps working unchanged.
- */
-static int
-reroot(void)
-{
-	int fd;
-
-	if(access("/mnt/emmcroot/bin/rc", AEXIST) < 0)
-		return -1;
-	fd = open("/srv/ext2", ORDWR);
-	if(fd < 0)
-		return -1;
-	if(mount(fd, -1, "/", MREPL|MCREATE, "") < 0){
-		close(fd);
-		return -1;
-	}
-	close(fd);
-
-	create("/boot", OREAD, DMDIR|0755);
-	bind("/bin", "/boot", MREPL|MCREATE);
-	bind("#c", "/dev", MAFTER);
-	bind("#V", "/dev", MAFTER);
-	bind("#e", "/env", MCREATE|MAFTER);
-	bind("#s", "/srv", MREPL|MCREATE);
-	bind("#@", "/mnt", MREPL|MCREATE);
-	bind("#p", "/proc", MAFTER);
-	/*
-	 * The root is read-only: nothing the system does can wear the
-	 * eMMC or leave it dirty.  Scratch space is the kernel's RAM
-	 * filesystem, so /tmp and /mnt are lost on power off by design.
-	 */
-	create("/tmp", OREAD, DMDIR|0777);
-	bind("#@", "/tmp", MREPL|MCREATE);
 	return 0;
 }
 
@@ -1202,37 +1132,27 @@ main(int argc, char **argv)
 			say("HARVEY-ARM64 EMMCFS FAIL\n");
 		else if(emmctest() == 0){
 			say("HARVEY-ARM64 EMMCFS PASS\n");
-			if(emmcroot() == 0){
-				say("HARVEY-ARM64 EMMC-ROOT PASS\n");
-				if(provision() == 0)
-					say("HARVEY-ARM64 EMMC-PROVISION PASS\n");
-				if(dataserve() == 0)
-					say("HARVEY-ARM64 EMMC-DATASRV PASS\n");
-				if(reroot() == 0){
-					say("HARVEY-ARM64 EMMC-REROOT PASS\n");
-					if(datamount() == 0)
-						say("HARVEY-ARM64 EMMC-DATA PASS\n");
-					else
-						say("HARVEY-ARM64 EMMC-DATA SKIP\n");
-				}else
-					say("HARVEY-ARM64 EMMC-REROOT SKIP\n");
-			}else
-				say("HARVEY-ARM64 EMMC-ROOT SKIP\n");
+			/*
+			 * The eMMC is one gefs filesystem.  Format the data
+			 * partition if it is blank, start the server, and mount
+			 * it at /mnt/data.  The root stays the boot-archive
+			 * initramfs, so there is no separate root filesystem and
+			 * no re-root.
+			 */
+			if(provision() == 0)
+				say("HARVEY-ARM64 EMMC-PROVISION PASS\n");
+			else
+				say("HARVEY-ARM64 EMMC-PROVISION SKIP\n");
+			if(dataserve() == 0)
+				say("HARVEY-ARM64 EMMC-DATASRV PASS\n");
+			else
+				say("HARVEY-ARM64 EMMC-DATASRV FAIL\n");
+			if(datamount() == 0)
+				say("HARVEY-ARM64 EMMC-DATA PASS\n");
+			else
+				say("HARVEY-ARM64 EMMC-DATA SKIP\n");
 		}else
 			say("HARVEY-ARM64 EMMCFS FAIL\n");
-	}
-	{
-		char *dispargv[] = { "/boot/o9display", nil };
-		pid = rfork(RFPROC|RFNOWAIT|RFFDG|RFENVG|RFREND|RFNOTEG);
-		if(pid == 0){
-			exec(dispargv[0], dispargv);
-			say("HARVEY-ARM64 DISPLAY-SERVICE EXEC FAIL\n");
-			_exits("exec");
-		}
-		if(pid < 0)
-			say("HARVEY-ARM64 DISPLAY-SERVICE FAIL\n");
-		else
-			say("HARVEY-ARM64 DISPLAY-SERVICE LAUNCHED\n");
 	}
 	{
 		char ctl[256];
@@ -1374,10 +1294,6 @@ main(int argc, char **argv)
 }
 ''', INIT_BASE, libc)
     o9drvman, _ = validate_elf(ROOT / "build/arm64-o9/o9drvman", O9DRVMAN_BASE)
-    o9display, _ = validate_elf(ROOT / "build/arm64-o9/o9display",
-                                O9DISPLAY_BASE)
-    asperascreen, _ = validate_elf(ROOT / "build/arm64-o9/o9aspera-screen",
-                                   O9ASPERA_SCREEN_BASE)
     o9xhci, _ = validate_elf(ROOT / "build/arm64-o9/o9xhci", O9XHCI_BASE)
     testxhci, _ = validate_elf(ROOT / "build/arm64-o9/test-xhci", TESTXHCI_BASE)
     testxhci1, _ = validate_elf(ROOT / "build/arm64-o9/test-xhci1", TESTXHCI1_BASE)
@@ -2044,8 +1960,6 @@ main(int argc, char **argv)
     emit_array(lines, "arm64execstubelf", stub)
     emit_array(lines, "arm64initelf", init)
     emit_array(lines, "arm64o9drvmanelf", o9drvman)
-    emit_array(lines, "arm64o9displayelf", o9display)
-    emit_array(lines, "arm64o9asperascreenelf", asperascreen)
     emit_array(lines, "arm64o9xhcielf", o9xhci)
     emit_array(lines, "arm64testxhcielf", testxhci)
     emit_array(lines, "arm64testxhci1elf", testxhci1)
@@ -2094,8 +2008,6 @@ main(int argc, char **argv)
     args.output.write_text("\n".join(lines))
     programs = {
         "o9drvman": o9drvman,
-        "o9display": o9display,
-        "o9aspera-screen": asperascreen,
         "o9xhci": o9xhci,
         "test-xhci": testxhci,
         "test-xhci1": testxhci1,

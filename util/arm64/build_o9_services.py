@@ -86,21 +86,6 @@ SERVICES = {
         ],
         "base": 0x600000,
     },
-    "o9display": {
-        "source": ROOT / "sys/src/cmd/o9display/service.o9",
-        "extra": [],
-        "base": 0x3A00000,
-    },
-    "o9aspera": {
-        "source": ROOT / "sys/src/cmd/o9aspera/main.o9",
-        "extra": [],
-        "base": 0x4600000,
-    },
-    "o9aspera-screen": {
-        "source": ROOT / "sys/src/cmd/o9aspera/screen.o9",
-        "extra": [],
-        "base": 0x4E00000,
-    },
     "o9xhci": {
         "source": ROOT / "sys/src/cmd/o9xhci/service.o9",
         "extra": [

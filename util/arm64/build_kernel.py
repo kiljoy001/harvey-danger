@@ -166,6 +166,8 @@ def main() -> None:
         flags.append("-DARM64_PIN_USER")
     if os.environ.get("ARM64_AFFINITY") == "1":
         flags.append("-DARM64_AFFINITY")
+    if os.environ.get("ARM64_NO_GMAC") == "1":
+        flags.append("-DARM64_NO_GMAC")
     for path in (OUT, ARCH, ROOT / "sys/src/9/port", ROOT / "sys/src/9/ip",
                  ROOT / "aarch64/include", ROOT / "sys/include",
                  ROOT / "sys/src/libc/9syscall"):
