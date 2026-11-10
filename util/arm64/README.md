@@ -260,7 +260,9 @@ affinity API its threading code uses (`cpu_set_t`, `CPU_ALLOC`,
 `CPU_ALLOC_SIZE`, `sched_getaffinity`) is in `util/libcxx/sched.h`.
 `install-sdk.py --with-tools` then ships `clangd`, and
 `clangd --check=<file> --compile-commands-dir=<dir>` exercises parsing,
-diagnostics and the index without an LSP client.
+diagnostics and the index without an LSP client.  `test-clangd.py` builds a
+small project, runs that check in QEMU, and writes a board Image with
+`--board-image`; the v1.1 board reported `All checks completed, 0 errors`.
 
 The heap tail accounting in `qmalloc` was wrong: after installing a new
 physical chunk, `morecore()` added only the requested units to `tailsize`
