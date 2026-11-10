@@ -273,7 +273,11 @@ without sanitizer_common's Linux syscall layer.  The minimal variant,
 `-fsanitize=undefined -fsanitize-minimal-runtime`, links compiler-rt's
 `libclang_rt.ubsan_minimal.a` and prints the check and caller PC.  Both
 were verified in QEMU with signed-overflow and out-of-bounds programs.
-ASan is not built yet: its fixed shadow mapping needs a guest address-space
+A guest `clang++ -fsanitize=undefined` compile of the same test printed
+`UBGUEST-COMPILE status 0` and
+`/initramfs/t/overflow.c:3:31: runtime error: add_overflow ...`, so the
+resource-directory auto-link path works in the guest as well.  ASan is not
+built yet: its fixed shadow mapping needs a guest address-space
 decision and a port of the Linux syscall/interceptor layer.
 
 The heap tail accounting in `qmalloc` was wrong: after installing a new
