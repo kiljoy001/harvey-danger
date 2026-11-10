@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import json
 import os
 import sys
 import subprocess
@@ -31,32 +32,19 @@ CFLAGS = [
     f"-I{os.path.join(REPO_ROOT, 'amd64/include')}",
     f"-I{os.path.join(REPO_ROOT, 'sys/include')}",
     f"-I{LIBAUTHSRV_DIR}",
-]
-
-SOURCES = [
-    "_asgetticket.c",
-    "_asrdresp.c",
-    "authdial.c",
-    "convA2M.c",
-    "convM2A.c",
-    "convM2PR.c",
-    "convM2T.c",
-    "convM2TR.c",
-    "convPR2M.c",
-    "convT2M.c",
-    "convTR2M.c",
-    "nvcsum.c",
-    "opasstokey.c",
-    "passtokey.c",
-    "readnvram.c",
+    f"-I{os.path.join(LIBAUTHSRV_DIR, 'dp9ik')}",
+    f"-I{os.path.join(REPO_ROOT, 'sys/src/cmd/auth/factotum')}",
 ]
 
 def main():
     os.makedirs(BUILD_DIR, exist_ok=True)
+    with open(os.path.join(LIBAUTHSRV_DIR, "libauthsrv.json"), "r") as f:
+        conf = json.load(f)[0]
+
     objs = []
-    for s in SOURCES:
+    for s in conf["SourceFiles"]:
         src = os.path.join(LIBAUTHSRV_DIR, s)
-        base = os.path.splitext(s)[0]
+        base = s.replace("/", "_").replace(".c", "")
         obj = os.path.join(BUILD_DIR, f"{base}.o")
         objs.append(obj)
         cmd = [CC] + CFLAGS + [src, "-o", obj]

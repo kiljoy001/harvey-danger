@@ -14,15 +14,15 @@ function start_vps_root() int64 {
         char *args[] = {"gefs", "-A", "-m", "32", "-n", "asperagefs",
                         "-f", "/dev/initrd", nil};
         char *image;
-        char *rargv[] = {"rio", "-t", "-s", "-i", "rc /lib/aspera/start.rc", nil};
+        char *rargv[] = {"rio", "-f", "/lib/font/bit/pelm/latin1.8.font", "-t", "-s", "-i", "rc /lib/aspera/start.rc", nil};
         char *rcargv[] = {"rc", "-i", nil};
         char *dirs[] = {"/home", "/tmp", "/var", "/n", "/n/host", "/srv",
-                        "/dev", "/fd", "/proc", "/mnt", "/mnt/o9", "/net", "/vps",
+                        "/dev", "/fd", "/proc", "/mnt", "/mnt/o9", "/mnt/plumb", "/mnt/factotum", "/net", "/vps",
                         "/vps/ram", "/vps/ram/home", "/vps/ram/tmp",
                         "/vps/ram/var", "/vps/ram/n", "/vps/ram/n/host",
                         "/vps/host", "/vps/host/clip", "/vps/host/downloads",
                         "/vps/host/fetch", "/vps/host/net", "/vps/host/uploads",
-                        "/vps/host/usb", "/vps/host/app", nil};
+                        "/vps/host/usb", "/vps/host/fido", "/vps/host/app", nil};
         char *value;
         Dir *d;
         int fd, pid, i, srvfd;
@@ -238,10 +238,57 @@ function start_vps_root() int64 {
         if(value == nil || value[0] == 0)
             putenv("sysname", "aspera");
         free(value);
+        value = getenv("home");
+        if(value == nil || value[0] == 0)
+            putenv("home", "/home");
+        free(value);
+        value = getenv("font");
+        if(value == nil || value[0] == 0)
+            putenv("font", "/lib/font/bit/pelm/latin1.8.font");
+        free(value);
 
         chdir("/");
+        /* Plumber must share Rio's namespace and environment: new windows
+           inherit /mnt/plumb, and plumber's rio-open children need $wsys. */
+        pid = rfork(RFPROC|RFFDG);
+        if(pid == 0){
+            char *pargv[] = {"plumber", "-p", "/lib/aspera/plumbing", nil};
+            exec("/bin/plumber", pargv);
+            print("vps: plumber exec failed: %r\n");
+            _exits("plumber exec failed");
+        }
+        if(pid > 0){
+            Waitmsg *w = wait();
+            if(w != nil && w->msg[0] == 0 && access("/mnt/plumb/send", AWRITE) >= 0)
+                print("vps: plumber ready\n");
+            else
+                print("vps: plumber failed: %s\n", w != nil ? w->msg : "wait failed");
+            free(w);
+        }else
+            print("vps: plumber fork failed: %r\n");
+
+        /* Start factotum so /mnt/factotum is mounted in the root namespace
+           shared by Rio, rc shells, and the fido hardware fob utility. */
+        pid = rfork(RFPROC|RFFDG);
+        if(pid == 0){
+            char *fargv[] = {"factotum", "-n", nil};
+            exec("/bin/auth/factotum", fargv);
+            exec("/bin/factotum", fargv);
+            print("vps: factotum exec failed: %r\n");
+            _exits("factotum exec failed");
+        }
+        if(pid > 0){
+            Waitmsg *w = wait();
+            if(w != nil && w->msg[0] == 0 && access("/mnt/factotum/ctl", AREAD) >= 0)
+                print("vps: factotum ready at /mnt/factotum\n");
+            else
+                print("vps: factotum failed: %s\n", w != nil ? w->msg : "wait failed");
+            free(w);
+        }else
+            print("vps: factotum fork failed: %r\n");
+
         print("vps: starting Rio\n");
-        pid = rfork(RFPROC|RFFDG|RFENVG);
+        pid = rfork(RFPROC|RFFDG);
         if(pid == 0){
             exec("/bin/rio", rargv);
             print("vps: rio exec failed: %r\n");

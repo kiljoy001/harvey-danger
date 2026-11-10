@@ -45,6 +45,7 @@ prototab[] =
 	&p9sk1,
 	&p9sk2,
 	&dp9ik,
+	&fido,
 	&pass,
 /*	&srs, */
 	&rsa,
@@ -390,10 +391,12 @@ fsopen(Req *r)
 	if(i < nelem(dirtab)){
 		if(dirtab[i].perm & DMEXCL)
 			p = &inuse[i];
-		if(strcmp(r->fid->uid, owner) == 0)
-			perm = dirtab[i].perm>>6;
-		else
-			perm = dirtab[i].perm;
+		if(strcmp(r->fid->uid, owner) != 0){
+			char *cur = getuser();
+			if(cur != nil && cur[0] != 0)
+				owner = estrdup(cur);
+		}
+		perm = dirtab[i].perm>>6;
 	}else
 		perm = 5;
 
@@ -412,7 +415,7 @@ fsopen(Req *r)
 
 	r->fid->aux = fss = emalloc(sizeof(Fsstate));
 	fss->phase = Notstarted;
-	fss->sysuser = r->fid->uid;
+	fss->sysuser = owner;
 	fss->attr = nil;
 	strcpy(fss->err, "factotum/fs.c no error");
 	respond(r, nil);

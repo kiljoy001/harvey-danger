@@ -17,6 +17,7 @@
 			"p9cr.c",
 			"p9sk1.c",
 			"dp9ik.c",
+			"fido.c",
 			"pass.c",
 			"rpc.c",
 			"rsa.c",
