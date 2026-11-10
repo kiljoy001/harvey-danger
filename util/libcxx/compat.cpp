@@ -120,12 +120,6 @@ extern "C" int getpagesize(void) {
 }
 
 
-extern "C" int poll(struct pollfd *fds, nfds_t n, int timeout) {
-    (void)fds; (void)n; (void)timeout;
-    errno = 38 /* ENOSYS */;
-    return -1;
-}
-
 /* Harvey has no resource limits; report an 8 MiB stack like POSIX defaults. */
 extern "C" int getrlimit(int resource, struct rlimit *rl) {
     if (!rl) { errno = 22 /* EINVAL */; return -1; }

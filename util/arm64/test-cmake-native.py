@@ -10,9 +10,9 @@ lean-cmake.py, which replaces bundled cURL/libarchive/libuv with stubs.
 
 `--binary` skips the build and tests an existing lean cmake.
 
-The Ninja generator is not exercised: it runs `ninja --version` through
-KWSys, whose pipe polling needs descriptor readiness that APEX does not
-provide yet.  Unix Makefiles generate without spawning the make program.
+The Ninja generator is not exercised: CMake's `execute_process` path hangs
+inside KWSys' fork/exec plumbing before it reaches select.  Unix Makefiles
+generate without spawning the make program.
 """
 from pathlib import Path
 import argparse

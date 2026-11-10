@@ -59,7 +59,6 @@ def main() -> None:
         "-DCMAKE_BUILD_TYPE=Release",
         "-DHARVEY_LEAN_CMAKE=ON",
         "-DCMake_ENABLE_DEBUGGER=OFF",
-        "-DCMAKE_C_FLAGS=-DKWSYSPE_USE_SELECT=0",
         "-DBUILD_CursesDialog=OFF", "-DBUILD_QtDialog=OFF",
         "-DBUILD_TESTING=OFF", "-DCMAKE_USE_OPENSSL=OFF",
         "-DCMAKE_DL_LIBS=",

@@ -1007,8 +1007,39 @@ runs `cmake --version`, a `cmake -P` script (`CMSCRIPT-OK 3.28.3`) and a
 Downloads, archive extraction and `cmake --workflow` are not available in
 lean mode and report a clean error.
 
-The Ninja generator is not exercised: it runs `ninja --version` through
-KWSys, whose non-blocking pipe polling needs descriptor readiness that APEX
-does not provide yet.  Unix Makefiles generate without spawning the make
-program.  Building the generated files still needs a guest make or ninja;
-that pairs with the same readiness work (and with `execute_process`).
+The Ninja generator is not exercised yet: CMake's `execute_process` and
+`ninja --version` path hangs inside KWSys' fork/exec plumbing *before* it
+reaches select.  Unix Makefiles generation does not spawn the make program,
+so it works.  Building the generated files still needs a guest make or
+ninja, which pairs with fixing that KWSys spawn path.
+
+## Descriptor readiness
+
+`select()`, `pselect()`, `poll()` and `ppoll()` live in
+`apex/src/ap/bsd/select.c`.  Plan 9 has no "would block" bit, so a probe is
+an `rfork(RFPROC|RFMEM)` child that blocks in `read()` on the descriptor
+and parks one byte in `Fdinfo.pbuf`; the following `read()` returns that
+byte first.  EOF is recorded and reported as `POLLHUP`.  Regular files and
+directories are always readable; write readiness is optimistic.  A probe
+that outlives `close()` notices the Fdinfo generation change and drops its
+result.
+
+`test-select.py` covers timeout, late data, a writer child, EOF and a
+regular file:
+
+```text
+SEL-TIMEOUT 0 1
+SEL-READY 1 1
+POLL-TIMEOUT 0 1
+POLL-READY 1 1
+POLL-CHILD 1 1
+POLL-EOF 1 1 1
+POLL-FILE 1 1
+select/poll PASS
+```
+
+Known limit: a probe already blocked when the peer end is closed after a
+`fork()` can be woken by devpipe's hangup (`qref` counts opens, and a copied
+fd group does not increment it).  Poll after spawning children, as KWSys
+and ninja do, and the probe sees the child's data.  The probe uses one
+16 KiB stack per descriptor, allocated lazily and reused.
