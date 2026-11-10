@@ -264,8 +264,8 @@ diagnostics and the index without an LSP client.  `test-clangd.py` builds a
 small project, runs that check in QEMU, and writes a board Image with
 `--board-image`; the v1.1 board reported `All checks completed, 0 errors`.
 
-`install-sdk.py --with-sanitizers` (or `build_sanitizers.py`) builds two
-UBSan runtimes into the clang resource directory.  The normal
+`install-sdk.py --with-sanitizers` (or `build_sanitizers.py`) builds the
+UBSan and ASan runtimes into the clang resource directory.  The normal
 `-fsanitize=undefined` links `libclang_rt.ubsan_standalone.a`, implemented
 in `util/arm64/ubsan_standalone.c`: it reads the compiler's handler
 descriptors directly and prints `file:line:col: runtime error: <check>`
@@ -276,9 +276,18 @@ were verified in QEMU with signed-overflow and out-of-bounds programs.
 A guest `clang++ -fsanitize=undefined` compile of the same test printed
 `UBGUEST-COMPILE status 0` and
 `/initramfs/t/overflow.c:3:31: runtime error: add_overflow ...`, so the
-resource-directory auto-link path works in the guest as well.  ASan is not
-built yet: its fixed shadow mapping needs a guest address-space
-decision and a port of the Linux syscall/interceptor layer.
+resource-directory auto-link path works in the guest as well.
+
+AddressSanitizer is a minimal user-space runtime in `util/arm64/asan_rt.c`,
+shipped as `libclang_rt.asan.a`.  It reserves the 64 GiB shadow at
+`0x1000000000` (the M0 probe) and a 64 GiB heap at `0x2000000000`, and
+poisons `malloc`/`free` redzones and registered globals.  It deliberately
+does **not** install a `SIGSEGV` handler: the ARM64 kernel currently turns
+an unhandled user fault into `pexit("user fault")`, so wild-pointer and
+stack-guard reports are unavailable without a kernel change.  The
+compiler-instrumented heap, global and use-after-free checks do not need a
+signal.  `test-asan.py` runs the five-case matrix (C and C++); there are no
+stack traces, no stack fake frames, no quarantine and no signal handling.
 
 The heap tail accounting in `qmalloc` was wrong: after installing a new
 physical chunk, `morecore()` added only the requested units to `tailsize`
