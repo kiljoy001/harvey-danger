@@ -340,7 +340,7 @@ setupfamily(Family *f)
 void
 main(int argc, char **argv)
 {
-	int fd, hosttest, kerneltest, console, famidx;
+	int fd, hosttest, kerneltest, console, nohw, famidx;
 	char *fname;
 	Family *f;
 	Dtb *dtb;
@@ -348,6 +348,7 @@ main(int argc, char **argv)
 	hosttest = 0;
 	kerneltest = 0;
 	console = 0;
+	nohw = 0;
 	fname = "emmc";
 	ARGBEGIN{
 	case 'd':
@@ -362,11 +363,14 @@ main(int argc, char **argv)
 	case 'c':
 		console = 1;
 		break;
+	case 'n':
+		nohw = 1;
+		break;
 	case 'f':
 		fname = ARGF();
 		break;
 	default:
-		fprint(2, "usage: lklboot [-c] [-d] [-f family] [-s] [-t] "
+		fprint(2, "usage: lklboot [-c] [-d] [-f family] [-n] [-s] [-t] "
 			  "[platform-node]\n");
 		exits("usage");
 	}ARGEND
@@ -425,17 +429,20 @@ main(int argc, char **argv)
 	}
 	say("lklboot: init ok\n");
 	setupfamily(f);
-	if(mapfamily(f) < 0){
+	if(!nohw && mapfamily(f) < 0){
 		say("lklboot: device map failed\n");
 		exits("map");
 	}
+	if(nohw)
+		say("lklboot: hardware mapping skipped\n");
 	lkl_set_dtb(dtb->start, dtb->end - dtb->start);
 	if(lkl_start_kernel("mem=%s", f->mem) < 0){
 		say("lklboot: lkl_start_kernel failed\n");
 		exits("start");
 	}
 	say("lklboot: kernel up\n");
-	watchfamily(f);
+	if(!nohw)
+		watchfamily(f);
 
 	/*
 	 * The USB family's job starts after the kernel is up: wait for the

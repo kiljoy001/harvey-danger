@@ -24,7 +24,7 @@ void
 main(void)
 {
 	char log[] = "/dev/lkllog", path[] = "/boot/lklboot", debug[] = "-d";
-	char *av[] = {path, HOST_ARG KT_ARG DEBUG_ARG nil};
+	char *av[] = {path, FAMILY_ARG NOHW_ARG HOST_ARG KT_ARG DEBUG_ARG nil};
 	char buf[4096];
 	int fd, n, pid, i;
 
@@ -79,11 +79,14 @@ main(void)
 
 def make_archive(out: Path, elf: Path, libc: Path, debug: bool,
                  settle_ms: int = 5000, hosttest: bool = False,
-                 kerneltest: bool = False, noemmc: bool = False) -> Path:
+                 kerneltest: bool = False, noemmc: bool = False,
+                 usb: bool = False) -> Path:
     out.mkdir(parents=True, exist_ok=True)
     source = LAUNCHER.replace("DEBUG_ARG", "debug," if debug else "")
     source = source.replace("HOST_ARG", '"-s",' if hosttest else "")
     source = source.replace("KT_ARG", '"-t",' if kerneltest else "")
+    source = source.replace("FAMILY_ARG", '"-f", "usb",' if usb else "")
+    source = source.replace("NOHW_ARG", '"-n",' if usb else "")
     source = source.replace("SETTLE_MS", str(settle_ms))
     launcher, _ = build_userland.build_program(out, "lklrun", source,
                                               0x200000, libc)
@@ -126,6 +129,8 @@ def main() -> None:
                     help="run the host-layer selftest (-s) instead of LKL")
     ap.add_argument("--kerneltest", action="store_true",
                     help="run the kernel-side nanosleep selftest (-t) after boot")
+    ap.add_argument("--usb", action="store_true",
+                    help="start the USB family with hardware mapping skipped")
     ap.add_argument("--noemmc", action="store_true",
                     help="let the LKL emmc family own the controller "
                          "(skip native emmcfs/gefs)")
@@ -141,7 +146,7 @@ def main() -> None:
         ap.error("--settle-ms must be between 0 and 300000")
     archive = make_archive(args.out, args.elf, args.libc, args.debug,
                            args.settle_ms, args.hosttest, args.kerneltest,
-                           args.noemmc)
+                           args.noemmc, args.usb)
     if args.archive_only:
         print(archive)
         return
@@ -152,12 +157,17 @@ def main() -> None:
     # LKL is a boot file started from the shell (not init): give the guest
     # time to reach rc, then type "lklrun".
     send = [(25.0, "/boot/lklrun\n")]
-    transcript = boot_until(command, "lklboot: halted", idle=args.deadline,
+    stop = "LKL-TEST observation finished" if args.usb else "lklboot: halted"
+    transcript = boot_until(command, stop, idle=args.deadline,
                             total=max(args.deadline, 120),
                             limit=4 * 1024 * 1024, send=send)
     log = args.out / "boot.log"
     log.write_text(transcript)
-    markers = ("Linux version", "lklboot: kernel up", "lklboot: halted")
+    if args.usb:
+        markers = ("lklboot: family usb", "lklboot: hardware mapping skipped",
+                   "lklboot: kernel up")
+    else:
+        markers = ("Linux version", "lklboot: kernel up", "lklboot: halted")
     missing = [marker for marker in markers if marker not in transcript]
     if missing:
         raise SystemExit(f"LKL boot failed: missing {missing}; see {log}")
