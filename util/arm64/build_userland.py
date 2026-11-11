@@ -41,6 +41,7 @@ ECHO_BASE = 0x2E00000
 CAT_BASE = 0x3200000
 LS_BASE = 0x3600000
 RNGFS_BASE = 0x3A00000
+WDTFS_BASE = 0x4E00000
 RTC_BASE = 0x3E00000
 PING_BASE = 0x8200000
 SDPROBE_BASE = 0x8600000
@@ -389,6 +390,11 @@ def build_pmicfs(out: Path, libc: Path) -> tuple[bytes, int]:
 def build_rngfs(out: Path, libc: Path) -> tuple[bytes, int]:
     return build_fs(out, libc, "rngfs",
                     ROOT / "sys/src/cmd/rngfs/rngfs.c", RNGFS_BASE)
+
+
+def build_wdtfs(out: Path, libc: Path) -> tuple[bytes, int]:
+    return build_fs(out, libc, "wdtfs",
+                    ROOT / "sys/src/cmd/wdtfs/wdtfs.c", WDTFS_BASE)
 
 
 def build_emmcfs(out: Path, libc: Path) -> tuple[bytes, int]:
@@ -1312,6 +1318,7 @@ main(int argc, char **argv)
     i2cfs, _ = build_i2cfs(out, libc)
     pmicfs, _ = build_pmicfs(out, libc)
     rngfs, _ = build_rngfs(out, libc)
+    wdtfs, _ = build_wdtfs(out, libc)
     mkdirbin, _ = build_elf(out, libc, "mkdir", ROOT / "sys/src/cmd/mkdir.c",
                             MKDIR_BASE, [])
     mount9bin, _ = build_elf(out, libc, "mount9", ROOT / "sys/src/cmd/mount9.c",
@@ -1979,6 +1986,7 @@ main(int argc, char **argv)
     emit_array(lines, "arm64i2cfself", i2cfs)
     emit_array(lines, "arm64pmicfself", pmicfs)
     emit_array(lines, "arm64rngfself", rngfs)
+    emit_array(lines, "arm64wdtfself", wdtfs)
     emit_array(lines, "arm64mkdirelf", mkdirbin)
     emit_array(lines, "arm64mountelf", mountbin)
     emit_array(lines, "arm64mount9elf", mount9bin)
@@ -2028,6 +2036,7 @@ main(int argc, char **argv)
         "i2cfs": i2cfs,
         "pmicfs": pmicfs,
         "rngfs": rngfs,
+        "wdtfs": wdtfs,
         "mkdir": mkdirbin,
         "mount": mountbin,
         "mount9": mount9bin,

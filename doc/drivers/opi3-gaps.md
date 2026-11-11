@@ -32,6 +32,7 @@ rows below describe the native `o9xhci` fallback and its parity-oracle role.
 - RK IOMMU two-level tables, used by VOP2.
 - NPU register/task format decoded in `9rock`; vendor driver exists.
 - TRNG: `rngfs` (Crypto V2) exposes `/srv/rng/{random,status,ctl}`.
+- Watchdog: `wdtfs` exposes `/srv/wdt/{status,ctl}`.
 
 ## SoC and controller blocks
 
@@ -44,7 +45,7 @@ rows below describe the native `o9xhci` fallback and its parity-oracle role.
 | PWM0-15 | FDT class recognized | No PWM driver; eDP backlight, fan, IR, header | P1 |
 | SARADC | FDT class recognized | No SARADC/key driver; recovery key, header ADC | P2 |
 | TSADC / thermal | FDT class recognized; PMIC reports temperature | No SoC TSADC, trip points, thermal zones | P1 |
-| Watchdog | FDT class recognized | No RK WDT driver | P1 |
+| Watchdog | `wdtfs` reports CR/TORR/CCVR and accepts disable/ping/enable | Board policy: timeout value derived from the WDT clock | P1 |
 | TRNG | `rngfs` serves `/srv/rng` from the Crypto V2 block (32-byte batches, masked control) | Board read test; enable CRU TRNG clocks/reset if U-Boot leaves them off | P1 |
 | Crypto engine | SoC block | No AES/SHA offload driver | P3 |
 | eFuse / OTP | Read via U-Boot/Linux only | No Harvey efuse driver; lot code is not a serial | P3 |
