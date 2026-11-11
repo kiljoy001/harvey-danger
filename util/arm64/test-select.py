@@ -15,6 +15,7 @@ import sys
 
 HERE = Path(__file__).resolve().parent
 SOURCE = HERE / "testdata" / "selectprobe.c"
+WSOURCE = HERE / "testdata" / "wpollprobe.c"
 
 EXPECT = [
     "SEL-TIMEOUT 0 1",
@@ -69,6 +70,27 @@ def main() -> None:
             if line.startswith(("SEL", "POLL")):
                 print("   ", line)
         sys.exit("missing select/poll results: " + ", ".join(missing))
+
+    # Write side: a blocked writer must make POLLOUT report not ready.
+    wdir = stage / "wpoll"
+    wdir.mkdir(exist_ok=True)
+    wbin = wdir / "wpollprobe"
+    subprocess.run([str(HERE / "aarch64-clang"), str(WSOURCE),
+                    "-o", str(wbin)], check=True)
+    subprocess.run(["llvm-strip", "--strip-all", str(wbin)], check=True)
+    wrunner = wdir / "runner.elf"
+    subprocess.run([sys.executable, str(HERE / "mkrun.py"), str(wbin),
+                    "--output", str(wrunner)], check=True)
+    wdump = wdir / "log"
+    subprocess.run([
+        sys.executable, str(HERE / "test_apex_boot.py"),
+        "--elf", str(wrunner), "--marker", "WPOLL-IDLE 1",
+        "--mem", str(args.mem), "--smp", str(args.smp),
+        "--deadline", str(args.deadline), "--dump", str(wdump),
+    ], check=True)
+    wtext = wdump.read_text(errors="replace")
+    if "WPOLL-BUSY 0 1" not in wtext:
+        sys.exit("blocked writer did not suppress POLLOUT")
     print("select/poll PASS")
 
 

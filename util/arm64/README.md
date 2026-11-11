@@ -1041,10 +1041,13 @@ an `rfork(RFPROC|RFMEM)` child that blocks in `read()` on the descriptor
 and fills a 4 KiB per-fd buffer; the following `read()` drains it (a short
 read keeps the remainder).  EOF is recorded and reported as `POLLHUP`.
 Regular files and directories are always readable.  Write readiness is
-optimistic because Plan 9 exposes no queue-full state, but access mode is
-respected: a read-only descriptor is reported with POLLERR rather than
-POLLOUT (and a write-only one with POLLERR for read events).  A probe that
-outlives `close()` notices the Fdinfo generation change and drops its result.
+optimistic because Plan 9 exposes no queue-full state, but two APEX facts
+are reported: access mode (a read-only descriptor gives POLLERR rather than
+POLLOUT) and `Fdinfo.pbusy` (while a writer is blocked on the fd, POLLOUT is
+not reported).  Threads share `_fdinfo`, so a blocked writer in one thread
+suppresses writability in another; a writer in a separately forked process
+does not.  A probe that outlives `close()` notices the generation change and
+drops its result.
 
 This is deliberate: Harvey does not grow a Linux-style queue-state syscall.
 Plan 9 programs either do a blocking write or use libthread's `alt`/`ioproc`;
