@@ -1069,4 +1069,6 @@ Known limit: a probe already blocked when the peer end is closed after a
 fd group does not increment it).  Poll after spawning children, as KWSys
 and ninja do, and the probe sees the child's data.  A probe uses one
 16 KiB stack and one 4 KiB buffer per descriptor, allocated lazily and
-reused; a descriptor closed while a probe is still blocked leaks both.
+reused.  A probe whose descriptor is closed while it is blocked is put on
+a small orphan list and its stack/buffer are freed once waitpid confirms
+it exited.
