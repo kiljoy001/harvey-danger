@@ -178,11 +178,18 @@ int remove(const char *);
 #undef sleep
 
 extern "C" {
-ssize_t write(int, const void *, size_t);
-ssize_t read(int, void *, size_t);
-int close(int);
-int pipe(int *);
-int dup(int);
+/* APEX's real entry points.  Keep the POSIX names as inline wrappers so
+ * the compiler can take their address without binding to Plan 9 libc's
+ * raw syscalls, which bypass _fdinfo (probe pushback, cloexec). */
+static inline ssize_t write(int d, const void *b, size_t n) {
+    return __write(d, b, n);
+}
+static inline ssize_t read(int d, void *b, size_t n) {
+    return __read(d, b, n);
+}
+static inline int close(int d) { return __close(d); }
+static inline int pipe(int *p) { return __pipe(p); }
+static inline int dup(int d) { return __dup(d); }
 int chdir(const char *);
 unsigned int alarm(unsigned int);
 unsigned int sleep(unsigned int);

@@ -407,3 +407,55 @@
      /* Select's timeout expired.  */
      wd->Expired = 1;
      return 1;
+--- a/Source/cmGeneratedFileStream.cxx	2024-02-05 07:28:25.000000000 -0800
++++ b/Source/cmGeneratedFileStream.cxx	2026-11-10 15:59:49.307546169 -0800
+@@ -28,7 +28,11 @@
+ cmGeneratedFileStream::cmGeneratedFileStream(std::string const& name,
+                                              bool quiet, Encoding encoding)
+   : cmGeneratedFileStreamBase(name)
++#ifdef HARVEY
++  , Stream(this->Name.c_str()) // NOLINT(cmake-use-cmsys-fstream)
++#else
+   , Stream(this->TempName.c_str()) // NOLINT(cmake-use-cmsys-fstream)
++#endif
+ {
+   // Check if the file opened.
+   if (!*this && !quiet) {
+@@ -66,6 +70,12 @@
+   // Store the file name and construct the temporary file name.
+   this->cmGeneratedFileStreamBase::Open(name);
+ 
++#ifdef HARVEY
++  /* Write in place: APEX's rename() is copy+unlink and the temporary
++     replacement path loses the file. */
++  this->TempName = this->Name;
++#endif
++
+   // Open the temporary output file.
+   if (binaryFlag) {
+     this->Stream::open( // NOLINT(cmake-use-cmsys-fstream)
+@@ -97,7 +107,13 @@
+ 
+ void cmGeneratedFileStream::SetCopyIfDifferent(bool copy_if_different)
+ {
++#ifdef HARVEY
++  /* APEX's rename path is copy+unlink; the temp/replace dance loses the
++     file on Harvey.  Write generated files in place instead. */
++  (void)copy_if_different;
++#else
+   this->CopyIfDifferent = copy_if_different;
++#endif
+ }
+ 
+ void cmGeneratedFileStream::SetCompression(bool compression)
+@@ -152,6 +168,10 @@
+ 
+ bool cmGeneratedFileStreamBase::Close()
+ {
++#ifdef HARVEY
++  /* The stream wrote directly to Name; nothing to rename or remove. */
++  return false;
++#endif
+   bool replaced = false;
+ 
+   std::string resname = this->Name;

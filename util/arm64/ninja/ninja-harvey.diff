@@ -1,0 +1,79 @@
+diff --git a/src/disk_interface.cc b/src/disk_interface.cc
+index e73d901..f7e5ca8 100644
+--- a/src/disk_interface.cc
++++ b/src/disk_interface.cc
+@@ -212,7 +212,7 @@ TimeStamp RealDiskInterface::Stat(const string& path, string* err) const {
+ #elif defined(__APPLE__)
+   return ((int64_t)st.st_mtimespec.tv_sec * 1000000000LL +
+           st.st_mtimespec.tv_nsec);
+-#elif defined(st_mtime) // A macro, so we're likely on modern POSIX.
++#elif defined(HARVEY) || defined(st_mtime) // POSIX st_mtim on Harvey
+   return (int64_t)st.st_mtim.tv_sec * 1000000000LL + st.st_mtim.tv_nsec;
+ #else
+   return (int64_t)st.st_mtime * 1000000000LL + st.st_mtimensec;
+diff --git a/src/subprocess-posix.cc b/src/subprocess-posix.cc
+index 8e78540..a44ef49 100644
+--- a/src/subprocess-posix.cc
++++ b/src/subprocess-posix.cc
+@@ -20,6 +20,7 @@
+ #include <fcntl.h>
+ #include <unistd.h>
+ #include <stdio.h>
++#include <stdlib.h>
+ #include <string.h>
+ #include <sys/wait.h>
+ #include <spawn.h>
+@@ -117,8 +118,15 @@ bool Subprocess::Start(SubprocessSet* set, const string& command) {
+   if (err != 0)
+     Fatal("posix_spawnattr_setflags: %s", strerror(err));
+ 
+-  const char* spawned_args[] = { "/bin/sh", "-c", command.c_str(), NULL };
+-  err = posix_spawn(&pid_, "/bin/sh", &action, &attr,
++#if defined(HARVEY)
++  const char* shell = getenv("SHELL");
++  if (!shell || !*shell)
++    shell = "/bin/rc";
++#else
++  const char* shell = "/bin/sh";
++#endif
++  const char* spawned_args[] = { shell, "-c", command.c_str(), NULL };
++  err = posix_spawn(&pid_, shell, &action, &attr,
+         const_cast<char**>(spawned_args), environ);
+   if (err != 0)
+     Fatal("posix_spawn: %s", strerror(err));
+diff --git a/src/util.cc b/src/util.cc
+index ef5f103..7291e3c 100644
+--- a/src/util.cc
++++ b/src/util.cc
+@@ -48,7 +48,9 @@
+ #elif defined(_AIX) && !defined(__PASE__)
+ #include <libperfstat.h>
+ #elif defined(linux) || defined(__GLIBC__)
++#ifndef HARVEY
+ #include <sys/sysinfo.h>
++#endif
+ #include <fstream>
+ #include <map>
+ #include "string_piece_util.h"
+@@ -654,6 +656,10 @@ int ParseCPUFromCGroup() {
+ #endif
+ 
+ int GetProcessorCount() {
++#if defined(HARVEY)
++  /* APEX has no complete sysconf; the affinity set is a single CPU. */
++  return 1;
++#endif
+ #ifdef _WIN32
+   DWORD cpuCount = 0;
+ #ifndef _WIN64
+@@ -818,6 +824,10 @@ double GetLoadAverage() {
+ double GetLoadAverage() {
+     return -0.0f;
+ }
++#elif defined(HARVEY)
++double GetLoadAverage() {
++  return -0.0f;
++}
+ #else
+ double GetLoadAverage() {
+   double loadavg[3] = { 0.0f, 0.0f, 0.0f };

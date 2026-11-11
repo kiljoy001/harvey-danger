@@ -1014,8 +1014,24 @@ blocking when there is no `/proc` or no exited child.
 Downloads, archive extraction and `cmake --workflow` are not available in
 lean mode and report a clean error.
 
-Building the generated files still needs a guest `make` or `ninja`; the
-toolchain now has everything CMake needs to drive one.
+`build-ninja.py` cross-builds ninja 1.11.1 with
+`util/arm64/ninja/ninja-harvey.diff`; `test-cmake-build.py` then runs the
+whole loop with the guest `rc` as `/bin/rc`:
+
+```text
+-- NPROJ-OK
+-- Configuring done (0.4s)
+-- Generating done (0.0s)
+-- Build files have been written to: /proj/build
+ninja: Entering directory `/proj/build'
+[1/1] cd /proj/build && /cmake/bin/cmake -E echo hi
+hi
+native CMake + ninja build PASS
+```
+
+The ninja port sets `SHELL=/bin/rc` (Plan 9's rc instead of /bin/sh) and
+uses the new APEX `posix_spawn`, while the sigset and probe-lifetime fixes
+made reaping and select/poll reliable under CMake's process handling.
 
 ## Descriptor readiness
 
