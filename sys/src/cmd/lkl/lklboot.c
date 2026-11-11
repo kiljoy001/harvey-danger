@@ -29,6 +29,7 @@ extern int	lklhost_iomem(u64, void*, int, int);
 extern int	lklhost_irqthread(char*, int);
 extern void	lklhost_raminit(unsigned long);
 extern int	lkl_printf(const char*, ...);
+extern void	usbservice(void);
 
 #define say(s) lkl_printf("%s", s)
 
@@ -435,6 +436,14 @@ main(int argc, char **argv)
 	}
 	say("lklboot: kernel up\n");
 	watchfamily(f);
+
+	/*
+	 * The USB family's job starts after the kernel is up: wait for the
+	 * Linux input device and translate it to /dev/kbd.  Other families
+	 * keep their existing post-boot path.
+	 */
+	if(f->setup == FamUsb && !kerneltest)
+		usbservice();
 
 	if(kerneltest){
 		selftest();

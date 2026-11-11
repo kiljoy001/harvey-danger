@@ -16,6 +16,9 @@ The third case is common on this board: the schematic has eDP, MIPI DSI,
 MIPI CSI, fan, IR, SARADC recovery key, headphone detect, and RTC battery
 signals that the board DTS does not describe.
 
+USB class services are moving to LKL (`lklusb`, see `lkl.md`); the USB
+rows below describe the native `o9xhci` fallback and its parity-oracle role.
+
 ## What already works
 
 - UART console on UART2 at 1500000 8N1.

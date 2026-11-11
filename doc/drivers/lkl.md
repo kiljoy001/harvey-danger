@@ -166,6 +166,26 @@ not used for hot paths (the driver uses `readl`/`writel` on the mapping).
 Native stays: boot, console, GIC/timer/MMU/PSCI, `#P`, GPIO/I2C/PMIC/UART,
 VOP2/HDMI/rio, `#l` + IP, USB PHY/port power.
 
+## USB family (`lklusb`)
+
+Status 2026-11-11: the family boots the kernel and maps its windows; the
+class path is being brought up.
+
+- Kernel config: `util/arm64/lkl-usb.config`, merged by
+  `util/arm64/build_lkl_kernel.sh`. It enables OF/COMMON_CLK/EXTCON, DWC3
+  host + the platform xHCI driver, the RK3568 USB2 PHY, HID/evdev and
+  storage, plus `dummy_hcd` and configfs gadgets for the hardware-free test.
+- `sys/src/cmd/lkl/lklusb.c` waits for `/dev/input/event0`, decodes
+  `input_event`, and writes Plan 9 characters to `/dev/kbd`. Storage and a
+  9P `/srv/input` service follow once keyboard input is proven.
+- `lklboot` calls it after `watchfamily()` for `FamUsb`; `-t` (the kernel
+  selftest) skips it.
+- Test order: `dummy_hcd` + configfs HID under QEMU, then the DWC3 USB2
+  port at `fcc00000`, then hubs and mass storage; USB3 (`fd000000` plus the
+  Naneng combphy) and UAC audio after that.
+- Prerequisites: the M1 initcall handoff (the kernel currently stops at the
+  end of early initcalls) and the native `usbpower`/PD_USB handoff.
+
 ## Build
 
 - One LKL binary per configuration, cross-compiled on the host.  The board
