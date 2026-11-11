@@ -84,13 +84,14 @@ def main() -> None:
     wdump = wdir / "log"
     subprocess.run([
         sys.executable, str(HERE / "test_apex_boot.py"),
-        "--elf", str(wrunner), "--marker", "WPOLL-IDLE 1",
+        "--elf", str(wrunner), "--marker", "WPOLL-DONE",
         "--mem", str(args.mem), "--smp", str(args.smp),
         "--deadline", str(args.deadline), "--dump", str(wdump),
     ], check=True)
     wtext = wdump.read_text(errors="replace")
-    if "WPOLL-BUSY 0 1" not in wtext:
-        sys.exit("blocked writer did not suppress POLLOUT")
+    for line in ("WPOLL-BUF 1 1", "WQ-ROUND 2 2 1", "WQ-CLOSE 2 2 1"):
+        if line not in wtext:
+            sys.exit(f"write-behind check missing: {line}")
     print("select/poll PASS")
 
 

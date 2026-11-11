@@ -1054,14 +1054,17 @@ Plan 9 programs either do a blocking write or use libthread's `alt`/`ioproc`;
 `poll()` exists for POSIX callers and reports the only writability facts the
 fd layer actually knows (access mode and a blocked writer).
 
-Strict POSIX conformance: for pipes and sockets the optimistic `POLLOUT` is
-a compromise, not a guarantee.  POSIX defines write readiness as a write
-that will not block; a full devpipe queue violates that.  Regular files are
-exact.  A strict implementation would need kernel queue state, or a
-zero-length write probe -- but devpipe queues are not coalescing, so a
-zero-length write leaves a 0-length block that a reader sees as EOF.  Code
-that needs backpressure must handle a blocking write or `EAGAIN`; do not
-treat `POLLOUT` on a pipe as a capacity reservation.
+POSIX write readiness on FIFOs is provided by an APEX write-behind queue,
+not by kernel state.  The first `POLLOUT`/write-set request for a FIFO
+enables an 8 KiB per-fd ring: `write()` copies into it and returns, a drain
+helper writes it to the real fd with blocking writes, and `POLLOUT` reports
+ring space.  `close()` flushes the ring.  This is opt-in by usage: a pipe
+that is never polled for writing keeps ordinary blocking `write()`.
+
+Trade-offs: a buffered write is accepted before the kernel has it; drain
+errors surface on the next write or poll; an abrupt `_exit` can lose queued
+bytes; and a forked child drops the queue because it belongs to the parent.
+Non-FIFO descriptors keep the access-mode plus `pbusy`/optimistic model.
 
 The affinity API reports the real online CPU count: `__harvey_ncpu()` counts
 `/dev/sysstat` lines, `sched_getaffinity` fills that many bits, and
