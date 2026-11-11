@@ -43,11 +43,13 @@ def main() -> None:
     env = dict(os.environ)
     env["CXX"] = str(HERE / "aarch64-clang++")
     proc = subprocess.run([sys.executable, "configure.py", "--bootstrap"],
-                          cwd=src, env=env)
+                          cwd=src, env=env, stdout=subprocess.PIPE,
+                          stderr=subprocess.STDOUT, text=True)
     if not binary.is_file():
+        sys.stdout.write(proc.stdout)
         sys.exit("ninja bootstrap did not produce a binary")
     # configure.py ends by executing ./ninja on the host; that failure is
-    # expected for a cross build.
+    # expected for a cross build, so its output is kept only on error.
 
     out = args.output
     out.parent.mkdir(parents=True, exist_ok=True)
