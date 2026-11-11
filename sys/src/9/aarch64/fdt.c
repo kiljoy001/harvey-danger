@@ -165,6 +165,10 @@ static const Fdtclass classtab[] = {
 	{ "rockchip,rk3568-tsadc", Fdtclasstsadc },
 	{ "rockchip,rk3568-wdt", Fdtclasswdt },
 	{ "snps,dw-wdt", Fdtclasswdt },
+	{ "rockchip,cryptov2-rng", Fdtclassrng },
+	{ "rockchip,trngv1", Fdtclassrng },
+	{ "rockchip,rkrng", Fdtclassrng },
+	{ "rockchip,cryptov1-rng", Fdtclassrng },
 	{ "rockchip,rk3568-i2s", Fdtclassi2s },
 	{ "rockchip,rk3568-i2s-tdm", Fdtclassi2s },
 	{ "rockchip,rk3568-cru", Fdtclasscru },
@@ -218,7 +222,7 @@ fdtclassname(u32 clas)
 {
 	static const char *name[] = {
 		"none", "uart", "i2c", "spi", "gpio", "pwm", "gmac", "mmc",
-		"usb", "pcie", "saradc", "tsadc", "wdt", "i2s", "cru", "grf",
+		"usb", "pcie", "saradc", "tsadc", "wdt", "rng", "i2s", "cru", "grf",
 		"npu", "gpu", "vop", "hdmi", "dsi", "edp", "sfc", "vpu",
 		"iommu", "power",
 	};

@@ -31,6 +31,7 @@ rows below describe the native `o9xhci` fallback and its parity-oracle role.
 - VOP2 + DW-HDMI scanout at a fixed 1920x1080 RGB888.
 - RK IOMMU two-level tables, used by VOP2.
 - NPU register/task format decoded in `9rock`; vendor driver exists.
+- TRNG: `rngfs` (Crypto V2) exposes `/srv/rng/{random,status,ctl}`.
 
 ## SoC and controller blocks
 
@@ -44,7 +45,7 @@ rows below describe the native `o9xhci` fallback and its parity-oracle role.
 | SARADC | FDT class recognized | No SARADC/key driver; recovery key, header ADC | P2 |
 | TSADC / thermal | FDT class recognized; PMIC reports temperature | No SoC TSADC, trip points, thermal zones | P1 |
 | Watchdog | FDT class recognized | No RK WDT driver | P1 |
-| TRNG | FDT class recognized | No RK RNG driver | P1 |
+| TRNG | `rngfs` serves `/srv/rng` from the Crypto V2 block (32-byte batches, masked control) | Board read test; enable CRU TRNG clocks/reset if U-Boot leaves them off | P1 |
 | Crypto engine | SoC block | No AES/SHA offload driver | P3 |
 | eFuse / OTP | Read via U-Boot/Linux only | No Harvey efuse driver; lot code is not a serial | P3 |
 | PMU power domains | PD_PIPE powered before GMAC, PD_NPU probed | Other domain policy absent; GMAC reset now released in the driver | P1 |

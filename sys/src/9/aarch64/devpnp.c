@@ -323,6 +323,7 @@ pnpfamily(int clas)
 	case Fdtclasssaradc:
 	case Fdtclasstsadc:
 	case Fdtclasswdt:
+	case Fdtclassrng:
 	case Fdtclassi2s:
 	case Fdtclasscru:
 	case Fdtclassgrf:

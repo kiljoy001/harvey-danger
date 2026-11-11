@@ -25,6 +25,7 @@ static Driver drivers[] = {
 	{ "gpio",	"/boot/gpiofs",	"gpio" },
 	{ "gpu",	"/boot/gpufs",	"gpu" },
 	{ "i2c",	"/boot/i2cfs",	"i2c" },
+	{ "rng",	"/boot/rngfs",	"rng" },
 	{ "usb",	"/boot/usbpower",	"usbpower" },
 	{ nil,	nil,	nil },
 };

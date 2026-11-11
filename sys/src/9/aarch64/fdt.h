@@ -28,6 +28,7 @@ enum {
 	Fdtclasssaradc,
 	Fdtclasstsadc,
 	Fdtclasswdt,
+	Fdtclassrng,
 	Fdtclassi2s,
 	Fdtclasscru,
 	Fdtclassgrf,
