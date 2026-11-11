@@ -1051,8 +1051,17 @@ drops its result.
 
 This is deliberate: Harvey does not grow a Linux-style queue-state syscall.
 Plan 9 programs either do a blocking write or use libthread's `alt`/`ioproc`;
-`poll()` exists for POSIX callers and reports the only writability fact the
-fd layer actually knows (access mode).
+`poll()` exists for POSIX callers and reports the only writability facts the
+fd layer actually knows (access mode and a blocked writer).
+
+Strict POSIX conformance: for pipes and sockets the optimistic `POLLOUT` is
+a compromise, not a guarantee.  POSIX defines write readiness as a write
+that will not block; a full devpipe queue violates that.  Regular files are
+exact.  A strict implementation would need kernel queue state, or a
+zero-length write probe -- but devpipe queues are not coalescing, so a
+zero-length write leaves a 0-length block that a reader sees as EOF.  Code
+that needs backpressure must handle a blocking write or `EAGAIN`; do not
+treat `POLLOUT` on a pipe as a capacity reservation.
 
 The affinity API reports the real online CPU count: `__harvey_ncpu()` counts
 `/dev/sysstat` lines, `sched_getaffinity` fills that many bits, and
