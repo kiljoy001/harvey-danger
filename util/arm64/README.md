@@ -1041,7 +1041,9 @@ an `rfork(RFPROC|RFMEM)` child that blocks in `read()` on the descriptor
 and fills a 4 KiB per-fd buffer; the following `read()` drains it (a short
 read keeps the remainder).  EOF is recorded and reported as `POLLHUP`.
 Regular files and directories are always readable.  Write readiness is
-optimistic: Plan 9 exposes no queue-full state.  A probe that outlives
+optimistic because Plan 9 exposes no queue-full state, but access mode is
+respected: a read-only descriptor is reported with POLLERR rather than
+POLLOUT (and a write-only one with POLLERR for read events).  A probe that outlives
 `close()` notices the Fdinfo generation change and drops its result.
 
 The affinity API reports the real online CPU count: `__harvey_ncpu()` counts
