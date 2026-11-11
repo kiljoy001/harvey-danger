@@ -272,25 +272,38 @@ arm64main(usize dtb)
 	 * boot command).  Reserve it before the page allocator exists so the
 	 * blobs stay intact; program names in it replace the embedded ones.
 	 */
-	if(info.nreserve < Maxfdtreserve &&
-	   BootarchiveAddr >= info.rambase &&
-	   BootarchiveAddr + 24 <= info.rambase + info.ramsize){
-		u8 *ap = (u8 *)BootarchiveAddr;
-		u32 total = 0;
+	/*
+	 * QEMU virt with 768 MiB puts the DMA arena at 0x50000000, which is
+	 * also the board's archive address.  Scan the board address first,
+	 * then the lower QEMU slot that clears the arena.
+	 */
+	{
+		static const u64 cand[] = { 0x50000000ULL, 0x49000000ULL };
+		u64 addr;
+		u32 ci;
 
-		if(ap[0]=='O' && ap[1]=='9' && ap[2]=='B' && ap[3]=='O' &&
-		   ap[4]=='O' && ap[5]=='T' && ap[6]=='0' && ap[7]=='1')
-			total = (u32)ap[16] | (u32)ap[17]<<8 |
-			        (u32)ap[18]<<16 | (u32)ap[19]<<24;
-		if(total < 24 || total > 1280u*1024*1024 ||
-		   BootarchiveAddr < (u64)__image_end ||
-		   BootarchiveAddr+total > info.rambase+info.ramsize)
-			total = 0;
-		if(total != 0){
-			info.reserve[info.nreserve].base = BootarchiveAddr;
+		for(ci = 0; ci < sizeof(cand)/sizeof(cand[0]) && info.nreserve < Maxfdtreserve; ci++){
+			u8 *ap;
+			u32 total = 0;
+
+			addr = cand[ci];
+			if(addr < info.rambase ||
+			   addr + 24 > info.rambase + info.ramsize)
+				continue;
+			ap = (u8 *)addr;
+			if(ap[0]=='O' && ap[1]=='9' && ap[2]=='B' && ap[3]=='O' &&
+			   ap[4]=='O' && ap[5]=='T' && ap[6]=='0' && ap[7]=='1')
+				total = (u32)ap[16] | (u32)ap[17]<<8 |
+				        (u32)ap[18]<<16 | (u32)ap[19]<<24;
+			if(total < 24 || total > 1280u*1024*1024 ||
+			   addr < (u64)__image_end ||
+			   addr+total > info.rambase+info.ramsize)
+				continue;
+			info.reserve[info.nreserve].base = addr;
 			info.reserve[info.nreserve++].size = total;
-			arm64bootarchbase = BootarchiveAddr;
+			arm64bootarchbase = addr;
 			arm64bootarchsize = total;
+			break;
 		}
 	}
 	if(arm64physinit(&info, dtb, size) < 0 ||

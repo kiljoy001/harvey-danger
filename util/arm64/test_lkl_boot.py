@@ -100,6 +100,7 @@ def make_archive(out: Path, elf: Path, libc: Path, debug: bool,
     if noemmc:
         files.append(("noemmc", b"1\n"))
     offset = 24 + 48 * len(files)
+    total = offset + sum(len(data) for _, data in files)
     table, body = bytearray(), bytearray()
     for name, data in files:
         table += struct.pack("<32sIIII", name.encode(), offset,
@@ -108,7 +109,7 @@ def make_archive(out: Path, elf: Path, libc: Path, debug: bool,
         offset += len(data)
     archive = out / "lkl-test.img"
     archive.write_bytes(struct.pack("<8sIIII", b"O9BOOT01", 1, len(files),
-                                    offset, 0) + table + body)
+                                    total, 0) + table + body)
     return archive
 
 
@@ -147,10 +148,10 @@ def main() -> None:
     command = ["qemu-system-aarch64", "-machine", "virt", "-cpu", args.cpu,
                "-m", "768M", "-nographic", "-monitor", "none", "-kernel",
                str(args.kernel), "-device",
-               f"loader,file={archive},addr=0x50000000"]
+               f"loader,file={archive},addr=0x49000000"]
     # LKL is a boot file started from the shell (not init): give the guest
     # time to reach rc, then type "lklrun".
-    send = [(25.0, "lklrun\n")]
+    send = [(25.0, "/boot/lklrun\n")]
     transcript = boot_until(command, "lklboot: halted", idle=args.deadline,
                             total=max(args.deadline, 120),
                             limit=4 * 1024 * 1024, send=send)

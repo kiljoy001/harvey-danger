@@ -200,6 +200,7 @@ uartwrite(char *buf, int n)
 
 static volatile int workerphase;
 static volatile int userprocessphase;
+static Rendez userdone;
 u64 useruartbase;
 static u32 useruarttype;
 static Fdtinfo *bootinfo;
@@ -210,6 +211,7 @@ arm64processresume(void)
 	Proc *up = externup();
 
 	userprocessphase = 2;
+	wakeup(&userdone);
 	arm64uartputs("HARVEY-ARM64 USER-PROCESS PASS\n");
 	/*
 	 * The probe is finished.  It has no parent, so a clean exit would be
@@ -574,8 +576,7 @@ worker(void *arg)
 		else
 			arm64uartputs("HARVEY-ARM64 IPI FAIL\n");
 		startuserprocess();
-		while(userprocessphase != 2)
-			sched();
+		sleep(&userdone, neverready, nil);
 		startinitprocess();
 	}else if(id >= 3){
 		print("HARVEY-ARM64 CPU%d-SCHED PASS\n", machp()->machno);
