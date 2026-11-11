@@ -1038,11 +1038,16 @@ made reaping and select/poll reliable under CMake's process handling.
 `select()`, `pselect()`, `poll()` and `ppoll()` live in
 `apex/src/ap/bsd/select.c`.  Plan 9 has no "would block" bit, so a probe is
 an `rfork(RFPROC|RFMEM)` child that blocks in `read()` on the descriptor
-and parks one byte in `Fdinfo.pbuf`; the following `read()` returns that
-byte first.  EOF is recorded and reported as `POLLHUP`.  Regular files and
-directories are always readable; write readiness is optimistic.  A probe
-that outlives `close()` notices the Fdinfo generation change and drops its
-result.
+and fills a 4 KiB per-fd buffer; the following `read()` drains it (a short
+read keeps the remainder).  EOF is recorded and reported as `POLLHUP`.
+Regular files and directories are always readable.  Write readiness is
+optimistic: Plan 9 exposes no queue-full state.  A probe that outlives
+`close()` notices the Fdinfo generation change and drops its result.
+
+The affinity API reports the real online CPU count: `__harvey_ncpu()` counts
+`/dev/sysstat` lines, `sched_getaffinity` fills that many bits, and
+`CPU_COUNT` counts them.  Ninja therefore sizes its job pool to the
+machine (four on the Orange Pi 3B).
 
 `test-select.py` covers timeout, late data, a writer child, EOF and a
 regular file:
@@ -1054,6 +1059,7 @@ POLL-TIMEOUT 0 1
 POLL-READY 1 1
 POLL-CHILD 1 1
 POLL-EOF 1 1 1
+POLL-BULK 4096 1
 POLL-FILE 1 1
 select/poll PASS
 ```
@@ -1061,5 +1067,6 @@ select/poll PASS
 Known limit: a probe already blocked when the peer end is closed after a
 `fork()` can be woken by devpipe's hangup (`qref` counts opens, and a copied
 fd group does not increment it).  Poll after spawning children, as KWSys
-and ninja do, and the probe sees the child's data.  The probe uses one
-16 KiB stack per descriptor, allocated lazily and reused.
+and ninja do, and the probe sees the child's data.  A probe uses one
+16 KiB stack and one 4 KiB buffer per descriptor, allocated lazily and
+reused; a descriptor closed while a probe is still blocked leaks both.

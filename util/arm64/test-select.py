@@ -26,6 +26,7 @@ EXPECT = [
     "POLL-CHILD 1 1",
     "POLL-CHILDBYTE 1 W",
     "POLL-EOF 1 1 1",
+    "POLL-BULK 4096 1",
     "POLL-EOFRD 0",
     "POLL-FILE 1 1",
     "POLL-FILEBYTE 1 F",

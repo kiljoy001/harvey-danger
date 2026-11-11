@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <unistd.h>
 #include <fcntl.h>
 #include <errno.h>
@@ -124,6 +125,44 @@ test_eof(void)
 }
 
 static void
+test_bulk(void)
+{
+	int p[2], n, m, total;
+	pid_t pid;
+	char *buf;
+	struct pollfd pf;
+
+	buf = malloc(4096);
+	pipe(p);
+	pid = fork();
+	if(pid == 0){
+		char *out = malloc(4096);
+		memset(out, 'A', 4096);
+		write(p[1], out, 4096);
+		_exit(0);
+	}
+	close(p[1]);
+	total = 0;
+	while(total < 4096){
+		pf.fd = p[0];
+		pf.events = POLLIN;
+		pf.revents = 0;
+		n = poll(&pf, 1, 1000);
+		if(n <= 0)
+			break;
+		m = read(p[0], buf + total, 1000);
+		if(m <= 0)
+			break;
+		total += m;
+	}
+	printf("POLL-BULK %d %d\n", total,
+	    total == 4096 && buf[0] == 'A' && buf[4095] == 'A');
+	waitpid(pid, 0, 0);
+	close(p[0]);
+	free(buf);
+}
+
+static void
 test_file(void)
 {
 	int fd, n, m;
@@ -154,6 +193,7 @@ main(void)
 	test_poll();
 	test_poll_child();
 	test_eof();
+	test_bulk();
 	test_file();
 	printf("SELPROBE-DONE\n");
 	return 0;

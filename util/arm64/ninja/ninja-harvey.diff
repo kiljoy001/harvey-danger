@@ -42,10 +42,21 @@ index 8e78540..a44ef49 100644
    if (err != 0)
      Fatal("posix_spawn: %s", strerror(err));
 diff --git a/src/util.cc b/src/util.cc
-index ef5f103..7291e3c 100644
+index ef5f103..2ab9b71 100644
 --- a/src/util.cc
 +++ b/src/util.cc
-@@ -48,7 +48,9 @@
+@@ -38,6 +38,10 @@
+ #include <sys/time.h>
+ #endif
+ 
++#if defined(HARVEY)
++#include <sched.h>
++#endif
++
+ #include <vector>
+ 
+ #if defined(__APPLE__) || defined(__FreeBSD__)
+@@ -48,7 +52,9 @@
  #elif defined(_AIX) && !defined(__PASE__)
  #include <libperfstat.h>
  #elif defined(linux) || defined(__GLIBC__)
@@ -55,18 +66,20 @@ index ef5f103..7291e3c 100644
  #include <fstream>
  #include <map>
  #include "string_piece_util.h"
-@@ -654,6 +656,10 @@ int ParseCPUFromCGroup() {
+@@ -654,6 +660,12 @@ int ParseCPUFromCGroup() {
  #endif
  
  int GetProcessorCount() {
 +#if defined(HARVEY)
-+  /* APEX has no complete sysconf; the affinity set is a single CPU. */
++  cpu_set_t hset;
++  if (sched_getaffinity(getpid(), sizeof(hset), &hset) == 0)
++    return CPU_COUNT(&hset);
 +  return 1;
 +#endif
  #ifdef _WIN32
    DWORD cpuCount = 0;
  #ifndef _WIN64
-@@ -818,6 +824,10 @@ double GetLoadAverage() {
+@@ -818,6 +830,10 @@ double GetLoadAverage() {
  double GetLoadAverage() {
      return -0.0f;
  }

@@ -27,7 +27,14 @@ typedef struct {
 #define CPU_ISSET(cpu, set) \
     (((set)->__bits[(cpu) / (8 * sizeof(unsigned long))] >> \
       ((cpu) % (8 * sizeof(unsigned long)))) & 1ul)
-#define CPU_COUNT(set) 1
+static inline int __harvey_cpu_count(const cpu_set_t *set)
+{
+    int i, n = 0;
+    for (i = 0; i < 16; i++)
+        n += __builtin_popcountl(set->__bits[i]);
+    return n;
+}
+#define CPU_COUNT(set) __harvey_cpu_count(set)
 #define CPU_ALLOC_SIZE(ncpus) (sizeof(cpu_set_t))
 #define CPU_ALLOC(ncpus) \
     ((cpu_set_t *)__builtin_calloc(1, CPU_ALLOC_SIZE(ncpus)))
@@ -35,6 +42,7 @@ typedef struct {
 
 int sched_setaffinity(int, size_t, const cpu_set_t *);
 int sched_getaffinity(int, size_t, cpu_set_t *);
+int __harvey_ncpu(void);
 
 #ifdef __cplusplus
 }

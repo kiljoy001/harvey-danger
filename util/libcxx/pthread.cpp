@@ -570,10 +570,13 @@ int sched_setaffinity(int pid, size_t setsize, const cpu_set_t *set) {
 }
 
 int sched_getaffinity(int pid, size_t setsize, cpu_set_t *set) {
+    int i, n;
     (void)pid;
     if (set && setsize >= sizeof(cpu_set_t)) {
         __builtin_memset(set, 0, sizeof(cpu_set_t));
-        CPU_SET(0, set);
+        n = __harvey_ncpu();
+        for (i = 0; i < n && i < CPU_SETSIZE; i++)
+            CPU_SET(i, set);
     }
     return 0;
 }
