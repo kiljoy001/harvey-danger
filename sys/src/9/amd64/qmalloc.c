@@ -97,6 +97,77 @@ static char *qstatstr[QSmax] = {
 	[QSfreeprev] = "freeprev",
 };
 
+#ifdef QMALLOCDEBUG
+enum { QtraceN = 32 };
+typedef struct Qtrace Qtrace;
+struct Qtrace {
+	u32 pid;
+	char text[16];
+	void *p;
+	u32 size;
+	u8 op;		/* 0 malloc, 1 free */
+};
+static Qtrace qtrace[QtraceN];
+static int qtracei;
+
+static void
+qtracelog(int op, void *p, u32 size)
+{
+	Proc *up = externup();
+	Qtrace *t = &qtrace[qtracei++ % QtraceN];
+
+	t->pid = up ? up->pid : 0;
+	t->text[0] = 0;
+	if(up && up->text)
+		strncpy(t->text, up->text, sizeof(t->text)-1);
+	t->p = p;
+	t->size = size;
+	t->op = op;
+}
+
+static void
+qtraceprint(void)
+{
+	int i;
+	Qtrace *t;
+
+	for(i = 0; i < QtraceN; i++){
+		t = &qtrace[(qtracei + i) % QtraceN];
+		if(t->pid == 0 && t->p == nil)
+			continue;
+		print("qtrace pid %d %s %s %#p %ud\n", t->pid, t->text,
+		      t->op ? "free" : "malloc", t->p, t->size);
+	}
+}
+#define QTRACE(op,p,size) qtracelog(op, p, size)
+#define QTRACEPRINT() qtraceprint()
+#else
+#define QTRACE(op,p,size)
+#define QTRACEPRINT()
+#endif
+
+/*
+ * Validate a free-list link before qmalloc dereferences it.  The
+ * qmalloc free list is a circular list of headers in the tail heap; a
+ * link outside that range is heap corruption, not a usable block.
+ */
+static void
+qchecklink(Header *p, Header *q)
+{
+	Proc *up;
+
+	if(p == &misclist || tailbase == nil)
+		return;
+	if(p >= tailbase && p < tailptr && ((usize)p & (sizeof(Header)-1)) == 0)
+		return;
+	up = externup();
+	print("qmalloc: bad free-list next %#p from %#p rover %#p base %#p tail %#p pid %d %s\n",
+	      p, q, rover, tailbase, tailptr, up ? up->pid : -1,
+	      up && up->text ? up->text : "?");
+	QTRACEPRINT();
+	panic("qmalloc: corrupt free list");
+}
+
 static Lock mainlock;
 
 #define MLOCK ilock(&mainlock)
@@ -296,6 +367,7 @@ qmalloc(usize nbytes)
 		if((q = rover) != nil){
 			do {
 				p = q->s.next;
+				qchecklink(p, q);
 				if(p->s.size >= nunits){
 					if(p->s.size > nunits){
 						p->s.size -= nunits;
@@ -514,6 +586,7 @@ mallocsummary(void)
 void
 free(void *ap)
 {
+	QTRACE(1, ap, 0);
 	MLOCK;
 	qfreeinternal(ap);
 	MUNLOCK;
@@ -524,6 +597,7 @@ malloc(u32 size)
 {
 	void *v;
 
+	QTRACE(0, nil, size);
 	if((v = qmalloc(size)) != nil)
 		memset(v, 0, size);
 

@@ -42,6 +42,8 @@ CFLAGS = [
     f"-I{os.path.join(REPO_ROOT, 'sys/src/9/ip')}",
     f"-I{os.path.join(REPO_ROOT, 'sys/src/libc/9syscall')}",
 ]
+if os.environ.get("HARVEY_QMALLOCDEBUG"):
+    CFLAGS += ["-DQMALLOCDEBUG"]
 
 LDFLAGS = [
     "-T", os.path.join(REPO_ROOT, "sys/src/9/amd64/kernel.ld"),
