@@ -1043,8 +1043,13 @@ read keeps the remainder).  EOF is recorded and reported as `POLLHUP`.
 Regular files and directories are always readable.  Write readiness is
 optimistic because Plan 9 exposes no queue-full state, but access mode is
 respected: a read-only descriptor is reported with POLLERR rather than
-POLLOUT (and a write-only one with POLLERR for read events).  A probe that outlives
-`close()` notices the Fdinfo generation change and drops its result.
+POLLOUT (and a write-only one with POLLERR for read events).  A probe that
+outlives `close()` notices the Fdinfo generation change and drops its result.
+
+This is deliberate: Harvey does not grow a Linux-style queue-state syscall.
+Plan 9 programs either do a blocking write or use libthread's `alt`/`ioproc`;
+`poll()` exists for POSIX callers and reports the only writability fact the
+fd layer actually knows (access mode).
 
 The affinity API reports the real online CPU count: `__harvey_ncpu()` counts
 `/dev/sysstat` lines, `sched_getaffinity` fills that many bits, and
