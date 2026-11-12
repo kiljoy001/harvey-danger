@@ -454,7 +454,7 @@ physseginit(Fdtinfo *info)
 	n = 0;
 	memset(&seg, 0, sizeof seg);
 	seg.attr = SG_PHYSICAL | SG_READ | SG_WRITE;
-	seg.pgszi = -1;	/* default 2 MiB pages */
+	seg.pgszi = -1;	/* addphysseg defaults to base pages */
 	for(i = 0; i < info->ndev; i++){
 		base = info->dev[i].base & ~(u64)(BIGPGSZ - 1);
 		end = (info->dev[i].base + info->dev[i].size + BIGPGSZ - 1) &
@@ -476,7 +476,7 @@ physseginit(Fdtinfo *info)
 		 * (an uncached 64 KiB memmove is milliseconds).
 		 */
 		seg.attr = SG_PHYSICAL | SG_READ | SG_WRITE | SG_CACHED;
-		seg.pgszi = -1;	/* addphysseg defaults to 2 MiB pages */
+		seg.pgszi = -1;	/* addphysseg defaults to base pages */
 		seg.name = "dma";
 		seg.pa = arm64dmabase;
 		seg.size = arm64dmasize / BIGPGSZ;

@@ -40,7 +40,7 @@ addphysseg(Physseg *new)
 	}
 
 	if(new->pgszi < 0)
-		new->pgszi = getpgszi(2 * MiB); /* 2M pages by default */
+		new->pgszi = getpgszi(PGSZ); /* base pages by default */
 	if(new->pgszi < 0)
 		panic("addphysseg");
 	*ps = *new;
@@ -229,6 +229,7 @@ segattach(Proc *p, int attr, char *name, usize va, usize len)
 	int sno;
 	Segment *s, *os;
 	Physseg *ps;
+	u32 pgsz;
 
 	/* BUG: Only ok for now */
 	if((va != 0 && va < UTZERO) || (va & KZERO) == KZERO)
@@ -268,6 +269,14 @@ segattach(Proc *p, int attr, char *name, usize va, usize len)
 	if(ps->name == nil)
 		error("segment not found");
 
+	/*
+	 * Physseg.size is still a limit in BIGPGSZ units, but the mapping
+	 * itself uses the page size the physical segment requests.  The
+	 * default is now the base page size; a device that needs a larger
+	 * granule can set pgszi explicitly.
+	 */
+	pgsz = sys->pgsz[ps->pgszi];
+
 	if(va == 0 && ps->gva != 0){
 		va = ps->gva;
 		if(len == 0)
@@ -277,7 +286,7 @@ segattach(Proc *p, int attr, char *name, usize va, usize len)
 	if(len == 0)
 		error("zero length");
 
-	len = BIGPGROUND(len);
+	len = (len + pgsz - 1) & ~(usize)(pgsz - 1);
 	if(len == 0)
 		error("length overflow");
 
@@ -301,17 +310,17 @@ segattach(Proc *p, int attr, char *name, usize va, usize len)
 		}
 	}
 
-	va = va & ~(BIGPGSZ - 1);
+	va = va & ~(usize)(pgsz - 1);
 	if(isoverlap(p, va, len) != nil)
 		error(Esoverlap);
 
-	if((len / BIGPGSZ) > ps->size)
+	if(len > ps->size * BIGPGSZ)
 		error("len > segment size");
 
 	attr &= ~SG_TYPE; /* Turn off what is not allowed */
 	attr |= ps->attr; /* Copy in defaults */
 
-	s = newseg(attr, va, len / BIGPGSZ);
+	s = newsegsz(attr, va, len / pgsz, pgsz);
 	s->pseg = ps;
 	p->seg[sno] = s;
 

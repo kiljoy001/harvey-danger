@@ -350,10 +350,12 @@ the exec-loaded text/data segments, BSS/heap and the stack all have
 therefore work at 4 KiB.  `vmemchr` steps at `PGSZ` as well, so string
 validation works for small segments.
 
-Plan 9 physical segments (`segattach`), the kernel's bootstrap exec stub,
-and a kernel file-backed `mmap` still use the historical `BIGPGSZ`
-(2 MiB), because `Physseg.size`, the bootstrap layout, and the image
-pager's segment unit are expressed in it.  An unaligned `MAP_FIXED` is
+Plan 9 physical segments (`segattach`) use the page size recorded in
+`Physseg`, which now defaults to `PGSZ`; a device can still request a
+larger granule.  `Physseg.size` remains a limit in `BIGPGSZ` units.
+The kernel's bootstrap exec stub and a kernel file-backed `mmap` still
+use `BIGPGSZ`, because the bootstrap layout and the image pager's
+segment unit are expressed in it.  An unaligned `MAP_FIXED` is
 rejected rather than silently rounded down.  The old single-arena workaround made `prot`,
 `mprotect`, `PROT_NONE` and `munmap` no-ops and has been removed.
 
