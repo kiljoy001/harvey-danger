@@ -55,6 +55,7 @@ typedef struct RWlock RWlock;
 typedef struct Sched Sched;
 typedef struct Schedq Schedq;
 typedef struct Segment Segment;
+typedef struct Segtab Segtab;
 typedef struct Sema Sema;
 typedef struct Strace Strace;
 typedef struct Timer Timer;
@@ -733,6 +734,18 @@ struct Strace {
 	Queue *q;
 };
 
+/*
+ * The segment table is separate from Proc so that rfork(RFMEM) processes
+ * can share one table.  Each Proc points seg at segtab->seg and seglock at
+ * segtab->l, so all existing p->seg[i] accesses keep working while a
+ * mapping made by one thread becomes visible to every thread.
+ */
+struct Segtab {
+	Ref	r;
+	QLock	l;
+	Segment	*seg[NSEG];
+};
+
 struct Proc {
 	Label sched;   /* known to l.s */
 	char *kstack;  /* known to l.s */
@@ -749,8 +762,9 @@ struct Proc {
 	QLock *qlock; /* addr of qlock being queued for DEBUG */
 	int state;
 	char *psstate; /* What /proc/#/status reports */
-	Segment *seg[NSEG];
-	QLock seglock; /* locked whenever seg[] changes */
+	Segment **seg; /* points at segtab->seg */
+	QLock *seglock; /* points at segtab->l; locked whenever seg[] changes */
+	Segtab *segtab; /* segment table, shared by rfork(RFMEM) */
 	int pid;
 	int index;     /* index (slot) in proc array */
 	u32 freemagic; /* psalloc/psrelease reuse guard */

@@ -188,6 +188,24 @@ mmurelease(Proc *p)
 	arm64mmurelease(p);
 }
 
+/*
+ * A CPU that has given up its process must not keep that process's page
+ * table in TTBR0.  If the process migrates and later exits on another CPU,
+ * its root is freed; an idle CPU still pointing at it would fault fetching
+ * the exception vector (the freed page may already have been zeroed).
+ * Switch to the kernel root before entering the scheduler.
+ */
+void
+mmuidle(void)
+{
+	/*
+	 * sched() and sleep() call mmuflushtlb() just before this, so the
+	 * TLB is already empty; only the root pointer needs to change.
+	 */
+	__asm__ volatile("msr ttbr0_el1, %0; isb"
+		:: "r"(arm64mmukernelroot()) : "memory");
+}
+
 int
 infected_with_std(void)
 {

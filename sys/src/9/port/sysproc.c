@@ -28,7 +28,7 @@ sysrfork(Ar0 *ar0, ...)
 {
 	Proc *up = externup();
 	Proc *p;
-	int flag, i, n, pid;
+	int flag, i, pid;
 	Fgrp *ofg;
 	Pgrp *opg;
 	Rgrp *org;
@@ -152,18 +152,36 @@ sysrfork(Ar0 *ar0, ...)
 	p->prepagemem = up->prepagemem;
 	p->dbgreg = 0;
 
-	/* Make a new set of memory segments */
-	n = flag & RFMEM;
-	qlock(&p->seglock);
-	if(waserror()){
-		qunlock(&p->seglock);
-		nexterror();
+	/*
+	 * Make a new set of memory segments.  RFMEM processes share one
+	 * table, so any mapping one thread makes is visible to the others;
+	 * a plain process gets its own table with the usual COW copies.
+	 */
+	if(flag & RFMEM){
+		qlock(&segtablock);
+		segtabput(p->segtab);
+		p->segtab = segtabshare(up->segtab);
+		if(p->segtab == nil){
+			p->seg = nil;
+			p->seglock = nil;
+			qunlock(&segtablock);
+			error(Enovmem);
+		}
+		p->seg = p->segtab->seg;
+		p->seglock = &p->segtab->l;
+		qunlock(&segtablock);
+	} else {
+		qlock(p->seglock);
+		if(waserror()){
+			qunlock(p->seglock);
+			nexterror();
+		}
+		for(i = 0; i < NSEG; i++)
+			if(up->seg[i])
+				p->seg[i] = dupseg(up->seg, i, 0);
+		qunlock(p->seglock);
+		poperror();
 	}
-	for(i = 0; i < NSEG; i++)
-		if(up->seg[i])
-			p->seg[i] = dupseg(up->seg, i, n);
-	qunlock(&p->seglock);
-	poperror();
 
 	/* File descriptors */
 	if(flag & (RFFDG | RFCFDG)){
@@ -441,14 +459,20 @@ execac(Ar0 *ar0, int flags, char *ufile, char **argv)
 	 * The architecture-dependent code which jumps to the new image
 	 * will also push a count of the argument array onto the stack (argc).
 	 */
-	qlock(&up->seglock);
+	/*
+	 * Give this process a private table: the new image must not replace
+	 * the address space of RFMEM siblings.  Reading the old argv still
+	 * works because the old segments stay alive in the shared table.
+	 */
+	segtabdetach(up);
+	qlock(up->seglock);
 	int sno = -1;
 	if(waserror()){
 		if(sno != -1 && up->seg[sno] != nil){
 			putseg(up->seg[sno]);
 			up->seg[sno] = nil;
 		}
-		qunlock(&up->seglock);
+		qunlock(up->seglock);
 		nexterror();
 	}
 
@@ -660,7 +684,7 @@ execac(Ar0 *ar0, int flags, char *ufile, char **argv)
 	/* the color of the stack was decided when we created it before,
 	 * it may have nothing to do with the color of other segments.
 	 */
-	qunlock(&up->seglock);
+	qunlock(up->seglock);
 	poperror(); /* seglock */
 
 	/*

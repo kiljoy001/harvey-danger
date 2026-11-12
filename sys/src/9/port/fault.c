@@ -144,6 +144,13 @@ fixfault(Segment *s, usize addr, int ftype, int dommuput, int color)
 	pg = &etp->pages[(soff & (PTEMAPMEM - 1)) / pgsz];
 	stype = s->type & SG_TYPE;
 
+	/*
+	 * PROT_NONE means no access at all.  Without this, the read-only
+	 * path below would happily map the page readable.
+	 */
+	if((s->type & (SG_READ | SG_WRITE | SG_EXEC)) == 0)
+		error("fixfault: access to PROT_NONE segment");
+
 	if(pg < etp->first)
 		etp->first = pg;
 	if(pg > etp->last)

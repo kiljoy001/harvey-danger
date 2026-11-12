@@ -52,6 +52,8 @@ sysmmap(Ar0 *ar0, ...)
 	va = PTR2UINT(addr);
 	if(va != 0 && ((va < UTZERO) || ((va & KZERO) == KZERO)))
 		error("virtual address in kernel");
+	if((flags & MAP_FIXED) && va != 0 && (va & (BIGPGSZ - 1)) != 0)
+		error(Ebadarg);
 
 	/* If not anonymous, validate fd and get channel */
 	if((flags & MAP_ANON) == 0 && (flags & MAP_ANONYMOUS) == 0){
@@ -64,9 +66,9 @@ sysmmap(Ar0 *ar0, ...)
 		}
 	}
 
-	qlock(&up->seglock);
+	qlock(up->seglock);
 	if(waserror()){
-		qunlock(&up->seglock);
+		qunlock(up->seglock);
 		if(c != nil)
 			poperror(); /* cclose */
 		nexterror();
@@ -80,8 +82,15 @@ sysmmap(Ar0 *ar0, ...)
 
 	/* Choose virtual address if not specified or not MAP_FIXED */
 	if(va == 0 || (flags & MAP_FIXED) == 0){
-		/* Start below the stack */
-		usize top = (va != 0) ? (va & ~(BIGPGSZ - 1)) : (USTKTOP - USTKSIZE - len);
+		/*
+		 * Keep clear of the exec area: sysexec builds the argument
+		 * vector in [NIXCALL, TSTKTOP) and then moves it to the real
+		 * stack in [TSTKTOP, USTKTOP).  Starting at TSTKTOP - len
+		 * (as this used to) puts anonymous mappings on top of that
+		 * area, so a process that mmap'd anything could not exec
+		 * with arguments.
+		 */
+		usize top = (va != 0) ? (va & ~(BIGPGSZ - 1)) : (NIXCALL - len);
 		va = top;
 		for(;;){
 			os = isoverlap(up, va, len);
@@ -126,7 +135,7 @@ sysmmap(Ar0 *ar0, ...)
 	up->seg[sno] = s;
 
 	poperror(); /* seglock */
-	qunlock(&up->seglock);
+	qunlock(up->seglock);
 
 	ar0->v = UINT2PTR(va);
 }
@@ -150,9 +159,9 @@ sysmunmap(Ar0 *ar0, ...)
 	if(len == 0 || (va & (BIGPGSZ - 1)) != 0)
 		error(Ebadarg);
 
-	qlock(&up->seglock);
+	qlock(up->seglock);
 	if(waserror()){
-		qunlock(&up->seglock);
+		qunlock(up->seglock);
 		nexterror();
 	}
 
@@ -166,6 +175,12 @@ sysmunmap(Ar0 *ar0, ...)
 			   (s->type & SG_TYPE) == SG_TEXT)
 				error(Ebadarg);
 
+			/*
+			 * Mark every process sharing the address space
+			 * before removing the segment: they may still hold
+			 * page-table entries for the range being unmapped.
+			 */
+			procflushseg(s);
 			up->seg[sno] = nil;
 			putseg(s);
 			mmuflush();
@@ -174,7 +189,7 @@ sysmunmap(Ar0 *ar0, ...)
 	}
 
 	poperror();
-	qunlock(&up->seglock);
+	qunlock(up->seglock);
 
 	if(sno == NSEG)
 		error(Ebadarg);
@@ -203,9 +218,9 @@ sysmprotect(Ar0 *ar0, ...)
 	if(len == 0 || (va & (BIGPGSZ - 1)) != 0)
 		error(Ebadarg);
 
-	qlock(&up->seglock);
+	qlock(up->seglock);
 	if(waserror()){
-		qunlock(&up->seglock);
+		qunlock(up->seglock);
 		nexterror();
 	}
 
@@ -221,13 +236,19 @@ sysmprotect(Ar0 *ar0, ...)
 			if(prot & PROT_EXEC)
 				s->type |= SG_EXEC;
 			qunlock(&s->lk);
+			/*
+			 * Existing mappings carry the old permission bits in
+			 * each process's page table; drop them so the next
+			 * access is resolved with the new protection.
+			 */
+			procflushseg(s);
 			mmuflush();
 			break;
 		}
 	}
 
 	poperror();
-	qunlock(&up->seglock);
+	qunlock(up->seglock);
 
 	if(sno == NSEG)
 		error(Ebadarg);

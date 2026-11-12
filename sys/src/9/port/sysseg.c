@@ -236,9 +236,9 @@ segattach(Proc *p, int attr, char *name, usize va, usize len)
 
 	vmemchr(name, 0, ~0);
 
-	qlock(&p->seglock);
+	qlock(p->seglock);
 	if(waserror()){
-		qunlock(&p->seglock);
+		qunlock(p->seglock);
 		nexterror();
 	}
 	for(sno = 0; sno < NSEG; sno++)
@@ -320,7 +320,7 @@ segattach(Proc *p, int attr, char *name, usize va, usize len)
 
 clean_out:
 	poperror();
-	qunlock(&p->seglock);
+	qunlock(p->seglock);
 	return va;
 }
 
@@ -365,9 +365,9 @@ syssegdetach(Ar0 *ar0, ...)
 	addr = PTR2UINT(va_arg(list, void *));
 	va_end(list);
 
-	qlock(&up->seglock);
+	qlock(up->seglock);
 	if(waserror()){
-		qunlock(&up->seglock);
+		qunlock(up->seglock);
 		nexterror();
 	}
 
@@ -394,10 +394,11 @@ found:
 		qunlock(&s->lk);
 		error(Ebadarg);
 	}
-	up->seg[i] = 0;
 	qunlock(&s->lk);
+	procflushseg(s);
+	up->seg[i] = 0;
 	putseg(s);
-	qunlock(&up->seglock);
+	qunlock(up->seglock);
 	poperror();
 
 	/* Ensure we flush any entries from the lost segment */

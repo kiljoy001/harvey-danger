@@ -238,6 +238,96 @@ sameseg:
 	return s;
 }
 
+QLock segtablock;
+
+/*
+ * Exited processes point at this empty table so that a pager pass can still
+ * take a valid seglock without racing a table teardown.
+ */
+static Segtab deadsegtab;
+
+Segtab *
+segtabempty(void)
+{
+	return &deadsegtab;
+}
+
+/*
+ * Segment tables are reference counted separately from the segments they
+ * hold.  Non-RFMEM processes get their own table (with the usual dupseg
+ * copy-on-write rules); RFMEM processes share one table, so a segment added
+ * or removed by any thread is seen by all of them.
+ */
+Segtab *
+newsegtab(void)
+{
+	Segtab *t;
+
+	t = malloc(sizeof *t);
+	if(t == nil)
+		return nil;
+	memset(t, 0, sizeof *t);
+	t->r.ref = 1;
+	return t;
+}
+
+Segtab *
+segtabshare(Segtab *t)
+{
+	if(t == nil)
+		return nil;
+	incref(&t->r);
+	return t;
+}
+
+void
+segtabput(Segtab *t)
+{
+	int i;
+
+	if(t == nil)
+		return;
+	if(decref(&t->r) != 0)
+		return;
+	for(i = 0; i < NSEG; i++)
+		if(t->seg[i] != nil)
+			putseg(t->seg[i]);
+	free(t);
+}
+
+/*
+ * Give p a private copy of the segment table, as exec must: the new image
+ * replaces p's address space without disturbing other RFMEM threads.  The
+ * segments themselves are shared here; exec drops these references when it
+ * commits the new image, and the old image survives for as long as another
+ * thread's table refers to it.
+ */
+void
+segtabdetach(Proc *p)
+{
+	Segtab *nt, *ot;
+	int i;
+
+	nt = newsegtab();
+	if(nt == nil)
+		error(Enovmem);
+	ot = p->segtab;
+	qlock(&ot->l);
+	for(i = 0; i < NSEG; i++){
+		if(p->seg[i] == nil)
+			continue;
+		incref(&p->seg[i]->r);
+		nt->seg[i] = p->seg[i];
+	}
+	p->segtab = nt;
+	p->seg = nt->seg;
+	p->seglock = &nt->l;
+	qunlock(&ot->l);
+	qlock(&segtablock);
+	segtabput(ot);
+	qunlock(&segtablock);
+}
+
 void
 segpage(Segment *s, Page *p)
 {

@@ -219,17 +219,17 @@ getzkseg(void)
 	Segment *s;
 	int i;
 
-	qlock(&up->seglock);
+	qlock(up->seglock);
 	for(i = 0; i < NSEG; i++){
 		s = up->seg[i];
 		if(s != nil && (s->type & SG_KZIO) != 0){
 			incref(&s->r);
-			qunlock(&up->seglock);
+			qunlock(up->seglock);
 			DBG("getzkseg: %#p\n", s);
 			return s;
 		}
 	}
-	qunlock(&up->seglock);
+	qunlock(up->seglock);
 	DBG("getzkseg: nil\n");
 	return nil;
 }

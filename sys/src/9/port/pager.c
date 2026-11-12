@@ -169,14 +169,17 @@ Again:
 			break;
 		np = 0;
 		if(p->prepagemem == 0 || prepaged != 0)
-			if(p->state != Dead && p->noswap == 0 && canqlock(&p->seglock)){
-				for(i = 0; i < NSEG; i++){
-					if((s = p->seg[i]) == nil)
-						continue;
-					if((s->type & SG_TYPE) == SG_TEXT)
-						np = pageout(p, s);
+			if(p->noswap == 0 && canqlock(&segtablock)){
+				if(p->state != Dead && canqlock(p->seglock)){
+					for(i = 0; i < NSEG; i++){
+						if((s = p->seg[i]) == nil)
+							continue;
+						if((s->type & SG_TYPE) == SG_TEXT)
+							np = pageout(p, s);
+					}
+					qunlock(p->seglock);
 				}
-				qunlock(&p->seglock);
+				qunlock(&segtablock);
 			}
 		/*
 		 * else process dead or locked or changing its segments

@@ -210,6 +210,7 @@ void mmuprocinit(Proc *);
 void mmuput(usize, Page *, u32);
 void mmurelease(Proc *);
 void mmuswitch(Proc *);
+void mmuidle(void);
 Chan *mntattachversion(char *muxattach, char *version, u8 tag,
 		       Chan *(*mntchan)(void));
 Chan *mntauth(Chan *, char *);
@@ -278,6 +279,12 @@ void procctl(Proc *);
 void procdump(void);
 int procfdprint(Chan *, int, int, char *, int);
 void procflushseg(Segment *);
+extern QLock segtablock; /* serializes table teardown with the pager */
+Segtab *newsegtab(void);
+Segtab *segtabshare(Segtab *);
+Segtab *segtabempty(void);
+void segtabput(Segtab *);
+void segtabdetach(Proc *);
 void procinit0(void);
 void procpriority(Proc *, int, int);
 void procrestore(Proc *);

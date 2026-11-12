@@ -250,6 +250,7 @@ sched(void)
 
 		procsave(up);
 		mmuflushtlb();
+		mmuidle();
 		if(setlabel(&up->sched)){
 			procrestore(up);
 			spllo();
@@ -832,7 +833,11 @@ newproc(void)
 	p->execargc = 0;
 	p->setargs = 0;
 	memset(&p->Timer, 0, sizeof p->Timer);
-	memset(p->seg, 0, sizeof p->seg);
+	p->segtab = newsegtab();
+	if(p->segtab == nil)
+		panic("newproc: segment table allocation failed");
+	p->seg = p->segtab->seg;
+	p->seglock = &p->segtab->l;
 	p->pid = incref(&pidalloc);
 	pshash(p);
 	p->noteid = incref(&noteidalloc);
@@ -908,11 +913,11 @@ procwired(Proc *p, int bm)
 	if(up == nil || p != up)
 		return;
 	up->color = corecolor(up->mp->machno);
-	qlock(&up->seglock);
+	qlock(up->seglock);
 	for(i = 0; i < NSEG; i++)
 		if(up->seg[i])
 			up->seg[i]->color = up->color;
-	qunlock(&up->seglock);
+	qunlock(up->seglock);
 }
 
 void
@@ -990,6 +995,7 @@ sleep(Rendez *r, int (*f)(void *), void *arg)
 
 		procsave(up);
 		mmuflushtlb();
+		mmuidle();
 		if(setlabel(&up->sched)){
 			/*
 			 *  here when the process is awakened
@@ -1261,7 +1267,6 @@ pexit(char *exitstr, int freemem)
 {
 	Proc *up = externup();
 	Proc *p;
-	Segment **s, **es;
 	u64 utime, stime;
 	Waitq *wq, *f, *next;
 	Fgrp *fgrp;
@@ -1378,15 +1383,17 @@ pexit(char *exitstr, int freemem)
 	if(!freemem)
 		addbroken(up);
 
-	qlock(&up->seglock);
-	es = &up->seg[NSEG];
-	for(s = up->seg; s < es; s++){
-		if(*s){
-			putseg(*s);
-			*s = 0;
-		}
-	}
-	qunlock(&up->seglock);
+	/*
+	 * Drop this process's reference on the table.  RFMEM siblings keep
+	 * the segments alive; the last user frees them.  Leave a valid empty
+	 * table behind so the pager can lock it while the Proc is Moribund.
+	 */
+	qlock(&segtablock);
+	segtabput(up->segtab);
+	up->segtab = segtabempty();
+	up->seg = up->segtab->seg;
+	up->seglock = &up->segtab->l;
+	qunlock(&segtablock);
 
 	lock(&up->exl); /* Prevent my children from leaving waits */
 	psunhash(up);

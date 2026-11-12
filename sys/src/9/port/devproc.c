@@ -1988,7 +1988,7 @@ txt2data(Proc *p, Segment *s)
 	ps->ldseg = s->ldseg;
 	ps->flushme = 1;
 
-	qlock(&p->seglock);
+	qlock(p->seglock);
 	for(i = 0; i < NSEG; i++)
 		if(p->seg[i] == s)
 			break;
@@ -1996,10 +1996,11 @@ txt2data(Proc *p, Segment *s)
 		panic("segment gone");
 
 	qunlock(&s->lk);
+	procflushseg(s);
 	putseg(s);
 	qlock(&ps->lk);
 	p->seg[i] = ps;
-	qunlock(&p->seglock);
+	qunlock(p->seglock);
 
 	return ps;
 }

@@ -722,7 +722,7 @@ segmentkproc(void *arg)
 	int done;
 	int sno;
 
-	qlock(&up->seglock);
+	qlock(up->seglock);
 	for(sno = 0; sno < NSEG; sno++)
 		if(up->seg[sno] == nil)
 			break;
@@ -732,7 +732,7 @@ segmentkproc(void *arg)
 
 	incref(&g->s->r);
 	up->seg[sno] = g->s;
-	qunlock(&up->seglock);
+	qunlock(up->seglock);
 
 	for(done = 0; !done;){
 		sleep(&g->cmdwait, cmdready, g);
