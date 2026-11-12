@@ -165,7 +165,13 @@ tsinit(Ts *t)
 	 */
 	/* Clear any latched TSHUT status (write 1 to clear), then idle. */
 	drw(&t->ts, TsAutoCon, 1 << 24);
-	drw(&t->ts, TsAutoCon, 0);
+	/*
+	 * tsadc_q_sel: the sensor output is negative-coefficient.  With
+	 * this bit clear the block reports raw q (4096-q inverted), which
+	 * reads ~25 C low against the RK3568 table.  The vendor driver
+	 * sets it in auto mode; user mode needs it too.
+	 */
+	drw(&t->ts, TsAutoCon, TsAutoQSel);
 	drw(&t->ts, TsUserCon, TsUserPdSoc);
 }
 
