@@ -166,6 +166,7 @@ static const Fdtclass classtab[] = {
 	{ "rockchip,rk3568-wdt", Fdtclasswdt },
 	{ "snps,dw-wdt", Fdtclasswdt },
 	{ "rockchip,cryptov2-rng", Fdtclassrng },
+	{ "rockchip,rk3568-rng", Fdtclassrng },
 	{ "rockchip,trngv1", Fdtclassrng },
 	{ "rockchip,rkrng", Fdtclassrng },
 	{ "rockchip,cryptov1-rng", Fdtclassrng },

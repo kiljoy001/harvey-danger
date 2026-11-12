@@ -556,7 +556,23 @@ booti 0x40080000 - 0x48000000
 ```
 
 The first ping initializes the PHY and may need Ctrl-C to return; the MDIO
-changes must follow that initialization. The board then reached the 9ring
+changes must follow that initialization.
+
+### Persisting the boot set
+
+This U-Boot has no environment storage: it prints `Loading Environment from
+nowhere` and does not provide `saveenv`.  Persist a new kernel/DTB on the
+TFTP server instead, under the built-in names:
+
+```
+aspera-arm64.img
+orangepi-3b-v1.1.dtb
+```
+
+The built-in `aspera_boot` then loads them after a power cycle with no
+`setenv`.  Keep the previous DTB as `.pre-rng` when changing it; a stock
+mainline DTB may leave `&rng` disabled, while the board DTS in
+`doc/boards/orangepi-3b/dts/rk3568.dtsi` enables it. The board then reached the 9ring
 test at roughly 3.8 MiB/s TFTP throughput. U-Boot's automatic `bootm` attempt
 after each TFTP transfer reports an image error; the explicit `booti` command
 is required. The repeatable development path is a serial boot script; the
