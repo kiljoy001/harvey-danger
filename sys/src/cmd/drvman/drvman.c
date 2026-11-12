@@ -16,30 +16,31 @@ struct Driver {
 	char *class;	/* #P class name */
 	char *prog;	/* /boot program that owns this class */
 	char *srv;	/* /srv/<name> the program posts */
+	char *arg;	/* optional single argument */
 };
 
 /* Universal class -> program registry.  One program serves every instance of
  * its class; the program discovers its instances itself through #P. */
 static Driver drivers[] = {
-	{ "uart",	"/boot/uartfs",	"uart" },
-	{ "gpio",	"/boot/gpiofs",	"gpio" },
-	{ "gpu",	"/boot/gpufs",	"gpu" },
-	{ "i2c",	"/boot/i2cfs",	"i2c" },
-	{ "rng",	"/boot/rngfs",	"rng" },
-	{ "wdt",	"/boot/wdtfs",	"wdt" },
-	{ "saradc",	"/boot/saradcfs",	"saradc" },
-	{ "tsadc",	"/boot/tsadcfs",	"tsadc" },
-	{ "pwm",	"/boot/pwmfs",	"pwm" },
-	{ "spi",	"/boot/spifs",	"spi" },
-	{ "sfc",	"/boot/sfcs",	"sfc" },
-	{ "usb",	"/boot/usbpower",	"usbpower" },
+	{ "uart",	"/boot/uartfs",	"uart", nil },
+	{ "gpio",	"/boot/gpiofs",	"gpio", nil },
+	{ "gpu",	"/boot/gpufs",	"gpu", nil },
+	{ "i2c",	"/boot/i2cfs",	"i2c", nil },
+	{ "rng",	"/boot/rngfs",	"rng", nil },
+	{ "wdt",	"/boot/wdtfs",	"wdt", nil },
+	{ "saradc",	"/boot/saradcfs",	"saradc", nil },
+	{ "tsadc",	"/boot/tsadcfs",	"tsadc", nil },
+	{ "pwm",	"/boot/pwmfs",	"pwm", nil },
+	{ "spi",	"/boot/spifs",	"spi", nil },
+	{ "sfc",	"/boot/sfcs",	"sfc", nil },
+	{ "usb",	"/boot/usbpower",	"usbpower", nil },
 	{ nil,	nil,	nil },
 };
 
 /* Drivers for devices that are not #P classes: they sit on top of another
  * service, so they start after the class registry has been launched. */
 static Driver children[] = {
-	{ "pmic",	"/boot/pmicfs",	"pmic" },
+	{ "pmic",	"/boot/pmicfs",	"pmic", "-c" },
 	{ nil,	nil,	nil },
 };
 
@@ -115,11 +116,12 @@ waitusbpower(int tries)
 static int
 launch(Driver *d)
 {
-	char *argv[2];
+	char *argv[3];
 	int pid;
 
 	argv[0] = d->prog;
-	argv[1] = nil;
+	argv[1] = d->arg;
+	argv[2] = nil;
 	pid = rfork(RFPROC|RFNOWAIT|RFFDG|RFNAMEG|RFENVG|RFREND|RFNOTEG);
 	if(pid < 0)
 		return -1;

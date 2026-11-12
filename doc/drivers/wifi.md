@@ -17,7 +17,7 @@ regulator-enable lines and the 32 kHz clock.
 | SDIO pins `GPIO2_A3..A7`, `B0` | SYS_GRF `0x20/0x24/0x28` | function 1, full-field masks |
 | `WL_REG_ON` = `GPIO0_D3` (pin 27) | PMU_GRF `0x18`, GPIO0 `0x0c`/`0x04` | mux 0 (GPIO), DDR_H bit 11, DR_H bit 11 |
 | `BT_REG_ON` = `GPIO2_B7` (pin 15) | SYS_GRF `0x2c`, GPIO2 `0x08`/`0x00` | mux 0, DDR_L bit 15, DR_L bit 15 |
-| 32 kHz to the module | `/srv/pmic` `clk32k on` | RK809 clock out |
+| 32 kHz to the module | RK809 `CLK32KOUT2` | `pmicfs -c` started by drvman |
 
 Two register conventions bit us and are worth remembering:
 
@@ -26,6 +26,10 @@ Two register conventions bit us and are worth remembering:
 * GPIO v2 writes take **value and write-enable in the same word**:
   `BIT(pin%16) | BIT(pin%16+16)`, so `WL_REG_ON` high is `0x08000800` at
   `DDR_H`/`DR_H`, and low is `0x08000000`.
+
+The module's 32 kHz sleep clock is the RK809 `CLK32KOUT2` output, enabled
+once at boot by `pmicfs -c` (drvman passes the flag); the driver does not
+touch the PMIC.
 
 `WL_REG_ON` is held low, then driven high, then the driver's 200 ms
 post-power-on delay applies.  Without a real output direction the module never
@@ -96,5 +100,29 @@ booti 0x40080000 - 0x48000000
 
 The board DTB must have `mmc@fe2c0000` enabled so `#P` exposes the window.
 
-Then `/boot/lklboot -f wifi`.  The service keeps the process (and the guest)
-alive; a datapath from the guest netdev to Harvey and BT HCI are next.
+Then `/boot/lklboot -b -f wifi`.  `-b` detaches with
+`rfork(RFPROC|RFNOTEG)` *before* any LKL state exists, so the shell gets its
+prompt back and the detached process owns the LKL CPU lock.  The service keeps
+the process (and the guest) alive; a datapath from the guest netdev to Harvey
+and BT HCI are next.
+
+## Diagnostics and the console
+
+The console is not part of the driver path:
+
+* `lklboot` opens `/dev/lkllog` (a ring-buffer file) and sends its own
+  messages there, and LKL's `print` op is redirected to the same fd, so guest
+  `printk` never touches the UART.
+* Host-side setup messages in `harvey-host.c` (`say`/`lkl_printf`) go to that
+  fd as well.
+* The kernel's old `mmuput dma ...` trace is gone; a normal start produces no
+  console output at all.
+* The only console output left is a genuine Harvey fault/panic dump, which
+  means the guest process died.
+
+Read the log with `cat /dev/lkllog`.  Interrupt forwarding uses `pread` at
+offset 0 on `#P/<node>/wait`: a plain `read` advances the file offset, hits
+EOF after the first interrupt and forces a reopen, which flaps the GIC line
+and intermittently breaks SDIO enumeration.  `pnpclose` now releases the line
+and a second opener is refused, so a leaked watcher can no longer corrupt the
+wait queue.

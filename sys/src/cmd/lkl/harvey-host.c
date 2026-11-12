@@ -524,6 +524,7 @@ typedef struct Irqsrc Irqsrc;
 struct Irqsrc {
 	char	node[64];
 	int	irq;
+	int	reported;
 };
 
 static void
@@ -536,14 +537,34 @@ irqwatch(void *x)
 	for(;;){
 		snprint(path, sizeof path, "#P/%s/wait", s->node);
 		if((fd = open(path, OREAD)) < 0){
-			n = snprint(msg, sizeof msg, "lklhost: irq %d: open %s: %r\n",
-				    s->irq, path);
-			write(2, msg, n);
-			sleep(100);
+			/*
+			 * The previous reader of this line never closed it (a
+			 * guest that died while a watcher was blocked).  Say so
+			 * once, in the log, and keep trying slowly.
+			 */
+			if(!s->reported){
+				n = snprint(msg, sizeof msg,
+					    "lklhost: irq %d: open %s: %r\n",
+					    s->irq, path);
+				say(msg, n);
+				s->reported = 1;
+			}
+			sleep(1000);
 			continue;
 		}
-		while((n = read(fd, buf, sizeof buf)) > 0)
+		s->reported = 0;
+		/*
+		 * pread at offset 0: each call blocks for the next interrupt
+		 * and never advances the file offset (a plain read would hit
+		 * EOF after the first one and force a reopen, which flaps the
+		 * GIC line).
+		 */
+		for(;;){
+			n = pread(fd, buf, sizeof buf, 0);
+			if(n <= 0)
+				break;
 			lkl_trigger_irq(s->irq);
+		}
 		close(fd);
 	}
 }
@@ -786,8 +807,8 @@ raminit(unsigned long want)
 	base = pnpnum("dma", "base");
 	size = pnpnum("dma", "size");
 	if(base == ~0ULL || size == ~0ULL || size < 64*1024*1024){
-		print("host: no dma arena (base %#llux size %#llux)\n",
-		      base, size);
+		lkl_printf("host: no dma arena (base %#llux size %#llux)\n",
+		       base, size);
 		return;
 	}
 	/*
@@ -796,15 +817,15 @@ raminit(unsigned long want)
 	 */
 	va = segattach(0, "dma", 0, size);
 	if(va == (void*)-1){
-		print("host: segattach dma %#llux: %r\n", size);
+		lkl_printf("host: segattach dma %#llux: %r\n", size);
 		return;
 	}
 	pa = base;
 	if(want != 0 && want < size){
 		if(dmaalloc(want, 0x200000, &pa) < 0 ||
 		   pa < base || pa + want > base + size){
-			print("host: dma alloc %lud failed; using whole arena\n",
-			      want);
+			lkl_printf("host: dma alloc %lud failed; using whole arena\n",
+			       want);
 			pa = base;
 			want = 0;
 		}
@@ -814,8 +835,8 @@ raminit(unsigned long want)
 	lklram = va + (pa - base);
 	lklrampa = pa;
 	lklramsize = want;
-	print("host: arena va %p pa %#llux size %#llux%s\n",
-	      lklram, pa, want, pa == base ? "" : " (chunk)");
+	lkl_printf("host: arena va %p pa %#llux size %#llux%s\n",
+		   lklram, pa, want, pa == base ? "" : " (chunk)");
 }
 
 /*
@@ -904,16 +925,16 @@ hpage_alloc(unsigned long size)
 		if(off + size <= lklramsize){
 			p = lklram + off;
 			lklramoff = off + size;
-			print("host: guest ram va %p dma %#llux size %lud\n",
-			      p, lkl_host_dma_pa(p, size), size);
+			lkl_printf("host: guest ram va %p dma %#llux size %lud\n",
+				   p, lkl_host_dma_pa(p, size), size);
 			memset(p, 0, size);
 			return p;
 		}
-		print("host: dma arena full: want %lud, used %llud\n",
-		      size, lklramoff);
+		lkl_printf("host: dma arena full: want %lud, used %llud\n",
+			   size, lklramoff);
 	}
 	if((p = mallocz(size + Page + 16, 1)) == nil){
-		print("host: page_alloc %lud failed\n", size);
+		lkl_printf("host: page_alloc %lud failed\n", size);
 		return nil;
 	}
 	a = (uchar*)(((uintptr)p + Page + 15) & ~(uintptr)(Page-1));
@@ -1413,9 +1434,9 @@ hresource(const char *path, int wr, const char *cmd, char *buf, int len)
 		return -1;
 	if(rpath[0] != 0)
 		snprint(pbuf, sizeof pbuf, "%s", rpath);
-	print("host: resource %s %s\n", pbuf, wr ? cmd : "read");
+	lkl_printf("host: resource %s %s\n", pbuf, wr ? cmd : "read");
 	if((fd = open(pbuf, wr ? OWRITE : OREAD)) < 0){
-		print("host: resource open %s: %r\n", pbuf);
+		lkl_printf("host: resource open %s: %r\n", pbuf);
 		return -1;
 	}
 	if(wr){

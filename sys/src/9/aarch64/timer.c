@@ -77,6 +77,14 @@ arm64irqenable(u32 irq)
 
 	if(gicdist == nil || (w = irqslot(irq)) == nil)
 		return -1;
+	/*
+	 * One reader per line.  A second one would share the single rendez
+	 * and the single "seen" counter, which corrupts both (and panics the
+	 * kernel with "double sleep").  This also turns a leaked watcher from
+	 * a crashed guest into a clean open error instead of corruption.
+	 */
+	if(w->open)
+		return -1;
 	mask = 1U << (irq % 32);
 	prio = 0x400/4 + irq/4;
 	shift = (irq % 4) * 8;

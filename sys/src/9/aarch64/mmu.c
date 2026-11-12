@@ -378,7 +378,6 @@ ptalloc(Proc *p)
 void
 mmuput(usize va, Page *page, u32 attr)
 {
-	static int dmatrace;
 	Proc *p;
 	u64 *root, *l2, *l3, *kernel, pa, entry;
 	u32 i1, i2, i3, size;
@@ -390,12 +389,6 @@ mmuput(usize va, Page *page, u32 attr)
 	size = sys->pgsz[page->pgszi];
 	if(size != PGSZ && size != BIGPGSZ)
 		panic("ARM64 mmuput: unsupported page size");
-	if(dmatrace < 24 && arm64dmasize != 0 &&
-	   page->pa >= arm64dmabase && page->pa < arm64dmabase + arm64dmasize){
-		dmatrace++;
-		print("mmuput dma va %p pa %p pgszi %ud size %ud ref %d\n",
-		      va, page->pa, page->pgszi, size, page->ref);
-	}
 	if((va | page->pa) & (size - 1))
 		panic("ARM64 mmuput: unaligned mapping");
 	kernel = (u64 *)arm64mmukernelroot();

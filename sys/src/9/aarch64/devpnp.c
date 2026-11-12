@@ -584,6 +584,14 @@ pnpopen(Chan *c, int omode)
 static void
 pnpclose(Chan *c)
 {
+	int dev;
+
+	/*
+	 * Closing the wait file must release the GIC line, or a reader that
+	 * exits leaves the line claimed and the next consumer gets -1.
+	 */
+	if(TYPE(c) == Qwait && (dev = DEV(c)) >= 0 && dev < (int)npnpdev)
+		arm64irqdisable(pnpdev[dev].irq);
 	free(c->aux);
 	c->aux = nil;
 }

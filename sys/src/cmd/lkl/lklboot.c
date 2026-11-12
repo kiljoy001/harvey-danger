@@ -352,25 +352,6 @@ wcnwr(u64 base, u32 off, u32 v)
 }
 
 static void
-wcnclk(void)
-{
-	int fd;
-
-	create("/mnt/wcnpmic", OREAD, DMDIR|0755);
-	if((fd = open("/srv/pmic", ORDWR)) < 0)
-		return;
-	if(mount(fd, -1, "/mnt/wcnpmic", MREPL, "") < 0){
-		close(fd);
-		return;
-	}
-	if((fd = open("/mnt/wcnpmic/ctl", OWRITE)) >= 0){
-		if(write(fd, "clk32k on", 9) == 9)
-			lkl_printf("lklboot: wcn 32 k clock on\n");
-		close(fd);
-	}
-}
-
-static void
 setwcnpower(void)
 {
 	u64 cru, pmugrf, sysgrf, gpio0, gpio2;
@@ -417,8 +398,6 @@ setwcnpower(void)
 	wcnwr(gpio2, 0x00, (1u<<(16+15)) | (1u<<15));
 	sleep(200);
 
-	wcnclk();
-
 	lkl_printf("lklboot: wcn cru33c %#ux cru178 %#ux grf20 %#ux "
 		   "grf24 %#ux grf28 %#ux grf2c %#ux pmugrf18 %#ux "
 		   "gpio0 ddr %#ux dr %#ux gpio2 ddr %#ux dr %#ux\n",
@@ -463,7 +442,7 @@ setupfamily(Family *f)
 void
 main(int argc, char **argv)
 {
-	int fd, hosttest, kerneltest, console, nohw, famidx;
+	int fd, hosttest, kerneltest, console, nohw, background, famidx;
 	char *fname;
 	Family *f;
 	Dtb *dtb;
@@ -472,6 +451,7 @@ main(int argc, char **argv)
 	kerneltest = 0;
 	console = 0;
 	nohw = 0;
+	background = 0;
 	fname = "emmc";
 	ARGBEGIN{
 	case 'd':
@@ -489,14 +469,25 @@ main(int argc, char **argv)
 	case 'n':
 		nohw = 1;
 		break;
+	case 'b':
+		background = 1;
+		break;
 	case 'f':
 		fname = ARGF();
 		break;
 	default:
-		fprint(2, "usage: lklboot [-c] [-d] [-f family] [-n] [-s] [-t] "
-			  "[platform-node]\n");
+		fprint(2, "usage: lklboot [-b] [-c] [-d] [-f family] [-n] "
+			  "[-s] [-t] [platform-node]\n");
 		exits("usage");
 	}ARGEND
+	/*
+	 * A driver family is a service, not a command: detach before any LKL
+	 * state exists so the shell that started it gets its prompt back and
+	 * the CPU-lock owner is the detached process.  RFNOTEG keeps console
+	 * interrupts away from a machine that must keep serving.
+	 */
+	if(background && rfork(RFPROC|RFNOTEG) != 0)
+		exits(nil);
 	/*
 	 * Diagnostics go to /dev/lkllog, a synthetic file backed by a ring
 	 * buffer.  Writing to /dev/cons from these threads is not safe: the
