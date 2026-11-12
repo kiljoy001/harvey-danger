@@ -36,7 +36,7 @@ rows below describe the native `o9xhci` fallback and its parity-oracle role.
 - SARADC: `saradcfs` exposes `/srv/saradc/chan0..7` and `/status`; conversions and vref control verified on v1.1.
 - TSADC: `tsadcfs` exposes `/srv/tsadc/temp0`, `temp1`, `status`; each read powers the ADC up, converts one channel in user mode and powers down.
 - TSADC bring-up gotchas: USER_CON bit 3 (adc_power_ctrl) must be set or the block stays powered down and DATA reads zero; AUTO_CON bit 1 (tsadc_q_sel) must be set or the negative-coefficient output is reported raw and reads about 25 C low.  Cross-checked against Armbian 6.18.21 on the same board (thermal_zone0 38.9 C, zone1 36.7 C).
-- OTP: the Armbian 6.18.21 `rockchip-otp` build only matches px30/rk3308/rk3576/rk3588, so the RK3568 node does not bind; fuse trim is still unread.
+- OTP: read with a locally built 6.18.21 carrying the upstream RK3568 patches (see `doc/drivers/otp.md`).  The TSADC trim cells on this board are unprogrammed, so `tsadcfs` correctly reports the untrimmed value; chip id `"M2Y401"` and serial are available for an identity service.
 - 9P write note: control writes can arrive in several messages; `saradcfs` and `wdtfs` buffer until newline before applying a command.
 
 ## SoC and controller blocks
