@@ -40,7 +40,8 @@ rows below describe the native `o9xhci` fallback and its parity-oracle role.
 - PWM: `pwmfs` exposes `/srv/pwm/{status,fan,ctl}` for the PWM1 block at fe6e0000.  The fan header is PWM7 (`GPIO0_C6`), gated by Q4; the vendor v1.1 DTS confirms it with `pwms = <&pwm7 0 50000 0>` (20 kHz).  v2.1 uses the same channel but a 20 ms period (50 Hz), so the revision matters for timing.  Boot enables the `CLK_PWM1`/`PCLK_PWM1` gates, muxes `clk_pwm1` to xin24m (24 MHz) and sets the pin function.  `fan <percent>` uses a 20 kHz period (1200 ticks).  Verified on v1.1: registers, pinmux, and the channel counter advancing.
 - Fan curve (implemented in `fanctl`): the vendor v1.1 table `cooling-levels = <0 50 100 150 200 255>` with `rockchip,temp-trips = <50000 1 55000 2 60000 3 65000 4 70000 5>`, i.e. 50/55/60/65/70 C select 0/50/100/150/200/255 duty, with 2 C hysteresis on the way down.
 - Fan policy: `fanctl` samples `/srv/tsadc/temp0` every 2 s and drives `/srv/pwm/ctl`; `/srv/fan/status` reports mode/temperature/level/duty and `/srv/fan/ctl` takes `auto`, `level`, `temp` (forced, for test) and `hyst`.  Verified with forced trips: 52/57/62/72 C -> levels 1/2/3/5 -> 19/39/58/100 %, and 69->67 C holds level 5 until 68 C.
-- PMU_GRF note: the RK3568 iomux registers use a hiword write mask (upper 16 bits select which fields are written).  A plain read-modify-write is silently ignored, which is why the first pinmux attempt read back zero.
+- PMU_GRF note: the RK3568 iomux registers use a hiword write mask (upper 16 bits select which fields are written).  A plain read-modify-write is silently ignored, which is why the first pinmux attempt read back zero.  The mask must cover the whole field, not just its low bit: a 4-bit function field at bit 8 needs mask 0xF00 (SPI3 first used 1<<8 and wrote a zero).
+- SPI: `spifs` exposes `/srv/spi/{status,xfer,ctl}` for SPI3 at fe640000, the controller wired to the 40-pin header (m0: cs0 GPIO4_A6, miso B0, mosi B2, clk B3, all function 4).  `/xfer` takes a write (MOSI bytes) and returns the received bytes on read.  Boot enables the clocks, muxes `clk_spi3` to xin24m and sets the pin functions.  Verified on v1.1: version 0x110002, 1-4 MHz transfers complete with no errors, mux reads 0x400/0x4404; MISO/MOSI loopback not yet checked (needs a jumper).
 - 9P write note: control writes can arrive in several messages; `saradcfs` and `wdtfs` buffer until newline before applying a command.
 
 ## SoC and controller blocks
@@ -50,7 +51,7 @@ rows below describe the native `o9xhci` fallback and its parity-oracle role.
 | UART0-9 | UART2 console works; `uartfs` exists | UART1 BT HCI, UART0/3-9 on header/debug, general UART service | P1/P2 |
 | GPIO / pinctrl | `gpiofs`; banks GPIO0-4, per-pin IRQ | 40-pin header policy, more pinmux, LED/IR consumers | P1 |
 | I2C0-5 | `i2cfs`; I2C0 = PMIC, I2C1 header | Device drivers on I2C1-5 (sensors, display DDC, camera) | P1 |
-| SPI0-3 | FDT class recognized | No SPI controller driver; header and TPM need it | P1 |
+| SPI0-3 | `spifs` drives SPI3 (fe640000, header m0 pins) as `/srv/spi`; transfers complete at 1-4 MHz, pinmux verified | Loopback/device test (needs a MOSI-MISO jumper), SPI0-2, SFC | P1 |
 | PWM0-15 | `pwmfs` drives the PWM1 block (fe6e0000) as `/srv/pwm`; fan on PWM7 verified | Other controllers, eDP backlight, IR, header pins | P1 |
 | SARADC | `saradcfs` serves `/srv/saradc/chan0..7` (10-bit); board test: chan0 1023/1798 mV, chan1 951/1671 mV, vref ctl 3.3 V -> 3296 mV | Add a key/header consumer | P2 |
 | TSADC / thermal | `tsadcfs` serves `/srv/tsadc/temp0`, `temp1` via user-mode conversions; board now reads 41.9/39.4 C untrimmed, against Linux 38.9/36.7 C | eFuse trim, trip/cooling policy | P1 |
@@ -105,7 +106,7 @@ rows below describe the native `o9xhci` fallback and its parity-oracle role.
 | RTC battery | `VCC_RTC`, SX-3215 | RK809 RTC works | Battery status/monitoring | P3 |
 | Work LED | GPIO0_C0, `work_led` | `gpiofs` can drive | Heartbeat/status service | P3 |
 | Ethernet LEDs | RJ45 PHY LEDs | Hardware default | Optional LED policy | P3 |
-| 40-pin header (CON2) | 2x20 header | GPIO/I2C/UART partial | SPI, PWM, SARADC; header pin policy | P1 |
+| 40-pin header (CON2) | 2x20 header | GPIO/I2C/UART, PWM, SARADC, SPI3 | Remaining pin functions; header policy | P1 |
 | M.2 M-key | `M.2-KEY-M-H3R2`, PCIe2x1 | No driver | PCIe + NVMe | P2 |
 | TF card slot | `TF2`, sdmmc0 | No driver | SDHCI instance, card detect | P2 |
 | eMMC | `sdhci`, HS200 | Works; boots with `/` on the ext2 root partition | fsck, larger partitions | P1 |
