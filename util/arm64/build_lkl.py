@@ -28,7 +28,7 @@ LD = os.environ.get("ARM64_LD", "ld.lld")
 BASE = 0x10000000          # below the 0x40000000 kernel boundary
 BIG_PAGE = 0x200000
 FAMILIES = json.loads((ROOT / "util/arm64/lkl-families.json").read_text())
-SETUP_IDS = {"emmc": 1, "usb": 2}
+SETUP_IDS = {"emmc": 1, "usb": 2, "wifi": 3}
 
 
 def run(cmd: list[str]) -> None:

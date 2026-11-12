@@ -6,6 +6,13 @@
 		"dtb": "lkl-emmc.dtb",
 		"setup": "emmc"
 	},
+	"wifi": {
+		"program": "lklwifi",
+		"mem": "256M",
+		"devices": ["mmc@fe2c0000"],
+		"dtb": "lkl-wifi.dtb",
+		"setup": "wifi"
+	},
 	"usb": {
 		"program": "lklusb",
 		"mem": "256M",

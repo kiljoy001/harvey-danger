@@ -822,6 +822,46 @@ raminit(unsigned long want)
  * Cache maintenance for the guest's DMA buffers.  op 0=clean (CPU wrote),
  * 1=invalidate (device wrote), 2=both.
  */
+/*
+ * Coherent (dmam_alloc_coherent) regions.  The arena is mapped cacheable, so
+ * a descriptor written by the CPU is invisible to the device until it is
+ * cleaned.  Linux assumes coherent memory needs no maintenance, so the host
+ * cleans every registered region before any device register write kicks DMA.
+ */
+void lkl_host_dma_sync(unsigned long, unsigned long, int);
+
+enum { Ncoal = 16 };
+static struct {
+	unsigned long pa;
+	unsigned long size;
+} coal[Ncoal];
+static int ncoal;
+
+void
+lkl_host_dma_coherent(void *va, unsigned long size, unsigned long pa)
+{
+	int i;
+
+	USED(va);
+	for(i = 0; i < ncoal; i++)
+		if(coal[i].pa == pa && coal[i].size == size)
+			return;
+	if(ncoal >= Ncoal)
+		return;
+	coal[ncoal].pa = pa;
+	coal[ncoal].size = size;
+	ncoal++;
+}
+
+static void
+coherentclean(void)
+{
+	int i;
+
+	for(i = 0; i < ncoal; i++)
+		lkl_host_dma_sync(coal[i].pa, coal[i].size, 0);
+}
+
 void
 lkl_host_dma_sync(unsigned long pa, unsigned long size, int op)
 {
@@ -1183,6 +1223,13 @@ hiomem_access(const volatile void *addr, void *val, int size, int write)
 			 * never starts the command.
 			 */
 			if(write){
+				/*
+				 * A register write may be the doorbell that
+				 * starts DMA: make coherent descriptors
+				 * visible to the device first.
+				 */
+				if(write == 1)
+					coherentclean();
 				switch(size){
 				case 1: *(volatile u8*)p = *(u8*)val; break;
 				case 2: *(volatile u16*)p = *(u16*)val; break;
@@ -1212,7 +1259,31 @@ hiomem_access(const volatile void *addr, void *val, int size, int write)
 			return 0;
 		}
 	}
-	return -1;
+	/*
+	 * Not a device window: LKL also routes readl()/writel() on ordinary
+	 * RAM (the IDMAC descriptor ring, for instance) through this op.  Guest
+	 * memory lives in this process, so a plain access is correct.
+	 */
+	if((u64)addr < 0x1000)
+		return -1;
+	if(write){
+		switch(size){
+		case 1: *(volatile u8*)p = *(u8*)val; break;
+		case 2: *(volatile u16*)p = *(u16*)val; break;
+		case 4: *(volatile u32*)p = *(u32*)val; break;
+		case 8: *(volatile u64*)p = *(u64*)val; break;
+		default: memmove((void*)p, val, size); break;
+		}
+	}else{
+		switch(size){
+		case 1: *(u8*)val = *(volatile u8*)p; break;
+		case 2: *(u16*)val = *(volatile u16*)p; break;
+		case 4: *(u32*)val = *(volatile u32*)p; break;
+		case 8: *(u64*)val = *(volatile u64*)p; break;
+		default: memmove(val, (void*)p, size); break;
+		}
+	}
+	return 0;
 }
 
 static void
@@ -1258,14 +1329,18 @@ hmmap(void *addr, unsigned long size, enum lkl_prot prot)
 {
 	USED(addr);
 	USED(prot);
-	return mallocz(size, 1);
+	/*
+	 * vmalloc memory can end up in a DMA buffer (the WiFi firmware image
+	 * is handed to the SDIO host from a vmalloc'd copy), so it has to come
+	 * from the arena whose physical addresses the device can reach.
+	 */
+	return hpage_alloc(size);
 }
 
 static int
 hmunmap(void *addr, unsigned long size)
 {
-	USED(size);
-	free(addr);
+	hpage_free(addr, size);
 	return 0;
 }
 

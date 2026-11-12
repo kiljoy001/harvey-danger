@@ -1,0 +1,75 @@
+/*
+ * Trimmed device tree for the LKL Wi-Fi/BT family (Orange Pi 3B v1.1).
+ *
+ * The Unisoc UWE5622 sits on sdmmc1 (DesignWare MSHC at fe2c0000) and
+ * carries both the cfg80211 Wi-Fi function and the Bluetooth HCI channel.
+ * As with the eMMC tree, clocks are modelled fixed: the native side
+ * programs the CRU (SCLK_SDMMC1 = 100 MHz, gates on) and the controller's
+ * internal divider produces the card clock.  The rails and the module's
+ * WL_REG_ON are also owned natively; there is no pwrseq node here.
+ */
+/dts-v1/;
+
+/ {
+	compatible = "rockchip,rk3566";
+	#address-cells = <2>;
+	#size-cells = <2>;
+
+	gic: interrupt-controller@fd400000 {
+		compatible = "arm,gic-v3";
+		reg = <0x0 0xfd400000 0x0 0x10000>,
+		      <0x0 0xfd460000 0x0 0x80000>;
+		interrupt-controller;
+		#interrupt-cells = <3>;
+		#address-cells = <0>;
+	};
+
+	mmc@fe2c0000 {
+		compatible = "rockchip,rk3568-dw-mshc", "rockchip,rk3288-dw-mshc";
+		reg = <0x0 0xfe2c0000 0x0 0x4000>;
+		interrupt-parent = <&gic>;
+		interrupts = <0 99 4>;		/* GIC_SPI 99, LEVEL_HIGH */
+		clocks = <&biu_clk>, <&ciu_clk>;
+		clock-names = "biu", "ciu";
+		clock-frequency = <50000000>;
+		fifo-depth = <0x100>;
+		bus-width = <4>;
+		non-removable;
+		no-sd;
+		no-mmc;
+		cap-sd-highspeed;
+		cap-sdio-irq;
+		max-frequency = <50000000>;
+		vmmc-supply = <&vcc_3v3>;
+		vqmmc-supply = <&vcc_1v8>;
+		status = "okay";
+	};
+
+	vcc_3v3: regulator-3v3 {
+		compatible = "regulator-fixed";
+		regulator-name = "vcc_3v3";
+		regulator-min-microvolt = <3300000>;
+		regulator-max-microvolt = <3300000>;
+		regulator-always-on;
+	};
+
+	vcc_1v8: regulator-1v8 {
+		compatible = "regulator-fixed";
+		regulator-name = "vcc_1v8";
+		regulator-min-microvolt = <1800000>;
+		regulator-max-microvolt = <1800000>;
+		regulator-always-on;
+	};
+
+	biu_clk: biu-clk {
+		compatible = "fixed-clock";
+		#clock-cells = <0>;
+		clock-frequency = <100000000>;
+	};
+
+	ciu_clk: ciu-clk {
+		compatible = "fixed-clock";
+		#clock-cells = <0>;
+		clock-frequency = <100000000>;
+	};
+};

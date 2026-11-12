@@ -20,6 +20,7 @@ enum {
 	FamNone,
 	FamEmmc,
 	FamUsb,
+	FamWifi,
 };
 
 typedef struct Dtb Dtb;

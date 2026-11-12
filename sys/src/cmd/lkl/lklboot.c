@@ -318,6 +318,126 @@ watchfamily(Family *f)
 	}
 }
 
+/*
+ * UWE5622 native handoff.  The guest owns the DW MSHC controller, but the
+ * CRU gates/mux, the SDIO pinmux and the module's power/reset lines stay
+ * native.  sclk_sdmmc1 is set to cpll_100m (the DT declares ciu fixed at
+ * 100 MHz); the controller divides it down to the card clock.
+ */
+static u64
+wcnmap(char *node)
+{
+	u64 base, size;
+
+	if(lklhost_mapdev(node, &base, &size) < 0){
+		lkl_printf("lklboot: map %s: %r\n", node);
+		return ~0ULL;
+	}
+	return base;
+}
+
+static u32
+wcnrd(u64 base, u32 off)
+{
+	u32 v = 0;
+
+	lklhost_iomem(base + off, &v, 4, 0);
+	return v;
+}
+
+static void
+wcnwr(u64 base, u32 off, u32 v)
+{
+	lklhost_iomem(base + off, &v, 4, 1);
+}
+
+static void
+wcnclk(void)
+{
+	int fd;
+
+	create("/mnt/wcnpmic", OREAD, DMDIR|0755);
+	if((fd = open("/srv/pmic", ORDWR)) < 0)
+		return;
+	if(mount(fd, -1, "/mnt/wcnpmic", MREPL, "") < 0){
+		close(fd);
+		return;
+	}
+	if((fd = open("/mnt/wcnpmic/ctl", OWRITE)) >= 0){
+		if(write(fd, "clk32k on", 9) == 9)
+			lkl_printf("lklboot: wcn 32 k clock on\n");
+		close(fd);
+	}
+}
+
+static void
+setwcnpower(void)
+{
+	u64 cru, pmugrf, sysgrf, gpio0, gpio2;
+	u32 v;
+
+	cru = wcnmap("clock-controller@fdd20000");
+	pmugrf = wcnmap("syscon@fdc20000");
+	sysgrf = wcnmap("syscon@fdc60000");
+	gpio0 = wcnmap("gpio@fdd60000");
+	gpio2 = wcnmap("gpio@fe750000");
+	if(cru == ~0ULL || pmugrf == ~0ULL || sysgrf == ~0ULL ||
+	   gpio0 == ~0ULL || gpio2 == ~0ULL)
+		return;
+
+	/*
+	 * hclk_sdmmc1/clk_sdmmc1 gates (0 enables), sclk_sdmmc1 mux =
+	 * cpll_100m (field 12-14, hiword mask, so 0x7<<28 | 3<<12).
+	 */
+	wcnwr(cru, 0x33c, 0x000c0000);
+	wcnwr(cru, 0x178, 0x70003000);
+
+	/* sdmmc1 pins: A3..A7 and B0, function 1. */
+	wcnwr(sysgrf, 0x20, 0xf0001000);
+	wcnwr(sysgrf, 0x24, 0xffff1111);
+	wcnwr(sysgrf, 0x28, 0x000f0001);
+
+	/* WL_REG_ON (GPIO0_D3) and BT_REG_ON (GPIO2_B7) become GPIOs. */
+	wcnwr(pmugrf, 0x18, 0xf0000000);
+	wcnwr(sysgrf, 0x2c, 0xf0000000);
+
+	/*
+	 * GPIO v2 writes carry a write-enable mask in the upper 16 bits:
+	 * a bit is updated when both its mask bit and value bit are set.
+	 * GPIO0_D3 is pin 27 (DR_H 0x04, DDR_H 0x0c, bit 11) and
+	 * GPIO2_B7 is pin 15 (DR_L 0x00, DDR_L 0x08, bit 15).
+	 */
+	wcnwr(gpio0, 0x0c, (1u<<(16+11)) | (1u<<11));
+	wcnwr(gpio2, 0x08, (1u<<(16+15)) | (1u<<15));
+
+	/* Drive WL_REG_ON low, then high; BT_REG_ON high. */
+	wcnwr(gpio0, 0x04, 1u<<(16+11));
+	sleep(10);
+	wcnwr(gpio0, 0x04, (1u<<(16+11)) | (1u<<11));
+	wcnwr(gpio2, 0x00, (1u<<(16+15)) | (1u<<15));
+	sleep(200);
+
+	wcnclk();
+
+	lkl_printf("lklboot: wcn cru33c %#ux cru178 %#ux grf20 %#ux "
+		   "grf24 %#ux grf28 %#ux grf2c %#ux pmugrf18 %#ux "
+		   "gpio0 ddr %#ux dr %#ux gpio2 ddr %#ux dr %#ux\n",
+		   wcnrd(cru, 0x33c), wcnrd(cru, 0x178),
+		   wcnrd(sysgrf, 0x20), wcnrd(sysgrf, 0x24),
+		   wcnrd(sysgrf, 0x28), wcnrd(sysgrf, 0x2c),
+		   wcnrd(pmugrf, 0x18), wcnrd(gpio0, 0x0c),
+		   wcnrd(gpio0, 0x04), wcnrd(gpio2, 0x08),
+		   wcnrd(gpio2, 0x00));
+}
+
+static void
+wifiservice(void)
+{
+	/* The guest driver owns the bus; keep the process (and kernel) up. */
+	for(;;)
+		sleep(1000);
+}
+
 static void
 setupfamily(Family *f)
 {
@@ -331,6 +451,9 @@ setupfamily(Family *f)
 		 * the vendor dwc3-rockchip glue is not in the 6.12 tree.
 		 */
 		lkl_printf("lklboot: usb family: native PHY handoff assumed\n");
+		break;
+	case FamWifi:
+		setwcnpower();
 		break;
 	default:
 		break;
@@ -441,6 +564,12 @@ main(int argc, char **argv)
 		exits("start");
 	}
 	say("lklboot: kernel up\n");
+	/*
+	 * Start forwarding device interrupts now.  lkl_start_kernel() returns
+	 * once the guest reaches /init, i.e. after every initcall has run, and
+	 * the drivers that need interrupts probe from workqueues (MMC card
+	 * detection) or after this point (the WiFi SDIO power-on).
+	 */
 	if(!nohw)
 		watchfamily(f);
 
@@ -451,6 +580,8 @@ main(int argc, char **argv)
 	 */
 	if(f->setup == FamUsb && !kerneltest)
 		usbservice();
+	if(f->setup == FamWifi && !kerneltest)
+		wifiservice();
 
 	if(kerneltest){
 		selftest();
