@@ -667,6 +667,7 @@ arm64kernelstart(Fdtinfo *info)
 	addbootfile("pwmfs", (u8 *)arm64pwmfself, sizeof(arm64pwmfself));
 	addbootfile("fanctl", (u8 *)arm64fanctlself, sizeof(arm64fanctlself));
 	addbootfile("spifs", (u8 *)arm64spifself, sizeof(arm64spifself));
+	addbootfile("sfcs", (u8 *)arm64sfcfself, sizeof(arm64sfcfself));
 	addbootfile("mkdir", (u8 *)arm64mkdirelf, sizeof(arm64mkdirelf));
 	addbootfile("mount", (u8 *)arm64mountelf, sizeof(arm64mountelf));
 	addbootfile("mount9", (u8 *)arm64mount9elf, sizeof(arm64mount9elf));

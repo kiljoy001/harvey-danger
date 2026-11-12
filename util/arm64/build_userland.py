@@ -47,6 +47,7 @@ TSADCFS_BASE = 0x6200000
 PWMFS_BASE = 0x6A00000
 FANCTL_BASE = 0x7200000
 SPIFS_BASE = 0x7A00000
+SFCS_BASE = 0x8200000
 RTC_BASE = 0x3E00000
 PING_BASE = 0x8200000
 SDPROBE_BASE = 0x8600000
@@ -425,6 +426,11 @@ def build_fanctl(out: Path, libc: Path) -> tuple[bytes, int]:
 def build_spifs(out: Path, libc: Path) -> tuple[bytes, int]:
     return build_fs(out, libc, "spifs",
                     ROOT / "sys/src/cmd/spifs/spifs.c", SPIFS_BASE)
+
+
+def build_sfcs(out: Path, libc: Path) -> tuple[bytes, int]:
+    return build_fs(out, libc, "sfcs",
+                    ROOT / "sys/src/cmd/sfcs/sfcs.c", SFCS_BASE)
 
 
 def build_emmcfs(out: Path, libc: Path) -> tuple[bytes, int]:
@@ -1367,6 +1373,7 @@ main(int argc, char **argv)
     pwmfs, _ = build_pwmfs(out, libc)
     fanctl, _ = build_fanctl(out, libc)
     spifs, _ = build_spifs(out, libc)
+    sfcs, _ = build_sfcs(out, libc)
     mkdirbin, _ = build_elf(out, libc, "mkdir", ROOT / "sys/src/cmd/mkdir.c",
                             MKDIR_BASE, [])
     mount9bin, _ = build_elf(out, libc, "mount9", ROOT / "sys/src/cmd/mount9.c",
@@ -2040,6 +2047,7 @@ main(int argc, char **argv)
     emit_array(lines, "arm64pwmfself", pwmfs)
     emit_array(lines, "arm64fanctlself", fanctl)
     emit_array(lines, "arm64spifself", spifs)
+    emit_array(lines, "arm64sfcfself", sfcs)
     emit_array(lines, "arm64mkdirelf", mkdirbin)
     emit_array(lines, "arm64mountelf", mountbin)
     emit_array(lines, "arm64mount9elf", mount9bin)
@@ -2095,6 +2103,7 @@ main(int argc, char **argv)
         "pwmfs": pwmfs,
         "fanctl": fanctl,
         "spifs": spifs,
+        "sfcs": sfcs,
         "mkdir": mkdirbin,
         "mount": mountbin,
         "mount9": mount9bin,

@@ -31,6 +31,7 @@ static Driver drivers[] = {
 	{ "tsadc",	"/boot/tsadcfs",	"tsadc" },
 	{ "pwm",	"/boot/pwmfs",	"pwm" },
 	{ "spi",	"/boot/spifs",	"spi" },
+	{ "sfc",	"/boot/sfcs",	"sfc" },
 	{ "usb",	"/boot/usbpower",	"usbpower" },
 	{ nil,	nil,	nil },
 };

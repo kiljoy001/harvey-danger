@@ -42,6 +42,8 @@ rows below describe the native `o9xhci` fallback and its parity-oracle role.
 - Fan policy: `fanctl` samples `/srv/tsadc/temp0` every 2 s and drives `/srv/pwm/ctl`; `/srv/fan/status` reports mode/temperature/level/duty and `/srv/fan/ctl` takes `auto`, `level`, `temp` (forced, for test) and `hyst`.  Verified with forced trips: 52/57/62/72 C -> levels 1/2/3/5 -> 19/39/58/100 %, and 69->67 C holds level 5 until 68 C.
 - PMU_GRF note: the RK3568 iomux registers use a hiword write mask (upper 16 bits select which fields are written).  A plain read-modify-write is silently ignored, which is why the first pinmux attempt read back zero.  The mask must cover the whole field, not just its low bit: a 4-bit function field at bit 8 needs mask 0xF00 (SPI3 first used 1<<8 and wrote a zero).
 - SPI: `spifs` exposes `/srv/spi/{status,xfer,ctl}` for SPI3 at fe640000, the controller wired to the 40-pin header (m0: cs0 GPIO4_A6, miso B0, mosi B2, clk B3, all function 4).  `/xfer` takes a write (MOSI bytes) and returns the received bytes on read.  Boot enables the clocks, muxes `clk_spi3` to xin24m and sets the pin functions.  Verified on v1.1: version 0x110002, 1-4 MHz transfers complete with no errors, mux reads 0x400/0x4404; MISO/MOSI loopback not yet checked (needs a jumper).
+- SFC: `sfcs` exposes the boot SPI NOR at fe300000 as `/srv/sfc`: `/status` (version, JEDEC ID, capacity), `/data` (read-only, at the file offset), `/hex` (dump of the last `dump` command), `/ctl` (`dump`, `rescan`, `flashreset`, `phase`, `fast`).  The flash is an XM25QU128C, 16 MiB, JEDEC 20 41 18.  Verified against U-Boot `sf read`: the GPT `EFI PART` at 0x200 and the `RKNS` idbloader header at 0x8000 match byte for byte.
+- SFC bring-up gotchas: the plain READ (0x03) loses the first data byte on this controller; use FAST READ (0x0B) with 8 dummy cycles.  CTRL.WPEN (bit 29) must be set, and the flash WP# is FSPI_D2 (GPIO1_C7, function 2, SYS_GRF 0x14 bits 12-15).  The part comes out of U-Boot in deep power-down, so `flashattach` sends 0xAB then a 0x66/0x99 reset before reading the ID.
 - 9P write note: control writes can arrive in several messages; `saradcfs` and `wdtfs` buffer until newline before applying a command.
 
 ## SoC and controller blocks
@@ -83,7 +85,7 @@ rows below describe the native `o9xhci` fallback and its parity-oracle role.
 | RGA (2D) | FDT class recognized | No driver | P3 |
 | ISP / VICAP | FDT class recognized | No driver | P3 |
 | MIPI CSI / DPHY | FDT class recognized | No camera/CSI driver | P3 |
-| SFC / SPI NOR | FDT class recognized; boot flash present | No SFC driver | P2 |
+| SFC / SPI NOR | `sfcs` reads the boot flash as `/srv/sfc`; XM25QU128C 16 MiB, verified against U-Boot | Write/erase (deliberately absent) | P2 |
 | SATA | Shared PCIe/USB3 lanes | No SATA connector exposed; not applicable | — |
 | Mailbox / SCMI | Firmware interface | No driver; only if firmware services are needed | P3 |
 | TEE / OP-TEE | Vendor BL32, keyroot oracle | No general TEE driver; vendor TEE is unauditable | P2 |
@@ -110,7 +112,7 @@ rows below describe the native `o9xhci` fallback and its parity-oracle role.
 | M.2 M-key | `M.2-KEY-M-H3R2`, PCIe2x1 | No driver | PCIe + NVMe | P2 |
 | TF card slot | `TF2`, sdmmc0 | No driver | SDHCI instance, card detect | P2 |
 | eMMC | `sdhci`, HS200 | Works; boots with `/` on the ext2 root partition | fsck, larger partitions | P1 |
-| SPI NOR | `sfc`, `jedec,spi-nor` | No driver | SFC read/write | P2 |
+| SPI NOR | `sfc`, `jedec,spi-nor` | Read-only via `sfcs`; GPT at 0x200 and RKNS at 0x8000 match U-Boot | Write/erase support | P2 |
 | USB3 host | USB3_HOST1, xHCI | Root ports work | HID/MSC/hubs, `#P` transport | **P0** |
 | USB2 host x2 | USB2_HOST2/3, EHCI/OHCI | Board probe | HID/MSC classes | P1 |
 | USB2 OTG / Type-C | `USB_OTG0`, `TYPEC1` power | PHY/regulator only | OTG role, CC/PD policy | P2 |
