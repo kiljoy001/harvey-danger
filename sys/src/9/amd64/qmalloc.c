@@ -579,13 +579,20 @@ mallocreadfmt(char *s, char *e)
 			if(best < 0)
 				break;
 			printed[best] = 1;
-			p = seprint(p, e, "tag %#ux (%c%c%c%c) live %d\n",
-				    qtags[best].tag,
-				    (qtags[best].tag >> 24) & 0xff,
-				    (qtags[best].tag >> 16) & 0xff,
-				    (qtags[best].tag >> 8) & 0xff,
-				    qtags[best].tag & 0xff,
+			p = seprint(p, e, "tag %#ux live %d", qtags[best].tag,
 				    qtags[best].live);
+			{
+				u32 t = qtags[best].tag;
+				int printable = ((t >> 24) & 0xff) >= 32 && ((t >> 24) & 0xff) < 127 &&
+					((t >> 16) & 0xff) >= 32 && ((t >> 16) & 0xff) < 127 &&
+					((t >> 8) & 0xff) >= 32 && ((t >> 8) & 0xff) < 127 &&
+					(t & 0xff) >= 32 && (t & 0xff) < 127;
+				if(printable)
+					p = seprint(p, e, " (%c%c%c%c)",
+						    (t >> 24) & 0xff, (t >> 16) & 0xff,
+						    (t >> 8) & 0xff, t & 0xff);
+			}
+			p = seprint(p, e, "\n");
 		}
 	}
 	for(i = 0; i < nelem(qstats); i++){
@@ -728,6 +735,7 @@ smalloc(u32 size)
 
 	while((v = mallocz(size, 1)) == nil)
 		tsleep(&up->sleep, return0, 0, 100);
+	setmalloctag(v, getcallerpc());
 	return v;
 }
 
