@@ -28,6 +28,7 @@ static Driver drivers[] = {
 	{ "rng",	"/boot/rngfs",	"rng" },
 	{ "wdt",	"/boot/wdtfs",	"wdt" },
 	{ "saradc",	"/boot/saradcfs",	"saradc" },
+	{ "tsadc",	"/boot/tsadcfs",	"tsadc" },
 	{ "usb",	"/boot/usbpower",	"usbpower" },
 	{ nil,	nil,	nil },
 };

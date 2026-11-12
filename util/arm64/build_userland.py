@@ -43,6 +43,7 @@ LS_BASE = 0x3600000
 RNGFS_BASE = 0x3A00000
 WDTFS_BASE = 0x4E00000
 SARADCFS_BASE = 0x5A00000
+TSADCFS_BASE = 0x6200000
 RTC_BASE = 0x3E00000
 PING_BASE = 0x8200000
 SDPROBE_BASE = 0x8600000
@@ -401,6 +402,11 @@ def build_wdtfs(out: Path, libc: Path) -> tuple[bytes, int]:
 def build_saradcfs(out: Path, libc: Path) -> tuple[bytes, int]:
     return build_fs(out, libc, "saradcfs",
                     ROOT / "sys/src/cmd/saradcfs/saradcfs.c", SARADCFS_BASE)
+
+
+def build_tsadcfs(out: Path, libc: Path) -> tuple[bytes, int]:
+    return build_fs(out, libc, "tsadcfs",
+                    ROOT / "sys/src/cmd/tsadcfs/tsadcfs.c", TSADCFS_BASE)
 
 
 def build_emmcfs(out: Path, libc: Path) -> tuple[bytes, int]:
@@ -1326,6 +1332,7 @@ main(int argc, char **argv)
     rngfs, _ = build_rngfs(out, libc)
     wdtfs, _ = build_wdtfs(out, libc)
     saradcfs, _ = build_saradcfs(out, libc)
+    tsadcfs, _ = build_tsadcfs(out, libc)
     mkdirbin, _ = build_elf(out, libc, "mkdir", ROOT / "sys/src/cmd/mkdir.c",
                             MKDIR_BASE, [])
     mount9bin, _ = build_elf(out, libc, "mount9", ROOT / "sys/src/cmd/mount9.c",
@@ -1995,6 +2002,7 @@ main(int argc, char **argv)
     emit_array(lines, "arm64rngfself", rngfs)
     emit_array(lines, "arm64wdtfself", wdtfs)
     emit_array(lines, "arm64saradcfself", saradcfs)
+    emit_array(lines, "arm64tsadcfself", tsadcfs)
     emit_array(lines, "arm64mkdirelf", mkdirbin)
     emit_array(lines, "arm64mountelf", mountbin)
     emit_array(lines, "arm64mount9elf", mount9bin)
@@ -2046,6 +2054,7 @@ main(int argc, char **argv)
         "rngfs": rngfs,
         "wdtfs": wdtfs,
         "saradcfs": saradcfs,
+        "tsadcfs": tsadcfs,
         "mkdir": mkdirbin,
         "mount": mountbin,
         "mount9": mount9bin,

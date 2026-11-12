@@ -34,6 +34,7 @@ rows below describe the native `o9xhci` fallback and its parity-oracle role.
 - TRNG: `rngfs` (Crypto V2) exposes `/srv/rng/{random,status,ctl}`.
 - Watchdog: `wdtfs` exposes `/srv/wdt/{status,ctl}`; status/ping verified on v1.1.
 - SARADC: `saradcfs` exposes `/srv/saradc/chan0..7` and `/status`; conversions and vref control verified on v1.1.
+- TSADC: `tsadcfs` exposes `/srv/tsadc/temp0`, `temp1`, `status`; each read powers the ADC up, converts one channel in user mode and powers down. Auto mode leaves DATA at zero on this block, and USER_CON bit 3 (adc_power_ctrl) must be set or no conversion runs. Readings are untrimmed (no eFuse driver yet), so they read ~10 C low.
 - 9P write note: control writes can arrive in several messages; `saradcfs` and `wdtfs` buffer until newline before applying a command.
 
 ## SoC and controller blocks
@@ -46,7 +47,7 @@ rows below describe the native `o9xhci` fallback and its parity-oracle role.
 | SPI0-3 | FDT class recognized | No SPI controller driver; header and TPM need it | P1 |
 | PWM0-15 | FDT class recognized | No PWM driver; eDP backlight, fan, IR, header | P1 |
 | SARADC | `saradcfs` serves `/srv/saradc/chan0..7` (10-bit); board test: chan0 1023/1798 mV, chan1 951/1671 mV, vref ctl 3.3 V -> 3296 mV | Add a key/header consumer | P2 |
-| TSADC / thermal | FDT class recognized; PMIC reports temperature | No SoC TSADC, trip points, thermal zones | P1 |
+| TSADC / thermal | `tsadcfs` serves `/srv/tsadc/temp0`, `temp1` via user-mode conversions (board: 12.5-15.5 C untrimmed); auto mode never converts on this block | eFuse trim, trip/cooling policy | P1 |
 | Watchdog | `wdtfs` reports CR/TORR/CCVR and accepts disable/ping/enable; board status and ping tested, ctl now buffers split writes | Enable/disable policy and timeout calibration | P1 |
 | TRNG | `rngfs` serves `/srv/rng`; board test generated 425,984 bytes with 0 errors | Clock/reset handoff is fine on v1.1; add a selftest/entropy consumer | — |
 | Crypto engine | SoC block | No AES/SHA offload driver | P3 |
