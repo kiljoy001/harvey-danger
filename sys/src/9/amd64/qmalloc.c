@@ -109,6 +109,8 @@ struct Qtrace {
 };
 static Qtrace qtrace[QtraceN];
 static int qtracei;
+enum { QliveN = 256 };
+static int qlive[QliveN];
 
 static void
 qtracelog(int op, void *p, u32 size)
@@ -515,6 +517,23 @@ mallocreadfmt(char *s, char *e)
 	p = seprint(p, e, "total allocated %lu, %u remaining\n",
 		    (tailptr - tailbase) * sizeof(Header), tailnunits * sizeof(Header));
 
+	{
+		uchar printed[QliveN];
+		int best, k, j;
+		memset(printed, 0, sizeof printed);
+		for(k = 0; k < 12; k++){
+			best = -1;
+			for(j = 0; j < QliveN; j++)
+				if(!printed[j] && qlive[j] > 0 &&
+				   (best < 0 || qlive[j] > qlive[best]))
+					best = j;
+			if(best < 0)
+				break;
+			printed[best] = 1;
+			p = seprint(p, e, "live %d units (%d bytes) %d\n",
+				    best, best * Unitsz, qlive[best]);
+		}
+	}
 	for(i = 0; i < nelem(qstats); i++){
 		if(qstats[i] == 0)
 			continue;
@@ -587,6 +606,12 @@ void
 free(void *ap)
 {
 	QTRACE(1, ap, 0);
+	if(ap != nil){
+		Header *p = (Header *)ap - 1;
+		u32 u = p->s.size;
+		if(u < QliveN && qlive[u] > 0)
+			qlive[u]--;
+	}
 	MLOCK;
 	qfreeinternal(ap);
 	MUNLOCK;
@@ -598,8 +623,12 @@ malloc(u32 size)
 	void *v;
 
 	QTRACE(0, nil, size);
-	if((v = qmalloc(size)) != nil)
+	if((v = qmalloc(size)) != nil){
+		u32 u = ((Header *)v - 1)->s.size;
+		if(u < QliveN)
+			qlive[u]++;
 		memset(v, 0, size);
+	}
 
 	return v;
 }
