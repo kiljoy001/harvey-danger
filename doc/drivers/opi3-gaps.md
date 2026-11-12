@@ -33,6 +33,8 @@ rows below describe the native `o9xhci` fallback and its parity-oracle role.
 - NPU register/task format decoded in `9rock`; vendor driver exists.
 - TRNG: `rngfs` (Crypto V2) exposes `/srv/rng/{random,status,ctl}`.
 - Watchdog: `wdtfs` exposes `/srv/wdt/{status,ctl}`; status/ping verified on v1.1.
+- SARADC: `saradcfs` exposes `/srv/saradc/chan0..7` and `/status`; conversions and vref control verified on v1.1.
+- 9P write note: control writes can arrive in several messages; `saradcfs` and `wdtfs` buffer until newline before applying a command.
 
 ## SoC and controller blocks
 
@@ -43,9 +45,9 @@ rows below describe the native `o9xhci` fallback and its parity-oracle role.
 | I2C0-5 | `i2cfs`; I2C0 = PMIC, I2C1 header | Device drivers on I2C1-5 (sensors, display DDC, camera) | P1 |
 | SPI0-3 | FDT class recognized | No SPI controller driver; header and TPM need it | P1 |
 | PWM0-15 | FDT class recognized | No PWM driver; eDP backlight, fan, IR, header | P1 |
-| SARADC | FDT class recognized | No SARADC/key driver; recovery key, header ADC | P2 |
+| SARADC | `saradcfs` serves `/srv/saradc/chan0..7` (10-bit); board test: chan0 1023/1798 mV, chan1 951/1671 mV, vref ctl 3.3 V -> 3296 mV | Add a key/header consumer | P2 |
 | TSADC / thermal | FDT class recognized; PMIC reports temperature | No SoC TSADC, trip points, thermal zones | P1 |
-| Watchdog | `wdtfs` reports CR/TORR/CCVR and accepts disable/ping/enable; board status and ping tested | Enable/disable policy and timeout calibration | P1 |
+| Watchdog | `wdtfs` reports CR/TORR/CCVR and accepts disable/ping/enable; board status and ping tested, ctl now buffers split writes | Enable/disable policy and timeout calibration | P1 |
 | TRNG | `rngfs` serves `/srv/rng`; board test generated 425,984 bytes with 0 errors | Clock/reset handoff is fine on v1.1; add a selftest/entropy consumer | — |
 | Crypto engine | SoC block | No AES/SHA offload driver | P3 |
 | eFuse / OTP | Read via U-Boot/Linux only | No Harvey efuse driver; lot code is not a serial | P3 |

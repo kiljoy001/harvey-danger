@@ -44,6 +44,8 @@ struct Wdt {
 	Drv	d;
 	QLock	lk;
 	ulong	pings;
+	char	ctlbuf[64];
+	int	ctllen;
 };
 
 static Wdt wdt;
@@ -97,7 +99,8 @@ fswrite(Req *r, void *aux)
 {
 	Wdt *w;
 	char *name, *p;
-	int torr;
+	char buf[64];
+	int i, n, complete, ok, torr;
 
 	w = aux;
 	name = drvfile(r)->name;
@@ -105,27 +108,54 @@ fswrite(Req *r, void *aux)
 		respond(r, "write not permitted");
 		return;
 	}
-	p = (char *)r->ifcall.data;
+	n = r->ifcall.count;
+	if(n >= (int)sizeof buf)
+		n = sizeof buf - 1;
+	memmove(buf, r->ifcall.data, n);
+	buf[n] = 0;
+
+	complete = 0;
+	ok = 0;
 	qlock(&w->lk);
-	if(strncmp(p, "disable", 7) == 0){
-		drw(&w->d, WdtCr, 0);
-		drw(&w->d, WdtCrr, CrrMagic);
-	}else if(strncmp(p, "ping", 4) == 0){
-		drw(&w->d, WdtCrr, CrrMagic);
-		w->pings++;
-	}else if(strncmp(p, "enable", 6) == 0){
-		torr = 0;
-		if(p[6] == ' ')
-			torr = atoi(p + 7) & TorrMask;
-		drw(&w->d, WdtTorr, torr);
-		drw(&w->d, WdtCr, CrEn);
-		drw(&w->d, WdtCrr, CrrMagic);
-	}else{
-		qunlock(&w->lk);
+	if(n > 0 && w->ctllen + n < (int)sizeof w->ctlbuf){
+		memmove(w->ctlbuf + w->ctllen, buf, n);
+		w->ctllen += n;
+		w->ctlbuf[w->ctllen] = 0;
+		for(i = 0; i < w->ctllen; i++)
+			if(w->ctlbuf[i] == '\n')
+				break;
+		if(i < w->ctllen){
+			w->ctlbuf[i] = 0;
+			complete = 1;
+			p = w->ctlbuf;
+			if(strncmp(p, "disable", 7) == 0){
+				drw(&w->d, WdtCr, 0);
+				drw(&w->d, WdtCrr, CrrMagic);
+				ok = 1;
+			}else if(strncmp(p, "ping", 4) == 0){
+				drw(&w->d, WdtCrr, CrrMagic);
+				w->pings++;
+				ok = 1;
+			}else if(strncmp(p, "enable", 6) == 0){
+				p += 6;
+				while(*p == ' ')
+					p++;
+				torr = atoi(p) & TorrMask;
+				drw(&w->d, WdtTorr, torr);
+				drw(&w->d, WdtCr, CrEn);
+				drw(&w->d, WdtCrr, CrrMagic);
+				ok = 1;
+			}
+			w->ctllen = 0;
+			w->ctlbuf[0] = 0;
+		}
+	}
+	qunlock(&w->lk);
+
+	if(complete && !ok){
 		respond(r, "ctl: disable, ping, or enable [torr]");
 		return;
 	}
-	qunlock(&w->lk);
 	r->ofcall.count = r->ifcall.count;
 	respond(r, nil);
 }

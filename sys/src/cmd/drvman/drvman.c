@@ -27,6 +27,7 @@ static Driver drivers[] = {
 	{ "i2c",	"/boot/i2cfs",	"i2c" },
 	{ "rng",	"/boot/rngfs",	"rng" },
 	{ "wdt",	"/boot/wdtfs",	"wdt" },
+	{ "saradc",	"/boot/saradcfs",	"saradc" },
 	{ "usb",	"/boot/usbpower",	"usbpower" },
 	{ nil,	nil,	nil },
 };
