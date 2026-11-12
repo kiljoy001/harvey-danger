@@ -37,7 +37,8 @@ rows below describe the native `o9xhci` fallback and its parity-oracle role.
 - TSADC: `tsadcfs` exposes `/srv/tsadc/temp0`, `temp1`, `status`; each read powers the ADC up, converts one channel in user mode and powers down.
 - TSADC bring-up gotchas: USER_CON bit 3 (adc_power_ctrl) must be set or the block stays powered down and DATA reads zero; AUTO_CON bit 1 (tsadc_q_sel) must be set or the negative-coefficient output is reported raw and reads about 25 C low.  Cross-checked against Armbian 6.18.21 on the same board (thermal_zone0 38.9 C, zone1 36.7 C).
 - OTP: read with a locally built 6.18.21 carrying the upstream RK3568 patches (see `doc/drivers/otp.md`).  The TSADC trim cells on this board are unprogrammed, so `tsadcfs` correctly reports the untrimmed value; chip id `"M2Y401"` and serial are available for an identity service.
-- PWM: `pwmfs` exposes `/srv/pwm/{status,fan,ctl}` for the PWM1 block at fe6e0000.  The fan header is PWM7 (`GPIO0_C6`), gated by Q4.  Boot enables the `CLK_PWM1`/`PCLK_PWM1` gates, muxes `clk_pwm1` to xin24m (24 MHz) and sets the pin function.  `fan <percent>` uses a 25 kHz period (960 ticks).  Verified on v1.1: registers, pinmux, and the channel counter advancing.
+- PWM: `pwmfs` exposes `/srv/pwm/{status,fan,ctl}` for the PWM1 block at fe6e0000.  The fan header is PWM7 (`GPIO0_C6`), gated by Q4; the vendor v1.1 DTS confirms it with `pwms = <&pwm7 0 50000 0>` (20 kHz).  v2.1 uses the same channel but a 20 ms period (50 Hz), so the revision matters for timing.  Boot enables the `CLK_PWM1`/`PCLK_PWM1` gates, muxes `clk_pwm1` to xin24m (24 MHz) and sets the pin function.  `fan <percent>` uses a 20 kHz period (1200 ticks).  Verified on v1.1: registers, pinmux, and the channel counter advancing.
+- Fan curve (vendor v1.1 DTS, not yet implemented): `cooling-levels = <0 50 100 150 200 255>` with `rockchip,temp-trips = <50000 1 55000 2 60000 3 65000 4 70000 5>`, i.e. 50/55/60/65/70 C select 0/50/100/150/200/255 duty.
 - PMU_GRF note: the RK3568 iomux registers use a hiword write mask (upper 16 bits select which fields are written).  A plain read-modify-write is silently ignored, which is why the first pinmux attempt read back zero.
 - 9P write note: control writes can arrive in several messages; `saradcfs` and `wdtfs` buffer until newline before applying a command.
 
@@ -95,7 +96,7 @@ rows below describe the native `o9xhci` fallback and its parity-oracle role.
 | MIPI CSI camera | Schematic: MIPI_CSI_RX, CAMERA_PDN_L | Not enabled | CSI/DPHY, ISP, camera power | P3 |
 | 3.5 mm earphone/mic | `EARPHONE`, `MIC1_IN`, `HP_DET_L` | No audio service | RK809 codec, HP detect, mic path | P2 |
 | Speaker out | `SPK_OUTp/n` | No audio service | RK809 speaker path | P2 |
-| Fan connector | `FAN1`, 5 V 500 mA, low-side MOSFET Q4 on `GPIO0_C6-PWM7` | `pwmfs` `/fan` sets duty (25 kHz); no tach, no thermal loop | Thermal trip/cooling policy | P1 |
+| Fan connector | `FAN1`, 5 V 500 mA, low-side MOSFET Q4 on `GPIO0_C6-PWM7` (v1.1 vendor DTS: `pwms = <&pwm7 0 50000 0>`) | `pwmfs` `/fan` sets duty (20 kHz); no tach, no thermal loop | Thermal trip/cooling policy | P1 |
 | IR receiver | `GPIO0_C6-PWM7_IR` | No input driver | IR decode or GPIO event | P2 |
 | Recovery key | `SARADC_VIN0_KEY/RECOVERY` | No SARADC/key driver | ADC key event | P2 |
 | Power key | `PMIC_PWRON`, RK809 IRQ | Polled by `pmicfs` | Wire GPIO0_A3 IRQ; event service | P1 |

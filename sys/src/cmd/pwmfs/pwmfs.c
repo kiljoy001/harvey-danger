@@ -41,7 +41,7 @@ enum {
 	Nchan		= 4,
 	FanChan		= 3,
 	ClockHz		= 24000000,
-	FanPeriod	= 960,		/* 25 kHz at 24 MHz */
+	FanPeriod	= 1200,		/* 20 kHz at 24 MHz: vendor v1.1 DTS */
 
 	CruGatePwm1	= 0x37c,	/* CLKGATE_CON(31) */
 	CruSel72	= 0x220,	/* CLKSEL_CON(72): clk_pwm1 mux */
