@@ -1937,11 +1937,11 @@ procctlmemio(Proc *p, usize offset, int n, void *va, int read)
 		s->steal--;
 	}
 	poperror();
-	pte = s->map[soff / PTEMAPMEM];
+	pte = s->map[soff / s->ptemapmem];
 	if(pte == 0)
 		panic("procctlmemio");
 	pgsz = sys->pgsz[s->pgszi];
-	pg = pte->pages[(soff & (PTEMAPMEM - 1)) / pgsz];
+	pg = pte->pages[(soff & (s->ptemapmem - 1)) / pgsz];
 	if(pagedout(pg))
 		panic("procctlmemio1");
 

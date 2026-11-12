@@ -46,18 +46,26 @@ Segment *
 newsegsz(int type, usize base, u64 size, u32 pgsz)
 {
 	Segment *s;
-	int mapsize;
+	int mapsize, ptepertab;
 
 	if(pgsz == 0 || getpgszi(pgsz) < 0)
 		panic("newsegsz: bad page size %d", pgsz);
-	if(size > SEGMAPSIZE * (PTEMAPMEM / pgsz))
+
+	/*
+	 * Keep one PTE table to roughly one page of pointers: 512 entries
+	 * is the old 1 GiB/BIGPGSZ table and becomes 2 MiB when the segment
+	 * uses 4 KiB pages.
+	 */
+	ptepertab = PTEMAPMEM / BIGPGSZ;
+	if(size > SEGMAXPTE * ptepertab)
 		error(Enovmem);
 
 	s = smalloc(sizeof(Segment));
+	s->ptepertab = ptepertab;
+	s->ptemapmem = ptepertab * pgsz;
 	s->r.ref = 1;
 	s->type = type;
 	s->base = base;
-	s->ptepertab = PTEMAPMEM / pgsz;
 	s->top = base + (size * pgsz);
 	s->size = size;
 	s->pgszi = getpgszi(pgsz);
@@ -66,10 +74,9 @@ newsegsz(int type, usize base, u64 size, u32 pgsz)
 	s->color = NOCOLOR;
 
 	mapsize = HOWMANY(size, s->ptepertab);
+	if(mapsize > SEGMAXPTE)
+		error(Enovmem);
 	if(mapsize > nelem(s->ssegmap)){
-		mapsize *= 2;
-		if(mapsize > (SEGMAPSIZE * s->ptepertab))
-			mapsize = (SEGMAPSIZE * s->ptepertab);
 		s->map = smalloc(mapsize * sizeof(Pte *));
 		s->mapsize = mapsize;
 	} else {
@@ -184,6 +191,7 @@ dupseg(Segment **seg, int segno, int share)
 		n->pgszi = s->pgszi;
 		n->color = s->color;
 		n->ptepertab = s->ptepertab;
+		n->ptemapmem = s->ptemapmem;
 		break;
 
 	case SG_STACK:
@@ -348,11 +356,11 @@ segpage(Segment *s, Page *p)
 		panic("segpage: p->va < s->base || p->va >= s->top");
 
 	soff = p->va - s->base;
-	pte = &s->map[soff / PTEMAPMEM];
+	pte = &s->map[soff / s->ptemapmem];
 	if(*pte == 0)
 		*pte = ptealloc(s);
 	pgsz = sys->pgsz[s->pgszi];
-	pg = &(*pte)->pages[(soff & (PTEMAPMEM - 1)) / pgsz];
+	pg = &(*pte)->pages[(soff & (s->ptemapmem - 1)) / pgsz];
 	*pg = p;
 	if(pg < (*pte)->first)
 		(*pte)->first = pg;
@@ -374,11 +382,11 @@ mfreeseg(Segment *s, usize start, int pages)
 
 	pgsz = sys->pgsz[s->pgszi];
 	soff = start - s->base;
-	j = (soff & (PTEMAPMEM - 1)) / pgsz;
+	j = (soff & (s->ptemapmem - 1)) / pgsz;
 
 	size = s->mapsize;
 	list = nil;
-	for(i = soff / PTEMAPMEM; i < size; i++){
+	for(i = soff / s->ptemapmem; i < size; i++){
 		if(pages <= 0)
 			break;
 		if(s->map[i] == 0){

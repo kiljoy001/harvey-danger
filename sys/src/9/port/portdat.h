@@ -381,7 +381,8 @@ struct Image {
 /*
  *  virtual MMU
  */
-#define PTEMAPMEM (1ULL * GiB)
+#define PTEMAPMEM (1ULL * GiB) /* VA covered by one PTE table at BIGPGSZ */
+#define SEGMAXPTE (1 << 20) /* max PTE tables per segment */
 #define SEGMAPSIZE 1984
 #define SSEGMAPSIZE 16 /* XXX: shouldn't be 32 at least? */
 
@@ -489,6 +490,7 @@ struct Segment {
 	u16 steal; /* Page stealer lock */
 	u16 type;	/* segment type */
 	int pgszi;	/* page size index in Mach MMMU */
+	u64 ptemapmem;	/* VA covered by one PTE table */
 	u32 ptepertab;
 	int color;
 	usize base; /* virtual base */

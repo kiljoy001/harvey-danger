@@ -136,12 +136,12 @@ fixfault(Segment *s, usize addr, int ftype, int dommuput, int color)
 	pgsz = sys->pgsz[s->pgszi];
 	addr &= ~(pgsz - 1);
 	soff = addr - s->base;
-	p = &s->map[soff / PTEMAPMEM];
+	p = &s->map[soff / s->ptemapmem];
 	if(*p == 0)
 		*p = ptealloc(s);
 
 	etp = *p;
-	pg = &etp->pages[(soff & (PTEMAPMEM - 1)) / pgsz];
+	pg = &etp->pages[(soff & (s->ptemapmem - 1)) / pgsz];
 	stype = s->type & SG_TYPE;
 
 	/*

@@ -489,9 +489,9 @@ syssegflush(Ar0 *ar0, ...)
 			l = s->top - addr;
 
 		ps = addr - s->base;
-		pte = s->map[ps / PTEMAPMEM];
-		ps &= PTEMAPMEM - 1;
-		pe = PTEMAPMEM;
+		pte = s->map[ps / s->ptemapmem];
+		ps &= s->ptemapmem - 1;
+		pe = s->ptemapmem;
 		if(pe - ps > l){
 			pe = ps + l;
 			pe = (pe + BIGPGSZ - 1) & ~(BIGPGSZ - 1);
