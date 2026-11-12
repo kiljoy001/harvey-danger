@@ -42,7 +42,7 @@ It does **not** yet offer an interactive shell.
 ### APEX on ARM64
 
 `util/arm64/build_apex.py` cross-builds the APEX startup layer for ARM64:
-crt0, `__libc_start_main`, the mmap arena and the raw syscall wrappers,
+crt0, `__libc_start_main`, the memory-mapping layer and the raw syscall wrappers,
 linked against the ARM64 Plan 9 libc.  `util/arm64/test_apex_boot.py`
 substitutes the resulting binary for the init image in the generated
 userland header and boots it in QEMU virt, so the first EL0 program the
@@ -54,7 +54,7 @@ TLS-OK
 ```
 
 That exercises the entry convention (argc/argv/Tos in registers), the heap
-stack switch, the mapping arena, and variant-I TLS end to end: the startup
+stack switch, the mapping path, and variant-I TLS end to end: the startup
 builds the block, publishes it through `#p/<pid>/tls`, the kernel loads
 `TPIDR_EL0`, and the program reads its initialised `__thread` variable.
 
@@ -327,6 +327,38 @@ RAM, and on the board that means the second memory bank first.
 
 `Proc.Timer` is zeroed when a `Proc` is allocated and detached in `pexit()`,
 so a recycled Proc cannot inherit a stale timer-list pointer.
+
+### Memory mappings
+
+`mmap`, `mprotect` and `munmap` are kernel operations; APEX forwards them.
+The segment table (`Segtab`) is reference counted and separate from `Proc`,
+so `rfork(RFMEM)` threads share one table: a mapping made by one thread is
+visible to every thread, and `mprotect`/`munmap` change the shared address
+space.  `Proc.seg` points into the table, which keeps the existing
+`p->seg[i]` accesses unchanged.
+
+A new mapping starts below the exec area (`NIXCALL`), not just below the
+stack, so a process that has mapped memory can still `exec` with arguments.
+`mprotect` changes the segment type and marks every process that maps the
+segment (`procflushseg`), then drops the caller's page table; each process
+re-faults its pages with the new protection.  `munmap` flushes the range
+before removing the segment.  `PROT_NONE` faults on both read and write.
+
+The kernel's segment granularity is `BIGPGSZ` (2 MiB), so an anonymous
+mapping occupies a 2 MiB-aligned segment even when the requested length is
+4 KiB.  `MAP_FIXED` must be 2 MiB aligned for the same reason.  This is a
+kernel page-size limitation, not an APEX arena; an unaligned `MAP_FIXED`
+is rejected rather than silently rounded down.  The old single-arena
+workaround made `prot`, `mprotect`, `PROT_NONE` and `munmap` no-ops and has
+been removed.
+
+A CPU that gives up a process switches TTBR0 back to the kernel root before
+entering the scheduler.  Without that, a process that migrated and later
+exited elsewhere could have its freed page table still installed on an idle
+CPU, which faulted fetching the exception vector and parked that CPU.
+
+`util/arm64/test-mmap.py` covers prot, `mprotect`, `PROT_NONE`, `munmap`,
+`MAP_FIXED`, and thread visibility of a mapping made after thread start.
 
 ### Running ARM tools with arguments
 
