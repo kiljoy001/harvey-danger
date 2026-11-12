@@ -680,6 +680,10 @@ arm64kernelstart(Fdtinfo *info)
 	addbootfile("emmc", (u8 *)arm64emmcelf, sizeof(arm64emmcelf));
 	addbootfile("displaytest", (u8 *)arm64displaytestelf,
 		    sizeof(arm64displaytestelf));
+#ifdef ARM64_EMBED_LKL
+	addbootfile("lklboot", (u8 *)arm64lklbootelf,
+		    sizeof(arm64lklbootelf));
+#endif
 	addbootfile("rcmain", (u8 *)arm64rcmain, sizeof(arm64rcmain));
 #ifdef ARM64_EMBED_GEFS
 	addbootfile("emmcfs", (u8 *)arm64emmcfs, sizeof(arm64emmcfs));

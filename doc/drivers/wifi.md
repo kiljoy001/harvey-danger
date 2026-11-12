@@ -86,21 +86,35 @@ answers CMD5 and `sdiohal_scan_card` times out after 6 s.
    called on the stack `struct firmware` used for `firmware_request_builtin()`
    (it `kfree()`s the pointer).
 
-## Deploy
+## Deploy and automatic start
 
-`lklboot` is ~19 MB stripped, too big for the main boot archive; it rides in
-the second archive U-Boot loads at `0x50000000`:
+`lklboot` is ~19 MB stripped.  The main boot image is built with it embedded
+(`build_lkl.py` writes `lklboot.stripped`; `build_userland.py` bakes it in and
+`boot.c` adds it as `/boot/lklboot`), so a plain power-on is enough: no second
+TFTP transfer, no U-Boot interaction, no shell.
+
+Order matters when rebuilding:
 
 ```
-tftpboot 0x40080000 aspera-arm64.img
-tftpboot 0x50000000 lklboot.arch
-tftpboot 0x48000000 orangepi-3b-v1.1.dtb
-booti 0x40080000 - 0x48000000
+util/arm64/build_lkl_kernel.sh                     # lkl.o
+util/arm64/build_lkl.py --lkl .../lkl.o --include .../include
+util/arm64/build_kernel.py                         # embeds lklboot, 33 MB image
 ```
+
+The boot init starts every LKL family as a detached service before rc:
+
+```
+{ "/boot/lklboot", "-b", "-f", "wifi" }
+```
+
+(`util/arm64/build_userland.py`, the generated init).  Add families to that
+list as they appear; the native drivers own eMMC and USB, so only WiFi is
+listed today.
 
 The board DTB must have `mmc@fe2c0000` enabled so `#P` exposes the window.
 
-Then `/boot/lklboot -b -f wifi`.  `-b` detaches with
+The second-archive path (`tftpboot 0x50000000 lklboot.arch`) still works and
+overrides the embedded copy if loaded, but it is no longer required.  `-b` detaches with
 `rfork(RFPROC|RFNOTEG)` *before* any LKL state exists, so the shell gets its
 prompt back and the detached process owns the LKL CPU lock.  The service keeps
 the process (and the guest) alive; a datapath from the guest netdev to Harvey

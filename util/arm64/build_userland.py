@@ -1332,6 +1332,30 @@ main(int argc, char **argv)
 		}
 		_exits("ping");
 	}
+	/*
+	 * LKL driver families run a Linux kernel for one device and are
+	 * services, not commands: start them detached (-b) before the shell,
+	 * so nothing has to be typed and the console stays free.
+	 */
+	{
+		char *lkllist[][5] = {
+			{ "/boot/lklboot", "-b", "-f", "wifi", nil },
+		};
+		int n = sizeof(lkllist) / sizeof(lkllist[0]);
+		int i;
+
+		for(i = 0; i < n; i++){
+			pid = rfork(RFPROC|RFNOWAIT|RFFDG|RFNAMEG|RFENVG|RFREND|RFNOTEG);
+			if(pid == 0){
+				exec(lkllist[i][0], lkllist[i]);
+				say("HARVEY-ARM64 LKL EXEC FAIL\n");
+				_exits("exec");
+			}
+			if(pid < 0)
+				say("HARVEY-ARM64 LKL LAUNCH FAIL\n");
+		}
+		say("HARVEY-ARM64 LKL SERVICES START\n");
+	}
 	{
 		char *rcargv[] = { "/boot/rc", "-i", "-m", "/boot/rcmain", nil };
 		say("HARVEY-ARM64 RC START\n");
@@ -2071,6 +2095,13 @@ main(int argc, char **argv)
     emit_array(lines, "arm64keyroottestelf", keyroottest)
     emit_array(lines, "arm64displaytestelf", displaytest)
     emit_array(lines, "arm64rcmain", rcmain.encode())
+    # The LKL program is too big for the boot image's program directory to be
+    # practical as a second TFTP transfer on boards whose U-Boot boot script
+    # is compiled in, so bake it in when it has been built.
+    lklboot = ROOT / "build/arm64-lkl/lklboot.stripped"
+    if lklboot.is_file():
+        emit_array(lines, "arm64lklbootelf", lklboot.read_bytes())
+        lines.append("#define ARM64_EMBED_LKL 1")
     # The gefs bring-up build embeds the files the re-root path needs
     # (emmcfs, ext2srv) and gefs itself, so the kernel is self-contained
     # and does not depend on a second TFTP transfer.

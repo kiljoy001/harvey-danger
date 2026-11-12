@@ -174,6 +174,14 @@ def main() -> None:
     a = ap.parse_args()
     elf = build(Path(a.out), Path(a.lkl), Path(a.include), Path(a.libc))
     print(f"{elf}: {elf.stat().st_size} bytes")
+    # The debug-info-heavy ELF is 100+ MB; the embedded boot copy only needs
+    # the program.  Keep both so a debugger still has symbols.
+    strip = shutil.which("llvm-strip") or shutil.which("strip")
+    if strip is not None:
+        thin = elf.with_suffix(".stripped")
+        shutil.copyfile(elf, thin)
+        run([strip, "--strip-debug", str(thin)])
+        print(f"{thin}: {thin.stat().st_size} bytes (stripped)")
     if a.archive:
         archive(elf, Path(a.archive))
 
