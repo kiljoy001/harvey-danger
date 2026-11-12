@@ -30,6 +30,7 @@ union Header {
 	struct {
 		Header *next;
 		u32 size;
+		u32 tag;	/* caller/process tag; uses the header padding */
 	} s;
 	Align al;
 };
@@ -111,6 +112,37 @@ static Qtrace qtrace[QtraceN];
 static int qtracei;
 enum { QliveN = 256 };
 static int qlive[QliveN];
+enum { QtagN = 256 };
+typedef struct Qtag Qtag;
+struct Qtag {
+	u32 tag;
+	int live;
+};
+static Qtag qtags[QtagN];
+static Lock taglock;
+
+static void
+qtagadd(u32 tag, int delta)
+{
+	int i, slot;
+
+	if(tag == 0)
+		return;
+	lock(&taglock);
+	slot = (tag * 2654435761u) & (QtagN - 1);
+	for(i = 0; i < QtagN; i++){
+		if(qtags[slot].tag == tag || qtags[slot].live == 0){
+			if(qtags[slot].live == 0)
+				qtags[slot].tag = tag;
+			qtags[slot].live += delta;
+			if(qtags[slot].live < 0)
+				qtags[slot].live = 0;
+			break;
+		}
+		slot = (slot + 1) & (QtagN - 1);
+	}
+	unlock(&taglock);
+}
 
 static void
 qtracelog(int op, void *p, u32 size)
@@ -534,6 +566,28 @@ mallocreadfmt(char *s, char *e)
 				    best, best * Unitsz, qlive[best]);
 		}
 	}
+	{
+		uchar printed[QtagN];
+		int best, k, j;
+		memset(printed, 0, sizeof printed);
+		for(k = 0; k < 12; k++){
+			best = -1;
+			for(j = 0; j < QtagN; j++)
+				if(!printed[j] && qtags[j].live > 0 &&
+				   (best < 0 || qtags[j].live > qtags[best].live))
+					best = j;
+			if(best < 0)
+				break;
+			printed[best] = 1;
+			p = seprint(p, e, "tag %#ux (%c%c%c%c) live %d\n",
+				    qtags[best].tag,
+				    (qtags[best].tag >> 24) & 0xff,
+				    (qtags[best].tag >> 16) & 0xff,
+				    (qtags[best].tag >> 8) & 0xff,
+				    qtags[best].tag & 0xff,
+				    qtags[best].live);
+		}
+	}
 	for(i = 0; i < nelem(qstats); i++){
 		if(qstats[i] == 0)
 			continue;
@@ -611,6 +665,9 @@ free(void *ap)
 		u32 u = p->s.size;
 		if(u < QliveN && qlive[u] > 0)
 			qlive[u]--;
+#ifdef QMALLOCDEBUG
+		qtagadd(p->s.tag, -1);
+#endif
 	}
 	MLOCK;
 	qfreeinternal(ap);
@@ -624,9 +681,14 @@ malloc(u32 size)
 
 	QTRACE(0, nil, size);
 	if((v = qmalloc(size)) != nil){
-		u32 u = ((Header *)v - 1)->s.size;
+		Header *p = (Header *)v - 1;
+		u32 u = p->s.size;
 		if(u < QliveN)
 			qlive[u]++;
+#ifdef QMALLOCDEBUG
+		p->s.tag = (u32)getcallerpc();
+		qtagadd(p->s.tag, 1);
+#endif
 		memset(v, 0, size);
 	}
 
@@ -752,6 +814,31 @@ realloc(void *ap, u32 size)
 void
 setmalloctag(void *v, u32 i)
 {
+	Header *p;
+
+	if(v == nil)
+		return;
+	p = (Header *)v - 1;
+#ifdef QMALLOCDEBUG
+	if(p->s.tag != 0)
+		qtagadd(p->s.tag, -1);
+#endif
+	p->s.tag = i;
+#ifdef QMALLOCDEBUG
+	if(i != 0)
+		qtagadd(i, 1);
+#endif
+}
+
+u32
+getmalloctag(void *v)
+{
+	Header *p;
+
+	if(v == nil)
+		return 0;
+	p = (Header *)v - 1;
+	return p->s.tag;
 }
 
 void
