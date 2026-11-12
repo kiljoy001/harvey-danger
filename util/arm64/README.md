@@ -344,13 +344,17 @@ segment (`procflushseg`), then drops the caller's page table; each process
 re-faults its pages with the new protection.  `munmap` flushes the range
 before removing the segment.  `PROT_NONE` faults on both read and write.
 
-Anonymous mappings use the base page size (`PGSZ`, 4 KiB): the segment
-length is rounded to 4 KiB, faults allocate 4 KiB pages, and `mprotect`
-and `munmap` operate at 4 KiB.  Other Plan 9 segments (stack, BSS,
-`segattach`, and file-backed images) keep the historical `BIGPGSZ`
-(2 MiB) unit, because their sizes and the physical-segment table are
-expressed in it.  An unaligned `MAP_FIXED` is rejected rather than
-silently rounded down.  The old single-arena workaround made `prot`,
+The user VM uses the base page size (`PGSZ`, 4 KiB): anonymous mappings,
+the exec-loaded text/data segments, BSS/heap and the stack all have
+4 KiB-rounded lengths and fault in 4 KiB pages.  `mprotect` and `munmap`
+therefore work at 4 KiB.  `vmemchr` steps at `PGSZ` as well, so string
+validation works for small segments.
+
+Plan 9 physical segments (`segattach`), the kernel's bootstrap exec stub,
+and a kernel file-backed `mmap` still use the historical `BIGPGSZ`
+(2 MiB), because `Physseg.size`, the bootstrap layout, and the image
+pager's segment unit are expressed in it.  An unaligned `MAP_FIXED` is
+rejected rather than silently rounded down.  The old single-arena workaround made `prot`,
 `mprotect`, `PROT_NONE` and `munmap` no-ops and has been removed.
 
 A CPU that gives up a process switches TTBR0 back to the kernel root before

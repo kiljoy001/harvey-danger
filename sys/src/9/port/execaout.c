@@ -205,7 +205,7 @@ aoutldseg(void *v, usize *entryp, Ldseg **rp, char *mach, u32 minpgsz)
 	 * but prepaged if EXAC
 	 */
 	// pagesize is always BIGPGSIZE on harvey.
-	ldseg[0].pgsz = BIGPGSZ;
+	ldseg[0].pgsz = PGSZ;
 	// the memory size is 400000 - 200000 (UTZERO starts 200000)
 	ldseg[0].memsz = textlim - UTZERO;
 	// the file size is the header size and text size; we read the
@@ -222,7 +222,7 @@ aoutldseg(void *v, usize *entryp, Ldseg **rp, char *mach, u32 minpgsz)
 
 	/* Data. Shared. */
 	// big page size, again.
-	ldseg[1].pgsz = BIGPGSZ;
+	ldseg[1].pgsz = PGSZ;
 	// size in mem is 600000 - 400000 = 200000
 	ldseg[1].memsz = datalim - textlim;
 	// Size in the file is datasz

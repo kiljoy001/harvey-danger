@@ -211,7 +211,7 @@ imagechanreclaim(void)
 }
 
 Image *
-attachimage(int type, Chan *c, int color, usize base, usize len)
+attachimagesz(int type, Chan *c, int color, usize base, usize len, u32 pgsz)
 {
 	Proc *up = externup();
 	Image *i, **l;
@@ -273,7 +273,7 @@ found:
 			unlock(&i->r.l);
 			pexit(Enovmem, 1);
 		}
-		i->s = newseg(type, base, len);
+		i->s = newsegsz(type, base, len, pgsz);
 		i->s->image = i;
 		i->s->color = color;
 		i->r.ref++;
@@ -326,4 +326,10 @@ putimage(Image *i)
 		return;
 	}
 	unlock(&i->r.l);
+}
+
+Image *
+attachimage(int type, Chan *c, int color, usize base, usize len)
+{
+	return attachimagesz(type, c, color, base, len, BIGPGSZ);
 }

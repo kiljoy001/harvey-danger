@@ -465,9 +465,8 @@ validaddr(void *addr, i32 len, int write)
 }
 
 /*
- * &s[0] is known to be a valid address.
- * Assume 2M pages, so it works for both 2M and 1G pages.
- * Note this won't work for 4*KiB pages!
+ * &s[0] is known to be a valid address.  Step at the base page size so
+ * this works for 4 KiB segments as well as BIGPGSZ and 1 GiB pages.
  */
 void *
 vmemchr(const void *s, int c, u32 n)
@@ -477,9 +476,9 @@ vmemchr(const void *s, int c, u32 n)
 	void *t;
 
 	a = PTR2UINT(s);
-	while(ROUNDUP(a, BIGPGSZ) != ROUNDUP(a + n - 1, BIGPGSZ)){
+	while(ROUNDUP(a, PGSZ) != ROUNDUP(a + n - 1, PGSZ)){
 		/* spans pages; handle this page */
-		m = BIGPGSZ - (a & (BIGPGSZ - 1));
+		m = PGSZ - (a & (PGSZ - 1));
 		t = memchr(UINT2PTR(a), c, m);
 		if(t)
 			return t;

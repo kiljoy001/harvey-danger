@@ -27,6 +27,7 @@ void *alloczio(Segment *, i32);
 int anyhigher(void);
 int anyready(void);
 Image *attachimage(int, Chan *, int, usize, usize);
+Image *attachimagesz(int, Chan *, int, usize, usize, u32);
 Page *auxpage(usize);
 Block *bl2mem(unsigned char *, Block *, int);
 int blocklen(Block *);

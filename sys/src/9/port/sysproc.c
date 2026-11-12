@@ -482,7 +482,7 @@ execac(Ar0 *ar0, int flags, char *ufile, char **argv)
 	if(i == NSEG)
 		error("exeac: no free segment slots");
 	sno = i;
-	up->seg[sno] = newseg(SG_STACK | SG_READ | SG_WRITE, TSTKTOP - USTKSIZE, USTKSIZE / BIGPGSZ);
+	up->seg[sno] = newsegsz(SG_STACK | SG_READ | SG_WRITE, TSTKTOP - USTKSIZE, USTKSIZE / PGSZ, PGSZ);
 	up->seg[sno]->color = up->color;
 
 	/*
@@ -640,16 +640,17 @@ execac(Ar0 *ar0, int flags, char *ufile, char **argv)
 	for(i = 0; i < nldseg; i++){
 
 		if(img == nil){
-			img = attachimage(ldseg[i].type, chan, up->color,
+			img = attachimagesz(ldseg[i].type, chan, up->color,
 					  ldseg[i].pg0vaddr,
-					  (ldseg[i].pg0off + ldseg[i].memsz + BIGPGSZ - 1) / BIGPGSZ);
+					  (ldseg[i].pg0off + ldseg[i].memsz + PGSZ - 1) / PGSZ,
+					  PGSZ);
 			s = img->s;
 			s->flushme = 1;
 			if(img->color != up->color)
 				up->color = img->color;
 			unlock(&img->r.l);
 		} else {
-			s = newseg(ldseg[i].type, ldseg[i].pg0vaddr, (ldseg[i].pg0off + ldseg[i].memsz + BIGPGSZ - 1) / BIGPGSZ);
+			s = newsegsz(ldseg[i].type, ldseg[i].pg0vaddr, (ldseg[i].pg0off + ldseg[i].memsz + PGSZ - 1) / PGSZ, PGSZ);
 			s->color = up->color;
 			incref(&img->r);
 			s->image = img;
@@ -657,12 +658,12 @@ execac(Ar0 *ar0, int flags, char *ufile, char **argv)
 
 		s->ldseg = ldseg[i];
 		up->seg[sno++] = s;
-		if(datalim < ldseg[i].pg0vaddr + ldseg[i].memsz)
-			datalim = ldseg[i].pg0vaddr + ldseg[i].memsz;
+		if(datalim < s->top)
+			datalim = s->top;
 	}
 
 	/* BSS. Zero fill on demand for TS */
-	s = newseg(SG_BSS | SG_READ | SG_WRITE, (datalim + BIGPGSZ - 1) & ~(BIGPGSZ - 1), 0);
+	s = newsegsz(SG_BSS | SG_READ | SG_WRITE, datalim, 0, PGSZ);
 	up->seg[sno++] = s;
 	s->color = up->color;
 

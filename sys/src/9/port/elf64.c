@@ -441,12 +441,18 @@ elf64ldseg(Chan *c, usize *entryp, Ldseg **rp, char *mach, u32 minpgsz)
 						error(Ebadexec);
 					}
 
-					ldseg[si].pgsz = align;
+					/*
+					 * Normalise to the page size the
+					 * segment will actually use.  ELF
+					 * alignment may be larger (2 MiB),
+					 * but pg0off must fit in one page.
+					 */
+					ldseg[si].pgsz = minpgsz;
 					ldseg[si].memsz = memsz;
 					ldseg[si].filesz = filesz;
-					ldseg[si].pg0fileoff = offset & ~(align - 1);
-					ldseg[si].pg0vaddr = vaddr & ~(align - 1);
-					ldseg[si].pg0off = offset & (align - 1);
+					ldseg[si].pg0fileoff = offset & ~(u64)(minpgsz - 1);
+					ldseg[si].pg0vaddr = vaddr & ~(u64)(minpgsz - 1);
+					ldseg[si].pg0off = offset & (minpgsz - 1);
 
 					si++;
 				}
