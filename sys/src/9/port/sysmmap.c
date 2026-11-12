@@ -29,6 +29,7 @@ sysmmap(Ar0 *ar0, ...)
 	va_list list;
 	usize va;
 	int sno, attr;
+	u32 pagesz;
 	Segment *s, *os;
 	Chan *c = nil;
 	Image *img = nil;
@@ -45,15 +46,9 @@ sysmmap(Ar0 *ar0, ...)
 	if(len == 0)
 		error("zero length");
 
-	len = BIGPGROUND(len);
-	if(len == 0)
-		error("length overflow");
-
 	va = PTR2UINT(addr);
 	if(va != 0 && ((va < UTZERO) || ((va & KZERO) == KZERO)))
 		error("virtual address in kernel");
-	if((flags & MAP_FIXED) && va != 0 && (va & (BIGPGSZ - 1)) != 0)
-		error(Ebadarg);
 
 	/* If not anonymous, validate fd and get channel */
 	if((flags & MAP_ANON) == 0 && (flags & MAP_ANONYMOUS) == 0){
@@ -65,6 +60,18 @@ sysmmap(Ar0 *ar0, ...)
 			nexterror();
 		}
 	}
+
+	/*
+	 * Anonymous mappings use the base page size, so mmap, mprotect and
+	 * munmap operate at 4 KiB.  A file-backed mapping still goes through
+	 * the image pager, whose segment unit is BIGPGSZ.
+	 */
+	pagesz = (c != nil) ? BIGPGSZ : PGSZ;
+	len = (len + pagesz - 1) & ~(usize)(pagesz - 1);
+	if(len == 0)
+		error("length overflow");
+	if((flags & MAP_FIXED) && va != 0 && (va & (pagesz - 1)) != 0)
+		error(Ebadarg);
 
 	qlock(up->seglock);
 	if(waserror()){
@@ -90,20 +97,20 @@ sysmmap(Ar0 *ar0, ...)
 		 * area, so a process that mmap'd anything could not exec
 		 * with arguments.
 		 */
-		usize top = (va != 0) ? (va & ~(BIGPGSZ - 1)) : (NIXCALL - len);
+		usize top = (va != 0) ? (va & ~(usize)(pagesz - 1)) : (NIXCALL - len);
 		va = top;
 		for(;;){
 			os = isoverlap(up, va, len);
 			if(os == nil)
 				break;
 			va = os->base;
-			if(len > va || va < UTZERO + BIGPGSZ)
+			if(len > va || va < UTZERO + pagesz)
 				error("cannot fit segment at virtual address");
 			va -= len;
 		}
 	} else {
 		/* MAP_FIXED: must be page aligned and not overlap unless unmapped */
-		va = va & ~(BIGPGSZ - 1);
+		va = va & ~(usize)(pagesz - 1);
 		if(isoverlap(up, va, len) != nil)
 			error(Esoverlap);
 	}
@@ -117,7 +124,10 @@ sysmmap(Ar0 *ar0, ...)
 	if(prot & PROT_EXEC)
 		attr |= SG_EXEC;
 
-	s = newseg(attr, va, len / BIGPGSZ);
+	if(c != nil)
+		s = newseg(attr, va, len / BIGPGSZ);
+	else
+		s = newsegsz(attr, va, len / PGSZ, PGSZ);
 	s->color = up->color;
 
 	if(c != nil){
@@ -156,7 +166,7 @@ sysmunmap(Ar0 *ar0, ...)
 	va_end(list);
 
 	va = PTR2UINT(addr);
-	if(len == 0 || (va & (BIGPGSZ - 1)) != 0)
+	if(len == 0 || (va & (PGSZ - 1)) != 0)
 		error(Ebadarg);
 
 	qlock(up->seglock);
@@ -215,7 +225,7 @@ sysmprotect(Ar0 *ar0, ...)
 	va_end(list);
 
 	va = PTR2UINT(addr);
-	if(len == 0 || (va & (BIGPGSZ - 1)) != 0)
+	if(len == 0 || (va & (PGSZ - 1)) != 0)
 		error(Ebadarg);
 
 	qlock(up->seglock);

@@ -36,43 +36,36 @@ segppn(Segment *s, u64 pa)
 }
 
 /*
- * Sizes are given in multiples of BIGPGSZ.
- * The actual page size used is either BIGPGSZ or 1*GiB
- * 1G is disabled for now. RGM.
- * if base is aligned to 1G and size is >= 1G and we support 1G pages.
+ * size is the number of pages, and the page size is pgsz.  Segment.size
+ * and Segment.top use the same unit, so a 4 KiB mmap segment really is
+ * four kilobytes long.  Most callers still use BIGPGSZ (the historical
+ * Plan 9 segment unit); SG_MMAP uses PGSZ so a small mapping does not
+ * reserve 2 MiB of address space or fault in a 2 MiB page.
  */
 Segment *
-newseg(int type, usize base, u64 size)
+newsegsz(int type, usize base, u64 size, u32 pgsz)
 {
 	Segment *s;
 	int mapsize;
-	u32 pgsz;
 
-	if(size > SEGMAPSIZE * (PTEMAPMEM / BIGPGSZ))
+	if(pgsz == 0 || getpgszi(pgsz) < 0)
+		panic("newsegsz: bad page size %d", pgsz);
+	if(size > SEGMAPSIZE * (PTEMAPMEM / pgsz))
 		error(Enovmem);
 
-	pgsz = BIGPGSZ;
-	if(0)	     // TODO: re enable this on a per-process basis via a write to /proc/pid/ctl.
-		if(size * BIGPGSZ >= 1 * GiB && getpgszi(1 * GiB) >= 0 &&
-		   (base & (1ULL * GiB - 1)) == 0 && ((size * BIGPGSZ) & (1ULL * GiB - 1)) == 0){
-			DBG("newseg: using 1G pages\n");
-			pgsz = 1 * GiB;
-		}
 	s = smalloc(sizeof(Segment));
 	s->r.ref = 1;
 	s->type = type;
 	s->base = base;
 	s->ptepertab = PTEMAPMEM / pgsz;
-	s->top = base + (size * BIGPGSZ);
+	s->top = base + (size * pgsz);
 	s->size = size;
 	s->pgszi = getpgszi(pgsz);
-	if(s->pgszi < 0)
-		panic("newseg: getpgszi %d", pgsz);
 	s->sema.prev = &s->sema;
 	s->sema.next = &s->sema;
 	s->color = NOCOLOR;
 
-	mapsize = HOWMANY(size * BIGPGSZ / pgsz, s->ptepertab);
+	mapsize = HOWMANY(size, s->ptepertab);
 	if(mapsize > nelem(s->ssegmap)){
 		mapsize *= 2;
 		if(mapsize > (SEGMAPSIZE * s->ptepertab))
@@ -85,6 +78,12 @@ newseg(int type, usize base, u64 size)
 	}
 
 	return s;
+}
+
+Segment *
+newseg(int type, usize base, u64 size)
+{
+	return newsegsz(type, base, size, BIGPGSZ);
 }
 
 void
@@ -176,7 +175,7 @@ dupseg(Segment **seg, int segno, int share)
 	case SG_MMAP:
 		if(share)
 			goto sameseg;
-		n = newseg(s->type, s->base, s->size);
+		n = newsegsz(s->type, s->base, s->size, sys->pgsz[s->pgszi]);
 		if(s->image != nil){
 			incref(&s->image->r);
 			n->image = s->image;
@@ -188,13 +187,13 @@ dupseg(Segment **seg, int segno, int share)
 		break;
 
 	case SG_STACK:
-		n = newseg(s->type, s->base, s->size);
+		n = newsegsz(s->type, s->base, s->size, sys->pgsz[s->pgszi]);
 		break;
 
 	case SG_BSS: /* Just copy on write */
 		if(share)
 			goto sameseg;
-		n = newseg(s->type, s->base, s->size);
+		n = newsegsz(s->type, s->base, s->size, sys->pgsz[s->pgszi]);
 		break;
 
 	case SG_LOAD:
@@ -209,7 +208,7 @@ dupseg(Segment **seg, int segno, int share)
 
 		if(share)
 			goto sameseg;
-		n = newseg(s->type, s->base, s->size);
+		n = newsegsz(s->type, s->base, s->size, sys->pgsz[s->pgszi]);
 
 		incref(&s->image->r);
 		n->image = s->image;

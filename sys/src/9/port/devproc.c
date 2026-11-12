@@ -1982,7 +1982,7 @@ txt2data(Proc *p, Segment *s)
 	int i;
 	Segment *ps;
 
-	ps = newseg(SG_DATA | SG_READ | SG_WRITE | SG_EXEC, s->base, s->size);
+	ps = newsegsz(SG_DATA | SG_READ | SG_WRITE | SG_EXEC, s->base, s->size, sys->pgsz[s->pgszi]);
 	ps->image = s->image;
 	incref(&ps->image->r);
 	ps->ldseg = s->ldseg;
@@ -2010,7 +2010,7 @@ data2txt(Segment *s)
 {
 	Segment *ps;
 
-	ps = newseg(SG_TEXT | SG_READ | SG_EXEC, s->base, s->size);
+	ps = newsegsz(SG_TEXT | SG_READ | SG_EXEC, s->base, s->size, sys->pgsz[s->pgszi]);
 	ps->image = s->image;
 	incref(&ps->image->r);
 	ps->ldseg = s->ldseg;

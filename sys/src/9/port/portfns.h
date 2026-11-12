@@ -234,6 +234,7 @@ Pgrp *newpgrp(void);
 Proc *newproc(void);
 Rgrp *newrgrp(void);
 Segment *newseg(int, usize, u64);
+Segment *newsegsz(int, usize, u64, u32);
 void newzmap(Segment *);
 void nexterror(void);
 void notemark(Watermark *, int);

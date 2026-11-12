@@ -414,6 +414,7 @@ syssegfree(Ar0 *ar0, ...)
 	Segment *s;
 	usize from, to;
 	usize len;
+	u32 pgsz;
 	va_list list;
 	va_start(list, ar0);
 
@@ -426,16 +427,17 @@ syssegfree(Ar0 *ar0, ...)
 	s = seg(up, from, 1);
 	if(s == nil)
 		error(Ebadarg);
+	pgsz = sys->pgsz[s->pgszi];
 	len = va_arg(list, usize);
-	to = (from + len) & ~(BIGPGSZ - 1);
+	to = (from + len) & ~(usize)(pgsz - 1);
 	if(to < from || to > s->top){
 		qunlock(&s->lk);
 		error(Ebadarg);
 	}
-	from = BIGPGROUND(from);
+	from = (from + pgsz - 1) & ~(usize)(pgsz - 1);
 	va_end(list);
 
-	mfreeseg(s, from, (to - from) / BIGPGSZ);
+	mfreeseg(s, from, (to - from) / pgsz);
 	qunlock(&s->lk);
 	mmuflush();
 
