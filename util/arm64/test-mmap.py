@@ -26,6 +26,10 @@ EXPECT = [
     "MPROT-RW-BYTE 1",
     "MMAP-FIXED 1",
     "MMAP-FIXEDBYTE 1",
+    "MMAP-GRANULE 1",
+    "MMAP-ADJACENT 1",
+    "MMAP-LENGTH 1",
+    "MMAP-FORKREAD 1",
     "MMAP-THREAD-SAW 1",
     "MMAP-DONE",
 ]

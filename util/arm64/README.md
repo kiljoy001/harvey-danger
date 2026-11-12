@@ -344,13 +344,14 @@ segment (`procflushseg`), then drops the caller's page table; each process
 re-faults its pages with the new protection.  `munmap` flushes the range
 before removing the segment.  `PROT_NONE` faults on both read and write.
 
-The kernel's segment granularity is `BIGPGSZ` (2 MiB), so an anonymous
-mapping occupies a 2 MiB-aligned segment even when the requested length is
-4 KiB.  `MAP_FIXED` must be 2 MiB aligned for the same reason.  This is a
-kernel page-size limitation, not an APEX arena; an unaligned `MAP_FIXED`
-is rejected rather than silently rounded down.  The old single-arena
-workaround made `prot`, `mprotect`, `PROT_NONE` and `munmap` no-ops and has
-been removed.
+Anonymous mappings use the base page size (`PGSZ`, 4 KiB): the segment
+length is rounded to 4 KiB, faults allocate 4 KiB pages, and `mprotect`
+and `munmap` operate at 4 KiB.  Other Plan 9 segments (stack, BSS,
+`segattach`, and file-backed images) keep the historical `BIGPGSZ`
+(2 MiB) unit, because their sizes and the physical-segment table are
+expressed in it.  An unaligned `MAP_FIXED` is rejected rather than
+silently rounded down.  The old single-arena workaround made `prot`,
+`mprotect`, `PROT_NONE` and `munmap` no-ops and has been removed.
 
 A CPU that gives up a process switches TTBR0 back to the kernel root before
 entering the scheduler.  Without that, a process that migrated and later
@@ -358,7 +359,8 @@ exited elsewhere could have its freed page table still installed on an idle
 CPU, which faulted fetching the exception vector and parked that CPU.
 
 `util/arm64/test-mmap.py` covers prot, `mprotect`, `PROT_NONE`, `munmap`,
-`MAP_FIXED`, and thread visibility of a mapping made after thread start.
+`MAP_FIXED`, 4 KiB segment granularity, fork inheritance, and thread
+visibility of a mapping made after thread start.
 
 ### Running ARM tools with arguments
 

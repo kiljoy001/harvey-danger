@@ -103,11 +103,63 @@ test_fixed(void)
 	p = mmap(want, BIGPG, PROT_READ|PROT_WRITE,
 	    MAP_ANON|MAP_PRIVATE|MAP_FIXED, -1, 0);
 	printf("MMAP-FIXED %d\n", p == want);
-	if(p == MAP_FAILED)
+	if(p == MAP_FAILED){
+		printf("MMAP-FIXED-ERR %d\n", errno);
 		return;
+	}
 	p[0] = 'F';
 	printf("MMAP-FIXEDBYTE %d\n", p[0] == 'F');
 	munmap(p, BIGPG);
+}
+
+static void
+test_granule(void)
+{
+	unsigned char *a, *b;
+
+	/* Two 4 KiB mappings should sit one page apart, not 2 MiB apart. */
+	a = mmap(nil, PG, PROT_READ|PROT_WRITE, MAP_ANON|MAP_PRIVATE, -1, 0);
+	b = mmap(nil, PG, PROT_READ|PROT_WRITE, MAP_ANON|MAP_PRIVATE, -1, 0);
+	printf("MMAP-GRANULE %d\n", a != MAP_FAILED && b == a - PG);
+	if(a != MAP_FAILED)
+		munmap(a, PG);
+	if(b != MAP_FAILED){
+		b[0] = 'B';
+		printf("MMAP-ADJACENT %d\n", b[0] == 'B');
+		munmap(b, PG);
+	}
+
+	/* The segment length is the rounded mapping length, not 2 MiB. */
+	a = mmap(nil, 2*PG, PROT_READ|PROT_WRITE, MAP_ANON|MAP_PRIVATE, -1, 0);
+	b = mmap(nil, PG, PROT_READ|PROT_WRITE, MAP_ANON|MAP_PRIVATE, -1, 0);
+	printf("MMAP-LENGTH %d\n", a != MAP_FAILED && b == a - PG);
+	if(a != MAP_FAILED)
+		munmap(a, 2*PG);
+	if(b != MAP_FAILED)
+		munmap(b, PG);
+}
+
+static void
+test_forkread(void)
+{
+	unsigned char *p;
+	pid_t pid;
+	int st;
+
+	p = mmap(nil, PG, PROT_READ|PROT_WRITE,
+	    MAP_ANON|MAP_PRIVATE, -1, 0);
+	if(p == MAP_FAILED){
+		printf("MMAP-FORKREAD 0\n");
+		return;
+	}
+	p[0] = 'K';
+	pid = fork();
+	if(pid == 0)
+		_exit(p[0] == 'K' ? 0 : 1);
+	st = -1;
+	waitpid(pid, &st, 0);
+	printf("MMAP-FORKREAD %d\n", WIFEXITED(st) && WEXITSTATUS(st) == 0);
+	munmap(p, PG);
 }
 
 static void
@@ -142,6 +194,8 @@ main(void)
 	printf("MMAP-START\n");
 	test_anon();
 	test_fixed();
+	test_granule();
+	test_forkread();
 	test_thread();
 	printf("MMAP-DONE\n");
 	return 0;
