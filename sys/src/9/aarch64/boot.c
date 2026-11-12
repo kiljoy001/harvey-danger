@@ -665,6 +665,7 @@ arm64kernelstart(Fdtinfo *info)
 	addbootfile("saradcfs", (u8 *)arm64saradcfself, sizeof(arm64saradcfself));
 	addbootfile("tsadcfs", (u8 *)arm64tsadcfself, sizeof(arm64tsadcfself));
 	addbootfile("pwmfs", (u8 *)arm64pwmfself, sizeof(arm64pwmfself));
+	addbootfile("fanctl", (u8 *)arm64fanctlself, sizeof(arm64fanctlself));
 	addbootfile("mkdir", (u8 *)arm64mkdirelf, sizeof(arm64mkdirelf));
 	addbootfile("mount", (u8 *)arm64mountelf, sizeof(arm64mountelf));
 	addbootfile("mount9", (u8 *)arm64mount9elf, sizeof(arm64mount9elf));

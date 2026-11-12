@@ -45,6 +45,7 @@ WDTFS_BASE = 0x4E00000
 SARADCFS_BASE = 0x5A00000
 TSADCFS_BASE = 0x6200000
 PWMFS_BASE = 0x6A00000
+FANCTL_BASE = 0x7200000
 RTC_BASE = 0x3E00000
 PING_BASE = 0x8200000
 SDPROBE_BASE = 0x8600000
@@ -413,6 +414,11 @@ def build_tsadcfs(out: Path, libc: Path) -> tuple[bytes, int]:
 def build_pwmfs(out: Path, libc: Path) -> tuple[bytes, int]:
     return build_fs(out, libc, "pwmfs",
                     ROOT / "sys/src/cmd/pwmfs/pwmfs.c", PWMFS_BASE)
+
+
+def build_fanctl(out: Path, libc: Path) -> tuple[bytes, int]:
+    return build_fs(out, libc, "fanctl",
+                    ROOT / "sys/src/cmd/fanctl/fanctl.c", FANCTL_BASE)
 
 
 def build_emmcfs(out: Path, libc: Path) -> tuple[bytes, int]:
@@ -1137,6 +1143,19 @@ main(int argc, char **argv)
 	}
 	say("HARVEY-ARM64 DRIVER-MANAGER PASS\n");
 	{
+		char *fansrv[] = { "/boot/fanctl", "fanctl", nil };
+		pid = rfork(RFPROC|RFNOWAIT|RFFDG|RFNAMEG|RFENVG|RFREND|RFNOTEG);
+		if(pid == 0){
+			exec(fansrv[0], fansrv);
+			say("HARVEY-ARM64 FANCTL EXEC FAIL\n");
+			_exits("exec");
+		}
+		if(pid < 0 || waitfor("/srv/fan", 100) < 0)
+			say("HARVEY-ARM64 FANCTL FAIL\n");
+		else
+			say("HARVEY-ARM64 FANCTL PASS\n");
+	}
+	{
 		char *hubsrv[] = { "/boot/hubfs", "hubfs", nil };
 		pid = rfork(RFPROC|RFNOWAIT|RFFDG|RFNAMEG|RFENVG|RFREND|RFNOTEG);
 		if(pid == 0){
@@ -1340,6 +1359,7 @@ main(int argc, char **argv)
     saradcfs, _ = build_saradcfs(out, libc)
     tsadcfs, _ = build_tsadcfs(out, libc)
     pwmfs, _ = build_pwmfs(out, libc)
+    fanctl, _ = build_fanctl(out, libc)
     mkdirbin, _ = build_elf(out, libc, "mkdir", ROOT / "sys/src/cmd/mkdir.c",
                             MKDIR_BASE, [])
     mount9bin, _ = build_elf(out, libc, "mount9", ROOT / "sys/src/cmd/mount9.c",
@@ -2011,6 +2031,7 @@ main(int argc, char **argv)
     emit_array(lines, "arm64saradcfself", saradcfs)
     emit_array(lines, "arm64tsadcfself", tsadcfs)
     emit_array(lines, "arm64pwmfself", pwmfs)
+    emit_array(lines, "arm64fanctlself", fanctl)
     emit_array(lines, "arm64mkdirelf", mkdirbin)
     emit_array(lines, "arm64mountelf", mountbin)
     emit_array(lines, "arm64mount9elf", mount9bin)
@@ -2064,6 +2085,7 @@ main(int argc, char **argv)
         "saradcfs": saradcfs,
         "tsadcfs": tsadcfs,
         "pwmfs": pwmfs,
+        "fanctl": fanctl,
         "mkdir": mkdirbin,
         "mount": mountbin,
         "mount9": mount9bin,

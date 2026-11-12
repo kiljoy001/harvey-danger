@@ -38,7 +38,8 @@ rows below describe the native `o9xhci` fallback and its parity-oracle role.
 - TSADC bring-up gotchas: USER_CON bit 3 (adc_power_ctrl) must be set or the block stays powered down and DATA reads zero; AUTO_CON bit 1 (tsadc_q_sel) must be set or the negative-coefficient output is reported raw and reads about 25 C low.  Cross-checked against Armbian 6.18.21 on the same board (thermal_zone0 38.9 C, zone1 36.7 C).
 - OTP: read with a locally built 6.18.21 carrying the upstream RK3568 patches (see `doc/drivers/otp.md`).  The TSADC trim cells on this board are unprogrammed, so `tsadcfs` correctly reports the untrimmed value; chip id `"M2Y401"` and serial are available for an identity service.
 - PWM: `pwmfs` exposes `/srv/pwm/{status,fan,ctl}` for the PWM1 block at fe6e0000.  The fan header is PWM7 (`GPIO0_C6`), gated by Q4; the vendor v1.1 DTS confirms it with `pwms = <&pwm7 0 50000 0>` (20 kHz).  v2.1 uses the same channel but a 20 ms period (50 Hz), so the revision matters for timing.  Boot enables the `CLK_PWM1`/`PCLK_PWM1` gates, muxes `clk_pwm1` to xin24m (24 MHz) and sets the pin function.  `fan <percent>` uses a 20 kHz period (1200 ticks).  Verified on v1.1: registers, pinmux, and the channel counter advancing.
-- Fan curve (vendor v1.1 DTS, not yet implemented): `cooling-levels = <0 50 100 150 200 255>` with `rockchip,temp-trips = <50000 1 55000 2 60000 3 65000 4 70000 5>`, i.e. 50/55/60/65/70 C select 0/50/100/150/200/255 duty.
+- Fan curve (implemented in `fanctl`): the vendor v1.1 table `cooling-levels = <0 50 100 150 200 255>` with `rockchip,temp-trips = <50000 1 55000 2 60000 3 65000 4 70000 5>`, i.e. 50/55/60/65/70 C select 0/50/100/150/200/255 duty, with 2 C hysteresis on the way down.
+- Fan policy: `fanctl` samples `/srv/tsadc/temp0` every 2 s and drives `/srv/pwm/ctl`; `/srv/fan/status` reports mode/temperature/level/duty and `/srv/fan/ctl` takes `auto`, `level`, `temp` (forced, for test) and `hyst`.  Verified with forced trips: 52/57/62/72 C -> levels 1/2/3/5 -> 19/39/58/100 %, and 69->67 C holds level 5 until 68 C.
 - PMU_GRF note: the RK3568 iomux registers use a hiword write mask (upper 16 bits select which fields are written).  A plain read-modify-write is silently ignored, which is why the first pinmux attempt read back zero.
 - 9P write note: control writes can arrive in several messages; `saradcfs` and `wdtfs` buffer until newline before applying a command.
 
@@ -127,7 +128,7 @@ rows below describe the native `o9xhci` fallback and its parity-oracle role.
 | GPU/NPU DVFS | OPP tables in DTS | No devfreq | P2 |
 | Power domains | PD_PIPE, PD_NPU probe | PD_USB, PD_VPU, PD_RGA, PD_ISP, PD_NPU policy | **P0** |
 | Thermal zones | DTS has GPU/SoC trips | No TSADC driver or cooling policy | P1 |
-| Fan control | PWM7 drives Q4; `pwmfs` `/fan <percent>` verified (register/counter) | No tach readback or thermal loop | P1 |
+| Fan control | `fanctl` closes the loop: tsadc -> vendor trips -> `pwmfs`; verified with forced temperatures | No tach readback | P1 |
 | Watchdog | WDT node | No driver/reset policy | P1 |
 | TRNG | RNG node | No driver | P1 |
 | Crypto offload | SoC crypto | No driver | P3 |
