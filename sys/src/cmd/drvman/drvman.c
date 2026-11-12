@@ -29,6 +29,7 @@ static Driver drivers[] = {
 	{ "wdt",	"/boot/wdtfs",	"wdt" },
 	{ "saradc",	"/boot/saradcfs",	"saradc" },
 	{ "tsadc",	"/boot/tsadcfs",	"tsadc" },
+	{ "pwm",	"/boot/pwmfs",	"pwm" },
 	{ "usb",	"/boot/usbpower",	"usbpower" },
 	{ nil,	nil,	nil },
 };
