@@ -25,6 +25,7 @@ O9DRVMAN_BASE = 0x600000
 UARTFS_BASE = 0x1600000
 GPIOFS_BASE = 0x1A00000
 GPUS_BASE = 0xD000000
+NPUFS_BASE = 0xD400000
 HUBFS_BASE = 0x1E00000
 DRVMAN_BASE = 0x2200000
 I2CFS_BASE = 0x2600000
@@ -371,6 +372,11 @@ def build_gpiofs(out: Path, libc: Path) -> tuple[bytes, int]:
 def build_gpufs(out: Path, libc: Path) -> tuple[bytes, int]:
     return build_fs(out, libc, "gpufs",
                     ROOT / "sys/src/cmd/gpufs/gpufs.c", GPUS_BASE)
+
+
+def build_npufs(out: Path, libc: Path) -> tuple[bytes, int]:
+    return build_fs(out, libc, "npufs",
+                    ROOT / "sys/src/cmd/npufs/npufs.c", NPUFS_BASE)
 
 
 def build_hubfs(out: Path, libc: Path) -> tuple[bytes, int]:
@@ -1386,6 +1392,7 @@ main(int argc, char **argv)
     uartfs, _ = build_uartfs(out, libc)
     gpiofs, _ = build_gpiofs(out, libc)
     gpufs, _ = build_gpufs(out, libc)
+    npufs, _ = build_npufs(out, libc)
     hubfs, _ = build_hubfs(out, libc)
     drvman, _ = build_drvman(out, libc)
     i2cfs, _ = build_i2cfs(out, libc)
@@ -2059,6 +2066,7 @@ main(int argc, char **argv)
     emit_array(lines, "arm64testaudioelf", testaudio)
     emit_array(lines, "arm64uartfself", uartfs)
     emit_array(lines, "arm64gpufself", gpufs)
+    emit_array(lines, "arm64npufself", npufs)
     emit_array(lines, "arm64gpiofself", gpiofs)
     emit_array(lines, "arm64hubfself", hubfs)
     emit_array(lines, "arm64drvmanelf", drvman)
@@ -2122,6 +2130,7 @@ main(int argc, char **argv)
         "test-audio": testaudio,
         "uartfs": uartfs,
         "gpufs": gpufs,
+        "npufs": npufs,
         "gpiofs": gpiofs,
         "hubfs": hubfs,
         "drvman": drvman,

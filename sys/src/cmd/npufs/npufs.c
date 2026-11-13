@@ -1,0 +1,493 @@
+/*
+ * npufs - the RK3566 NPU (NVDLA-derived "RKNPU") as a 9P service.
+ *
+ * The first rung, like gpufs: bring the block out of reset and read it.
+ * The NPU hangs off its own rail (RK809 DCDC_REG4, vdd_npu) and its own
+ * power domain (PD_NPU), and U-Boot leaves the rail disabled and at
+ * 500 mV.  With the rail off the PMU never acknowledges the NIU idle
+ * release and any access to 0xfde40000 aborts the bus, which is why this
+ * driver asks pmicfs for the rail before touching the registers.
+ *
+ * Files:
+ *
+ *	status	model, power, clock and interrupt state
+ *	regs	the PC/status register window, decoded
+ *	ctl	"power", "off", "reset", "read <off>", "write <off> <val>"
+ *
+ * Not here yet: the IOMMU grants, the regcmd/task ring, and job
+ * submission.  The register map is from drivers/rknpu/include/rknpu_ioctl.h.
+ */
+#include <u.h>
+#include <libc.h>
+#include <fcall.h>
+#include <thread.h>
+#include <9p.h>
+#include "drv.h"
+
+enum {
+	PmuBase		= 0xfdd90000,
+	CruBase		= 0xfdd20000,
+
+	/* RK3568 PMU controller: power 0xa0, idle request 0x50, status
+	 * 0x98, ack 0x60, idle 0x68.  PD_NPU is power bit 1 and idle
+	 * request/ack bit 2. */
+	PmuPwr		= 0xa0,
+	PmuReq		= 0x50,
+	PmuStatus	= 0x98,
+	PmuAck		= 0x60,
+	PmuIdle		= 0x68,
+
+	PdNpu		= 1<<1,
+	PdNpuReq	= 1<<2,
+
+	/* CRU: NPU clocks and resets (NPU clock rate itself is SCMI's). */
+	CruClksel7	= 0x11c,
+	CruClksel8	= 0x120,
+	CruGate3	= 0x30c,
+	CruSoftrst2	= 0x408,
+
+	/* rknpu register window (drivers/rknpu/include/rknpu_ioctl.h). */
+	RegVersion	= 0x000,
+	RegVersionNum	= 0x004,
+	RegPcOpEn	= 0x008,
+	RegPcDataAddr	= 0x010,
+	RegPcDataAmount	= 0x014,
+	RegIntMask	= 0x020,
+	RegIntClear	= 0x024,
+	RegIntStatus	= 0x028,
+	RegIntRaw	= 0x02c,
+	RegPcTaskControl= 0x030,
+	RegPcDmaBase	= 0x034,
+	RegEnableMask	= 0xf008,
+};
+
+typedef struct Npu Npu;
+struct Npu {
+	Drv	d;
+	Drv	pmu;
+	Drv	cru;
+	int	mapped;
+	int	powered;
+	int	responded;
+	u32	version;
+	u32	versionnum;
+	u32	identmask;
+	char	rail[96];
+	char	why[256];
+	QLock	lk;
+};
+
+static Npu npu;
+
+static void
+setwhy(Npu *n, char *fmt, ...)
+{
+	va_list a;
+
+	if(n->why[0] != 0)
+		return;
+	va_start(a, fmt);
+	vseprint(n->why, n->why + sizeof n->why, fmt, a);
+	va_end(a);
+}
+
+/*
+ * One pmicfs command.  The service is a channel in /srv, so mount it in
+ * this process's namespace first (the same thing pmicfs does for i2cfs).
+ * The ctl handler buffers until a newline and leaves its result for the
+ * next read.
+ */
+static void
+mountpmic(void)
+{
+	int fd;
+
+	if(rfork(RFNAMEG) < 0)
+		return;
+	create("/mnt/pmic", OREAD, DMDIR|0700);
+	fd = open("/srv/pmic", ORDWR);
+	if(fd < 0)
+		return;
+	if(mount(fd, -1, "/mnt/pmic", MREPL, "") < 0)
+		print("npufs: mount /srv/pmic: %r\n");
+	close(fd);
+}
+
+static int
+pmictl(char *cmd, char *res, int nres)
+{
+	char buf[96];
+	int fd, n;
+
+	fd = open("/mnt/pmic/ctl", ORDWR);
+	if(fd < 0)
+		return -1;
+	snprint(buf, sizeof buf, "%s\n", cmd);
+	if(write(fd, buf, strlen(buf)) < 0){
+		close(fd);
+		return -1;
+	}
+	n = read(fd, res, nres - 1);
+	close(fd);
+	if(n < 0)
+		return -1;
+	res[n] = 0;
+	while(n > 0 && (res[n-1] == '\n' || res[n-1] == '\r'))
+		res[--n] = 0;
+	return 0;
+}
+
+/* vdd_npu is a separate RK809 buck; 900 mV is what the vendor DT asks for. */
+static int
+railup(Npu *n)
+{
+	char r[96];
+
+	if(pmictl("set vdd_npu 900", r, sizeof r) < 0){
+		setwhy(n, "no pmic service: %r");
+		return -1;
+	}
+	if(pmictl("on vdd_npu", r, sizeof r) < 0){
+		setwhy(n, "cannot enable vdd_npu: %r");
+		return -1;
+	}
+	snprint(n->rail, sizeof n->rail, "vdd_npu 900 mV");
+	if(r[0] != 0)
+		snprint(n->rail, sizeof n->rail, "%s", r);
+	sleep(20);			/* regulator-ramp-delay is 6 ms */
+	return 0;
+}
+
+static int
+pmuon(Npu *n)
+{
+	int i;
+
+	if(n->powered)
+		return 0;
+	if(!n->mapped){
+		setwhy(n, "registers not mapped");
+		return -1;
+	}
+	if(railup(n) < 0)
+		return -1;
+
+	/*
+	 * Clocks and resets first.  The NPU NIU holds its idle ack until
+	 * its hclk/aclk actually run, so releasing the request before the
+	 * gates open leaves the domain stuck in idle.
+	 */
+	drw(&n->cru, CruClksel7, 0x81cf0000u | (1u<<6) | 1u);
+	drw(&n->cru, CruClksel8, 0x00ff0000u | 0x33u);
+	drw(&n->cru, CruGate3, 0x1fff0000u);
+	drw(&n->cru, CruSoftrst2, (0x1800u<<16) | 0x1800u);
+	for(i = 0; i < 1000; i++)
+		;
+	drw(&n->cru, CruSoftrst2, (0x1800u<<16) | 0u);
+
+	/* Power on PD_NPU: high-word mask, clear power bit 1. */
+	drw(&n->pmu, PmuPwr, PdNpu << 16);
+	for(i = 0; i < 1000; i++){
+		if((drd(&n->pmu, PmuStatus) & PdNpu) == 0)
+			break;
+		sleep(1);
+	}
+	if(i == 1000){
+		setwhy(n, "PD_NPU power timeout (status %#ux)",
+		       drd(&n->pmu, PmuStatus));
+		return -1;
+	}
+
+	/* Leave idle: clear request bit 2, wait for ack and idle to clear. */
+	drw(&n->pmu, PmuReq, PdNpuReq << 16);
+	for(i = 0; i < 1000; i++){
+		if((drd(&n->pmu, PmuAck) & PdNpuReq) == 0 &&
+		   (drd(&n->pmu, PmuIdle) & PdNpuReq) == 0)
+			break;
+		sleep(1);
+	}
+	if(i == 1000){
+		setwhy(n, "PD_NPU idle timeout (rail %s, ack %#ux idle %#ux)",
+		       n->rail, drd(&n->pmu, PmuAck), drd(&n->pmu, PmuIdle));
+		return -1;
+	}
+	n->powered = 1;
+	return 0;
+}
+
+static void
+pmuoff(Npu *n)
+{
+	int i;
+
+	if(!n->powered)
+		return;
+	drw(&n->pmu, PmuReq, PdNpuReq | (PdNpuReq << 16));
+	for(i = 0; i < 1000; i++){
+		if((drd(&n->pmu, PmuAck) & PdNpuReq) != 0)
+			break;
+		sleep(1);
+	}
+	drw(&n->pmu, PmuPwr, PdNpu | (PdNpu << 16));
+	n->powered = 0;
+}
+
+/*
+ * The VERSION register reads zero on this part; the reset value of
+ * INT_MASK (0x8001ffff) is the reliable sign that the block answers.
+ */
+static void
+ident(Npu *n)
+{
+	if(!n->powered){
+		n->responded = 0;
+		return;
+	}
+	n->version = drd(&n->d, RegVersion);
+	n->versionnum = drd(&n->d, RegVersionNum);
+	n->identmask = drd(&n->d, RegIntMask);
+	n->responded = (n->identmask != 0 && n->identmask != ~0u);
+	if(!n->responded)
+		setwhy(n, "no register response (INT_MASK %#ux)", n->identmask);
+}
+
+static char *
+statustext(Npu *n, char *buf, int nbuf)
+{
+	char *p, *e;
+
+	p = buf;
+	e = buf + nbuf;
+	if(!n->mapped)
+		return seprint(p, e, "no npu node: %s\n", n->why);
+	p = seprint(p, e, "model rk3566-rknpu (NVDLA-derived)\n");
+	p = seprint(p, e, "version %#ux num %#ux responded %s\n",
+	            n->version, n->versionnum, n->responded ? "yes" : "no");
+	if(n->powered)
+		p = seprint(p, e, "power on rail %s pd_npu on clocks 594/4 MHz\n",
+		            n->rail);
+	else
+		p = seprint(p, e, "power off\n");
+	if(n->powered){
+		p = seprint(p, e, "int raw %#ux status %#ux mask %#ux clear %#ux\n",
+		            drd(&n->d, RegIntRaw), drd(&n->d, RegIntStatus),
+		            drd(&n->d, RegIntMask), drd(&n->d, RegIntClear));
+		p = seprint(p, e, "pc op_en %#ux data_addr %#ux amount %#ux task %#ux dma %#x\n",
+		            drd(&n->d, RegPcOpEn), drd(&n->d, RegPcDataAddr),
+		            drd(&n->d, RegPcDataAmount), drd(&n->d, RegPcTaskControl),
+		            drd(&n->d, RegPcDmaBase));
+	}else
+		p = seprint(p, e, "registers unreadable while the domain is off\n");
+	if(n->why[0] != 0)
+		p = seprint(p, e, "last error: %s\n", n->why);
+	return buf;
+}
+
+static char *
+regstext(Npu *n, char *buf, int nbuf)
+{
+	static struct { char *name; u32 off; } reg[] = {
+		{ "VERSION",		RegVersion },
+		{ "VERSION_NUM",	RegVersionNum },
+		{ "PC_OP_EN",		RegPcOpEn },
+		{ "PC_DATA_ADDR",	RegPcDataAddr },
+		{ "PC_DATA_AMOUNT",	RegPcDataAmount },
+		{ "INT_MASK",		RegIntMask },
+		{ "INT_CLEAR",		RegIntClear },
+		{ "INT_STATUS",		RegIntStatus },
+		{ "INT_RAW_STATUS",	RegIntRaw },
+		{ "PC_TASK_CONTROL",	RegPcTaskControl },
+		{ "PC_DMA_BASE_ADDR",	RegPcDmaBase },
+		{ "ENABLE_MASK",	RegEnableMask },
+	};
+	char *p, *e;
+	int i;
+
+	p = buf;
+	e = buf + nbuf;
+	if(!n->powered)
+		return seprint(p, e, "power off; registers unreadable\n");
+	for(i = 0; i < nelem(reg); i++)
+		p = seprint(p, e, "%-17s %#06ux %#08ux\n",
+		            reg[i].name, reg[i].off, drd(&n->d, reg[i].off));
+	return buf;
+}
+
+static void
+fsread(Req *r, void *aux)
+{
+	Npu *n;
+	char buf[2048];
+	char *name;
+
+	n = aux;
+	name = drvfile(r)->name;
+	if(strcmp(name, "status") == 0){
+		qlock(&n->lk);
+		statustext(n, buf, sizeof buf);
+		qunlock(&n->lk);
+		readstr(r, buf);
+		respond(r, nil);
+		return;
+	}
+	if(strcmp(name, "regs") == 0){
+		qlock(&n->lk);
+		regstext(n, buf, sizeof buf);
+		qunlock(&n->lk);
+		readstr(r, buf);
+		respond(r, nil);
+		return;
+	}
+	respond(r, "read not permitted");
+}
+
+static void
+ctlcmd(Npu *n, char *line)
+{
+	char res[128];
+	char *f[4];
+	int nf, off;
+
+	nf = tokenize(line, f, nelem(f));
+	if(nf == 0)
+		return;
+	if(strcmp(f[0], "power") == 0){
+		if(pmuon(n) < 0)
+			print("npufs: power: %s\n", n->why);
+		else{
+			ident(n);
+			print("npufs: power on, int mask %#ux\n", n->identmask);
+		}
+	}else if(strcmp(f[0], "off") == 0){
+		pmuoff(n);
+		print("npufs: power off\n");
+	}else if(strcmp(f[0], "reset") == 0){
+		if(!n->powered){
+			print("npufs: reset ignored, power is off\n");
+			return;
+		}
+		drw(&n->cru, CruSoftrst2, (0x1800u<<16) | 0x1800u);
+		sleep(1);
+		drw(&n->cru, CruSoftrst2, (0x1800u<<16) | 0u);
+		sleep(1);
+		ident(n);
+		print("npufs: reset, int mask %#ux\n", n->identmask);
+	}else if(strcmp(f[0], "ident") == 0){
+		ident(n);
+	}else if(strcmp(f[0], "read") == 0 && nf >= 2){
+		off = strtoul(f[1], nil, 0);
+		snprint(res, sizeof res, "%#x: %#ux", off, drd(&n->d, off));
+		print("npufs: %s\n", res);
+	}else if(strcmp(f[0], "write") == 0 && nf >= 3){
+		off = strtoul(f[1], nil, 0);
+		drw(&n->d, off, strtoul(f[2], nil, 0));
+		snprint(res, sizeof res, "%#x: %#ux", off, drd(&n->d, off));
+		print("npufs: %s\n", res);
+	}else
+		print("npufs: unknown command %s\n", f[0]);
+}
+
+static void
+fswrite(Req *r, void *aux)
+{
+	static char ctl[128];
+	static int ctllen;
+	Npu *n;
+	char *p, *e;
+
+	n = aux;
+	p = r->ifcall.data;
+	e = p + r->ifcall.count;
+	while(p < e){
+		if(*p == '\n'){
+			ctl[ctllen] = 0;
+			if(ctllen > 0){
+				qlock(&n->lk);
+				ctlcmd(n, ctl);
+				qunlock(&n->lk);
+			}
+			ctllen = 0;
+			p++;
+			continue;
+		}
+		if(ctllen < (int)sizeof ctl - 1)
+			ctl[ctllen++] = *p;
+		p++;
+	}
+	r->ofcall.count = r->ifcall.count;
+	respond(r, nil);
+}
+
+static DrvFile files[] = {
+	{ "status",	0444,	&npu,	fsread,	nil },
+	{ "regs",	0444,	&npu,	fsread,	nil },
+	{ "ctl",	0666,	&npu,	nil,	fswrite },
+};
+
+static void
+usage(void)
+{
+	fprint(2, "usage: npufs [-i]\n");
+	exits("usage");
+}
+
+void
+main(int argc, char **argv)
+{
+	DrvSrv *s;
+	int info;
+
+	info = 0;
+	ARGBEGIN{
+	case 'i':
+		info = 1;
+		break;
+	default:
+		usage();
+	}ARGEND
+	if(argc != 0)
+		usage();
+
+	if(drvfind(&npu.d, "npu", 0) < 0){
+		if(info){
+			print("npufs: no npu in #P\n");
+			exits("nonpu");
+		}
+		drvfail("npufs: no NPU in #P");
+	}
+	mountpmic();
+	if(drvmap(&npu.d) < 0){
+		setwhy(&npu, "cannot map %s: %r", npu.d.name);
+	}else{
+		npu.mapped = 1;
+		if(drvfindreg(&npu.pmu, PmuBase) == 0 && drvmap(&npu.pmu) == 0){
+			if(drvfindreg(&npu.cru, CruBase) == 0 && drvmap(&npu.cru) == 0){
+				if(pmuon(&npu) == 0)
+					ident(&npu);
+			}else
+				setwhy(&npu, "no CRU at %#llux in #P", (u64)CruBase);
+		}else
+			setwhy(&npu, "no PMU at %#llux in #P", (u64)PmuBase);
+	}
+
+	if(info){
+		char buf[1024];
+
+		statustext(&npu, buf, sizeof buf);
+		print("%s", buf);
+		exits(npu.responded ? nil : "noprobe");
+	}
+
+	if(npu.responded)
+		print("HARVEY-ARM64 NPU PROBE version %#ux mask %#ux\n",
+		      npu.version, npu.identmask);
+	else
+		print("HARVEY-ARM64 NPU PROBE FAIL %s\n",
+		      npu.why[0] ? npu.why : "no response");
+
+	s = drvsrv("npu", files, nelem(files));
+	if(s == nil)
+		drvfail("npufs: cannot build 9P tree");
+	drvsrvpost(s);
+	drvhealthrun("npufs");
+}

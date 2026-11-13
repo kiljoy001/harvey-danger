@@ -40,7 +40,7 @@ unsupported   no native driver; use a compatibility host or sponsor a port
 | VPU (decode) | `#P` | rkvdec | — | — | unsupported | H.264/H.265 decode |
 | VEPU (encode) | `#P` | vepu | — | — | unsupported | — |
 | RGA (2D) | `#P` | rga | — | — | unsupported | blit/scale |
-| NPU | `#P` | rknpu (NVDLA-derived) | — | — | experimental | regcmd/task format and 0xfde40000 block decoded in 9rock; vendor driver present; no Harvey driver yet |
+| NPU | `#P` | rknpu (NVDLA-derived) | npufs | `/srv/npu` | experimental | vdd_npu/PD_NPU/clocks/resets and the register window; no jobs or IOMMU yet |
 | GPU | `#P` | Mali G52 | gpufs | `/srv/gpu` | partial | power/clock/reset + GPU_ID/feature block on hardware; no GPU MMU, jobs or graphics |
 | ISP / camera | `#P` | rkisp + vicap | — | — | unsupported | MIPI CSI |
 | eFuse / OTP | `#P` | RK efuse | — | — | unsupported | — |

@@ -241,6 +241,13 @@ railctl(char *name, int on)
 			en |= 1 << r->enbit;
 		else
 			en &= ~(1 << r->enbit);
+		/*
+		 * RK809 enable registers use bits 7:4 as a write mask for
+		 * the four enables in bits 3:0.  U-Boot leaves vdd_npu off
+		 * precisely because a plain write is ignored, so pass all
+		 * four mask bits with every change.
+		 */
+		en = (en & 0x0f) | 0xf0;
 		if(pmwrite(r->enreg, &en, 1) < 0){
 			snprint(ctlresult, sizeof ctlresult, "write %s: %r", name);
 			return;

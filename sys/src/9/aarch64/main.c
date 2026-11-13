@@ -293,35 +293,94 @@ rk3566npuprobe(u64 dmapage)
 	uartputs("shmem0 ");
 	uarthex(v);
 	uartputs("\n");
-	/* Now try the block itself: power domain, resets, version. */
+	/*
+	 * Bring the block up in the order the vendor genpd code uses:
+	 * clocks and resets first, then power, then release the NIU idle
+	 * request.  The NPU NIU appears to hold its idle ack until its
+	 * hclk/aclk are actually running, which is why the earlier
+	 * power-then-clock ordering never saw the ack drop.
+	 */
 	{
 		volatile u32 *pmu = (volatile u32 *)0xfdd90000ULL;
 		volatile u32 *cru = (volatile u32 *)0xfdd20000ULL;
 		volatile u32 *npu = (volatile u32 *)0xfde40000ULL;
-		volatile u32 *mmu = (volatile u32 *)0xfde4b000ULL;
 
-		pmu[0x0050/4] = 0x00040004U;
-		pmu[0x00a0/4] = 0x00020000U;
-		pmu[0x0050/4] = 0x00040000U;
+		uartputs("before st ");
+		uarthex(pmu[0x0098/4]);
+		uartputs(" req ");
+		uarthex(pmu[0x0050/4]);
+		uartputs(" ack ");
+		uarthex(pmu[0x0060/4]);
+		uartputs(" idle ");
+		uarthex(pmu[0x0068/4]);
+		uartputs("\n");
+
+		/* Clocks: mux gpll/2, hclk/pclk /4, NPU gates 0-12 open. */
 		cru[0x11c/4] = 0x81cf0000U | (1U<<6) | 1U;
 		cru[0x120/4] = 0x00ff0000U | 0x33U;
 		cru[0x30c/4] = 0x1fff0000U;
+		/* srst_a/srst_h are bits 11/12 of SOFTRST_CON(2). */
 		cru[0x408/4] = (0x1800U<<16) | 0x1800U;
 		for(i = 0; i < 1000; i++)
 			__asm__ volatile("nop");
 		cru[0x408/4] = (0x1800U<<16) | 0U;
 		__asm__ volatile("dsb sy" ::: "memory");
-		uartputs("npu pmu ");
-		uarthex(pmu[0x0098/4]);
-		/*
-		 * Reading 0xfde40000 or 0xfde4b000 still aborts even with
-		 * PD_NPU on, vdd_npu at 900 mV, the CRU NPU clocks open and
-		 * the SCMI npu clock enabled.  The block itself is the next
-		 * thing to sort out; do not take the machine down here.
-		 */
-		(void)npu;
-		(void)mmu;
+		uartputs("clk: sel7 ");
+		uarthex(cru[0x11c/4]);
+		uartputs(" sel8 ");
+		uarthex(cru[0x120/4]);
+		uartputs(" gate3 ");
+		uarthex(cru[0x30c/4]);
+		uartputs(" softrst2 ");
+		uarthex(cru[0x408/4]);
+		uartputs(" ack ");
+		uarthex(pmu[0x0060/4]);
 		uartputs("\n");
+
+		/* Power on: clear pwr bit 1, wait for status bit 1 to clear. */
+		pmu[0x00a0/4] = 0x00020000U;
+		for(i = 0; i < 100000; i++){
+			if((pmu[0x0098/4] & 2) == 0)
+				break;
+			__asm__ volatile("nop");
+		}
+		uartputs("powered st ");
+		uarthex(pmu[0x0098/4]);
+		uartputs(" w ");
+		uarthex(i);
+		uartputs(" ack ");
+		uarthex(pmu[0x0060/4]);
+		uartputs("\n");
+
+		/* Release the NIU idle request (bit 2) and wait for the ack. */
+		pmu[0x0050/4] = 0x00040000U;
+		__asm__ volatile("dsb sy" ::: "memory");
+		for(i = 0; i < 1000000; i++){
+			if((pmu[0x0060/4] & 4) == 0 && (pmu[0x0068/4] & 4) == 0)
+				break;
+			__asm__ volatile("nop");
+		}
+		uartputs("released req ");
+		uarthex(pmu[0x0050/4]);
+		uartputs(" ack ");
+		uarthex(pmu[0x0060/4]);
+		uartputs(" idle ");
+		uarthex(pmu[0x0068/4]);
+		uartputs(" w ");
+		uarthex(i);
+		uartputs("\n");
+
+		if((pmu[0x0060/4] & 4) != 0)
+			uartputs("npu niu stays idle; not touching 0xfde40000\n");
+		else{
+			uartputs("npu version ");
+			uarthex(npu[0x0000/4]);
+			uartputs(" vnum ");
+			uarthex(npu[0x0004/4]);
+			uartputs(" iommu ");
+			uarthex(((volatile u32 *)0xfde4b000ULL)[0x0004/4]);
+			uartputs("\n");
+		}
 	}
 	uartputs("HARVEY-ARM64 RK3566-NPU PROBE-DONE\n");
 }

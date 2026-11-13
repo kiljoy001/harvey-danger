@@ -655,6 +655,7 @@ arm64kernelstart(Fdtinfo *info)
 		    sizeof(arm64testaudioelf));
 	addbootfile("uartfs", (u8 *)arm64uartfself, sizeof(arm64uartfself));
 	addbootfile("gpufs", (u8 *)arm64gpufself, sizeof(arm64gpufself));
+	addbootfile("npufs", (u8 *)arm64npufself, sizeof(arm64npufself));
 	addbootfile("gpiofs", (u8 *)arm64gpiofself, sizeof(arm64gpiofself));
 	addbootfile("hubfs", (u8 *)arm64hubfself, sizeof(arm64hubfself));
 	addbootfile("drvman", (u8 *)arm64drvmanelf, sizeof(arm64drvmanelf));

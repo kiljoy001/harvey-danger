@@ -41,6 +41,9 @@ static Driver drivers[] = {
  * service, so they start after the class registry has been launched. */
 static Driver children[] = {
 	{ "pmic",	"/boot/pmicfs",	"pmic", "-c" },
+	/* The NPU rail (vdd_npu) is an RK809 buck, so npufs runs after
+	 * pmicfs and asks it for the rail before touching PD_NPU. */
+	{ "npu",	"/boot/npufs",	"npu", nil },
 	{ nil,	nil,	nil },
 };
 
