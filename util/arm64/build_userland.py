@@ -1338,7 +1338,7 @@ main(int argc, char **argv)
 	 * so nothing has to be typed and the console stays free.
 	 */
 	{
-		char *lkllist[][5] = {
+		char *lkllist[][6] = {
 			{ "/boot/lklboot", "-b", "-f", "wifi", nil },
 		};
 		int n = sizeof(lkllist) / sizeof(lkllist[0]);
