@@ -23,7 +23,8 @@ from zoneinfo import ZoneInfo
 HERE = Path(__file__).resolve().parent
 CACHE = Path(os.environ.get("EVOLUTION_CALENDAR_CACHE",
                             Path.home() / ".cache/evolution/calendar"))
-DAYS = int(os.environ.get("WADA_CAL_DAYS", "14"))
+PAST_DAYS = int(os.environ.get("WADA_CAL_PAST_DAYS", "365"))
+FUTURE_DAYS = int(os.environ.get("WADA_CAL_FUTURE_DAYS", "365"))
 TZNAME = os.environ.get("WADA_TZ")
 if not TZNAME:
     try:
@@ -93,11 +94,13 @@ def events():
 
 def main():
     today = dt.datetime.now(TZ).date()
-    end = today + dt.timedelta(days=DAYS - 1)
-    byday = {today + dt.timedelta(days=i): [] for i in range(DAYS)}
+    start = today - dt.timedelta(days=PAST_DAYS)
+    end = today + dt.timedelta(days=FUTURE_DAYS)
+    byday = {start + dt.timedelta(days=i): []
+             for i in range((end - start).days + 1)}
     total = 0
     for day, clock, summary, location in events():
-        if day < today or day > end:
+        if day < start or day > end:
             continue
         byday[day].append((clock, summary, location))
         total += 1
@@ -130,10 +133,10 @@ def main():
     index.write_text("\n".join(idx).rstrip() + "\n")
     os.replace(index, HERE / "calendar/index")
     (HERE / "calendar.status.tmp").write_text(
-        f"{DAYS} days · {total} events\n")
+        f"1 year · {total} events\n")
     os.replace(HERE / "calendar.status.tmp", HERE / "calendar.status")
-    print(f"calendar-sync: {total} events across {DAYS} days "
-          f"({TZNAME})")
+    print(f"calendar-sync: {total} events across "
+          f"{start}..{end} ({TZNAME})")
 
 
 if __name__ == "__main__":
