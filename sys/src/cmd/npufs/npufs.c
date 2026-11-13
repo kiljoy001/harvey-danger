@@ -66,11 +66,97 @@ enum {
 	 * broadcast operation-enable. */
 	PcTarget	= 0x100 + 1,
 	CnaTarget	= 0x200 + 1,
+	CoreTarget	= 0x800 + 1,
+	DpuTarget	= 0x1000 + 1,
+	RdmaTarget	= 0x2000 + 1,
 	GlobTarget	= 0x81,
 	PcRegAmounts	= 0x014,
 	PcOpEnReg	= 0x008,
 	CnaDcompRegnum	= 0x1104,
 	CnaDcompCtrl	= 0x1100,
+
+	/* CNA block (rocket_ref/registers.xml). */
+	CnaOpEn		= 0x1008,
+	CnaConvCon1	= 0x100c,
+	CnaConvCon2	= 0x1010,
+	CnaConvCon3	= 0x1014,
+	CnaDataSize0	= 0x1020,
+	CnaDataSize1	= 0x1024,
+	CnaDataSize2	= 0x1028,
+	CnaDataSize3	= 0x102c,
+	CnaWeightSize0	= 0x1030,
+	CnaWeightSize1	= 0x1034,
+	CnaWeightSize2	= 0x1038,
+	CnaCbufCon0	= 0x1040,
+	CnaCbufCon1	= 0x1044,
+	CnaCvtCon0	= 0x104c,
+	CnaCvtCon1	= 0x1050,
+	CnaCvtCon5	= 0x1180,
+	CnaPadCon0	= 0x1068,
+	CnaPadCon1	= 0x1184,
+	CnaFeatureAddr	= 0x1070,
+	CnaDmaCon0	= 0x1078,
+	CnaDmaCon1	= 0x107c,
+	CnaDmaCon2	= 0x1080,
+	CnaFcSize0	= 0x1084,
+	CnaFcSize1	= 0x1088,
+	CnaDcompAddr0	= 0x1110,
+	CnaDcompAmount0	= 0x1140,
+
+	/* CORE, DPU and DPU_RDMA. */
+	CoreMiscCfg	= 0x3010,
+	CoreDataoutSize0= 0x3014,
+	CoreDataoutSize1= 0x3018,
+	CoreClipTruncate= 0x301c,
+	DpuFeatureModeCfg= 0x400c,
+	DpuDataFormat	= 0x4010,
+	DpuOffsetPend	= 0x4014,
+	DpuDstBaseAddr	= 0x4020,
+	DpuDstSurfStride= 0x4024,
+	DpuCubeWidth	= 0x4030,
+	DpuCubeHeight	= 0x4034,
+	DpuCubeNotch	= 0x4038,
+	DpuCubeChannel	= 0x403c,
+	DpuBsCfg	= 0x4040,
+	DpuBsOwCfg	= 0x4050,
+	DpuBsOwOp	= 0x4054,
+	DpuWdmaSize0	= 0x4058,
+	DpuWdmaSize1	= 0x405c,
+	DpuBnCfg	= 0x4060,
+	DpuEwCfg	= 0x4070,
+	DpuOutCvtOffset	= 0x4080,
+	DpuOutCvtScale	= 0x4084,
+	DpuOutCvtShift	= 0x4088,
+	RdmaCubeWidth	= 0x500c,
+	RdmaCubeHeight	= 0x5010,
+	RdmaCubeChannel	= 0x5014,
+	RdmaSrcBaseAddr	= 0x5018,
+	RdmaBrdmaCfg	= 0x501c,
+	RdmaBsBaseAddr	= 0x5020,
+	RdmaErdmaCfg	= 0x5034,
+	RdmaEwBaseAddr	= 0x5038,
+	RdmaEwSurfStride= 0x5040,
+	RdmaFeatureModeCfg=0x5044,
+	RdmaSrcDmaCfg	= 0x5048,
+
+	/* NPU IOMMU (rockchip,iommu-v2 at 0xfde4b000). */
+	MmuBase		= 0xfde4b000,
+	MmuDteaddr	= 0x00,
+	MmuStatus	= 0x04,
+	MmuCommand	= 0x08,
+	MmuFaultaddr	= 0x0c,
+	MmuZapone	= 0x10,
+	MmuIntraw	= 0x14,
+	MmuIntclear	= 0x18,
+	MmuIntmask	= 0x1c,
+	MmuAutogating	= 0x24,
+	MmuPaging	= 1<<0,
+	MmuFaultbit	= 1<<1,
+	MmuAutogateNofetch = 1u<<31,
+	MmuEnable	= 0,
+	MmuDisable	= 1,
+	MmuZap		= 4,
+	MmuReset	= 6,
 };
 
 /* struct rknpu_task, 40 bytes (drivers/rknpu/include/rknpu_ioctl.h). */
@@ -92,6 +178,13 @@ struct Npu {
 	Drv	d;
 	Drv	pmu;
 	Drv	cru;
+	Drv	mmu;
+	int	havemmu;
+	int	iommue;
+	void	*dt;
+	void	*pt;
+	u64	dtpa;
+	u64	ptpa;
 	int	mapped;
 	int	powered;
 	int	responded;
@@ -104,8 +197,10 @@ struct Npu {
 
 	void	*task;		/* task array */
 	void	*cmd;		/* regcmd stream */
+	void	*scratch;	/* safe DMA target for block tests */
 	u64	taskpa;
 	u64	cmdpa;
+	u64	scratchpa;
 	u32	lastraw;
 	u32	lastdcomp;
 };
@@ -290,6 +385,103 @@ ident(Npu *n)
  * the four-word trailer.  With every configuration register at zero the
  * compute blocks have no work, and any error still shows in INT_RAW.
  */
+static u32
+mmupa(u64 pa)
+{
+	u64 v;
+
+	v = pa & 0xfffff000ULL;
+	v |= (pa & 0xf00000000ULL) >> 24;
+	v |= (pa & 0xf000000000ULL) >> 32;
+	return (u32)v;
+}
+
+static void
+mmumap(Npu *n, u64 base, u64 size)
+{
+	u64 a;
+
+	for(a = base; a < base + size; a += 4096)
+		((u32 *)n->pt)[(a>>12) & 0x3ff] = mmupa(a) | 7;
+}
+
+/*
+ * Identity-map the DMA buffers in the NPU's 4 GiB IOVA space and turn
+ * paging on.  One page table covers the arena's 4 MiB directory slot;
+ * every other IOVA now faults instead of reaching memory.
+ */
+static int
+iommuon(Npu *n)
+{
+	u32 dtei;
+	int i;
+
+	if(n->iommue)
+		return 0;
+	if(!n->havemmu){
+		setwhy(n, "no NPU IOMMU in #P");
+		return -1;
+	}
+	if(n->task == nil || n->cmd == nil || n->scratch == nil){
+		setwhy(n, "allocate the DMA buffers first");
+		return -1;
+	}
+	if(n->dt == nil){
+		n->dt = drvdma(&n->d, 4096, 4096, &n->dtpa);
+		n->pt = drvdma(&n->d, 4096, 4096, &n->ptpa);
+		if(n->dt == nil || n->pt == nil){
+			setwhy(n, "no DMA for the IOMMU tables");
+			return -1;
+		}
+	}
+	dtei = (u32)(n->taskpa >> 22) & 0x3ff;
+	if(((n->cmdpa >> 22) & 0x3ff) != dtei ||
+	   ((n->scratchpa >> 22) & 0x3ff) != dtei){
+		setwhy(n, "DMA buffers span IOMMU directory entries");
+		return -1;
+	}
+	memset(n->dt, 0, 4096);
+	memset(n->pt, 0, 4096);
+	((u32 *)n->dt)[dtei] = mmupa(n->ptpa) | 1;
+	mmumap(n, n->taskpa, 4096);
+	mmumap(n, n->cmdpa, 4096);
+	mmumap(n, n->scratchpa, 0x4000);
+	drvdmacache(DrvClean, n->dtpa, 4096);
+	drvdmacache(DrvClean, n->ptpa, 4096);
+
+	drw(&n->mmu, MmuCommand, MmuReset);
+	for(i = 0; i < 1000 && drd(&n->mmu, MmuDteaddr) != 0; i++)
+		sleep(1);
+	drw(&n->mmu, MmuDteaddr, mmupa(n->dtpa) | 1);
+	drw(&n->mmu, MmuCommand, MmuZap);
+	drw(&n->mmu, MmuIntmask, 3);
+	drw(&n->mmu, MmuAutogating,
+	    drd(&n->mmu, MmuAutogating) | MmuAutogateNofetch);
+	drw(&n->mmu, MmuCommand, MmuEnable);
+	for(i = 0; i < 1000 && (drd(&n->mmu, MmuStatus) & MmuPaging) == 0; i++)
+		sleep(1);
+	if((drd(&n->mmu, MmuStatus) & MmuPaging) == 0){
+		setwhy(n, "IOMMU enable timed out (status %#ux)",
+		       drd(&n->mmu, MmuStatus));
+		return -1;
+	}
+	n->iommue = 1;
+	return 0;
+}
+
+static void
+iommuoff(Npu *n)
+{
+	int i;
+
+	if(!n->iommue)
+		return;
+	drw(&n->mmu, MmuCommand, MmuDisable);
+	for(i = 0; i < 1000 && (drd(&n->mmu, MmuStatus) & MmuPaging) != 0; i++)
+		sleep(1);
+	n->iommue = 0;
+}
+
 static int
 jobtest(Npu *n)
 {
@@ -303,10 +495,14 @@ jobtest(Npu *n)
 		n->task = drvdma(&n->d, 4096, 64, &n->taskpa);
 		n->cmd = drvdma(&n->d, 4096, 64, &n->cmdpa);
 	}
-	if(n->task == nil || n->cmd == nil){
+	if(n->scratch == nil)
+		n->scratch = drvdma(&n->d, 0x4000, 64, &n->scratchpa);
+	if(n->task == nil || n->cmd == nil || n->scratch == nil){
 		setwhy(n, "no DMA arena for the task ring");
 		return -1;
 	}
+	if(iommuon(n) < 0)
+		return -1;
 	memset(n->task, 0, 4096);
 	memset(n->cmd, 0, 4096);
 
@@ -366,6 +562,146 @@ jobtest(Npu *n)
 	return n->lastdcomp == 0xdeadbeef ? 0 : -1;
 }
 
+static void
+emit(u64 *w, int *i, u32 target, u32 reg, u32 val)
+{
+	w[(*i)++] = ((u64)target<<48) | ((u64)val<<16) | (reg & 0xffff);
+}
+
+static void
+emitcna(Npu *n, u64 *w, int *i, int start)
+{
+	emit(w, i, CnaTarget, CnaCbufCon0, (1<<4)|1);	/* 1 weight, 1 data bank */
+	emit(w, i, CnaTarget, CnaCbufCon1, 1);		/* one data entry */
+	emit(w, i, CnaTarget, CnaConvCon1, 0);
+	emit(w, i, CnaTarget, CnaConvCon2, 52<<4);	/* feature grains */
+	emit(w, i, CnaTarget, CnaConvCon3, (1<<3)|1);	/* stride 1x1 */
+	emit(w, i, CnaTarget, CnaDataSize0, (1<<16)|1);
+	emit(w, i, CnaTarget, CnaDataSize1, 32);	/* real 0, aligned 32 */
+	emit(w, i, CnaTarget, CnaDataSize2, 1);
+	emit(w, i, CnaTarget, CnaDataSize3, 1);
+	emit(w, i, CnaTarget, CnaWeightSize0, 1);
+	emit(w, i, CnaTarget, CnaWeightSize1, 1);
+	emit(w, i, CnaTarget, CnaWeightSize2, (1<<24)|(1<<16)|1);
+	emit(w, i, CnaTarget, CnaCvtCon0, 0xb);	/* bypass */
+	emit(w, i, CnaTarget, CnaCvtCon1, 1<<16);	/* scale 1 */
+	emit(w, i, CnaTarget, CnaCvtCon5, 0xffff);
+	emit(w, i, CnaTarget, CnaPadCon0, 0);
+	emit(w, i, CnaTarget, CnaPadCon1, 0x80);
+	emit(w, i, CnaTarget, CnaFeatureAddr, (u32)n->scratchpa);
+	emit(w, i, CnaTarget, CnaDmaCon0, (15<<16)|15);
+	emit(w, i, CnaTarget, CnaDmaCon1, 1);
+	emit(w, i, CnaTarget, CnaDmaCon2, 0);
+	emit(w, i, CnaTarget, CnaFcSize0, (1<<16)|1);
+	emit(w, i, CnaTarget, CnaFcSize1, 32);
+	emit(w, i, CnaTarget, CnaDcompCtrl, 0);
+	emit(w, i, CnaTarget, CnaDcompRegnum, 0);
+	emit(w, i, CnaTarget, CnaDcompAddr0, (u32)n->scratchpa + 0x200);
+	emit(w, i, CnaTarget, CnaDcompAmount0, 0);
+	if(start)
+		emit(w, i, CnaTarget, CnaOpEn, 1);
+}
+
+/*
+ * Start only the CNA, with every address it can reach inside one scratch
+ * buffer.  A 1x1x1 int8 convolution is the smallest job that makes the
+ * block read input and weights; the point is the interrupt, not the maths.
+ */
+static int
+cnatest(Npu *n, int broadcast)
+{
+	Task *t;
+	u64 *w;
+	u8 *in, *wt;
+	int i, raw, done;
+
+	if(pmuon(n) < 0)
+		return -1;
+	if(n->task == nil){
+		n->task = drvdma(&n->d, 4096, 64, &n->taskpa);
+		n->cmd = drvdma(&n->d, 4096, 64, &n->cmdpa);
+	}
+	if(n->scratch == nil)
+		n->scratch = drvdma(&n->d, 0x4000, 64, &n->scratchpa);
+	if(n->task == nil || n->cmd == nil || n->scratch == nil){
+		setwhy(n, "no DMA arena for the CNA test");
+		return -1;
+	}
+	if(iommuon(n) < 0)
+		return -1;
+	memset(n->task, 0, 4096);
+	memset(n->cmd, 0, 4096);
+	memset(n->scratch, 0, 0x4000);
+	in = n->scratch;
+	wt = (u8 *)n->scratch + 0x200;
+	in[0] = 2;
+	wt[0] = 3;
+
+	w = n->cmd;
+	i = 0;
+	emitcna(n, w, &i, !broadcast);
+	w[i++] = 0;
+	emit(w, &i, PcTarget, PcRegAmounts, 0);
+	w[i++] = 0x0041000000000000ULL;
+	if(broadcast)
+		emit(w, &i, GlobTarget, PcOpEnReg, 0x1d);
+	else
+		emit(w, &i, CnaTarget, CnaDcompCtrl, 0);
+
+	t = n->task;
+	t->int_mask = broadcast ? 0x1ffff : 0xf;
+	t->int_clear = 0x1ffff;
+	t->regcfg_amount = i - 4;
+	t->regcmd_addr = n->cmdpa;
+
+	drvdmacache(DrvClean, n->cmdpa, 4096);
+	drvdmacache(DrvClean, n->taskpa, 4096);
+	drvdmacache(DrvClean, n->scratchpa, 0x4000);
+
+	drw(&n->d, RegIntClear, 0x1ffff);
+	drw(&n->d, RegIntMask, broadcast ? 0x1ffff : 0xf);
+	if(n->iommue){
+		drw(&n->mmu, MmuIntclear, 3);
+		drw(&n->mmu, MmuCommand, 5);	/* fault done */
+	}
+	drw(&n->d, RegPcDataAddr, (u32)n->cmdpa);
+	drw(&n->d, RegPcDataAmount, t->regcfg_amount + 3);
+	drw(&n->d, RegPcTaskControl, (6<<12) | 1);
+	drw(&n->d, RegPcDmaBase, (u32)n->taskpa);
+	drw(&n->d, RegPcOpEn, 1);
+	drw(&n->d, RegPcOpEn, 0);
+
+	raw = 0;
+	for(i = 0; i < 500; i++){
+		raw = drd(&n->d, RegIntRaw);
+		if(raw & 0xf)
+			break;
+		sleep(1);
+	}
+	done = (raw & 0xf) != 0;
+	n->lastraw = raw;
+	drw(&n->d, RegIntClear, 0x1ffff);
+	if(n->iommue){
+		/* A fault stalls the bus; acknowledge it so the next job runs. */
+		drw(&n->mmu, MmuIntclear, 3);
+		drw(&n->mmu, MmuCommand, 5);
+	}
+	drvdmacache(DrvInval, n->scratchpa, 0x4000);
+	print("npufs: %s raw %#ux status %#ux pc %#ux scratch %#llux out %02ux",
+	      broadcast ? "bcna" : "cna", raw, drd(&n->d, RegIntStatus),
+	      drd(&n->d, RegPcTaskStatus), n->scratchpa,
+	      ((u8 *)n->scratch)[0x1000]);
+	if(n->iommue)
+		print(" iommu raw %#ux fault %#ux",
+		      drd(&n->mmu, MmuIntraw), drd(&n->mmu, MmuFaultaddr));
+	print("\n");
+	if(!done)
+		setwhy(n, "CNA did not signal (raw %#ux)", raw);
+	else
+		n->why[0] = 0;
+	return done ? 0 : -1;
+}
+
 static char *
 statustext(Npu *n, char *buf, int nbuf)
 {
@@ -384,7 +720,15 @@ statustext(Npu *n, char *buf, int nbuf)
 	else
 		p = seprint(p, e, "power off\n");
 	if(n->powered){
-		p = seprint(p, e, "int raw %#ux status %#ux mask %#ux clear %#ux\n",
+		if(n->havemmu){
+		p = seprint(p, e, "iommu %s", n->iommue ? "paging" : "off");
+		if(n->iommue)
+			p = seprint(p, e, " raw %#ux fault %#ux",
+			            drd(&n->mmu, MmuIntraw),
+			            drd(&n->mmu, MmuFaultaddr));
+		p = seprint(p, e, "\n");
+	}
+	p = seprint(p, e, "int raw %#ux status %#ux mask %#ux clear %#ux\n",
 		            drd(&n->d, RegIntRaw), drd(&n->d, RegIntStatus),
 		            drd(&n->d, RegIntMask), drd(&n->d, RegIntClear));
 		p = seprint(p, e, "pc op_en %#ux data_addr %#ux amount %#ux task %#ux dma %#x\n",
@@ -494,6 +838,21 @@ ctlcmd(Npu *n, char *line)
 		ident(n);
 	}else if(strcmp(f[0], "test") == 0){
 		jobtest(n);
+	}else if(strcmp(f[0], "cna") == 0){
+		cnatest(n, 0);
+	}else if(strcmp(f[0], "bcna") == 0){
+		cnatest(n, 1);
+	}else if(strcmp(f[0], "iommu") == 0){
+		if(iommuon(n) < 0)
+			print("npufs: iommu: %s\n", n->why);
+		else{
+			drw(&n->mmu, MmuIntclear, 3);
+			print("npufs: iommu paging, status %#ux\n",
+			      drd(&n->mmu, MmuStatus));
+		}
+	}else if(strcmp(f[0], "iommu-off") == 0){
+		iommuoff(n);
+		print("npufs: iommu off\n");
 	}else if(strcmp(f[0], "read") == 0 && nf >= 2){
 		off = strtoul(f[1], nil, 0);
 		snprint(res, sizeof res, "%#x: %#ux", off, drd(&n->d, off));
@@ -576,6 +935,8 @@ main(int argc, char **argv)
 		drvfail("npufs: no NPU in #P");
 	}
 	mountpmic();
+	if(drvfindreg(&npu.mmu, MmuBase) == 0 && drvmap(&npu.mmu) == 0)
+		npu.havemmu = 1;
 	if(drvmap(&npu.d) < 0){
 		setwhy(&npu, "cannot map %s: %r", npu.d.name);
 	}else{

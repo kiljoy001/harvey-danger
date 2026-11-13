@@ -305,8 +305,12 @@ arm64pnpinit(Fdtinfo *info)
 	consolebase = info->uartbase;
 	npnpdev = 0;
 	for(i = 0; i < info->ndev && npnpdev < Maxfdtdev; i++){
-		if(info->dev[i].clas == Fdtclassiommu)
-			continue;
+		/*
+		 * IOMMU windows are granted like any other device.  The
+		 * kernel's own rkiommu driver works from the device tree,
+		 * so a user driver that owns a bus (the NPU, for one) can
+		 * programme the tables its device walks.
+		 */
 		pnpdev[npnpdev++] = info->dev[i];
 	}
 }

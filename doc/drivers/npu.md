@@ -79,7 +79,8 @@ but `arm64main`'s probe (`ARM64_RK3566_NPU_PROBE=1`) exercises the protocol.
 ```
 /srv/npu/status   model, rail, power, interrupt and PC state
 /srv/npu/regs     decoded register window
-/srv/npu/ctl      power | off | reset | ident | read <off> | write <off> <v>
+/srv/npu/ctl      power | off | reset | ident | iommu | iommu-off
+                  cna | bcna | test | read <off> | write <off> <v>
 ```
 
 It maps the NPU window through `#P` (the board DTB must carry the
@@ -123,14 +124,47 @@ physical memory (one such run corrupted kernel memory and panicked in
 harmless second CNA write.  Before enabling the blocks for real, point the
 feature/weight/DPU addresses at a scratch DMA buffer (or enable the IOMMU).
 
+## IOMMU
+
+The NPU's IOMMU (`rockchip,iommu-v2` at `0xfde4b000`) is now granted through
+`#P` (the kernel no longer hides `Fdtclassiommu` nodes) and `npufs`
+programmes it itself:
+
+1. A 4 KiB directory and one 4 KiB page table come from the DMA arena.
+2. `DTE[index]` points at the page table; the task, regcmd and scratch
+   buffers are identity-mapped in it (`PTE = pa | 7`).
+3. Reset command, `DTEADDR = dt|1`, zap, fault interrupt mask, autogating
+   `| 0x80000000`, enable, wait for `STATUS.PAGING`.
+
+`iommu paging`, `status 0x19` (paging + idle + replay) and no faults.  The
+PC-mode task keeps working, so the identity mapping matches the physical
+addresses.
+
+This is also a safety net: `bcna` (the broadcast operation-enable) starts
+every block, and a later run faulted at `0xc2002000` — the IOMMU reported
+`raw 0x1 fault 0xc2002000` and `INT_RAW 0x10000` instead of writing to RAM.
+Before that, the same mistake corrupted kernel memory and panicked in
+`qfreeinternal`.
+
+Two things surfaced from that run:
+
+* Block configuration registers latch while the block is stalled: after a
+  fault, direct `write` to `0x1070` is ignored and the readback stays at the
+  stale value.  `reset` (soft reset) restores them to zero and writes work
+  again.
+* The CNA address registers read back as `0xc2002000`/`0xc2002200` while
+  `0xe1002000`/`0xe1002200` (scratch, scratch+0x200) were programmed — an
+  address rebasing/format question in the regcmd path that still has to be
+  understood before a real conv.
+
 ## Next
 
-1. Point the CNA/DPU address registers at a scratch buffer and let the
-   broadcast op-enable run; then look for the completion interrupt and the
-   task counter.
-2. **IOMMU.**  `0xfde4b000` answers (`0x04 = 0x18`).  The kernel currently
-   drops `Fdtclassiommu` nodes from `#P`, so either expose the NPU IOMMU to
-   `npufs` or keep using physical DMA (`rk356x_rknpu_config.dma_mask` is
-   32-bit and PC mode works without the IOMMU).
-3. A real operation (conv/depthwise) from the vendor `drivers/rknpu` and
-   `9rock/rocket_ref` register tables.
+1. Understand the CNA address format: write a known value into
+   `CNA_FEATURE_DATA_ADDR` through a one-regcmd job and read it back, then
+   map the observed transform before pointing a real operation at memory.
+2. A real operation (conv/depthwise) from the vendor `drivers/rknpu` and
+   `9rock/rocket_ref` register tables, with the IOMMU on.
+3. The PC block's completion interrupt still has not been seen: the test
+   jobs finish (the last regcmd executes) but `INT_RAW` stays clear unless a
+   block errors, so the block-level done bits or the expected `INT_MASK`
+   need matching to what the hardware raises.
