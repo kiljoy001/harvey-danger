@@ -1174,10 +1174,9 @@ vnet_mmio_read(struct virtio_net *vn, uint64_t addr, uint8_t *data, uint32_t len
         return;
     }
     if (off >= 0x300 && off < 0x310) {
-        static const uint8_t mac[6] = {0x52,0x54,0x00,0x12,0x34,0x56};
         uint8_t cfg[16];
         memset(cfg, 0, sizeof cfg);
-        memcpy(cfg, mac, 6);
+        memcpy(cfg, vn->mac, 6);
         *(uint16_t *)(cfg+6) = 1; /* link up */
         *(uint16_t *)(cfg+8) = 1;
         *(uint16_t *)(cfg+10) = 1500;
@@ -1207,6 +1206,15 @@ vnet_init(struct virtio_net *vn, int vm, uint8_t *ram, size_t ram_size, int tapf
     vn->ram_size = ram_size;
     vn->tapfd = tapfd;
     vn->irq = 11;
+    {
+        pid_t pid = getpid();
+        vn->mac[0] = 0x52;
+        vn->mac[1] = 0x54;
+        vn->mac[2] = 0x00;
+        vn->mac[3] = (pid >> 16) & 0xff;
+        vn->mac[4] = (pid >> 8) & 0xff;
+        vn->mac[5] = pid & 0xff;
+    }
     vn->bar0[0x04] = 0x20; /* MAC */
     vn->bar0[0x06] = 0x01; /* STATUS */
     vn->bar0[0x18] = VNET_QSIZE;
