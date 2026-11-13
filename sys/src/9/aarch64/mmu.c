@@ -236,6 +236,8 @@ arm64mmubuild(Fdtinfo *info)
 	device[regions++] = (Fdtvirtio){0xfdc80000ULL, 0x1000};
 #ifdef ARM64_RK3566_NPU_PROBE
 	/* Temporary register probe; a user-space driver will own these later. */
+	/* SCMI shared memory, reserved no-map below the kernel's RAM window. */
+	device[regions++] = (Fdtvirtio){0x10f000ULL, Pagesz};
 	device[regions++] = (Fdtvirtio){0xfdd90000ULL, Pagesz};
 	device[regions++] = (Fdtvirtio){0xfdd20000ULL, Pagesz};
 	device[regions++] = (Fdtvirtio){0xfde40000ULL, Pagesz};
