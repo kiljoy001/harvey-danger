@@ -29,7 +29,7 @@ V8 is configured as:
 - `v8_enable_lite_mode=true` (`V8_JITLESS`; no Sparkplug/Maglev/Turbofan)
 - no WebAssembly
 - no i18n/ICU
-- no sandbox and no pointer compression
+- no sandbox, no pointer compression and no cppgc 4 GiB caged heap
 - static, non-component build
 - host tools use V8's bundled libc++; the target uses APEX + the Harvey libc++
 

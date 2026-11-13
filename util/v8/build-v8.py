@@ -36,6 +36,7 @@ v8_enable_i18n_support=false
 v8_enable_temporal_support=false
 is_component_build=false
 v8_enable_sandbox=false
+cppgc_enable_caged_heap=false
 v8_enable_pointer_compression=false
 v8_enable_pointer_compression_shared_cage=false
 v8_enable_external_code_space=false
