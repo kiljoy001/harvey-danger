@@ -58,6 +58,8 @@ arm64cpuentry:
 	isb
 	mov	x1, #(3 << 20)		/* FP/SIMD at EL0 and EL1 */
 	msr	cpacr_el1, x1
+	mov	x1, #3			/* EL0PCTEN | EL0VCTEN */
+	msr	cntkctl_el1, x1
 	isb
 	mov	x0, x19
 	b	arm64cpustart

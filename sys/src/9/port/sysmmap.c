@@ -185,20 +185,27 @@ sysmunmap(Ar0 *ar0, ...)
 		s = up->seg[sno];
 		if(s == nil)
 			continue;
-		if(s->base == va){
-			/* Do not allow unmapping main text or stack segments */
-			if((s->type & SG_TYPE) == SG_STACK ||
-			   (s->type & SG_TYPE) == SG_TEXT)
-				error(Ebadarg);
+		if(va >= s->base && va < s->top){
+			if(va == s->base && len >= s->top - s->base){
+				/* Do not allow unmapping main text or stack segments */
+				if((s->type & SG_TYPE) == SG_STACK ||
+				   (s->type & SG_TYPE) == SG_TEXT)
+					error(Ebadarg);
 
+				/*
+				 * Mark every process sharing the address space
+				 * before removing the segment: they may still hold
+				 * page-table entries for the range being unmapped.
+				 */
+				procflushseg(s);
+				memgrpclr(up, sno);
+				mmuflush();
+			}
 			/*
-			 * Mark every process sharing the address space
-			 * before removing the segment: they may still hold
-			 * page-table entries for the range being unmapped.
+			 * A partial unmap of a reservation is left mapped for
+			 * now: the kernel does not split a segment yet.  This
+			 * keeps the pages reachable for V8's page allocator.
 			 */
-			procflushseg(s);
-			memgrpclr(up, sno);
-			mmuflush();
 			break;
 		}
 	}

@@ -303,6 +303,10 @@ arm64mmuon(u64 rootpa)
 	 * FP state management is still future work; FP arithmetic itself
 	 * remains unused by the current user runtime. */
 	__asm__ volatile("msr cpacr_el1, %0" :: "r"((u64)3<<20) : "memory");
+	/* Let EL0 read the virtual and physical counters.  V8's absl time
+	 * code reads CNTVCT_EL0 directly; without EL0VCTEN that is a
+	 * trapped system instruction. */
+	__asm__ volatile("msr cntkctl_el1, %0" :: "r"((u64)3) : "memory");
 	kernelroot = rootpa;
 	__asm__ volatile("isb; tlbi vmalle1; dsb sy; isb" ::: "memory");
 	__asm__ volatile("mrs %0, sctlr_el1" : "=r"(sctlr));
