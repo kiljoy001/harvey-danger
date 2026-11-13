@@ -55,12 +55,20 @@ struct rlimit {
 #define RLIMIT_MEMLOCK 8
 #define RLIMIT_AS      9
 
+#ifndef PRIO_PROCESS
+#define PRIO_PROCESS 0
+#define PRIO_PGRP 1
+#define PRIO_USER 2
+#endif
+
 #define RUSAGE_SELF     0
 #define RUSAGE_CHILDREN (-1)
 
 int getrlimit(int, struct rlimit *);
 int setrlimit(int, const struct rlimit *);
 int getrusage(int, struct rusage *);
+int getpriority(int, unsigned);
+int setpriority(int, unsigned, int);
 
 #ifdef __cplusplus
 }

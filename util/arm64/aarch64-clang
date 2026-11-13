@@ -5,6 +5,9 @@
 # HARVEY_CXX   1 to link libc++ (set by aarch64-clang++)
 # ARM64_CC     underlying clang (default clang-23, then clang)
 set -e
+# Do not let host include-path environment variables leak into the
+# cross compile; they can shadow APEX headers.
+unset CPATH C_INCLUDE_PATH CPLUS_INCLUDE_PATH OBJC_INCLUDE_PATH
 selfdir=$(cd "$(dirname "$0")" && pwd)
 HARVEY=${HARVEY:-$(cd "$selfdir/../.." && pwd)}
 HARVEY_CXX=${HARVEY_CXX:-0}

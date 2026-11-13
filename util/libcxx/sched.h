@@ -42,6 +42,14 @@ static inline int __harvey_cpu_count(const cpu_set_t *set)
 
 int sched_setaffinity(int, size_t, const cpu_set_t *);
 int sched_getaffinity(int, size_t, cpu_set_t *);
+int sched_getcpu(void);
+struct sched_param {
+    int sched_priority;
+};
+int sched_getparam(int, struct sched_param *);
+int sched_setparam(int, const struct sched_param *);
+int sched_get_priority_max(int);
+int sched_get_priority_min(int);
 int __harvey_ncpu(void);
 
 #ifdef __cplusplus

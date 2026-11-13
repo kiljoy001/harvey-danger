@@ -256,12 +256,6 @@ extern "C" char *strsignal(int sig) {
     return buf;
 }
 
-extern "C" long syscall(long n, ...) {
-    (void)n;
-    errno = 38 /* ENOSYS */;
-    return -1;
-}
-
 extern "C" void _Exit(int status) {
     extern void _exit(int);
     _exit(status);
@@ -269,11 +263,6 @@ extern "C" void _Exit(int status) {
 
 extern "C" int fchown(int fd, uid_t uid, gid_t gid) {
     (void)fd; (void)uid; (void)gid;
-    return 0;
-}
-
-extern "C" int madvise(void *addr, size_t len, int advice) {
-    (void)addr; (void)len; (void)advice;
     return 0;
 }
 
@@ -636,3 +625,10 @@ void operator delete(void *p, std::align_val_t) { harvey_aligned_free(p); }
 void operator delete[](void *p, std::align_val_t) { harvey_aligned_free(p); }
 void operator delete(void *p, size_t, std::align_val_t) { harvey_aligned_free(p); }
 void operator delete[](void *p, size_t, std::align_val_t) { harvey_aligned_free(p); }
+
+extern "C" int sched_getcpu(void) { return 0; }
+
+extern "C" int sched_getparam(int, struct sched_param *) { return 0; }
+extern "C" int sched_setparam(int, const struct sched_param *) { return 0; }
+extern "C" int sched_get_priority_max(int) { return 0; }
+extern "C" int sched_get_priority_min(int) { return 0; }

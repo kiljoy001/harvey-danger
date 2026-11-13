@@ -1,0 +1,52 @@
+diff --git a/absl/base/internal/spinlock_wait.cc b/absl/base/internal/spinlock_wait.cc
+index ca5492b..38981e0 100644
+--- a/absl/base/internal/spinlock_wait.cc
++++ b/absl/base/internal/spinlock_wait.cc
+@@ -25,7 +25,7 @@
+ 
+ #if defined(_WIN32)
+ #include "absl/base/internal/spinlock_win32.inc"
+-#elif defined(__linux__)
++#elif defined(__linux__) && !defined(__harvey__)
+ #include "absl/base/internal/spinlock_linux.inc"
+ #elif defined(__akaros__)
+ #include "absl/base/internal/spinlock_akaros.inc"
+diff --git a/absl/debugging/internal/address_is_readable.cc b/absl/debugging/internal/address_is_readable.cc
+index 88aa516..6587d5b 100644
+--- a/absl/debugging/internal/address_is_readable.cc
++++ b/absl/debugging/internal/address_is_readable.cc
+@@ -21,7 +21,7 @@
+ 
+ #include "absl/base/config.h"
+ 
+-#if !defined(__linux__) || defined(__ANDROID__)
++#if !defined(__linux__) || defined(__ANDROID__) || defined(__harvey__)
+ 
+ namespace absl {
+ ABSL_NAMESPACE_BEGIN
+diff --git a/absl/debugging/internal/elf_mem_image.h b/absl/debugging/internal/elf_mem_image.h
+index f24aa26..f95e507 100644
+--- a/absl/debugging/internal/elf_mem_image.h
++++ b/absl/debugging/internal/elf_mem_image.h
+@@ -36,7 +36,7 @@
+ #if defined(__ELF__) && !defined(__OpenBSD__) && !defined(__QNX__) &&    \
+     !defined(__asmjs__) && !defined(__wasm__) && !defined(__HAIKU__) &&  \
+     !defined(__sun) && !defined(__VXWORKS__) && !defined(__hexagon__) && \
+-    !defined(__XTENSA__)
++    !defined(__XTENSA__) && !defined(__harvey__)
+ #define ABSL_HAVE_ELF_MEM_IMAGE 1
+ #endif
+ 
+diff --git a/absl/debugging/internal/symbolize.h b/absl/debugging/internal/symbolize.h
+index 22bed14..bc71a7b 100644
+--- a/absl/debugging/internal/symbolize.h
++++ b/absl/debugging/internal/symbolize.h
+@@ -30,7 +30,7 @@
+ 
+ #ifdef ABSL_INTERNAL_HAVE_ELF_SYMBOLIZE
+ #error ABSL_INTERNAL_HAVE_ELF_SYMBOLIZE cannot be directly set
+-#elif defined(__ELF__) && defined(__linux__) && !defined(__ANDROID__)
++#elif defined(__ELF__) && defined(__linux__) && !defined(__ANDROID__) && !defined(__harvey__)
+ #define ABSL_INTERNAL_HAVE_ELF_SYMBOLIZE 1
+ 
+ #include <elf.h>

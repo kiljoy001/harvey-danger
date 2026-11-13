@@ -29,6 +29,8 @@ void _exits(char *);
 void *__harvey_tls_alloc(void);
 int rfork(int);
 unsigned int sleep(unsigned int);
+extern void *__harvey_main_stack;
+extern size_t __harvey_main_stack_size;
 }
 
 enum {
@@ -418,7 +420,7 @@ int pthread_once(pthread_once_t *o, void (*fn)(void)) {
 /* ---- thread attributes ------------------------------------------------- */
 
 int pthread_attr_init(pthread_attr_t *a) {
-    if (a) a->__stacksize = (int)DEFAULT_STACK;
+    if (a) { a->__stacksize = (int)DEFAULT_STACK; a->__stackaddr = nullptr; }
     return 0;
 }
 
@@ -436,6 +438,20 @@ int pthread_attr_setstacksize(pthread_attr_t *a, size_t n) {
 int pthread_attr_getstacksize(const pthread_attr_t *a, size_t *n) {
     if (!a || !n) return EINVAL;
     *n = (size_t)a->__stacksize;
+    return 0;
+}
+
+int pthread_attr_getstack(const pthread_attr_t *a, void **base, size_t *n) {
+    if (!a || !base || !n) return EINVAL;
+    *base = a->__stackaddr;
+    *n = (size_t)a->__stacksize;
+    return 0;
+}
+
+int pthread_getattr_np(pthread_t t, pthread_attr_t *a) {
+    if (!a) return EINVAL;
+    a->__stackaddr = t ? t->stack : nullptr;
+    a->__stacksize = t && t->stack_size ? (int)t->stack_size : (int)DEFAULT_STACK;
     return 0;
 }
 
@@ -506,6 +522,8 @@ int pthread_detach(pthread_t t) {
 pthread_t pthread_self(void) {
     if (!__harvey_self) {
         static __harvey_thread main_thread;
+        main_thread.stack = (char *)__harvey_main_stack;
+        main_thread.stack_size = __harvey_main_stack_size;
         __harvey_self = &main_thread;
     }
     return __harvey_self;
@@ -704,3 +722,19 @@ int sem_getvalue(sem_t *sem, int *value) {
 }
 
 } // extern "C"
+
+int pthread_getschedparam(pthread_t, int *policy, struct sched_param *param) {
+    if (policy) *policy = 0;
+    if (param) param->sched_priority = 0;
+    return 0;
+}
+
+int pthread_setschedparam(pthread_t, int, const struct sched_param *) {
+    return 0;
+}
+
+int pthread_kill(pthread_t t, int sig) {
+    (void)t;
+    (void)sig;
+    return 0;
+}

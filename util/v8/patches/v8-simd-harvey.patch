@@ -1,0 +1,13 @@
+diff --git a/src/objects/simd.cc b/src/objects/simd.cc
+index 3ef81df9..c234bc42 100644
+--- a/src/objects/simd.cc
++++ b/src/objects/simd.cc
+@@ -352,7 +352,7 @@ uintptr_t fast_search_avx(T* array, uintptr_t array_len, uintptr_t index,
+ // __builtin_sve_* on a per-function basis. Clang only supports
+ // mangling SVE types with the Microsoft C++ ABI since version 21.
+ // Fallback to Neon in cases where SVE is not supported.
+-#if defined(NEON64) && defined(__clang__) && \
++#if defined(NEON64) && defined(__clang__) && !defined(__harvey__) && \
+     (!defined(V8_TARGET_OS_WIN) || __clang_major__ >= 21)
+ #define V8_ENABLE_SIMD_SVE 1
+ 

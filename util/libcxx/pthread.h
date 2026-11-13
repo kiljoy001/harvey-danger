@@ -47,6 +47,7 @@ typedef unsigned int pthread_key_t;
 
 typedef struct {
     int __stacksize;
+    void *__stackaddr;
 } pthread_attr_t;
 
 typedef struct {
@@ -66,9 +67,15 @@ typedef struct {
 #define PTHREAD_RWLOCK_INITIALIZER \
     { {1, 0, 0, 0}, {0}, {0}, 0, 0, 0 }
 
+#ifndef PTHREAD_STACK_MIN
 #define PTHREAD_STACK_MIN 16384
+#endif
+#ifndef PTHREAD_DESTRUCTOR_ITERATIONS
 #define PTHREAD_DESTRUCTOR_ITERATIONS 4
+#endif
+#ifndef PTHREAD_KEYS_MAX
 #define PTHREAD_KEYS_MAX 64
+#endif
 
 /* keys are per thread */
 #define PTHREAD_DESTRUCTOR_ITERATIONS_ 4
@@ -102,6 +109,12 @@ int pthread_attr_init(pthread_attr_t *);
 int pthread_attr_destroy(pthread_attr_t *);
 int pthread_attr_setstacksize(pthread_attr_t *, size_t);
 int pthread_attr_getstacksize(const pthread_attr_t *, size_t *);
+int pthread_attr_getstack(const pthread_attr_t *, void **, size_t *);
+int pthread_getattr_np(pthread_t, pthread_attr_t *);
+struct sched_param;
+int pthread_getschedparam(pthread_t, int *, struct sched_param *);
+int pthread_setschedparam(pthread_t, int, const struct sched_param *);
+int pthread_kill(pthread_t, int);
 
 int pthread_create(pthread_t *, const pthread_attr_t *, void *(*)(void *), void *);
 int pthread_join(pthread_t, void **);

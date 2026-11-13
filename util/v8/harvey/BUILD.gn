@@ -1,0 +1,38 @@
+# Harvey/ARM64 target toolchain for V8.
+#
+# The build script sets HARVEY to the Harvey checkout root.  The compiler
+# driver selects the APEX headers, the ARM64 Plan 9 libc and libc++, and links
+# with apex.ld.
+
+import("//build/toolchain/gcc_toolchain.gni")
+
+_harvey = getenv("HARVEY")
+if (_harvey == "") {
+  _harvey = "/home/scott/Repo/harvey"
+}
+
+single_gcc_toolchain("harvey_arm64") {
+  cc = "$_harvey/util/arm64/aarch64-clang"
+  cxx = "$_harvey/util/arm64/aarch64-clang++"
+  ar = "llvm-ar"
+  ld = "$_harvey/util/arm64/aarch64-clang++"
+  nm = "llvm-nm"
+  readelf = "llvm-readelf"
+
+  # V8 turns on a number of warnings that clang 23 does not know or that are
+  # only meaningful for Linux/glibc.  __harvey__ selects the APEX fallbacks
+  # patched into abseil.
+  extra_cppflags = "-Wno-unknown-warning-option -Wno-shorten-64-to-32 " +
+                   "-Wno-implicit-fallthrough -Wno-invalid-noreturn " +
+                   "-Wno-unused-const-variable -Wno-ctad-maybe-unsupported " +
+                   "-D__harvey__"
+
+  toolchain_args = {
+    current_cpu = "arm64"
+    current_os = "linux"
+    is_clang = true
+    use_custom_libcxx = false
+    use_sysroot = false
+    v8_current_cpu = "arm64"
+  }
+}

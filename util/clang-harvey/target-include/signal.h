@@ -39,8 +39,10 @@ typedef int sig_atomic_t;
 #define SIGTTIN  19
 #define SIGTTOU  20
 #define SIGTRAP  21
+#define SIGSYS   31
+#define SIGPROF  27
 
-#define NSIG     22
+#define NSIG     32
 
 #ifndef MINSIGSTKSZ
 #define MINSIGSTKSZ 8192
@@ -52,6 +54,8 @@ extern "C" {
 #endif
 
 typedef void (*__harvey_sighandler_t)(int);
+
+#define SA_RESTART 0x10000000
 
 #define SIG_DFL ((__harvey_sighandler_t)0)
 #define SIG_ERR ((__harvey_sighandler_t)-1)
