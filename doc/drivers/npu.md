@@ -91,17 +91,46 @@ the reason is in `status`.
 `regs`/`status` refuse to touch the block while the domain is off: an
 access to an unpowered NPU is a bus abort, not a zero.
 
+## PC-mode job submission
+
+`echo test > /srv/npu/ctl` submits one task and works:
+
+```
+npufs: test cmd 0xe1001000 task 0xe1000000 amount 4 raw 0x0 status 0x0 pc 0xf000 dcomp 0xdeadbeef
+```
+
+* The PC DMA-fetches a `struct rknpu_task` array from `PC_DMA_BASE_ADDR`.
+  Each task is 40 bytes (eight u32 then `u64 regcmd_addr`).
+* `regcmd_addr` points at the 64-bit regcmd stream; `PC_DATA_ADDR` is the
+  first task's stream and `PC_DATA_AMOUNT` is `regcfg_amount + 3`.
+  `regcfg_amount` counts the *register* words; the PC also fetches the
+  four-word trailer that follows them (next-stream address, register
+  amounts, the `0x0041` magic, and the operation-enable broadcast).
+* A regcmd word is `target<<48 | value<<16 | reg`, where `reg` is the
+  block-relative register offset and `target` is the block id + 1:
+  PC `0x101`, CNA `0x201`, CORE `0x801`, DPU `0x1001`; the broadcast
+  operation-enable uses target `0x81`.
+* `PC_TASK_CONTROL = 6<<12 | ntasks`; `PC_OP_EN` is toggled 1 then 0.
+* The test stream writes `CNA_DCOMP_REGNUM` (0x1104) with `0xdeadbeef`;
+  reading it back proves the task fetch, stream fetch and decode all ran.
+  `PC_TASK_STATUS` (0x3c) reads `0xf000` after the task.
+
+**Hazard:** the trailer's last word is normally the broadcast
+operation-enable.  With every CNA/DPU address register at zero that starts
+the compute blocks and their DMA, which on a live machine can write low
+physical memory (one such run corrupted kernel memory and panicked in
+`arm64mmubuild`).  The `test` command deliberately replaces it with a
+harmless second CNA write.  Before enabling the blocks for real, point the
+feature/weight/DPU addresses at a scratch DMA buffer (or enable the IOMMU).
+
 ## Next
 
-1. **Job submission.**  The PC block DMA-fetches a `struct rknpu_task` array
-   (`PC_DMA_BASE_ADDR`), each task naming a 64-bit regcmd stream
-   (`PC_DATA_ADDR`, `PC_DATA_AMOUNT`), with `PC_TASK_CONTROL = 6<<12 |
-   ntasks` and `PC_OP_EN` toggled 1→0.  The regcmd encoding is
-   `target<<48 | value<<16 | reg` (see `9rock/rocket_ref/rkt_regcmd.c` and
-   the vendor `drivers/rknpu`).
+1. Point the CNA/DPU address registers at a scratch buffer and let the
+   broadcast op-enable run; then look for the completion interrupt and the
+   task counter.
 2. **IOMMU.**  `0xfde4b000` answers (`0x04 = 0x18`).  The kernel currently
    drops `Fdtclassiommu` nodes from `#P`, so either expose the NPU IOMMU to
-   `npufs` or use physical DMA first (`rk356x_rknpu_config.dma_mask` is
+   `npufs` or keep using physical DMA (`rk356x_rknpu_config.dma_mask` is
    32-bit and PC mode works without the IOMMU).
-3. Keep the vendor `drivers/rknpu` (9rock) as the reference oracle for the
-   register/task format.
+3. A real operation (conv/depthwise) from the vendor `drivers/rknpu` and
+   `9rock/rocket_ref` register tables.

@@ -58,7 +58,33 @@ enum {
 	RegIntRaw	= 0x02c,
 	RegPcTaskControl= 0x030,
 	RegPcDmaBase	= 0x034,
+	RegPcTaskStatus	= 0x03c,
 	RegEnableMask	= 0xf008,
+
+	/* Regcmd trailer: the PC fetches regcfg_amount + 4 words, the last
+	 * four being next-address, register-amounts, the 0041 magic and the
+	 * broadcast operation-enable. */
+	PcTarget	= 0x100 + 1,
+	CnaTarget	= 0x200 + 1,
+	GlobTarget	= 0x81,
+	PcRegAmounts	= 0x014,
+	PcOpEnReg	= 0x008,
+	CnaDcompRegnum	= 0x1104,
+	CnaDcompCtrl	= 0x1100,
+};
+
+/* struct rknpu_task, 40 bytes (drivers/rknpu/include/rknpu_ioctl.h). */
+typedef struct Task Task;
+struct Task {
+	u32	flags;
+	u32	op_idx;
+	u32	enable_mask;
+	u32	int_mask;
+	u32	int_clear;
+	u32	int_status;
+	u32	regcfg_amount;
+	u32	regcfg_offset;
+	u64	regcmd_addr;
 };
 
 typedef struct Npu Npu;
@@ -75,6 +101,13 @@ struct Npu {
 	char	rail[96];
 	char	why[256];
 	QLock	lk;
+
+	void	*task;		/* task array */
+	void	*cmd;		/* regcmd stream */
+	u64	taskpa;
+	u64	cmdpa;
+	u32	lastraw;
+	u32	lastdcomp;
 };
 
 static Npu npu;
@@ -251,6 +284,88 @@ ident(Npu *n)
 		setwhy(n, "no register response (INT_MASK %#ux)", n->identmask);
 }
 
+/*
+ * One PC-mode task.  The stream writes CNA_DCOMP_REGNUM, a plain register
+ * with no side effects, so success is visible as a readback, followed by
+ * the four-word trailer.  With every configuration register at zero the
+ * compute blocks have no work, and any error still shows in INT_RAW.
+ */
+static int
+jobtest(Npu *n)
+{
+	Task *t;
+	u64 *c, nc;
+	int i, raw;
+
+	if(pmuon(n) < 0)
+		return -1;
+	if(n->task == nil){
+		n->task = drvdma(&n->d, 4096, 64, &n->taskpa);
+		n->cmd = drvdma(&n->d, 4096, 64, &n->cmdpa);
+	}
+	if(n->task == nil || n->cmd == nil){
+		setwhy(n, "no DMA arena for the task ring");
+		return -1;
+	}
+	memset(n->task, 0, 4096);
+	memset(n->cmd, 0, 4096);
+
+	c = n->cmd;
+	nc = 0;
+	c[nc++] = ((u64)CnaTarget<<48) | ((u64)0xdeadbeef<<16) | CnaDcompRegnum;
+	/* trailer: next stream, register amounts, 0041 magic, op-enable */
+	c[nc++] = 0;
+	c[nc++] = ((u64)PcTarget<<48) | PcRegAmounts;
+	c[nc++] = 0x0041000000000000ULL;
+	/*
+	 * Deliberately not the broadcast op-enable: that starts CNA/DPU
+	 * with every address register at zero, and on a live machine the
+	 * resulting DMA can scribble over low physical memory.  Writing a
+	 * second harmless CNA register keeps the four-word trailer shape.
+	 */
+	c[nc++] = ((u64)CnaTarget<<48) | ((u64)0<<16) | CnaDcompCtrl;
+
+	t = n->task;
+	t->int_mask = 0x1ffff;
+	t->int_clear = 0x1ffff;
+	t->regcfg_amount = nc - 4;	/* register words, trailer excluded */
+	t->regcmd_addr = n->cmdpa;
+
+	drvdmacache(DrvClean, n->cmdpa, 4096);
+	drvdmacache(DrvClean, n->taskpa, 4096);
+
+	drw(&n->d, RegIntClear, 0x1ffff);
+	drw(&n->d, RegIntMask, 0x1ffff);
+	drw(&n->d, RegPcDataAddr, (u32)n->cmdpa);
+	drw(&n->d, RegPcDataAmount, t->regcfg_amount + 3);
+	drw(&n->d, RegPcTaskControl, (6<<12) | 1);
+	drw(&n->d, RegPcDmaBase, (u32)n->taskpa);
+	drw(&n->d, RegPcOpEn, 1);
+	drw(&n->d, RegPcOpEn, 0);
+
+	raw = 0;
+	for(i = 0; i < 200; i++){
+		raw = drd(&n->d, RegIntRaw);
+		if(raw != 0)
+			break;
+		sleep(1);
+	}
+	n->lastraw = raw;
+	n->lastdcomp = drd(&n->d, CnaDcompRegnum);
+	drw(&n->d, RegIntClear, 0x1ffff);
+
+	print("npufs: test cmd %#llux task %#llux amount %ud raw %#ux status %#ux pc %#ux dcomp %#ux\n",
+	      n->cmdpa, n->taskpa, t->regcfg_amount + 3, raw,
+	      drd(&n->d, RegIntStatus), drd(&n->d, RegPcTaskStatus),
+	      n->lastdcomp);
+	if(n->lastdcomp != 0xdeadbeef)
+		setwhy(n, "task did not run (dcomp %#ux raw %#ux)",
+		       n->lastdcomp, raw);
+	else
+		n->why[0] = 0;
+	return n->lastdcomp == 0xdeadbeef ? 0 : -1;
+}
+
 static char *
 statustext(Npu *n, char *buf, int nbuf)
 {
@@ -278,6 +393,9 @@ statustext(Npu *n, char *buf, int nbuf)
 		            drd(&n->d, RegPcDmaBase));
 	}else
 		p = seprint(p, e, "registers unreadable while the domain is off\n");
+	if(n->lastraw != 0 || n->lastdcomp != 0)
+		p = seprint(p, e, "last job raw %#ux dcomp %#ux\n",
+		            n->lastraw, n->lastdcomp);
 	if(n->why[0] != 0)
 		p = seprint(p, e, "last error: %s\n", n->why);
 	return buf;
@@ -374,6 +492,8 @@ ctlcmd(Npu *n, char *line)
 		print("npufs: reset, int mask %#ux\n", n->identmask);
 	}else if(strcmp(f[0], "ident") == 0){
 		ident(n);
+	}else if(strcmp(f[0], "test") == 0){
+		jobtest(n);
 	}else if(strcmp(f[0], "read") == 0 && nf >= 2){
 		off = strtoul(f[1], nil, 0);
 		snprint(res, sizeof res, "%#x: %#ux", off, drd(&n->d, off));
