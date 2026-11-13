@@ -1379,9 +1379,11 @@ qiwrite(Queue *q, void *vp, int len)
 		ilock(&q->Lock);
 
 		/* we use an artificially high limit for kernel prints since anything
-		 * over the limit gets dropped
+		 * over the limit gets dropped.  bound the block memory too: a queue
+		 * written one byte at a time costs a whole block per byte, so a
+		 * data-byte limit can hide megabytes of blocks.
 		 */
-		if(q->dlen >= 16 * 1024){
+		if(q->dlen >= 16 * 1024 || q->len >= 16 * 1024){
 			iunlock(&q->Lock);
 			freeb(b);
 			break;
