@@ -42,8 +42,8 @@ From the repository root:
 
 ```
 sh util/quality/xhci.sh
-python3 util/9vm/test_xhci.py
-python3 util/9vm/test_xhci_guest.py
+python3 9vm/test_xhci.py
+python3 9vm/test_xhci_guest.py
 ```
 
 The native gate covers descriptor fuzzing, sanitizers, I/O fault injection,

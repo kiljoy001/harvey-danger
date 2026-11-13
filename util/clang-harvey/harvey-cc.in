@@ -32,7 +32,7 @@ fi
 
 if [ ! -d "$LIBCXX/include/c++/v1" ]; then
     echo "harvey-cc: missing $LIBCXX/include/c++/v1" >&2
-    echo "harvey-cc: run util/9vm/build_libcxx.py first" >&2
+    echo "harvey-cc: run ../9vm/build_libcxx.py first" >&2
     exit 1
 fi
 

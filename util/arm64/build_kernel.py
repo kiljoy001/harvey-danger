@@ -141,7 +141,7 @@ def main() -> None:
         (OUT / "sys_src_9_aarch64_boot.c.o").unlink(missing_ok=True)
     for mode, name in (("errstr.h", "errstr.h"), ("systab.c", "systab.c"),
                        ("sys.h", "sys.h")):
-        subprocess.run([sys.executable, str(ROOT / "util/9vm/mksys.py"),
+        subprocess.run([sys.executable, str(ROOT.parent / "9vm/mksys.py"),
                         f"-mode={mode}", "-o", str(OUT / name),
                         str(ROOT / "sys/src/sysconf.json")],
                        check=True, stdout=subprocess.DEVNULL)

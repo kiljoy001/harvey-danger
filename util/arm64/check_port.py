@@ -20,7 +20,7 @@ CC = os.environ.get("ARM64_CC") or shutil.which("clang-23") or "clang"
 def main() -> None:
     OUT.mkdir(parents=True, exist_ok=True)
     subprocess.run([
-        sys.executable, str(ROOT / "util/9vm/mksys.py"), "-mode=errstr.h",
+        sys.executable, str(ROOT.parent / "9vm/mksys.py"), "-mode=errstr.h",
         "-o", str(OUT / "errstr.h"), str(ROOT / "sys/src/sysconf.json"),
     ], check=True, stdout=subprocess.DEVNULL)
     includes = [OUT, ROOT / "sys/src/9/aarch64", ROOT / "sys/src/9/port",

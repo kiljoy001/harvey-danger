@@ -14,7 +14,7 @@ call.
 ## Build
 
 ```sh
-python3 util/9vm/build_libmonocypher.py
+python3 9vm/build_libmonocypher.py
 ```
 
 This produces `build/libmonocypher.a` and `build/aspera-mctest`.  The

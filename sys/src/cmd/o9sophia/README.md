@@ -46,7 +46,7 @@ endpoint. Sophia takes the image or device path as the second argument:
 o9sophia sophia /path/to/image
 ```
 
-The VM gate is `python3 util/9vm/test_sophia.py` from the Harvey root. It
+The VM gate is `python3 9vm/test_sophia.py` from the Harvey root. It
 checks offset and sparse writes, log replay, deletion, corruption detection,
 the fixed-size image path, two 9P mounts, and persistence across VM boots.
 

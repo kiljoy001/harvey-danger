@@ -5,7 +5,7 @@ a small library that is enough for `std::string`, `std::vector`, and
 `std::map`. It builds a Harvey ELF and runs under 9vm.
 
 ```sh
-util/9vm/build_libcxx.py --run
+../9vm/build_libcxx.py --run
 ```
 
 The smoke test prints:
@@ -37,7 +37,7 @@ It is deliberately not a full libc++ port yet.
 ```sh
 HARVEY=$HOME/Repo/harvey $HOME/Repo/ucc/c++ util/libcxx/test_stl.cpp \
     -o build/libcxx/test_ucxx.elf
-util/9vm/9vm -boot build/libcxx/test_ucxx.elf build/harvey.32bit
+../9vm/9vm -boot build/libcxx/test_ucxx.elf build/harvey.32bit
 ```
 
 The `-boot` path must be inside the Harvey checkout because 9vm's hostfs
@@ -62,7 +62,7 @@ APEX's C headers predate C11 and carry a few Plan 9-isms. `compat.h` and
 
 Exceptions and RTTI **are** available.
 
-Exception support is libunwind (DWARF, built by `util/9vm/build_libunwind.py`)
+Exception support is libunwind (DWARF, built by `../9vm/build_libunwind.py`)
 plus libc++abi's `__cxa_*` runtime and `__gxx_personality_v0`, compiled into
 `libc++.a`.  Unwinding runs destructors, so RAII works:
 

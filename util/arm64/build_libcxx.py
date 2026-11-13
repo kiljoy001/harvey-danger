@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Cross-build libc++ for ARM64 Harvey.
 
-Mirrors util/9vm/build_libcxx.py: the same source list, the same
+Mirrors 9vm/build_libcxx.py: the same source list, the same
 __config_site, and the same support objects (compat, libm/locale stubs,
 the pthread layer, libc++abi's typeinfo and exception runtime).  Only the
 target and the platform include roots change, plus the ARM64 APEX startup
@@ -39,9 +39,9 @@ LIBUNWIND = LLVM / "libunwind"
 COMPILER_RT = LLVM / "compiler-rt" / "lib" / "builtins"
 
 x86 = importlib.util.module_from_spec(importlib.util.spec_from_file_location(
-    "hx", ROOT / "util" / "9vm" / "build_libcxx.py"))
+    "hx", ROOT.parent / "9vm" / "build_libcxx.py"))
 importlib.util.spec_from_file_location(
-    "hx", ROOT / "util" / "9vm" / "build_libcxx.py").loader.exec_module(x86)
+    "hx", ROOT.parent / "9vm" / "build_libcxx.py").loader.exec_module(x86)
 SOURCES = list(x86.SOURCES)
 # std::placeholders lives in bind.cpp; the x86 list predates it and does not
 # include it, which leaves std::bind users with an undefined _1.

@@ -11,7 +11,7 @@ import tempfile
 
 ROOT = Path(__file__).resolve().parents[2]
 SYSCONF = ROOT / "sys/src/sysconf.json"
-MKSYS = ROOT / "util/9vm/mksys.py"
+MKSYS = ROOT.parent / "9vm/mksys.py"
 CC = shutil.which("clang-23") or shutil.which("clang")
 
 

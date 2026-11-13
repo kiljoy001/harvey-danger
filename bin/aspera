@@ -10,17 +10,18 @@ import sys
 
 
 ROOT = Path(__file__).resolve().parents[1]
-LIVE = ROOT / "util/9vm/aspera_live.py"
-SYSTEM_TEST = ROOT / "util/9vm/test_system_milestone.py"
-DRIVER_TEST = ROOT / "util/9vm/test_driver_manager.py"
-DRIVER_IMAGE_TEST = ROOT / "util/9vm/test_driver_image.py"
-KERNEL_TEST = ROOT / "util/9vm/test_boot.py"
-NETWORK_TEST = ROOT / "util/9vm/test_net.py"
+NINEVM = Path(os.environ.get("NINEVM", ROOT.parent / "9vm"))
+LIVE = NINEVM / "aspera_live.py"
+SYSTEM_TEST = NINEVM / "test_system_milestone.py"
+DRIVER_TEST = NINEVM / "test_driver_manager.py"
+DRIVER_IMAGE_TEST = NINEVM / "test_driver_image.py"
+KERNEL_TEST = NINEVM / "test_boot.py"
+NETWORK_TEST = NINEVM / "test_net.py"
 ARM_KERNEL_TEST = ROOT / "util/arm64/test_virtio9p.py"
 QUALITY = ROOT / "util/quality/run.sh"
 BUILD = ROOT / "build"
 PREVIEW_FILES = (
-    ROOT / "util/9vm/9vm",
+    NINEVM / "9vm",
     BUILD / "harvey.32bit",
     BUILD / "libo9.a",
     BUILD / "libdraw.a",
@@ -34,7 +35,7 @@ PREVIEW_FILES = (
     BUILD / "libbio.a",
     BUILD / "libc.a",
 )
-SYSTEM_FILES = (ROOT / "util/9vm/9vm", BUILD / "harvey.32bit")
+SYSTEM_FILES = (NINEVM / "9vm", BUILD / "harvey.32bit")
 
 
 def check(command: str, image: Path) -> list[str]:
@@ -49,18 +50,18 @@ def check(command: str, image: Path) -> list[str]:
             problems.append(f"missing {label}")
     graphical = command in ("start", "preview", "check")
     if graphical and not LIVE.is_file():
-        problems.append("missing util/9vm/aspera_live.py")
+        problems.append("missing 9vm/aspera_live.py")
     if command == "verify":
         if not SYSTEM_TEST.is_file():
-            problems.append("missing util/9vm/test_system_milestone.py")
+            problems.append("missing 9vm/test_system_milestone.py")
         if not DRIVER_TEST.is_file():
-            problems.append("missing util/9vm/test_driver_manager.py")
+            problems.append("missing 9vm/test_driver_manager.py")
         if not DRIVER_IMAGE_TEST.is_file():
-            problems.append("missing util/9vm/test_driver_image.py")
+            problems.append("missing 9vm/test_driver_image.py")
         if not KERNEL_TEST.is_file():
-            problems.append("missing util/9vm/test_boot.py")
+            problems.append("missing 9vm/test_boot.py")
         if not NETWORK_TEST.is_file():
-            problems.append("missing util/9vm/test_net.py")
+            problems.append("missing 9vm/test_net.py")
         if not ARM_KERNEL_TEST.is_file():
             problems.append("missing util/arm64/test_virtio9p.py")
     if command == "preview":
@@ -110,7 +111,7 @@ def main() -> int:
     if problems:
         for problem in problems:
             print(f"aspera: {problem}", file=sys.stderr)
-        print("Build instructions: util/9vm/PACKAGING.md", file=sys.stderr)
+        print("Build instructions: 9vm/PACKAGING.md", file=sys.stderr)
         return 1
     if args.command == "check":
         print("GEFS-backed Aspera desktop VM is ready to start")

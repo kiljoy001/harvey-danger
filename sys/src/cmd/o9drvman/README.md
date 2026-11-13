@@ -84,12 +84,12 @@ termination after the grace deadline.
 Build or test it with the generic Objective-9C C source support:
 
 ```
-python3 util/9vm/prism.py build sys/src/cmd/o9drvman/service.o9 \
+python3 9vm/prism.py build sys/src/cmd/o9drvman/service.o9 \
   --c-source sys/src/cmd/o9drvman/lifecycle.c \
   --c-source sys/src/cmd/o9drvman/health.c \
   --c-source sys/src/cmd/o9drvman/binding.c -o build/o9drvman
 
-python3 util/9vm/prism.py run sys/src/cmd/o9drvman/test_service.o9 \
+python3 9vm/prism.py run sys/src/cmd/o9drvman/test_service.o9 \
   --c-source sys/src/cmd/o9drvman/lifecycle.c \
   --c-source sys/src/cmd/o9drvman/health.c \
   --c-source sys/src/cmd/o9drvman/binding.c -m 512 -t 45

@@ -137,7 +137,7 @@ clients that do not read `winrect` can still draw over the bar.
 Buttons use black text and outlines on white, including inactive windows.
 Labels become compact symbols only in narrow windows. Hit testing uses the
 visible window under the pointer, so inactive controls work on the first click.
-`util/9vm/test-rio-controls.mjs` checks redraws, resizing, maximize/restore,
+`9vm/test-rio-controls.mjs` checks redraws, resizing, maximize/restore,
 inactive controls, canceled clicks, hide, and close in the browser guest.
 
 ## Bounded file opening
@@ -173,7 +173,7 @@ The GEFS/VPS guest enters through `boot/vps_init.o9`, not Halatha's standalone
 particular, the VPS Rio fork must not use RFENVG: the already-running plumber
 needs Rio's subsequently published `$wsys` when launching `rio-open`.
 
-`util/9vm/test-rio-vps-plumber.mjs URL` boots the actual VPS browser page,
+`9vm/test-rio-vps-plumber.mjs URL` boots the actual VPS browser page,
 checks `/mnt/plumb/send`, then opens a filename containing
 spaces and an apostrophe from vdir and verifies an exact edit/save. The VPS
 kernel must be rebuilt and its deployed cache version changed for boot fixes;

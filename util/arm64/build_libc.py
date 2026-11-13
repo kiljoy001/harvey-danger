@@ -36,7 +36,7 @@ def main() -> None:
     objects.mkdir(parents=True, exist_ok=True)
     wrappers.mkdir(parents=True, exist_ok=True)
     subprocess.run([
-        sys.executable, str(ROOT / "util/9vm/mksys.py"),
+        sys.executable, str(ROOT.parent / "9vm/mksys.py"),
         "-mode=syscallfiles", "-arch=aarch64", "-o", str(wrappers),
         str(ROOT / "sys/src/sysconf.json"),
     ], check=True, stdout=subprocess.DEVNULL)

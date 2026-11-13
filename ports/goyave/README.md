@@ -88,7 +88,7 @@ The non-obvious obstacles, now confirmed from the source:
 1. **Phase 1/2:** scaffold `sys/src/9/arm` from 9front's ARMv7 core and add
    an ARM `virt` QEMU config (PL011, GIC-400, generic timer, virtio) to get a
    serial console test loop without hardware.
-2. Add ARMv7 to `util/9vm/mksys.py` and build `sys/src/libc/arm` +
+2. Add ARMv7 to `../9vm/mksys.py` and build `sys/src/libc/arm` +
    `klibc` assembly.
 3. Then the board port in this order: UART → GIC/timer → eMMC → display →
    touch → USB → Wi-Fi.

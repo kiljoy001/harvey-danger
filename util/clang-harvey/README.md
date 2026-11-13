@@ -4,7 +4,7 @@ The goal is a `clang++` that *runs on Harvey*. That needs three things beyond
 the C++ runtime:
 
 1. **libc++** — the standard library, built for APEX. See
-   `util/libcxx/README.md` and `util/9vm/build_libcxx.py`.
+   `util/libcxx/README.md` and `../9vm/build_libcxx.py`.
 2. **LLVM/Clang itself, cross-built to the Harvey target.** The compiler
    executes on Harvey; only the build runs on Linux.
 3. **A linker** — Harvey binaries are ELF and are linked with `lld` today.
@@ -205,14 +205,14 @@ Two details matter:
 util/clang-harvey/harvey-clang++ hello.cpp -o build/hello.elf
 
 # Run it under the 9vm microVM.
-util/9vm/9vm -boot build/hello.elf build/harvey.32bit
+../9vm/9vm -boot build/hello.elf build/harvey.32bit
 ```
 
 `harvey-clang` is the C driver, `harvey-clang++` the C++ one. Both pin the
 target triple, the APEX sysroot, libc++, and the Harvey link recipe
 (`crt0.o`, `libc++.a`, `libcxxabi.a`, `libap.a`, `libc.a`, `crtn.o`).
 
-Prerequisites: run `util/9vm/build_libcxx.py` once so
+Prerequisites: run `../9vm/build_libcxx.py` once so
 `build/libcxx/include/c++/v1` and `build/libcxx/lib/libc++.a` exist.
 
 ## Cross-building Clang

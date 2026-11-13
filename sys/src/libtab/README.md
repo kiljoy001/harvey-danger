@@ -39,8 +39,8 @@ plain or HASHED column and treat the encrypted cell as payload.
 Monocypher must be built first:
 
 ```sh
-python3 util/9vm/build_libmonocypher.py
-python3 util/9vm/build_libtab.py
+python3 9vm/build_libmonocypher.py
+python3 9vm/build_libtab.py
 ```
 
 Outputs: `build/libtab.a`, `build/aspera-tabtest` (core suite),
