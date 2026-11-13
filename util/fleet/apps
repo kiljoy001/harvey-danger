@@ -1,0 +1,7 @@
+schema=app
+
+name=cartoons
+dis=files
+mode=once
+snap=fleet/cartoons.status
+context=files:remote/babyfs/usr/scott/cartoons
