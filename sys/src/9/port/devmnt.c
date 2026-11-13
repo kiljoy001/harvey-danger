@@ -394,7 +394,8 @@ static Walkqid *
 mntwalk(Chan *c, Chan *nc, char **name, int nname)
 {
 	Proc *up = externup();
-	int i, alloc;
+	int i;
+	volatile int alloc;	/* set after waserror(); the handler must see it */
 	Mnt *mnt;
 	Mntrpc *r;
 	Walkqid *wq;

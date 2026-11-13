@@ -199,6 +199,9 @@ devclone(Chan *c)
 	}
 
 	nc = newchan();
+#ifdef QMALLOCDEBUG
+	setmalloctag(nc, getcallerpc());
+#endif
 
 	/*
 	 * The caller fills dev in if and when necessary.
@@ -224,7 +227,8 @@ devwalk(Chan *c, Chan *nc, char **name, int nname, Dirtab *tab, int ntab,
 	Proc *up = externup();
 	if(0)
 		print_func_entry();
-	int i, j, alloc;
+	int i, j;
+	volatile int alloc;	/* set after waserror(); the handler must see it */
 	Walkqid *wq;
 	char *n;
 	Dir dir;

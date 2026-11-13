@@ -1221,6 +1221,11 @@ nameerror(char *name, char *err)
  * can attach the correct name.  Sysstat need the
  * correct name so they can rewrite the stat info.
  */
+#ifdef QMALLOCDEBUG
+u32 namec_entries, namec_returns, namec_ok, namec_err, namec_closed;
+u32 namec_fname, namec_felems, namec_foff;
+#endif
+
 Chan *
 namec(char *aname, int amode, int omode, int perm)
 {
@@ -1231,12 +1236,20 @@ namec(char *aname, int amode, int omode, int perm)
 	Chan *volatile c, *volatile cnew, *volatile found;
 	Path *path;
 	Elemlist e;
+	/* parsename() fills e after waserror(); a longjmp restores
+	 * callee-saved registers, so keep the ownership in memory. */
+	char *volatile ename;
+	char **volatile eelems;
+	int *volatile eoff;
 	Rune r;
 	Mhead *mh;
 	char *createerr, tmperrbuf[ERRMAX];
 	char *name;
 	Dev *dev;
 
+#ifdef QMALLOCDEBUG
+	namec_entries++;
+#endif
 	if(aname[0] == '\0')
 		error("empty file name");
 	aname = validnamedup(aname, 1);
@@ -1307,6 +1320,9 @@ namec(char *aname, int amode, int omode, int perm)
 
 	e.aname = aname;
 	e.prefix = name - aname;
+	ename = nil;
+	eelems = nil;
+	eoff = nil;
 	e.name = nil;
 	e.elems = nil;
 	e.off = nil;
@@ -1314,13 +1330,27 @@ namec(char *aname, int amode, int omode, int perm)
 	e.nerror = 0;
 	if(waserror()){
 		cclose(c);
-		free(e.name);
-		free(e.elems);
+#ifdef QMALLOCDEBUG
+		namec_closed++;
+#endif
+#ifdef QMALLOCDEBUG
+		if(ename != nil) namec_fname++;
+		if(eelems != nil) namec_felems++;
+#endif
+		free(ename);
+		free(eelems);
+#ifdef QMALLOCDEBUG
+		namec_returns++;
+		namec_err++;
+#endif
 		/*
 		 * Prepare nice error, showing first e.nerror elements of name.
 		 */
 		if(e.nerror == 0){
-			free(e.off);
+#ifdef QMALLOCDEBUG
+			if(eoff != nil) namec_foff++;
+#endif
+			free(eoff);
 			nexterror();
 		}
 		strcpy(tmperrbuf, up->errstr);
@@ -1332,8 +1362,11 @@ namec(char *aname, int amode, int omode, int perm)
 			    e.prefix, e.off[e.nerror], e.nerror,
 			    e.nelems, aname, e.off[0], e.off[1]);
 		}
-		len = e.prefix + e.off[e.nerror];
-		free(e.off);
+		len = e.prefix + eoff[e.nerror];
+#ifdef QMALLOCDEBUG
+		if(eoff != nil) namec_foff++;
+#endif
+		free(eoff);
 		namelenerror(aname, len, tmperrbuf);
 	}
 
@@ -1341,6 +1374,9 @@ namec(char *aname, int amode, int omode, int perm)
 	 * Build a list of elements in the name.
 	 */
 	parsename(name, &e);
+	ename = e.name;
+	eelems = e.elems;
+	eoff = e.off;
 
 	/*
 	 * On create, ....
@@ -1589,12 +1625,23 @@ namec(char *aname, int amode, int omode, int perm)
 		kstrcpy(up->genbuf, e.elems[e.nelems - 1], sizeof up->genbuf);
 	else
 		kstrcpy(up->genbuf, ".", sizeof up->genbuf);
+#ifdef QMALLOCDEBUG
+	if(e.name != nil) namec_fname++;
+	if(e.elems != nil) namec_felems++;
+	if(e.off != nil) namec_foff++;
+#endif
 	free(e.name);
 	free(e.elems);
 	free(e.off);
+#ifdef QMALLOCDEBUG
+	namec_ok++;
+#endif
 	poperror(); /* e c */
 	free(aname);
 	poperror(); /* aname */
+#ifdef QMALLOCDEBUG
+	namec_returns++;
+#endif
 
 	return c;
 }
