@@ -122,6 +122,51 @@ mount -A '#~/host' /n/host
 ls /n/host
 ```
 
+## virtio-net
+
+`os/pc/ethervirtio.c` drives 9vm's virtio-net device.  9vm only creates the
+PCI function when it is given a tap (`-net-tap`); `boot.sh -n tap0` passes it:
+
+```sh
+./boot.sh -s inferno -n tap0
+```
+
+Creating a tap normally needs `CAP_NET_ADMIN`, but an unprivileged user+net
+namespace is enough, and keeps the tap and the service under test isolated:
+
+```sh
+unshare -Urn sh -c '
+  ip tuntap add dev tap0 mode tap
+  ip addr add 10.0.0.1/24 dev tap0
+  ip link set tap0 up
+  ip link set lo up
+  exec ./boot.sh -n tap0
+'
+```
+
+The init binds `#l` and `#I` at `/net`.  Configure the guest interface by
+hand (or put this in a script in `/n/host`):
+
+```rc
+cat /net/ipifc/clone
+echo bind ether ether0 > /net/ipifc/0/ctl
+echo add 10.0.0.2 255.255.255.0 > /net/ipifc/0/ctl
+```
+
+Then any TCP service reachable from the namespace, including a 9P server, can
+be mounted directly:
+
+```rc
+mkdir /n/cal
+mount -A tcp!10.0.0.1!5657 /n/cal
+cat /n/cal/calendar.status
+```
+
+9vm's ACPI tables do not route the PCI INTx line, so `intrenable` fails for
+IRQ 11.  The driver therefore leaves `ether->irq` at -1 and a 10 ms kproc
+polls the used rings; the device still raises its ISR bit and the poll reads
+it to deassert the line.
+
 ## Baseline measured on this setup
 
 - `cp -r /dis` (783 files, 7.6 MB): ~7.7 s

@@ -1130,17 +1130,23 @@ vnet_mmio_write(struct virtio_net *vn, uint64_t addr,
         q->enabled = (vn->bar0[0x1c] & 1) != 0;
         return;
     }
-    if (off == 0x20 && len >= 8) {
+    /*
+     * A 32-bit guest writes each 64-bit ring address as two 32-bit
+     * stores.  Accept either half and pick the assembled value out of
+     * the register image; the queue is not enabled until both halves
+     * and queueenable have been written.
+     */
+    if ((off == 0x20 || off == 0x24) && (len == 4 || len >= 8)) {
         struct vnet_queue *q = (vn->bar0[0x16] & 1) ? &vn->txq : &vn->rxq;
         q->desc = *(uint64_t *)(vn->bar0 + 0x20);
         return;
     }
-    if (off == 0x28 && len >= 8) {
+    if ((off == 0x28 || off == 0x2c) && (len == 4 || len >= 8)) {
         struct vnet_queue *q = (vn->bar0[0x16] & 1) ? &vn->txq : &vn->rxq;
         q->avail = *(uint64_t *)(vn->bar0 + 0x28);
         return;
     }
-    if (off == 0x30 && len >= 8) {
+    if ((off == 0x30 || off == 0x34) && (len == 4 || len >= 8)) {
         struct vnet_queue *q = (vn->bar0[0x16] & 1) ? &vn->txq : &vn->rxq;
         q->used = *(uint64_t *)(vn->bar0 + 0x30);
         return;

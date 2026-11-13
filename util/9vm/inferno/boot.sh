@@ -1,7 +1,7 @@
 #!/bin/sh
 # Boot the Inferno guest on 9vm.
 #
-#   ./boot.sh [-s SHMNAME] [-c CMDLINE] [image] [ipc.elf]
+#   ./boot.sh [-s SHMNAME] [-c CMDLINE] [-n TAP] [image] [ipc.elf]
 #
 # Without -s the guest runs headless on the serial console (stdin/stdout of
 # this script).  With -s the 9vm display region is created as /dev/shm/SHMNAME
@@ -13,11 +13,13 @@ here=$(cd "$(dirname "$0")" && pwd)
 repo=$(cd "$here/../../.." && pwd)
 work=${NINEVM_WORK:-/tmp/9vm-inferno}
 shm=
+net=
 cmd="bootargs=local!#9/0 nobootprompt=local console=0"
 while [ $# -gt 0 ]; do
 	case "$1" in
 	-s) shm=$2; shift 2 ;;
 	-c) cmd=$2; shift 2 ;;
+	-n) net=$2; shift 2 ;;
 	-h|--help) sed -n '2,10p' "$0"; exit 0 ;;
 	*) break ;;
 	esac
@@ -32,6 +34,7 @@ elf=${2:-$work/ipc.elf}
 [ -f "$elf" ] || { echo "missing $elf (run ./mkelf.py)" >&2; exit 1; }
 
 set -- -c "$cmd" -disk "$img"
+[ -n "$net" ] && set -- "$@" -net-tap "$net"
 if [ -n "$shm" ]; then
 	# shm_open(3) needs the leading slash; 9vm creates with O_EXCL, so a
 	# stale region from a previous run would make it fail.
