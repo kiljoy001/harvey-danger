@@ -970,7 +970,7 @@ mem2bl(u8 *p, int len)
 			n = Maxatomic;
 
 		*l = b = allocb(n);
-		setmalloctag(b, (up->text[0] << 24) | (up->text[1] << 16) | (up->text[2] << 8) | up->text[3]);
+		setmalloctag(b->base, (up->text[0] << 24) | (up->text[1] << 16) | (up->text[2] << 8) | up->text[3]);
 		memmove(b->wp, p, n);
 		b->wp += n;
 		p += n;
@@ -1331,7 +1331,7 @@ qwrite(Queue *q, void *vp, int len)
 			n = Maxatomic;
 
 		b = allocb(n);
-		setmalloctag(b, (up->text[0] << 24) | (up->text[1] << 16) | (up->text[2] << 8) | up->text[3]);
+		setmalloctag(b->base, (up->text[0] << 24) | (up->text[1] << 16) | (up->text[2] << 8) | up->text[3]);
 		if(waserror()){
 			freeb(b);
 			nexterror();

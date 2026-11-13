@@ -112,36 +112,48 @@ static Qtrace qtrace[QtraceN];
 static int qtracei;
 enum { QliveN = 256 };
 static int qlive[QliveN];
-enum { QtagN = 256 };
+enum { QtagN = 1024 };
 typedef struct Qtag Qtag;
 struct Qtag {
 	u32 tag;
 	int live;
+	u64 bytes;
 };
 static Qtag qtags[QtagN];
 static Lock taglock;
 
 static void
-qtagadd(u32 tag, int delta)
+qtagadd(u32 tag, int delta, u64 bytes)
 {
 	int i, slot;
 
 	if(tag == 0)
 		return;
-	lock(&taglock);
+	ilock(&taglock);
 	slot = (tag * 2654435761u) & (QtagN - 1);
 	for(i = 0; i < QtagN; i++){
-		if(qtags[slot].tag == tag || qtags[slot].live == 0){
-			if(qtags[slot].live == 0)
-				qtags[slot].tag = tag;
+		if(qtags[slot].tag == tag){
 			qtags[slot].live += delta;
+			if((i64)qtags[slot].bytes + (i64)bytes < 0)
+				qtags[slot].bytes = 0;
+			else
+				qtags[slot].bytes += bytes;
 			if(qtags[slot].live < 0)
 				qtags[slot].live = 0;
 			break;
 		}
+		if(qtags[slot].tag == 0){
+			/* never reuse a slot: an entry that reached zero
+			 * stays put, so a later alloc/free for the same tag
+			 * always finds the same account. */
+			qtags[slot].tag = tag;
+			qtags[slot].live = delta < 0 ? 0 : delta;
+			qtags[slot].bytes = bytes > 0 ? bytes : 0;
+			break;
+		}
 		slot = (slot + 1) & (QtagN - 1);
 	}
-	unlock(&taglock);
+	iunlock(&taglock);
 }
 
 static void
@@ -569,18 +581,20 @@ mallocreadfmt(char *s, char *e)
 	{
 		uchar printed[QtagN];
 		int best, k, j;
+		u64 tagbytes;
 		memset(printed, 0, sizeof printed);
 		for(k = 0; k < 12; k++){
 			best = -1;
 			for(j = 0; j < QtagN; j++)
 				if(!printed[j] && qtags[j].live > 0 &&
-				   (best < 0 || qtags[j].live > qtags[best].live))
+				   (best < 0 || qtags[j].bytes > qtags[best].bytes))
 					best = j;
 			if(best < 0)
 				break;
 			printed[best] = 1;
-			p = seprint(p, e, "tag %#ux live %d", qtags[best].tag,
-				    qtags[best].live);
+			p = seprint(p, e, "tag %#ux live %d bytes %llud",
+				    qtags[best].tag, qtags[best].live,
+				    qtags[best].bytes);
 			{
 				u32 t = qtags[best].tag;
 				int printable = ((t >> 24) & 0xff) >= 32 && ((t >> 24) & 0xff) < 127 &&
@@ -593,6 +607,35 @@ mallocreadfmt(char *s, char *e)
 						    (t >> 8) & 0xff, t & 0xff);
 			}
 			p = seprint(p, e, "\n");
+		}
+		tagbytes = 0;
+		for(j = 0; j < QtagN; j++)
+			if(qtags[j].live > 0)
+				tagbytes += qtags[j].bytes;
+		p = seprint(p, e, "tag total %llud bytes\n", tagbytes);
+
+		memset(printed, 0, sizeof printed);
+		for(k = 0; k < 8; k++){
+			best = -1;
+			for(j = 0; j < QtagN; j++)
+				if(!printed[j] && qtags[j].live > 0 &&
+				   (best < 0 || qtags[j].live > qtags[best].live))
+					best = j;
+			if(best < 0)
+				break;
+			printed[best] = 1;
+			p = seprint(p, e, "cnt %#ux live %d bytes %llud\n",
+				    qtags[best].tag, qtags[best].live,
+				    qtags[best].bytes);
+		}
+		{
+			extern u32 namec_entries, namec_returns, namec_ok, namec_err, namec_closed;
+			extern u32 namec_fname, namec_felems, namec_foff;
+			p = seprint(p, e, "namec entries %ud returns %ud ok %ud err %ud closed %ud miss %ud\n",
+				    namec_entries, namec_returns, namec_ok, namec_err,
+				    namec_closed, namec_entries - namec_ok - namec_err);
+			p = seprint(p, e, "namec freed name %ud elems %ud off %ud\n",
+				    namec_fname, namec_felems, namec_foff);
 		}
 	}
 	for(i = 0; i < nelem(qstats); i++){
@@ -673,7 +716,7 @@ free(void *ap)
 		if(u < QliveN && qlive[u] > 0)
 			qlive[u]--;
 #ifdef QMALLOCDEBUG
-		qtagadd(p->s.tag, -1);
+		qtagadd(p->s.tag, -1, -(u64)u * sizeof(Header));
 #endif
 	}
 	MLOCK;
@@ -694,7 +737,7 @@ malloc(u32 size)
 			qlive[u]++;
 #ifdef QMALLOCDEBUG
 		p->s.tag = (u32)getcallerpc();
-		qtagadd(p->s.tag, 1);
+		qtagadd(p->s.tag, 1, (u64)u * sizeof(Header));
 #endif
 		memset(v, 0, size);
 	}
@@ -829,12 +872,12 @@ setmalloctag(void *v, u32 i)
 	p = (Header *)v - 1;
 #ifdef QMALLOCDEBUG
 	if(p->s.tag != 0)
-		qtagadd(p->s.tag, -1);
+		qtagadd(p->s.tag, -1, -(u64)p->s.size * sizeof(Header));
 #endif
 	p->s.tag = i;
 #ifdef QMALLOCDEBUG
 	if(i != 0)
-		qtagadd(i, 1);
+		qtagadd(i, 1, (u64)p->s.size * sizeof(Header));
 #endif
 }
 
