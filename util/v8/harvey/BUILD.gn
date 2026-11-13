@@ -24,7 +24,7 @@ single_gcc_toolchain("harvey_arm64") {
   # patched into abseil.
   extra_cppflags = "-Wno-unknown-warning-option -Wno-shorten-64-to-32 " +
                    "-Wno-implicit-fallthrough -Wno-invalid-noreturn " +
-                   "-Wno-unused-const-variable -Wno-ctad-maybe-unsupported " +
+                   "-Wno-unused-const-variable -Wno-ctad-maybe-unsupported -Wno-unused-function " +
                    "-D__harvey__"
 
   toolchain_args = {

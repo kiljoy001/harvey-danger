@@ -52,7 +52,7 @@ if [ "$HARVEY_CXX" = 1 ]; then
 fi
 
 if [ "$compile_only" = 1 ] || [ "$asm_only" = 1 ]; then
-	exec "$CC" $FLAGS "$@"
+	exec "$CC" $FLAGS "$@" -fno-stack-protector
 fi
 
 # Drop host libraries; Harvey's libs supply the equivalents.
@@ -69,6 +69,6 @@ eval set -- $ARGS
 exec "$CC" $FLAGS -fuse-ld=lld -nostdlib -static -no-pie \
 	-T "$selfdir/apex.ld" -Wl,-u,_start \
 	-Wl,-z,max-page-size=4096 -Wl,--eh-frame-hdr \
-	"$@" \
+	"$@" -fno-stack-protector \
 	"$LIBCXX/lib/libc++.a" "$LIBCXX/lib/libunwind.a" \
 	"$APEXLIB/libap.a" "$LIBC" "$APEXLIB/libbuiltins.a"

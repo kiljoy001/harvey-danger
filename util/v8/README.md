@@ -70,5 +70,7 @@ which clang 23 cannot compile (the NEON path is used instead).
 ## Status
 
 Host V8 builds and runs (`out/host/d8 -e 'print(1+2)'` → `3`).  The Harvey
-cross build compiles `libv8_libbase.a` and the bulk of `d8`; the remaining
-blockers are tracked in the build log while the target link is brought up.
+cross build compiles `libv8_libbase.a` and the full target object set; the
+remaining work is the final link and the first EL0 run.  V8's
+`-fstack-protector` is overridden in the cross driver, since Harvey has no
+libssp runtime.
