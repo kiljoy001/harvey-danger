@@ -812,7 +812,7 @@ cnatest(Npu *n, int broadcast)
  * still guards the rest of the address space.
  */
 static int
-convtest(Npu *n)
+convtest(Npu *n, int inval, int wtval)
 {
 	Task *t;
 	u64 *w;
@@ -839,8 +839,8 @@ convtest(Npu *n)
 	memset(n->scratch, 0, 0x4000);
 	in = n->scratch;
 	wt = (u8 *)n->scratch + 0x200;
-	in[0] = 2;
-	wt[0] = 3;
+	in[0] = inval;
+	wt[0] = wtval;
 
 	w = n->cmd;
 	i = 0;
@@ -916,14 +916,14 @@ convtest(Npu *n)
 	drw(&n->d, RegPcOpEn, 1);
 	drw(&n->d, RegPcOpEn, 0);
 
-	raw = 0;
 	for(i = 0; i < 1000; i++){
-		raw = drd(&n->d, RegIntRaw);
-		if(raw != 0)
+		if((drd(&n->d, CnaOpEn) | drd(&n->d, 0x3008) |
+		    drd(&n->d, 0x4008) | drd(&n->d, 0x5008)) == 0)
 			break;
 		sleep(1);
 	}
-	done = raw != 0;
+	raw = drd(&n->d, RegIntRaw);
+	done = i < 1000;
 	n->lastraw = raw;
 	drw(&n->d, RegIntClear, 0x1ffff);
 	if(n->iommue){
@@ -931,18 +931,23 @@ convtest(Npu *n)
 		drw(&n->mmu, MmuCommand, 5);
 	}
 	drvdmacache(DrvInval, n->scratchpa, 0x4000);
-	print("npufs: conv raw %#ux status %#ux pc %#ux op %#x/%#x/%#x/%#x out %02ux %02ux %02ux %02ux",
-	      raw, drd(&n->d, RegIntStatus), drd(&n->d, RegPcTaskStatus),
+	print("npufs: conv raw %#ux status %#ux pc %#ux w %d op %#x/%#x/%#x/%#x\n",
+	      raw, drd(&n->d, RegIntStatus), drd(&n->d, RegPcTaskStatus), i,
 	      drd(&n->d, CnaOpEn), drd(&n->d, 0x3008), drd(&n->d, 0x4008),
-	      drd(&n->d, 0x5008),
+	      drd(&n->d, 0x5008));
+	print("npufs: conv in %02ux %02ux wt %02ux out %02ux %02ux %02ux %02ux %02ux %02ux %02ux %02ux",
+	      ((u8 *)n->scratch)[0], ((u8 *)n->scratch)[1],
+	      ((u8 *)n->scratch)[0x200],
 	      ((u8 *)n->scratch)[0x1000], ((u8 *)n->scratch)[0x1001],
-	      ((u8 *)n->scratch)[0x1002], ((u8 *)n->scratch)[0x1003]);
+	      ((u8 *)n->scratch)[0x1002], ((u8 *)n->scratch)[0x1003],
+	      ((u8 *)n->scratch)[0x1004], ((u8 *)n->scratch)[0x1005],
+	      ((u8 *)n->scratch)[0x1006], ((u8 *)n->scratch)[0x1007]);
 	if(n->iommue)
 		print(" iommu raw %#ux fault %#ux",
 		      drd(&n->mmu, MmuIntraw), drd(&n->mmu, MmuFaultaddr));
 	print("\n");
 	if(!done)
-		setwhy(n, "blocks did not signal (raw %#ux)", raw);
+		setwhy(n, "blocks did not finish (raw %#ux)", raw);
 	else
 		n->why[0] = 0;
 	return done ? 0 : -1;
@@ -1091,8 +1096,25 @@ ctlcmd(Npu *n, char *line)
 	}else if(strcmp(f[0], "dummy") == 0 && nf >= 2){
 		n->dummy = drvdma(&n->d, strtoul(f[1], nil, 0), 64, &n->dummypa);
 		print("npufs: dummy %#llux\n", n->dummypa);
+	}else if(strcmp(f[0], "dump") == 0 && nf >= 2){
+		u32 off = strtoul(f[1], nil, 0);
+		int len = nf >= 3 ? strtoul(f[2], nil, 0) : 32;
+		int k;
+		if(n->scratch == nil)
+			n->scratch = drvdma(&n->d, 0x4000, 64, &n->scratchpa);
+		if(n->scratch != nil && off + len <= 0x4000){
+			drvdmacache(DrvInval, n->scratchpa, 0x4000);
+			print("npufs: dump %#x:", off);
+			for(k = 0; k < len; k++){
+				if(k > 0 && k % 16 == 0)
+					print("\nnpufs: dump %#x:", off+k);
+				print(" %02ux", ((u8 *)n->scratch)[off+k]);
+			}
+			print("\n");
+		}
 	}else if(strcmp(f[0], "conv") == 0){
-		convtest(n);
+		convtest(n, nf >= 2 ? strtoul(f[1], nil, 0) : 2,
+		         nf >= 3 ? strtoul(f[2], nil, 0) : 3);
 	}else if(strcmp(f[0], "wtest") == 0 && nf >= 3){
 		wtest(n, strtoul(f[1], nil, 0), strtoul(f[2], nil, 0));
 	}else if(strcmp(f[0], "iommu") == 0){

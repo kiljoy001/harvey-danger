@@ -164,12 +164,37 @@ Two things surfaced from that run:
 
 ## The 1x1x1 conv
 
-`echo conv > /srv/npu/ctl` configures CNA, CORE, DPU and DPU_RDMA for a
-1x1x1 int8 convolution with every address inside the scratch buffer, then
-issues the broadcast operation-enable.  With the `reloc()` fix there is no
-IOMMU fault, so all of the DMA stays in the buffer.
+`echo conv [in [weight]] > /srv/npu/ctl` configures CNA, CORE, DPU and
+DPU_RDMA for a 1x1x1 int8 convolution with every address inside the
+scratch buffer, then issues the broadcast operation-enable.
 
-It still does not complete, but the block state says the broadcast works.
+The blocking piece was the **ping-pong handshake**: the regcmd stream has
+to write `S_POINTER = 0xe` (pointer PP mode | executer PP enable | pointer
+PP enable) in CNA, CORE, DPU and DPU_RDMA *before* the operation enable.
+Without it every block latched `op_en` and waited on the CNA/CORE hand-off
+forever.  With it the job completes:
+
+```
+conv raw 0x4 status 0x0 pc 0xf000 w 0 op 0x0/0x0/0x0/0x0
+conv in 7f 00 wt 7f out 00 00 00 00 ...
+```
+
+`INT_RAW` bit 2 (CNA weight done) fires, every block's `op_en` returns to
+zero, and the DPU has written the destination: `dump 0x1000` shows the
+32-channel output atom.  It is data dependent - `conv 2 3` leaves
+`ff ff ff ff`, `conv 0x7f 0x7f` leaves `00 00 00 00` - so the whole
+CNA -> CBUF -> CORE -> DPU path is live.
+
+The *value* is not yet the arithmetic we expect: a one-channel input takes
+rocket_ref's image-CVT path (scale 0x4000, offset -128, truncate 14), and
+the output zero-point conversion then maps the result into int8.  The next
+check is to declare 32 real channels with CVT bypass, where the expected
+`2*3 = 6` should survive.
+
+The other rocket_ref corrections that went in with it: 32-byte
+(channel-aligned) weights and two weight banks, `PAD_CON1 = -128`,
+`CORE_DATAOUT_SIZE_1 = 31`, `OUT_CVT_SCALE = 0x4001`, and the `0x3030` /
+`0x40c4` writes.
 With the `0x7f` operation-enable word (`rocket_ref`'s comment matches the
 TRM; its code emits `0x1d`) the register read-back after the job is:
 
@@ -188,10 +213,9 @@ difference, so the CNA is not stuck in the weight decompressor.
 
 ## Next
 
-1. Feed the CORE what it waits for: the CBUF bank/entry counts and the
-   channel alignment are the likely culprits for a 1-channel conv.  Read
-   `CORE`/`DPU` state registers after the job and compare with the
-   `rocket_ref` fill order.
+1. Get a verifiable number: 32 declared channels with CVT bypass, then
+   compare the output atom with `2*3`.  After that, the model's real
+   scales/zero points take over.
 2. A real operation (conv/depthwise) from the vendor `drivers/rknpu` and
    `9rock/rocket_ref` register tables.
 3. Wire the completion interrupt (GIC SPI 151) instead of polling
