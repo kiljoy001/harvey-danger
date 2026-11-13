@@ -561,6 +561,7 @@ mallocreadfmt(char *s, char *e)
 	p = seprint(p, e, "total allocated %lu, %u remaining\n",
 		    (tailptr - tailbase) * sizeof(Header), tailnunits * sizeof(Header));
 
+#ifdef QMALLOCDEBUG
 	{
 		uchar printed[QliveN];
 		int best, k, j;
@@ -638,6 +639,7 @@ mallocreadfmt(char *s, char *e)
 				    namec_fname, namec_felems, namec_foff);
 		}
 	}
+#endif /* QMALLOCDEBUG */
 	for(i = 0; i < nelem(qstats); i++){
 		if(qstats[i] == 0)
 			continue;
@@ -713,9 +715,9 @@ free(void *ap)
 	if(ap != nil){
 		Header *p = (Header *)ap - 1;
 		u32 u = p->s.size;
+#ifdef QMALLOCDEBUG
 		if(u < QliveN && qlive[u] > 0)
 			qlive[u]--;
-#ifdef QMALLOCDEBUG
 		qtagadd(p->s.tag, -1, -(u64)u * sizeof(Header));
 #endif
 	}
@@ -733,9 +735,9 @@ malloc(u32 size)
 	if((v = qmalloc(size)) != nil){
 		Header *p = (Header *)v - 1;
 		u32 u = p->s.size;
+#ifdef QMALLOCDEBUG
 		if(u < QliveN)
 			qlive[u]++;
-#ifdef QMALLOCDEBUG
 		p->s.tag = (u32)getcallerpc();
 		qtagadd(p->s.tag, 1, (u64)u * sizeof(Header));
 #endif
