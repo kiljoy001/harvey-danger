@@ -211,6 +211,16 @@ whole chain finishes.
 Setting `DCOMP_CTRL`'s `WT_DEC_BYPASS` (bit 3) for raw weights made no
 difference, so the CNA is not stuck in the weight decompressor.
 
+## Unrelated: a boot-time kernel panic
+
+Several boots during this work died in `qfreeinternal` (reading address
+`0x20`, then `ilockdepth 1` in `qlock`) with no NPU job running - the last
+one during the first console command after rc started.  The dumps are
+identical each time and the fault is in the allocator free list, so it is
+a kernel heap corruption, not NPU DMA (the IOMMU is off until a job is
+submitted).  It does not reproduce every boot.  Worth chasing separately:
+`qfreeinternal` at `sys/src/9/aarch64/qmalloc.c:362`, `qlock.c:75`.
+
 ## Next
 
 1. Get a verifiable number: 32 declared channels with CVT bypass, then

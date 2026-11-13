@@ -668,7 +668,7 @@ wtest(Npu *n, u32 off, u32 val)
 }
 
 static void
-emitcna(Npu *n, u64 *w, int *i, int start)
+emitcna(Npu *n, u64 *w, int *i, int start, int raw)
 {
 	emit(w, i, CnaTarget, CnaCbufCon0, (2<<4)|1);	/* 2 weight, 1 data bank */
 	emit(w, i, CnaTarget, CnaCbufCon1, 1);		/* one data entry */
@@ -676,20 +676,29 @@ emitcna(Npu *n, u64 *w, int *i, int start)
 	emit(w, i, CnaTarget, CnaConvCon2, 52<<4);	/* feature grains */
 	emit(w, i, CnaTarget, CnaConvCon3, (1<<3)|1);	/* stride 1x1 */
 	emit(w, i, CnaTarget, CnaDataSize0, (1<<16)|1);
-	emit(w, i, CnaTarget, CnaDataSize1, 32);	/* real 0, aligned 32 */
+	emit(w, i, CnaTarget, CnaDataSize1, raw ? (31<<16)|32 : 32);
 	emit(w, i, CnaTarget, CnaDataSize2, 1);
 	emit(w, i, CnaTarget, CnaDataSize3, 1);
 	emit(w, i, CnaTarget, CnaWeightSize0, 32);	/* 32-aligned channels */
 	emit(w, i, CnaTarget, CnaWeightSize1, 32);
 	emit(w, i, CnaTarget, CnaWeightSize2, (1<<24)|(1<<16)|1);
-	/* One real channel takes rocket_ref's image-CVT path. */
-	emit(w, i, CnaTarget, CnaCvtCon0,
-	     (14<<22)|(14<<16)|(14<<10)|(14<<4));
-	emit(w, i, CnaTarget, CnaCvtCon1, (0x4000<<16)|0xff80);
-	emit(w, i, CnaTarget, CnaCvtCon2, (0x4000<<16)|0xff80);
-	emit(w, i, CnaTarget, CnaCvtCon3, (0x4000<<16)|0xff80);
-	emit(w, i, CnaTarget, CnaCvtCon4, (0x4000<<16)|0xff80);
-	emit(w, i, CnaTarget, CnaCvtCon5, 0xffff);
+	if(raw){
+		emit(w, i, CnaTarget, CnaCvtCon0, 0xb);	/* bypass */
+		emit(w, i, CnaTarget, CnaCvtCon1, 1<<16);
+		emit(w, i, CnaTarget, CnaCvtCon2, 1<<16);
+		emit(w, i, CnaTarget, CnaCvtCon3, 1<<16);
+		emit(w, i, CnaTarget, CnaCvtCon4, 1<<16);
+		emit(w, i, CnaTarget, CnaCvtCon5, 0);
+	}else{
+		/* One real channel takes rocket_ref's image-CVT path. */
+		emit(w, i, CnaTarget, CnaCvtCon0,
+		     (14<<22)|(14<<16)|(14<<10)|(14<<4));
+		emit(w, i, CnaTarget, CnaCvtCon1, (0x4000<<16)|0xff80);
+		emit(w, i, CnaTarget, CnaCvtCon2, (0x4000<<16)|0xff80);
+		emit(w, i, CnaTarget, CnaCvtCon3, (0x4000<<16)|0xff80);
+		emit(w, i, CnaTarget, CnaCvtCon4, (0x4000<<16)|0xff80);
+		emit(w, i, CnaTarget, CnaCvtCon5, 0xffff);
+	}
 	emit(w, i, CnaTarget, CnaPadCon0, 0);
 	emit(w, i, CnaTarget, CnaPadCon1, 0xffffff80);
 	emit(w, i, CnaTarget, CnaFeatureAddr, reloc(n, n->scratchpa));
@@ -743,7 +752,7 @@ cnatest(Npu *n, int broadcast)
 
 	w = n->cmd;
 	i = 0;
-	emitcna(n, w, &i, !broadcast);
+	emitcna(n, w, &i, !broadcast, 0);
 	w[i++] = 0;
 	emit(w, &i, PcTarget, PcRegAmounts, 0);
 	w[i++] = 0x0041000000000000ULL;
@@ -812,7 +821,7 @@ cnatest(Npu *n, int broadcast)
  * still guards the rest of the address space.
  */
 static int
-convtest(Npu *n, int inval, int wtval)
+convtest(Npu *n, int inval, int wtval, int rawch)
 {
 	Task *t;
 	u64 *w;
@@ -849,7 +858,7 @@ convtest(Npu *n, int inval, int wtval)
 	emit(w, &i, CoreTarget, CoreSPointer, 0xe);
 	emit(w, &i, DpuTarget, DpuSPointer, 0xe);
 	emit(w, &i, RdmaTarget, RdmaSPointer, 0xe);
-	emitcna(n, w, &i, 0);
+	emitcna(n, w, &i, 0, rawch);
 	/* CORE */
 	emit(w, &i, CoreTarget, CoreMiscCfg, 1);
 	emit(w, &i, CoreTarget, CoreDataoutSize0, 0);
@@ -1114,7 +1123,10 @@ ctlcmd(Npu *n, char *line)
 		}
 	}else if(strcmp(f[0], "conv") == 0){
 		convtest(n, nf >= 2 ? strtoul(f[1], nil, 0) : 2,
-		         nf >= 3 ? strtoul(f[2], nil, 0) : 3);
+		         nf >= 3 ? strtoul(f[2], nil, 0) : 3, 0);
+	}else if(strcmp(f[0], "convraw") == 0){
+		convtest(n, nf >= 2 ? strtoul(f[1], nil, 0) : 2,
+		         nf >= 3 ? strtoul(f[2], nil, 0) : 3, 1);
 	}else if(strcmp(f[0], "wtest") == 0 && nf >= 3){
 		wtest(n, strtoul(f[1], nil, 0), strtoul(f[2], nil, 0));
 	}else if(strcmp(f[0], "iommu") == 0){
