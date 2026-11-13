@@ -169,19 +169,26 @@ Two things surfaced from that run:
 issues the broadcast operation-enable.  With the `reloc()` fix there is no
 IOMMU fault, so all of the DMA stays in the buffer.
 
-It still does not complete: `INT_RAW` stays zero and the output is zero.
-Afterwards `write 0x1008 1` (CNA op-enable) reads back 0, i.e. the CNA
-configuration registers are locked, which suggests the blocks *are* running
-and waiting on something (another block, a CBUF handshake, or the
-operation-enable value).  `rocket_ref`'s comment says the broadcast word is
-`0x0081_0000_007f_0008` while its code emits `0x0081_0000_001d_0008`; the
-`0x7f` variant (reserved field 0x3f) is the obvious next thing to try.
+It still does not complete, but the block state says the broadcast works.
+With the `0x7f` operation-enable word (`rocket_ref`'s comment matches the
+TRM; its code emits `0x1d`) the register read-back after the job is:
+
+```
+CNA op_en 0   CORE 1   DPU 1   DPU_RDMA 1
+```
+
+So the CNA ran and cleared its enable, while CORE/DPU/RDMA latched theirs
+and stay busy - the chain stalls after the CNA, most likely waiting on
+CBUF data (the CNA's 1-channel output has to fill the 32-channel atom the
+CORE reads).  `INT_RAW` stays zero because the job only interrupts when the
+whole chain finishes.
 
 ## Next
 
-1. Try the `0x7f` operation-enable value and check whether the blocks
-   complete; if the CNA stays locked, look at the CNA/CORE/DPU handshake
-   registers and the exact `INT_STATUS` bits librknnrt expects.
+1. Feed the CORE what it waits for: the CBUF bank/entry counts and the
+   channel alignment are the likely culprits for a 1-channel conv.  Read
+   `CORE`/`DPU` state registers after the job and compare with the
+   `rocket_ref` fill order.
 2. A real operation (conv/depthwise) from the vendor `drivers/rknpu` and
    `9rock/rocket_ref` register tables.
 3. Wire the completion interrupt (GIC SPI 151) instead of polling

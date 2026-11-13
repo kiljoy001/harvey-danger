@@ -736,7 +736,7 @@ cnatest(Npu *n, int broadcast)
 	emit(w, &i, PcTarget, PcRegAmounts, 0);
 	w[i++] = 0x0041000000000000ULL;
 	if(broadcast)
-		emit(w, &i, GlobTarget, PcOpEnReg, 0x1d);
+		emit(w, &i, GlobTarget, PcOpEnReg, 0x7f);
 	else
 		emit(w, &i, CnaTarget, CnaDcompCtrl, 0);
 
@@ -912,8 +912,10 @@ convtest(Npu *n)
 		drw(&n->mmu, MmuCommand, 5);
 	}
 	drvdmacache(DrvInval, n->scratchpa, 0x4000);
-	print("npufs: conv raw %#ux status %#ux pc %#ux out %02ux %02ux %02ux %02ux",
+	print("npufs: conv raw %#ux status %#ux pc %#ux op %#x/%#x/%#x/%#x out %02ux %02ux %02ux %02ux",
 	      raw, drd(&n->d, RegIntStatus), drd(&n->d, RegPcTaskStatus),
+	      drd(&n->d, CnaOpEn), drd(&n->d, 0x3008), drd(&n->d, 0x4008),
+	      drd(&n->d, 0x5008),
 	      ((u8 *)n->scratch)[0x1000], ((u8 *)n->scratch)[0x1001],
 	      ((u8 *)n->scratch)[0x1002], ((u8 *)n->scratch)[0x1003]);
 	if(n->iommue)
