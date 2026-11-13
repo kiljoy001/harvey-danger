@@ -55,3 +55,18 @@ they contain personal data.
 The next step is to replace this static directory with a `9vmctl`
 service that publishes the same `apps`/status files from the live
 fleet.
+
+## Radicale source
+
+`radicale-9p` (`/home/scott/Repo/radicale-9p`) reads Radicale's storage
+directly and renders the same `calendar/index`, `calendar/<date>` and
+`calendar.status` files.  Its `--snapshot` mode writes them into this
+directory, so the tablet keeps its current 9P mount while CalDAV lives
+in Radicale instead of Evolution.  The sidecar also serves the tree
+itself over 9P2000 on a separate port for a future per-user namespace.
+
+```sh
+/home/scott/Repo/radicale-9p/.venv/bin/radicale-9p \
+  --user scott --default-user scott \
+  --snapshot "$(pwd)"
+```
