@@ -47,7 +47,7 @@ def build(out: Path, lkl_o: Path, lkl_inc: Path, libc: Path) -> Path:
         "-I", str(lkl_inc),
     ]
     objects = []
-    for name in ("harvey-host.c", "lklboot.c", "lklusb.c"):
+    for name in ("harvey-host.c", "lklboot.c", "lklusb.c", "wifiscan.c"):
         obj = out / (Path(name).stem + ".o")
         run(cflags + ["-c", str(src / name), "-o", str(obj)])
         objects.append(obj)

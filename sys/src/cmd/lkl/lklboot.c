@@ -22,6 +22,7 @@ extern void	lkl_set_dtb(void*, unsigned long);
 extern long	lkl_sys_halt(void);
 extern void	lkl_cleanup(void);
 extern void	lklhost_setout(int);
+extern int	wifiscan(void);
 extern void	lklhost_debug(int);
 extern void	lklhost_selftest(void);
 extern int	lklhost_mapdev(char*, u64*, u64*);
@@ -442,7 +443,7 @@ setupfamily(Family *f)
 void
 main(int argc, char **argv)
 {
-	int fd, hosttest, kerneltest, console, nohw, background, famidx;
+	int fd, hosttest, kerneltest, console, nohw, background, scan, famidx;
 	char *fname;
 	Family *f;
 	Dtb *dtb;
@@ -452,6 +453,7 @@ main(int argc, char **argv)
 	console = 0;
 	nohw = 0;
 	background = 0;
+	scan = 0;
 	fname = "emmc";
 	ARGBEGIN{
 	case 'd':
@@ -472,12 +474,15 @@ main(int argc, char **argv)
 	case 'b':
 		background = 1;
 		break;
+	case 'w':
+		scan = 1;
+		break;
 	case 'f':
 		fname = ARGF();
 		break;
 	default:
 		fprint(2, "usage: lklboot [-b] [-c] [-d] [-f family] [-n] "
-			  "[-s] [-t] [platform-node]\n");
+			  "[-s] [-t] [-w] [platform-node]\n");
 		exits("usage");
 	}ARGEND
 	/*
@@ -571,8 +576,11 @@ main(int argc, char **argv)
 	 */
 	if(f->setup == FamUsb && !kerneltest)
 		usbservice();
-	if(f->setup == FamWifi && !kerneltest)
+	if(f->setup == FamWifi && !kerneltest){
+		if(scan)
+			wifiscan();
 		wifiservice();
+	}
 
 	if(kerneltest){
 		selftest();
