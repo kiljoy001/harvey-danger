@@ -237,9 +237,11 @@ segattach(Proc *p, int attr, char *name, usize va, usize len)
 
 	vmemchr(name, 0, ~0);
 
+	qlock(&memgrplock);
 	qlock(p->seglock);
 	if(waserror()){
 		qunlock(p->seglock);
+		qunlock(&memgrplock);
 		nexterror();
 	}
 	for(sno = 0; sno < NSEG; sno++)
@@ -256,6 +258,7 @@ segattach(Proc *p, int attr, char *name, usize va, usize len)
 		s = (*_globalsegattach)(p, name);
 		if(s != nil){
 			p->seg[sno] = s;
+			memgrpset(p, sno, s);
 			if(p == up && up->prepagemem)
 				nixprepage(sno);
 			va = s->base;
@@ -323,6 +326,7 @@ segattach(Proc *p, int attr, char *name, usize va, usize len)
 	s = newsegsz(attr, va, len / pgsz, pgsz);
 	s->pseg = ps;
 	p->seg[sno] = s;
+	memgrpset(p, sno, s);
 
 	if(p == up && up->prepagemem)
 		nixprepage(sno);
@@ -330,6 +334,7 @@ segattach(Proc *p, int attr, char *name, usize va, usize len)
 clean_out:
 	poperror();
 	qunlock(p->seglock);
+	qunlock(&memgrplock);
 	return va;
 }
 
@@ -374,9 +379,11 @@ syssegdetach(Ar0 *ar0, ...)
 	addr = PTR2UINT(va_arg(list, void *));
 	va_end(list);
 
+	qlock(&memgrplock);
 	qlock(up->seglock);
 	if(waserror()){
 		qunlock(up->seglock);
+		qunlock(&memgrplock);
 		nexterror();
 	}
 
@@ -405,9 +412,9 @@ found:
 	}
 	qunlock(&s->lk);
 	procflushseg(s);
-	up->seg[i] = 0;
-	putseg(s);
+	memgrpclr(up, i);
 	qunlock(up->seglock);
+	qunlock(&memgrplock);
 	poperror();
 
 	/* Ensure we flush any entries from the lost segment */

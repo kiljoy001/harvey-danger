@@ -73,9 +73,11 @@ sysmmap(Ar0 *ar0, ...)
 	if((flags & MAP_FIXED) && va != 0 && (va & (pagesz - 1)) != 0)
 		error(Ebadarg);
 
+	qlock(&memgrplock);
 	qlock(up->seglock);
 	if(waserror()){
 		qunlock(up->seglock);
+		qunlock(&memgrplock);
 		if(c != nil)
 			poperror(); /* cclose */
 		nexterror();
@@ -143,9 +145,11 @@ sysmmap(Ar0 *ar0, ...)
 	}
 
 	up->seg[sno] = s;
+	memgrpset(up, sno, s);
 
 	poperror(); /* seglock */
 	qunlock(up->seglock);
+	qunlock(&memgrplock);
 
 	ar0->v = UINT2PTR(va);
 }
@@ -169,9 +173,11 @@ sysmunmap(Ar0 *ar0, ...)
 	if(len == 0 || (va & (PGSZ - 1)) != 0)
 		error(Ebadarg);
 
+	qlock(&memgrplock);
 	qlock(up->seglock);
 	if(waserror()){
 		qunlock(up->seglock);
+		qunlock(&memgrplock);
 		nexterror();
 	}
 
@@ -191,8 +197,7 @@ sysmunmap(Ar0 *ar0, ...)
 			 * page-table entries for the range being unmapped.
 			 */
 			procflushseg(s);
-			up->seg[sno] = nil;
-			putseg(s);
+			memgrpclr(up, sno);
 			mmuflush();
 			break;
 		}
@@ -200,6 +205,7 @@ sysmunmap(Ar0 *ar0, ...)
 
 	poperror();
 	qunlock(up->seglock);
+	qunlock(&memgrplock);
 
 	if(sno == NSEG)
 		error(Ebadarg);

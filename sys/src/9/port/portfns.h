@@ -282,11 +282,14 @@ void procdump(void);
 int procfdprint(Chan *, int, int, char *, int);
 void procflushseg(Segment *);
 extern QLock segtablock; /* serializes table teardown with the pager */
+extern QLock memgrplock; /* serializes address-space membership and multicast */
 Segtab *newsegtab(void);
-Segtab *segtabshare(Segtab *);
 Segtab *segtabempty(void);
 void segtabput(Segtab *);
-void segtabdetach(Proc *);
+int memgrpjoin(Proc *, Proc *);
+void memgrpleave(Proc *);
+void memgrpset(Proc *, int, Segment *);
+void memgrpclr(Proc *, int);
 void procinit0(void);
 void procpriority(Proc *, int, int);
 void procrestore(Proc *);

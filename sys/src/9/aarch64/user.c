@@ -232,8 +232,11 @@ arm64usertrap1(Arm64ureg *r)
 		return;
 	}
 #endif
-	if(useractive == 0)
+	if(useractive == 0){
+		print("ARM64 unhandled user exception pid %d %s esr %#llx elr %#p far %#p\n",
+		      p->pid, p->text, r->esr, r->elr, r->far);
 		arm64fault();
+	}
 	trapesr = r->esr;
 	trapfar = r->far;
 	if(ec == 0x15 && (r->esr&0xffff) == 1){

@@ -174,6 +174,12 @@ arm64fault(void)
 	uarthex(elr);
 	uartputs(" far ");
 	uarthex(far);
+	{
+		u64 spsr;
+		__asm__ volatile("mrs %0, spsr_el1" : "=r"(spsr));
+		uartputs(" spsr ");
+		uarthex(spsr);
+	}
 	uartputs("\n");
 	for(;;)
 		__asm__ volatile("wfi");

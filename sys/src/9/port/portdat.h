@@ -56,6 +56,7 @@ typedef struct Sched Sched;
 typedef struct Schedq Schedq;
 typedef struct Segment Segment;
 typedef struct Segtab Segtab;
+typedef struct Memgrp Memgrp;
 typedef struct Sema Sema;
 typedef struct Strace Strace;
 typedef struct Timer Timer;
@@ -748,6 +749,15 @@ struct Segtab {
 	Segment	*seg[NSEG];
 };
 
+/*
+ * RFMEM processes share an address space: each keeps its own segment table
+ * (dupseg gives every one a private stack) and a Memgrp links them so a
+ * mapping made by one is installed into all of them.
+ */
+struct Memgrp {
+	Proc	*mem;
+};
+
 struct Proc {
 	Label sched;   /* known to l.s */
 	char *kstack;  /* known to l.s */
@@ -766,7 +776,9 @@ struct Proc {
 	char *psstate; /* What /proc/#/status reports */
 	Segment **seg; /* points at segtab->seg */
 	QLock *seglock; /* points at segtab->l; locked whenever seg[] changes */
-	Segtab *segtab; /* segment table, shared by rfork(RFMEM) */
+	Segtab *segtab; /* this process's segment table */
+	Memgrp *memgrp; /* RFMEM address-space group, nil if alone */
+	Proc *memnext;  /* next member in memgrp */
 	int pid;
 	int index;     /* index (slot) in proc array */
 	u32 freemagic; /* psalloc/psrelease reuse guard */

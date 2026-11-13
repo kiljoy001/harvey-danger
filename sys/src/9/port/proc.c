@@ -838,6 +838,8 @@ newproc(void)
 		panic("newproc: segment table allocation failed");
 	p->seg = p->segtab->seg;
 	p->seglock = &p->segtab->l;
+	p->memgrp = nil;
+	p->memnext = nil;
 	p->pid = incref(&pidalloc);
 	pshash(p);
 	p->noteid = incref(&noteidalloc);
@@ -1384,10 +1386,11 @@ pexit(char *exitstr, int freemem)
 		addbroken(up);
 
 	/*
-	 * Drop this process's reference on the table.  RFMEM siblings keep
-	 * the segments alive; the last user frees them.  Leave a valid empty
-	 * table behind so the pager can lock it while the Proc is Moribund.
+	 * Leave the RFMEM address-space group before touching the table:
+	 * a sibling must not install a mapping into a process that is going
+	 * away.  Then drop this process's reference on its own table.
 	 */
+	memgrpleave(up);
 	qlock(&segtablock);
 	segtabput(up->segtab);
 	up->segtab = segtabempty();

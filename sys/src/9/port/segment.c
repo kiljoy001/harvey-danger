@@ -259,12 +259,7 @@ segtabempty(void)
 	return &deadsegtab;
 }
 
-/*
- * Segment tables are reference counted separately from the segments they
- * hold.  Non-RFMEM processes get their own table (with the usual dupseg
- * copy-on-write rules); RFMEM processes share one table, so a segment added
- * or removed by any thread is seen by all of them.
- */
+/* Every process owns one segment table; it is freed when the process exits. */
 Segtab *
 newsegtab(void)
 {
@@ -275,15 +270,6 @@ newsegtab(void)
 		return nil;
 	memset(t, 0, sizeof *t);
 	t->r.ref = 1;
-	return t;
-}
-
-Segtab *
-segtabshare(Segtab *t)
-{
-	if(t == nil)
-		return nil;
-	incref(&t->r);
 	return t;
 }
 
@@ -303,36 +289,110 @@ segtabput(Segtab *t)
 }
 
 /*
- * Give p a private copy of the segment table, as exec must: the new image
- * replaces p's address space without disturbing other RFMEM threads.  The
- * segments themselves are shared here; exec drops these references when it
- * commits the new image, and the old image survives for as long as another
- * thread's table refers to it.
+ * RFMEM address-space groups.  Every process has its own segment table, so
+ * dupseg() can keep giving each one a private stack; the group is only used
+ * to propagate a mapping made later to the other threads.
+ */
+QLock memgrplock;
+
+/* memgrplock is held */
+int
+memgrpjoin(Proc *p, Proc *leader)
+{
+	Memgrp *g;
+
+	g = leader->memgrp;
+	if(g == nil){
+		g = malloc(sizeof *g);
+		if(g == nil)
+			return -1;
+		g->mem = leader;
+		leader->memnext = nil;
+		leader->memgrp = g;
+	}
+	p->memgrp = g;
+	p->memnext = g->mem;
+	g->mem = p;
+	return 0;
+}
+
+void
+memgrpleave(Proc *p)
+{
+	Memgrp *g;
+	Proc **l, *m;
+
+	qlock(&memgrplock);
+	if((g = p->memgrp) != nil){
+		for(l = &g->mem; (m = *l) != nil; l = &m->memnext)
+			if(m == p){
+				*l = p->memnext;
+				break;
+			}
+		p->memgrp = nil;
+		p->memnext = nil;
+		if(g->mem == nil)
+			free(g);
+	}
+	qunlock(&memgrplock);
+}
+
+/*
+ * Install s at slot sno in p and every member of its group.  The caller
+ * holds memgrplock and p->seglock; each member's seglock is taken in turn.
  */
 void
-segtabdetach(Proc *p)
+memgrpset(Proc *p, int sno, Segment *s)
 {
-	Segtab *nt, *ot;
-	int i;
+	Memgrp *g;
+	Proc *m;
 
-	nt = newsegtab();
-	if(nt == nil)
-		error(Enovmem);
-	ot = p->segtab;
-	qlock(&ot->l);
-	for(i = 0; i < NSEG; i++){
-		if(p->seg[i] == nil)
+	if((g = p->memgrp) == nil)
+		return;
+	for(m = g->mem; m != nil; m = m->memnext){
+		if(m == p)
 			continue;
-		incref(&p->seg[i]->r);
-		nt->seg[i] = p->seg[i];
+		qlock(m->seglock);
+		if(m->seg[sno] == nil){
+			m->seg[sno] = s;
+			incref(&s->r);
+		}else
+			print("memgrpset: slot %d busy in pid %d\n", sno, m->pid);
+		qunlock(m->seglock);
 	}
-	p->segtab = nt;
-	p->seg = nt->seg;
-	p->seglock = &nt->l;
-	qunlock(&ot->l);
-	qlock(&segtablock);
-	segtabput(ot);
-	qunlock(&segtablock);
+}
+
+/*
+ * Remove the segment in slot sno from p and every member of its group.
+ * The caller holds memgrplock and p->seglock.
+ */
+void
+memgrpclr(Proc *p, int sno)
+{
+	Memgrp *g;
+	Proc *m;
+	Segment *s;
+	int dropped;
+
+	if((s = p->seg[sno]) == nil)
+		return;
+	p->seg[sno] = nil;
+	if((g = p->memgrp) != nil){
+		for(m = g->mem; m != nil; m = m->memnext){
+			if(m == p)
+				continue;
+			dropped = 0;
+			qlock(m->seglock);
+			if(m->seg[sno] == s){
+				m->seg[sno] = nil;
+				dropped = 1;
+			}
+			qunlock(m->seglock);
+			if(dropped)
+				putseg(s);
+		}
+	}
+	putseg(s);
 }
 
 void

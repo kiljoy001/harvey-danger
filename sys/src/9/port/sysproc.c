@@ -153,34 +153,33 @@ sysrfork(Ar0 *ar0, ...)
 	p->dbgreg = 0;
 
 	/*
-	 * Make a new set of memory segments.  RFMEM processes share one
-	 * table, so any mapping one thread makes is visible to the others;
-	 * a plain process gets its own table with the usual COW copies.
+	 * Make a new set of memory segments.  Every process keeps its own
+	 * table: dupseg() shares text, data and device windows but always
+	 * allocates a fresh stack, so an RFMEM child cannot walk on its
+	 * parent's stack.  The child is then linked into the parent's
+	 * Memgrp, and a mapping made by any member later is installed into
+	 * all of them by memgrpset().
 	 */
+	if(flag & RFMEM)
+		qlock(&memgrplock);
+	qlock(up->seglock);
+	if(waserror()){
+		qunlock(up->seglock);
+		if(flag & RFMEM)
+			qunlock(&memgrplock);
+		nexterror();
+	}
+	for(i = 0; i < NSEG; i++)
+		if(up->seg[i])
+			p->seg[i] = dupseg(up->seg, i, (flag & RFMEM) != 0);
+	qunlock(up->seglock);
+	poperror();
 	if(flag & RFMEM){
-		qlock(&segtablock);
-		segtabput(p->segtab);
-		p->segtab = segtabshare(up->segtab);
-		if(p->segtab == nil){
-			p->seg = nil;
-			p->seglock = nil;
-			qunlock(&segtablock);
+		if(memgrpjoin(p, up) < 0){
+			qunlock(&memgrplock);
 			error(Enovmem);
 		}
-		p->seg = p->segtab->seg;
-		p->seglock = &p->segtab->l;
-		qunlock(&segtablock);
-	} else {
-		qlock(p->seglock);
-		if(waserror()){
-			qunlock(p->seglock);
-			nexterror();
-		}
-		for(i = 0; i < NSEG; i++)
-			if(up->seg[i])
-				p->seg[i] = dupseg(up->seg, i, 0);
-		qunlock(p->seglock);
-		poperror();
+		qunlock(&memgrplock);
 	}
 
 	/* File descriptors */
@@ -464,7 +463,7 @@ execac(Ar0 *ar0, int flags, char *ufile, char **argv)
 	 * the address space of RFMEM siblings.  Reading the old argv still
 	 * works because the old segments stay alive in the shared table.
 	 */
-	segtabdetach(up);
+	memgrpleave(up);
 	qlock(up->seglock);
 	int sno = -1;
 	if(waserror()){
