@@ -98,6 +98,8 @@ static char *qstatstr[QSmax] = {
 	[QSfreeprev] = "freeprev",
 };
 
+static int qsnapreq;
+
 #ifdef QMALLOCDEBUG
 enum { QtraceN = 32 };
 typedef struct Qtrace Qtrace;
@@ -121,6 +123,8 @@ struct Qtag {
 };
 static Qtag qtags[QtagN];
 static Lock taglock;
+static int qliveprev[QliveN];
+static int qtagprev[QtagN];
 
 static void
 qtagadd(u32 tag, int delta, u64 bytes)
@@ -566,6 +570,19 @@ mallocreadfmt(char *s, char *e)
 		uchar printed[QliveN];
 		int best, k, j;
 		memset(printed, 0, sizeof printed);
+		for(k = 0; k < 5; k++){
+			best = -1;
+			for(j = 0; j < QliveN; j++)
+				if(!printed[j] && qlive[j] - qliveprev[j] > 0 &&
+				   (best < 0 || qlive[j] - qliveprev[j] > qlive[best] - qliveprev[best]))
+					best = j;
+			if(best < 0)
+				break;
+			printed[best] = 1;
+			p = seprint(p, e, "grow size %d bytes %d (%+d)\n",
+				    best * Unitsz, qlive[best], qlive[best] - qliveprev[best]);
+		}
+		memset(printed, 0, sizeof printed);
 		for(k = 0; k < 12; k++){
 			best = -1;
 			for(j = 0; j < QliveN; j++)
@@ -619,6 +636,21 @@ mallocreadfmt(char *s, char *e)
 		for(k = 0; k < 8; k++){
 			best = -1;
 			for(j = 0; j < QtagN; j++)
+				if(!printed[j] && qtags[j].live - qtagprev[j] > 0 &&
+				   (best < 0 || qtags[j].live - qtagprev[j] > qtags[best].live - qtagprev[best]))
+					best = j;
+			if(best < 0)
+				break;
+			printed[best] = 1;
+			p = seprint(p, e, "grow tag %#ux %d (%+d) bytes %llud\n",
+				    qtags[best].tag, qtags[best].live,
+				    qtags[best].live - qtagprev[best], qtags[best].bytes);
+		}
+
+		memset(printed, 0, sizeof printed);
+		for(k = 0; k < 8; k++){
+			best = -1;
+			for(j = 0; j < QtagN; j++)
 				if(!printed[j] && qtags[j].live > 0 &&
 				   (best < 0 || qtags[j].live > qtags[best].live))
 					best = j;
@@ -639,6 +671,13 @@ mallocreadfmt(char *s, char *e)
 				    namec_fname, namec_felems, namec_foff);
 		}
 	}
+	if(qsnapreq){
+		int j;
+		for(j = 0; j < QliveN; j++)
+			qliveprev[j] = qlive[j];
+		for(j = 0; j < QtagN; j++)
+			qtagprev[j] = qtags[j].live;
+	}
 #endif /* QMALLOCDEBUG */
 	for(i = 0; i < nelem(qstats); i++){
 		if(qstats[i] == 0)
@@ -653,8 +692,10 @@ mallocreadsummary(Chan *c, void *a, i32 n, i32 offset)
 {
 	char *alloc;
 
+	qsnapreq = (offset == 0);
 	alloc = malloc(16 * READSTR);
 	mallocreadfmt(alloc, alloc + 16 * READSTR);
+	qsnapreq = 0;
 	n = readstr(offset, a, n, alloc);
 	free(alloc);
 

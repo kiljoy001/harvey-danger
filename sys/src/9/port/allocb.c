@@ -71,6 +71,9 @@ allocb(int size)
 		mallocsummary();
 		panic("allocb: no memory for %d bytes\n", size);
 	}
+#ifdef QMALLOCDEBUG
+	setmalloctag(b->base, getcallerpc());
+#endif
 
 	return b;
 }
@@ -109,6 +112,9 @@ iallocb(int size)
 	ilock(&ialloc.Lock);
 	ialloc.bytes += b->lim - b->base;
 	iunlock(&ialloc.Lock);
+#ifdef QMALLOCDEBUG
+	setmalloctag(b->base, getcallerpc());
+#endif
 
 	return b;
 }
