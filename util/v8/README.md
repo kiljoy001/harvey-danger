@@ -70,7 +70,37 @@ which clang 23 cannot compile (the NEON path is used instead).
 ## Status
 
 Host V8 builds and runs (`out/host/d8 -e 'print(1+2)'` → `3`).  The Harvey
-cross build compiles `libv8_libbase.a` and the full target object set; the
-remaining work is the final link and the first EL0 run.  V8's
-`-fstack-protector` is overridden in the cross driver, since Harvey has no
-libssp runtime.
+cross build compiles `libv8_libbase.a`, the full target object set and
+links a 22 MiB static `d8`.  V8's `-fstack-protector` is overridden in the
+cross driver, since Harvey has no libssp runtime.
+
+Verified on QEMU virt (2048 MiB, SMP 2):
+
+```text
+$ python3 util/v8/test-v8.py --v8 ~/Repo/v8
+D8-OK 3
+V8 d8 PASS
+```
+
+`d8` is running the snapshot, parsing and executing JavaScript in jitless
+mode.
+
+## VM limitations still visible to V8
+
+Harvey's kernel manages mappings at segment granularity, while V8's page
+allocator uses sub-range operations:
+
+- partial `munmap` of a reservation,
+- partial `mprotect` (V8 decommits individual pages of the read-only space),
+- `MAP_FIXED` replacement (POSIX allows it; Harvey rejects overlaps).
+
+The bring-up patches in `patches/v8-readonly-harvey.patch` make the
+read-only flag/snapshot protections and no-access decommits advisory, and
+the kernel currently accepts partial `munmap` without splitting the
+segment.  The proper fix is to split segments for sub-range protections;
+the workaround is recorded rather than hidden in APEX.
+
+The ARM64 kernel enables `CNTKCTL_EL1.EL0PCTEN|EL0VCTEN`, so V8's
+`CNTVCT_EL0` reads do not trap.  `rk`/image paging may print
+`racing on demand load` when several V8 threads fault the same page; it is
+a diagnostic, not a failure.

@@ -1,0 +1,71 @@
+diff --git a/src/base/platform/platform-posix.cc b/src/base/platform/platform-posix.cc
+index 939cb01a..0d40e8f2 100644
+--- a/src/base/platform/platform-posix.cc
++++ b/src/base/platform/platform-posix.cc
+@@ -566,6 +566,11 @@ bool OS::SetPermissions(void* address, size_t size, MemoryPermission access) {
+   DCHECK_EQ(0, reinterpret_cast<uintptr_t>(address) % CommitPageSize());
+   DCHECK_EQ(0, size % CommitPageSize());
+ 
++#ifdef __harvey__
++  // Harvey's mprotect works on a whole segment.  Decommit requests only
++  // discard pages; leaving them accessible is harmless for bring-up.
++  if (access == OS::MemoryPermission::kNoAccess) return true;
++#endif
+   int prot = GetProtectionFromMemoryPermission(access);
+   int ret = mprotect(address, size, prot);
+ 
+@@ -688,6 +693,11 @@ bool OS::DecommitPages(void* address, size_t size) {
+   // shall be removed, as if by an appropriate call to munmap(), before the new
+   // mapping is established." As a consequence, the memory will be
+   // zero-initialized on next access.
++#ifdef __harvey__
++  // No MAP_FIXED replacement; decommit is advisory.
++  madvise(address, size, MADV_DONTNEED);
++  return true;
++#else
+   void* ret = mmap(address, size, PROT_NONE,
+                    MAP_FIXED | MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
+   if (V8_UNLIKELY(ret == MAP_FAILED)) {
+@@ -697,6 +707,7 @@ bool OS::DecommitPages(void* address, size_t size) {
+   }
+   CHECK_EQ(ret, address);
+   return true;
++#endif
+ }
+ #endif  // !defined(_AIX)
+ #endif  // !V8_OS_ZOS
+diff --git a/src/flags/flags.cc b/src/flags/flags.cc
+index 9bc6d2a0..5ae72191 100644
+--- a/src/flags/flags.cc
++++ b/src/flags/flags.cc
+@@ -1031,7 +1031,12 @@ void FlagList::FreezeFlags() {
+   // first unprotect the memory again.
+   // Note that for string flags we only protect the pointer itself, but not the
+   // string storage. TODO(12887): Fix this.
++#ifndef __harvey__
++  // Harvey's mprotect applies to the containing segment; v8_flags shares the
++  // d8 data segment with ordinary globals, so protecting it would make them
++  // read-only too.
+   base::OS::SetDataReadOnly(&v8_flags, sizeof(v8_flags));
++#endif
+ }
+ 
+ // static
+diff --git a/src/heap/read-only-spaces.cc b/src/heap/read-only-spaces.cc
+index b302fd3f..5973ad8e 100644
+--- a/src/heap/read-only-spaces.cc
++++ b/src/heap/read-only-spaces.cc
+@@ -174,6 +174,13 @@ void ReadOnlyPage::MakeHeaderRelocatableAndMarkAsSealed() {
+ 
+ void ReadOnlySpace::SetPermissionsForPages(MemoryAllocator* memory_allocator,
+                                            PageAllocator::Permission access) {
++#ifdef __harvey__
++  // Harvey's mprotect currently applies to the containing segment.  The
++  // read-only space is the embedded snapshot inside the d8 data segment, so
++  // making it read-only would also make the program's BSS read-only.  Leave
++  // the snapshot writable until the kernel can split protections per page.
++  if (access == PageAllocator::kRead) return;
++#endif
+   for (BasePage* chunk : pages_) {
+     // Read only pages don't have valid reservation object so we get proper
+     // page allocator manually.

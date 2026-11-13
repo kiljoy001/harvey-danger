@@ -41,6 +41,7 @@ v8_enable_pointer_compression=false
 v8_enable_pointer_compression_shared_cage=false
 v8_enable_external_code_space=false
 v8_use_metagen=false
+v8_use_external_startup_data=false
 clang_use_chrome_plugins=false
 use_cppgc_clang_plugin=false
 arm_control_flow_integrity="none"
@@ -94,6 +95,7 @@ def main() -> None:
     dest.mkdir(exist_ok=True)
     shutil.copy2(HERE / "harvey" / "BUILD.gn", dest / "BUILD.gn")
     apply_patch(v8, HERE / "patches" / "v8-simd-harvey.patch")
+    apply_patch(v8, HERE / "patches" / "v8-readonly-harvey.patch")
     apply_patch(v8 / "third_party" / "abseil-cpp",
                 HERE / "patches" / "absl-harvey.patch")
 

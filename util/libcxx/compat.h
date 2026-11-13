@@ -37,24 +37,6 @@ typedef unsigned int uint_fast32_t;
 #include <stdint.h>
 #include <stdlib.h>
 
-/* APEX's INT64_C/UINT64_C use the "long" suffix even though its int64_t is
- * "long long".  That makes every UINT64_C() literal a different type from
- * uint64_t and breaks overload resolution (std::max, constructors). */
-#undef INT64_C
-#undef UINT64_C
-#define INT64_C(c)  c##LL
-#define UINT64_C(c) c##ULL
-#undef INT64_MAX
-#undef INT64_MIN
-#undef UINT64_MAX
-#undef INT64_C
-#undef UINT64_C
-#define INT64_C(c)  c##LL
-#define UINT64_C(c) c##ULL
-#define INT64_MAX  9223372036854775807LL
-#define INT64_MIN  (-INT64_MAX - 1LL)
-#define UINT64_MAX 18446744073709551615ULL
-
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -274,13 +256,6 @@ int utimes(const char *, const struct timeval *);
 #define MS_ASYNC 1
 #define MS_INVALIDATE 2
 #define MS_SYNC 4
-#endif
-#ifndef MADV_DONTNEED
-#define MADV_NORMAL 0
-#define MADV_RANDOM 1
-#define MADV_SEQUENTIAL 2
-#define MADV_WILLNEED 3
-#define MADV_DONTNEED 4
 #endif
 #define _SC_GETPW_R_SIZE_MAX 20
 char *realpath(const char *, char *);
