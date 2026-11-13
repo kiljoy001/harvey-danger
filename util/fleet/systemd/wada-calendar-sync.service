@@ -1,0 +1,6 @@
+[Unit]
+Description=Wada fleet calendar sync (Evolution cache -> 9P)
+
+[Service]
+Type=oneshot
+ExecStart=%h/Repo/harvey/util/fleet/calendar-sync.py

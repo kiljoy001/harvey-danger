@@ -29,6 +29,29 @@ from this directory.
 
 Keep `u9fs` on loopback or Ygg; `-a none` has no authentication.
 
+## Real calendar data
+
+`calendar-sync.py` reads Evolution's local calendar cache and writes
+`calendar/index`, `calendar/<date>` and `calendar.status`.  Evolution
+remains the CalDAV client; this is a read-only bridge until a direct
+CalDAV sync replaces it.
+
+```sh
+./calendar-sync.py
+```
+
+Install the user timer for a refresh every five minutes:
+
+```sh
+mkdir -p ~/.config/systemd/user
+cp systemd/wada-calendar-sync.* ~/.config/systemd/user/
+systemctl --user daemon-reload
+systemctl --user enable --now wada-calendar-sync.timer
+```
+
+The generated `calendar/` and `calendar.status` are ignored by git:
+they contain personal data.
+
 The next step is to replace this static directory with a `9vmctl`
 service that publishes the same `apps`/status files from the live
 fleet.
