@@ -112,6 +112,11 @@ npufs: test cmd 0xe1001000 task 0xe1000000 amount 4 raw 0x0 status 0x0 pc 0xf000
   PC `0x101`, CNA `0x201`, CORE `0x801`, DPU `0x1001`; the broadcast
   operation-enable uses target `0x81`.
 * `PC_TASK_CONTROL = 6<<12 | ntasks`; `PC_OP_EN` is toggled 1 then 0.
+* **Address operands are relative to `PC_DMA_BASE_ADDR`.**  A regcmd that
+  writes `x` to an address register reads back `x + task_base` (mod 2^32):
+  with the task array at `0xe1010000`, writing `0x2000` reads `0xe1012000`
+  and writing `0xffff3000` reads `0xe1003000`.  So the operand to program a
+  physical address is `pa - task_base`.  `npufs` has a `reloc()` for this.
 * The test stream writes `CNA_DCOMP_REGNUM` (0x1104) with `0xdeadbeef`;
   reading it back proves the task fetch, stream fetch and decode all ran.
   `PC_TASK_STATUS` (0x3c) reads `0xf000` after the task.
@@ -152,19 +157,32 @@ Two things surfaced from that run:
   fault, direct `write` to `0x1070` is ignored and the readback stays at the
   stale value.  `reset` (soft reset) restores them to zero and writes work
   again.
-* The CNA address registers read back as `0xc2002000`/`0xc2002200` while
-  `0xe1002000`/`0xe1002200` (scratch, scratch+0x200) were programmed — an
-  address rebasing/format question in the regcmd path that still has to be
-  understood before a real conv.
+* The address operands turned out to be task-relative (see above), which
+  is what produced the `0xc2002000` read-back; the `conv` command now
+  programs every block address through `reloc()` and runs with no IOMMU
+  fault at all.
+
+## The 1x1x1 conv
+
+`echo conv > /srv/npu/ctl` configures CNA, CORE, DPU and DPU_RDMA for a
+1x1x1 int8 convolution with every address inside the scratch buffer, then
+issues the broadcast operation-enable.  With the `reloc()` fix there is no
+IOMMU fault, so all of the DMA stays in the buffer.
+
+It still does not complete: `INT_RAW` stays zero and the output is zero.
+Afterwards `write 0x1008 1` (CNA op-enable) reads back 0, i.e. the CNA
+configuration registers are locked, which suggests the blocks *are* running
+and waiting on something (another block, a CBUF handshake, or the
+operation-enable value).  `rocket_ref`'s comment says the broadcast word is
+`0x0081_0000_007f_0008` while its code emits `0x0081_0000_001d_0008`; the
+`0x7f` variant (reserved field 0x3f) is the obvious next thing to try.
 
 ## Next
 
-1. Understand the CNA address format: write a known value into
-   `CNA_FEATURE_DATA_ADDR` through a one-regcmd job and read it back, then
-   map the observed transform before pointing a real operation at memory.
+1. Try the `0x7f` operation-enable value and check whether the blocks
+   complete; if the CNA stays locked, look at the CNA/CORE/DPU handshake
+   registers and the exact `INT_STATUS` bits librknnrt expects.
 2. A real operation (conv/depthwise) from the vendor `drivers/rknpu` and
-   `9rock/rocket_ref` register tables, with the IOMMU on.
-3. The PC block's completion interrupt still has not been seen: the test
-   jobs finish (the last regcmd executes) but `INT_RAW` stays clear unless a
-   block errors, so the block-level done bits or the expected `INT_MASK`
-   need matching to what the hardware raises.
+   `9rock/rocket_ref` register tables.
+3. Wire the completion interrupt (GIC SPI 151) instead of polling
+   `INT_RAW`.

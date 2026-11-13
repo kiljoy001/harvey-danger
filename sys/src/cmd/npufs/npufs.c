@@ -201,6 +201,8 @@ struct Npu {
 	u64	taskpa;
 	u64	cmdpa;
 	u64	scratchpa;
+	void	*dummy;
+	u64	dummypa;
 	u32	lastraw;
 	u32	lastdcomp;
 };
@@ -385,6 +387,39 @@ ident(Npu *n)
  * the four-word trailer.  With every configuration register at zero the
  * compute blocks have no work, and any error still shows in INT_RAW.
  */
+static void
+emit(u64 *w, int *i, u32 target, u32 reg, u32 val)
+{
+	w[(*i)++] = ((u64)target<<48) | ((u64)val<<16) | (reg & 0xffff);
+}
+
+static void
+softreset(Npu *n)
+{
+	drw(&n->cru, CruSoftrst2, (0x1800u<<16) | 0x1800u);
+	sleep(1);
+	drw(&n->cru, CruSoftrst2, (0x1800u<<16) | 0u);
+	sleep(1);
+	n->iommue = 0;		/* the block reset may have cleared paging */
+}
+
+static u32
+targetof(u32 reg)
+{
+	return (1u << ((((reg)>>12) & 0xf) + 8)) | 1;
+}
+
+/*
+ * Address operands in a regcmd are relative to PC_DMA_BASE_ADDR (the task
+ * array).  A write of x to an address register reads back x + taskpa; this
+ * turns a physical address into the operand that produces it.
+ */
+static u32
+reloc(Npu *n, u64 pa)
+{
+	return (u32)(pa - n->taskpa);
+}
+
 static u32
 mmupa(u64 pa)
 {
@@ -562,10 +597,67 @@ jobtest(Npu *n)
 	return n->lastdcomp == 0xdeadbeef ? 0 : -1;
 }
 
-static void
-emit(u64 *w, int *i, u32 target, u32 reg, u32 val)
+/*
+ * One regcmd writing val to off, then read the register back.  This is how
+ * the address-field encoding gets characterised without rebuilding.
+ */
+static int
+wtest(Npu *n, u32 off, u32 val)
 {
-	w[(*i)++] = ((u64)target<<48) | ((u64)val<<16) | (reg & 0xffff);
+	Task *t;
+	u64 *w;
+	int i, raw;
+	u32 back;
+
+	if(pmuon(n) < 0)
+		return -1;
+	if(n->task == nil){
+		n->task = drvdma(&n->d, 4096, 64, &n->taskpa);
+		n->cmd = drvdma(&n->d, 4096, 64, &n->cmdpa);
+	}
+	if(n->scratch == nil)
+		n->scratch = drvdma(&n->d, 0x4000, 64, &n->scratchpa);
+	if(n->task == nil || n->cmd == nil || n->scratch == nil){
+		setwhy(n, "no DMA arena");
+		return -1;
+	}
+	softreset(n);
+	if(iommuon(n) < 0)
+		return -1;
+	memset(n->task, 0, 4096);
+	memset(n->cmd, 0, 4096);
+
+	w = n->cmd;
+	i = 0;
+	emit(w, &i, targetof(off), off, val);
+	w[i++] = 0;
+	emit(w, &i, PcTarget, PcRegAmounts, 0);
+	w[i++] = 0x0041000000000000ULL;
+	emit(w, &i, CnaTarget, CnaDcompCtrl, 0);
+
+	t = n->task;
+	t->int_mask = 0;
+	t->int_clear = 0x1ffff;
+	t->regcfg_amount = i - 4;
+	t->regcmd_addr = n->cmdpa;
+	drvdmacache(DrvClean, n->cmdpa, 4096);
+	drvdmacache(DrvClean, n->taskpa, 4096);
+
+	drw(&n->d, RegIntClear, 0x1ffff);
+	drw(&n->d, RegIntMask, 0);
+	drw(&n->d, RegPcDataAddr, (u32)n->cmdpa);
+	drw(&n->d, RegPcDataAmount, t->regcfg_amount + 3);
+	drw(&n->d, RegPcTaskControl, (6<<12) | 1);
+	drw(&n->d, RegPcDmaBase, (u32)n->taskpa);
+	drw(&n->d, RegPcOpEn, 1);
+	drw(&n->d, RegPcOpEn, 0);
+	for(i = 0; i < 200 && (raw = drd(&n->d, RegIntRaw)) == 0; i++)
+		sleep(1);
+	back = drd(&n->d, off);
+	print("npufs: wtest %#x <- %#x reads %#x raw %#x task %#x\n",
+	      off, val, back, raw, drd(&n->d, RegPcTaskStatus));
+	drw(&n->d, RegIntClear, 0x1ffff);
+	return 0;
 }
 
 static void
@@ -588,7 +680,7 @@ emitcna(Npu *n, u64 *w, int *i, int start)
 	emit(w, i, CnaTarget, CnaCvtCon5, 0xffff);
 	emit(w, i, CnaTarget, CnaPadCon0, 0);
 	emit(w, i, CnaTarget, CnaPadCon1, 0x80);
-	emit(w, i, CnaTarget, CnaFeatureAddr, (u32)n->scratchpa);
+	emit(w, i, CnaTarget, CnaFeatureAddr, reloc(n, n->scratchpa));
 	emit(w, i, CnaTarget, CnaDmaCon0, (15<<16)|15);
 	emit(w, i, CnaTarget, CnaDmaCon1, 1);
 	emit(w, i, CnaTarget, CnaDmaCon2, 0);
@@ -596,7 +688,7 @@ emitcna(Npu *n, u64 *w, int *i, int start)
 	emit(w, i, CnaTarget, CnaFcSize1, 32);
 	emit(w, i, CnaTarget, CnaDcompCtrl, 0);
 	emit(w, i, CnaTarget, CnaDcompRegnum, 0);
-	emit(w, i, CnaTarget, CnaDcompAddr0, (u32)n->scratchpa + 0x200);
+	emit(w, i, CnaTarget, CnaDcompAddr0, reloc(n, n->scratchpa + 0x200));
 	emit(w, i, CnaTarget, CnaDcompAmount0, 0);
 	if(start)
 		emit(w, i, CnaTarget, CnaOpEn, 1);
@@ -697,6 +789,139 @@ cnatest(Npu *n, int broadcast)
 	print("\n");
 	if(!done)
 		setwhy(n, "CNA did not signal (raw %#ux)", raw);
+	else
+		n->why[0] = 0;
+	return done ? 0 : -1;
+}
+
+/*
+ * The whole pipeline for a 1x1x1 int8 convolution.  Every address operand
+ * is task-relative and every target lies in the scratch buffer; the IOMMU
+ * still guards the rest of the address space.
+ */
+static int
+convtest(Npu *n)
+{
+	Task *t;
+	u64 *w;
+	u8 *in, *wt;
+	int i, raw, done;
+
+	if(pmuon(n) < 0)
+		return -1;
+	if(n->task == nil){
+		n->task = drvdma(&n->d, 4096, 64, &n->taskpa);
+		n->cmd = drvdma(&n->d, 4096, 64, &n->cmdpa);
+	}
+	if(n->scratch == nil)
+		n->scratch = drvdma(&n->d, 0x4000, 64, &n->scratchpa);
+	if(n->task == nil || n->cmd == nil || n->scratch == nil){
+		setwhy(n, "no DMA arena for the conv test");
+		return -1;
+	}
+	softreset(n);
+	if(iommuon(n) < 0)
+		return -1;
+	memset(n->task, 0, 4096);
+	memset(n->cmd, 0, 4096);
+	memset(n->scratch, 0, 0x4000);
+	in = n->scratch;
+	wt = (u8 *)n->scratch + 0x200;
+	in[0] = 2;
+	wt[0] = 3;
+
+	w = n->cmd;
+	i = 0;
+	emitcna(n, w, &i, 0);
+	/* CORE */
+	emit(w, &i, CoreTarget, CoreMiscCfg, 1);
+	emit(w, &i, CoreTarget, CoreDataoutSize0, 0);
+	emit(w, &i, CoreTarget, CoreDataoutSize1, 0);
+	emit(w, &i, CoreTarget, CoreClipTruncate, 0);
+	/* DPU */
+	emit(w, &i, DpuTarget, DpuFeatureModeCfg, (15<<5)|(2<<1));
+	emit(w, &i, DpuTarget, DpuDataFormat, 0);
+	emit(w, &i, DpuTarget, DpuOffsetPend, 0);
+	emit(w, &i, DpuTarget, DpuDstBaseAddr, reloc(n, n->scratchpa + 0x1000));
+	emit(w, &i, DpuTarget, DpuDstSurfStride, 1<<4);
+	emit(w, &i, DpuTarget, DpuCubeWidth, 0);
+	emit(w, &i, DpuTarget, DpuCubeHeight, 0);
+	emit(w, &i, DpuTarget, DpuCubeNotch, 0);
+	emit(w, &i, DpuTarget, DpuCubeChannel, 31);
+	emit(w, &i, DpuTarget, DpuBsCfg, (2<<16)|(1<<8)|(1<<6)|(1<<4));
+	emit(w, &i, DpuTarget, DpuBsOwCfg, (1<<8)|(1<<5)|(1<<2));
+	emit(w, &i, DpuTarget, DpuBsOwOp, 0x80);
+	emit(w, &i, DpuTarget, DpuWdmaSize0, 31);
+	emit(w, &i, DpuTarget, DpuWdmaSize1, 0);
+	emit(w, &i, DpuTarget, DpuBnCfg, (1<<6)|(1<<4)|(1<<1)|1);
+	emit(w, &i, DpuTarget, DpuEwCfg, (1<<9)|(1<<8)|(1<<7)|(1<<1)|1);
+	emit(w, &i, DpuTarget, DpuOutCvtOffset, 0xffffff80);
+	emit(w, &i, DpuTarget, DpuOutCvtScale, 0x4000);
+	emit(w, &i, DpuTarget, DpuOutCvtShift, 14);
+	/* DPU_RDMA */
+	emit(w, &i, RdmaTarget, RdmaCubeWidth, 0);
+	emit(w, &i, RdmaTarget, RdmaCubeHeight, 0);
+	emit(w, &i, RdmaTarget, RdmaCubeChannel, 31);
+	emit(w, &i, RdmaTarget, RdmaSrcBaseAddr, reloc(n, n->scratchpa + 0x800));
+	emit(w, &i, RdmaTarget, RdmaBrdmaCfg, 1<<1);
+	emit(w, &i, RdmaTarget, RdmaBsBaseAddr, reloc(n, n->scratchpa + 0x300));
+	emit(w, &i, RdmaTarget, RdmaErdmaCfg, 1);
+	emit(w, &i, RdmaTarget, RdmaEwBaseAddr, reloc(n, n->scratchpa + 0xc00));
+	emit(w, &i, RdmaTarget, RdmaEwSurfStride, 0);
+	emit(w, &i, RdmaTarget, RdmaFeatureModeCfg, (15<<11)|(1<<4));
+	emit(w, &i, RdmaTarget, RdmaSrcDmaCfg, 0);
+	/* trailer, with the broadcast operation-enable */
+	w[i++] = 0;
+	emit(w, &i, PcTarget, PcRegAmounts, 0);
+	w[i++] = 0x0041000000000000ULL;
+	emit(w, &i, GlobTarget, PcOpEnReg, 0x1d);
+
+	t = n->task;
+	t->int_mask = 0x1ffff;
+	t->int_clear = 0x1ffff;
+	t->regcfg_amount = i - 4;
+	t->regcmd_addr = n->cmdpa;
+
+	drvdmacache(DrvClean, n->cmdpa, 4096);
+	drvdmacache(DrvClean, n->taskpa, 4096);
+	drvdmacache(DrvClean, n->scratchpa, 0x4000);
+
+	drw(&n->d, RegIntClear, 0x1ffff);
+	drw(&n->d, RegIntMask, 0x1ffff);
+	drw(&n->mmu, MmuIntclear, 3);
+	drw(&n->mmu, MmuCommand, 5);
+	drw(&n->d, RegPcDataAddr, (u32)n->cmdpa);
+	drw(&n->d, RegPcDataAmount, t->regcfg_amount + 3);
+	drw(&n->d, RegPcTaskControl, (6<<12) | 1);
+	drw(&n->d, RegPcDmaBase, (u32)n->taskpa);
+	drw(&n->d, RegPcOpEn, 1);
+	drw(&n->d, RegPcOpEn, 0);
+
+	raw = 0;
+	for(i = 0; i < 1000; i++){
+		raw = drd(&n->d, RegIntRaw);
+		if(raw != 0)
+			break;
+		sleep(1);
+	}
+	done = raw != 0;
+	n->lastraw = raw;
+	drw(&n->d, RegIntClear, 0x1ffff);
+	if(n->iommue){
+		drw(&n->mmu, MmuIntclear, 3);
+		drw(&n->mmu, MmuCommand, 5);
+	}
+	drvdmacache(DrvInval, n->scratchpa, 0x4000);
+	print("npufs: conv raw %#ux status %#ux pc %#ux out %02ux %02ux %02ux %02ux",
+	      raw, drd(&n->d, RegIntStatus), drd(&n->d, RegPcTaskStatus),
+	      ((u8 *)n->scratch)[0x1000], ((u8 *)n->scratch)[0x1001],
+	      ((u8 *)n->scratch)[0x1002], ((u8 *)n->scratch)[0x1003]);
+	if(n->iommue)
+		print(" iommu raw %#ux fault %#ux",
+		      drd(&n->mmu, MmuIntraw), drd(&n->mmu, MmuFaultaddr));
+	print("\n");
+	if(!done)
+		setwhy(n, "blocks did not signal (raw %#ux)", raw);
 	else
 		n->why[0] = 0;
 	return done ? 0 : -1;
@@ -842,6 +1067,13 @@ ctlcmd(Npu *n, char *line)
 		cnatest(n, 0);
 	}else if(strcmp(f[0], "bcna") == 0){
 		cnatest(n, 1);
+	}else if(strcmp(f[0], "dummy") == 0 && nf >= 2){
+		n->dummy = drvdma(&n->d, strtoul(f[1], nil, 0), 64, &n->dummypa);
+		print("npufs: dummy %#llux\n", n->dummypa);
+	}else if(strcmp(f[0], "conv") == 0){
+		convtest(n);
+	}else if(strcmp(f[0], "wtest") == 0 && nf >= 3){
+		wtest(n, strtoul(f[1], nil, 0), strtoul(f[2], nil, 0));
 	}else if(strcmp(f[0], "iommu") == 0){
 		if(iommuon(n) < 0)
 			print("npufs: iommu: %s\n", n->why);
