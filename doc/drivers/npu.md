@@ -183,6 +183,9 @@ CBUF data (the CNA's 1-channel output has to fill the 32-channel atom the
 CORE reads).  `INT_RAW` stays zero because the job only interrupts when the
 whole chain finishes.
 
+Setting `DCOMP_CTRL`'s `WT_DEC_BYPASS` (bit 3) for raw weights made no
+difference, so the CNA is not stuck in the weight decompressor.
+
 ## Next
 
 1. Feed the CORE what it waits for: the CBUF bank/entry counts and the

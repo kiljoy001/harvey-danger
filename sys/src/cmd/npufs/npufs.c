@@ -686,7 +686,7 @@ emitcna(Npu *n, u64 *w, int *i, int start)
 	emit(w, i, CnaTarget, CnaDmaCon2, 0);
 	emit(w, i, CnaTarget, CnaFcSize0, (1<<16)|1);
 	emit(w, i, CnaTarget, CnaFcSize1, 32);
-	emit(w, i, CnaTarget, CnaDcompCtrl, 0);
+	emit(w, i, CnaTarget, CnaDcompCtrl, 8);	/* WT_DEC_BYPASS: raw weights */
 	emit(w, i, CnaTarget, CnaDcompRegnum, 0);
 	emit(w, i, CnaTarget, CnaDcompAddr0, reloc(n, n->scratchpa + 0x200));
 	emit(w, i, CnaTarget, CnaDcompAmount0, 0);
