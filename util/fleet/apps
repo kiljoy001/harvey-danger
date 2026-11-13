@@ -5,3 +5,10 @@ dis=files
 mode=once
 snap=fleet/cartoons.status
 context=files:remote/babyfs/usr/scott/cartoons
+
+name=calendar
+title=Calendar
+dis=calendar
+mode=once
+snap=fleet/calendar.status
+context=calendar:

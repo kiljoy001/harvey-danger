@@ -1,0 +1,13 @@
+schema=calendar
+
+date=2026-11-13
+title=Fri 13
+status=3 events
+
+date=2026-11-14
+title=Sat 14
+status=1 event
+
+date=2026-11-15
+title=Sun 15
+status=free
