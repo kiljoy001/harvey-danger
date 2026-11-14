@@ -13,6 +13,7 @@
  */
 #include <u.h>
 #include <libc.h>
+#include <rockchip/rk356x.h>
 
 /* SDHCI register offsets (SD Host Controller Simplified Spec 3.0). */
 enum {
@@ -160,6 +161,54 @@ mapdev(void)
 {
 	mmio = mapnode("mmc@fe310000", 0xfe310000);
 	return 0;
+}
+
+/*
+ * The eMMC pins share the RK3566 flash pin group with the FSPI boot-flash
+ * controller.  sfcs remuxes GPIO1_C7 from eMMC RSTn to FSPI CS1 at
+ * startup, which holds the card in reset: CMD0 completes (it needs no
+ * response) but CMD1 times out.  Restore the eMMC function before
+ * touching the card.  The GRF iomux registers are hiword-masked: the
+ * upper 16 bits say which 4-bit fields the write applies to.
+ */
+static void
+emmc_pinmux(void)
+{
+	static struct { int bank, pin, func; } pins[] = {
+		/* emmc-bus8 / emmc-cmd / emmc-clk / emmc-datastrobe /
+		 * emmc-rstnout from the board DTS: GPIO1 B4-B7 and C0-C7,
+		 * function 1.  sfcs remuxes C7 to FSPI CS1, which holds the
+		 * card in reset and is why CMD1 never answers. */
+		{1, 0x0c, 1}, {1, 0x0d, 1}, {1, 0x0e, 1}, {1, 0x0f, 1},
+		{1, 0x10, 1}, {1, 0x11, 1}, {1, 0x12, 1}, {1, 0x13, 1},
+		{1, 0x14, 1}, {1, 0x15, 1}, {1, 0x16, 1}, {1, 0x17, 1},
+		/* flash_volsel = GPIO0_A7 in PMU_GRF. */
+		{0, 0x07, 1},
+	};
+	static u8 *grf, *pmugrf;
+	static int shown;
+	u32 mask, v;
+	int i, off, shift;
+
+	if(grf == nil){
+		grf = mapnode("syscon@fdc60000", 0xfdc60000);
+		pmugrf = mapnode("syscon@fdc20000", 0xfdc20000);
+	}
+	for(i = 0; i < nelem(pins); i++){
+		off = RK_IOMUX_REG(pins[i].bank, pins[i].pin);
+		shift = RK_IOMUX_SHIFT(pins[i].pin);
+		mask = 0xfu << shift;
+		v = (mask << 16) | ((u32)(pins[i].func & 0xf) << shift);
+		*(volatile u32 *)((pins[i].bank == 0 ? pmugrf : grf) + off) = v;
+	}
+	__asm__ volatile("dsb sy" ::: "memory");
+	if(verbose && !shown){
+		shown = 1;
+		print("emmc: pinmux grf18 %ux grf1c %ux pmugrf04 %ux\n",
+		      *(volatile u32 *)(grf + 0x18),
+		      *(volatile u32 *)(grf + 0x1c),
+		      *(volatile u32 *)(pmugrf + 0x04));
+	}
 }
 
 /*
@@ -785,6 +834,8 @@ readmulti(u32 lba, int count, u8 *buf)
 {
 	int n;
 
+	/* sfcs may have remuxed the shared pins since initcard(). */
+	emmc_pinmux();
 	dmainit();
 	n = 512*count;
 	dmacache(Dcivac, datapa, n);
@@ -811,6 +862,8 @@ writemulti(u32 lba, int count, u8 *buf)
 {
 	int n;
 
+	/* sfcs may have remuxed the shared pins since initcard(). */
+	emmc_pinmux();
 	dmainit();
 	n = 512*count;
 	memmove(datava, buf, n);
@@ -1291,6 +1344,7 @@ initcard(u32 *ocrp)
 	 * The card's VCC is vcc_3v3 (POWER = 3.3V) while its IO is vcc_1v8
 	 * (HOST_CONTROL2 VDD_180), which is the one combination never tried.
 	 */
+	emmc_pinmux();
 	resetall();
 	vendor_probe();
 	/*
@@ -1773,6 +1827,65 @@ main(int argc, char **argv)
 		      rd32(0x00), rd32(0x58), rd32(0x5c));
 		print("emmc: data %02x %02x %02x %02x\n",
 		      datava[0], datava[1], datava[2], datava[3]);
+		exits(nil);
+	}
+	if(strcmp(argv[1], "soak") == 0){
+		static char *name[] = { "read", "write", "verify" };
+		int mib, mode, i, k, nchunks;
+		vlong t0, t1, bytes;
+
+		if(argc < 4)
+			fail("usage: emmc soak lba mib [r|w|v]");
+		lba = strtoul(argv[2], nil, 0);
+		mib = atoi(argv[3]);
+		if(mib < 1)
+			mib = 1;
+		if(mib > 16384)
+			mib = 16384;
+		mode = 0;
+		if(argc > 4){
+			if(strcmp(argv[4], "w") == 0)
+				mode = 1;
+			else if(strcmp(argv[4], "v") == 0)
+				mode = 2;
+		}
+		if(initcard(&ocr) < 0)
+			fail("emmc: card init failed");
+		dmainit();
+		nchunks = mib * 16;		/* 64 KiB per chunk */
+		bytes = (vlong)nchunks * sizeof buf;
+		t0 = nsec();
+		for(i = 0; i < nchunks; i++){
+			for(k = 0; k < (int)sizeof buf; k++)
+				buf[k] = (k + i) & 0xff;	/* write pattern */
+			if(mode == 1){
+				if(writemulti(lba + (u32)i*128, 128, buf) < 0)
+					fail("emmc: soak write lba %ud failed",
+					     lba + (u32)i*128);
+				if((i & 15) == 15)
+					emmcflush();
+			}else if(readmulti(lba + (u32)i*128, 128, back) < 0)
+				fail("emmc: soak read lba %ud failed",
+				     lba + (u32)i*128);
+			else if(mode == 2){
+				for(k = 0; k < (int)sizeof buf; k++)
+					if(back[k] != (u8)((k + i) & 0xff))
+						fail("emmc: verify mismatch "
+						     "lba %ud offset %d",
+						     lba + (u32)i*128, k);
+			}
+			if((i & 1023) == 1023 || i == nchunks-1){
+				t1 = nsec();
+				print("emmc: soak %s %d/%d MiB %lld ns\n",
+				      name[mode], (i+1)/16, mib, t1-t0);
+			}
+		}
+		if(mode == 1)
+			emmcflush();
+		t1 = nsec();
+		print("emmc: soak %s %d MiB PASS in %lld ns: %lld KiB/s\n",
+		      name[mode], mib, t1-t0,
+		      (bytes/1024)*1000000000LL/(t1-t0));
 		exits(nil);
 	}
 	if(strcmp(argv[1], "bench") == 0){

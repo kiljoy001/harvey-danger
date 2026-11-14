@@ -26,6 +26,9 @@ rows below describe the native `o9xhci` fallback and its parity-oracle role.
 - RK809 regulators, RTC/alarm, CLKOUT2, power key (polled), thermal reporting.
 - eMMC: SDHCI/dwcmshc, 50 MHz 8-bit, HS200 200 MHz, ADMA2, `/srv/emmc`,
   `emmcfs` with a 9P block interface and boot-time read/write self-test.
+  The driver now restores the shared eMMC pin group before each transfer,
+  because `sfcs` remuxes GPIO1_C7 from eMMC RSTn to FSPI CS1 at startup.
+  A 16 GiB write and a 16 GiB read soak both completed at 83/120 MiB/s.
 - GMAC at 10 Mbps with `gmacfs`; MAC/PHY register path documented.
 - xHCI root-port enumeration, control/bulk/interrupt transfers, UAC1 probe.
 - VOP2 + DW-HDMI scanout at a fixed 1920x1080 RGB888.
@@ -200,14 +203,22 @@ read. The first-class work is:
 
 ## Reset behaviour under sustained eMMC I/O
 
-The board sometimes resets (full DDR retrain, not a kernel panic) while
-writing large runs to the eMMC, and the same has been seen while
-copying a large file out of the ext2 data partition.  Reads of the
-200 GiB partition are the least reliable operation.  The Rockchip
-preloader and ATF come back cleanly, so this looks like a supply or
-watchdog event rather than memory corruption; it is still open.
+The board sometimes reset (full DDR retrain, not a kernel panic) while
+writing large runs to the eMMC, and the same was seen while copying a
+large file out of the ext2 data partition.  The reset was tracked to
+the eMMC command path, not to the filesystem: `sfcs` remuxes GPIO1_C7
+from eMMC RSTn to FSPI CS1 at startup, so the card sat in reset and
+every data command failed.  The driver now restores the eMMC pin group
+before `initcard()` and before each ADMA2 transfer.
 
-Two operational consequences:
+After that fix the resets did not reproduce: a 16 GiB write
+(16,384 MiB at 83 MiB/s), a 16 GiB read (120 MiB/s), and a 1 GiB
+write-then-verify all completed on a cold boot with `sfcs` already
+running.  The earlier soak failures are therefore attributed to the
+pinmux conflict; a supply or thermal cause is not ruled out for longer
+runs, and the fan policy remains the mitigation if one appears.
+
+Two operational consequences remain:
 
 - Write the root filesystem in chunks (`mmc write` of 32 MiB at a time)
   rather than one 128 MiB write.

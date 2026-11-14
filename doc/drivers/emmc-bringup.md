@@ -5,8 +5,10 @@ Driver: `sys/src/cmd/emmc/emmc.c` (`/boot/emmc`), user space over the
 `#P` grant at `fe200000 + 0x110000` (the grant covers the containing
 2 MiB block, so the driver adds the in-block offset).
 
-Status: controller fully usable, **card never answers**.  The same card
-reads and writes from U-Boot in the same power cycle.
+Status: **working** — HS200 200 MHz, 8-bit, ADMA2.  The long "card never
+answers" period below had two causes: the SDHCI command/transfer
+encoding, and `sfcs` remuxing the shared eMMC reset pin at startup.
+Both are fixed; the driver restores its pin group before each transfer.
 
 ## Comparison with the vendor kernel (`9rock/linux-rockchip`)
 
@@ -311,6 +313,63 @@ Transfers still run at the 702 Hz identify clock (~6 s per 512-byte
 block).  Raising the clock needs the DLL/PHY sampling work: 25 MHz gives
 a Data End Bit Error and 5 MHz a Command End Bit Error with the bypassed
 DLL.
+
+## Second root cause: `sfcs` steals the eMMC reset pin
+
+After the command/transfer encoding was fixed, `/boot/emmc` still failed
+with `CMD0` complete and `CMD1` timing out (`EIS.CTO`).  The card was
+held in reset.  The eMMC pin group and the FSPI boot flash share
+GPIO1; one signal overlaps the FSPI function:
+
+| eMMC signal | pin | eMMC function | FSPI/firmware use |
+| --- | --- | --- | --- |
+| D0-D7 | GPIO1 B4-B7, C0-C3 | 1 | not used by FSPI |
+| CMD | GPIO1 C4 | 1 | not used by FSPI |
+| CLK | GPIO1 C5 | 1 | not used by FSPI |
+| DATASTROBE | GPIO1 C6 | 1 | not used by FSPI |
+| RSTn | GPIO1 **C7** | 1 | **FSPI CS1 (function 2)** |
+
+`sfcs` configures the boot SPI NOR at startup and writes
+`SYS_GRF 0x14 = 0x000f2000`, which remuxes GPIO1 C7 from eMMC RSTn to
+FSPI CS1.  The eMMC's reset line is then held, so the controller can
+transmit `CMD0` (no response required, so it "completes") but the card
+never answers `CMD1`, `CMD2` or `CMD13`.
+
+The previous working tests predate the `sfcs` service.  The driver now
+reprograms the `emmc-bus8`, `emmc-cmd`, `emmc-clk`, `emmc-datastrobe`
+and `emmc-rstnout` groups (GPIO1 B4-B7/C0-C7, function 1) and
+`flash_volsel` (GPIO0_A7, PMU_GRF) before `initcard()` and before every
+ADMA2 transfer.  The GRF iomux registers are written with the RK356x
+hiword mask.
+
+Verified after the fix (cold boot, `sfcs` already running):
+
+```
+emmc: pinmux grf18 1111 grf1c 1111 pmugrf04 1001
+emmc: cmd0 ok present 3f700f0
+emmc: cid 9010f0ba 363411fc 41334135 00d62903
+emmc: csd ef964000 ffffffff 329f5903 00d0ffff
+emmc: hs200 dll 13b rx aa007800 tx 29000010 hc2 b
+emmc: tuning ok hc2 8b
+emmc: lba0 signature 55aa
+```
+
+`sfcs` still remuxes C7 whenever it is asked to read the boot flash, so
+a pinmux arbiter is the long-term fix; the per-transfer restore keeps
+the eMMC usable in the meantime.
+
+Sustained-I/O results after the fix (cold boot, `sfcs` running):
+
+```
+emmc: soak write 16384 MiB PASS in 198026671680 ns: 84809 KiB/s
+emmc: soak read  16384 MiB PASS in 136825107048 ns: 119874 KiB/s
+emmc: soak write  1024 MiB PASS in 12203591451 ns:  85923 KiB/s
+emmc: soak verify 1024 MiB PASS in 18105327615 ns:  57915 KiB/s
+```
+
+The verify pass rewrites the deterministic pattern and compares every
+byte read back.  `/boot/emmc soak <lba> <mib> [r|w|v]` is the soak
+tool; `w` writes, `v` verifies, the default is a read.
 
 ## Working driver: 50 MHz, 8-bit
 

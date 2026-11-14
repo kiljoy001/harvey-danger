@@ -480,6 +480,10 @@ main(int argc, char **argv)
 	 * FSPI pins, SYS_GRF hiword write masks (full 4-bit fields):
 	 * D0-D3 -> 0x18 bits 0,4,8,12 = 1; D4 -> 0x1c bit 0 = 1;
 	 * B7 (d2) -> 0x0c bits 12-15 = 2.
+	 *
+	 * GPIO1_C7 is also the eMMC RSTn pin.  The eMMC driver restores
+	 * its pin group before every transfer, so this is survivable, but
+	 * a future pinmux arbiter should hand the pin back after identify.
 	 */
 	drw(&sfc.grf, 0x18, 0xffff1111);
 	drw(&sfc.grf, 0x1c, 0x000f0001);
