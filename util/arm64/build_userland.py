@@ -800,9 +800,10 @@ def userland_signature() -> str:
     # to be part of the cache key or a stale archive is reused.
     gefs = os.environ.get("ARM64_BUILD_GEFS", "0")
     ucc = os.environ.get("UCC", "")
+    nolkl = os.environ.get("ARM64_NO_LKL", "0")
     return buildcache.signature(
         ["build_userland", "no-usbpower=" + variant, "gefs=" + gefs,
-         "ucc=" + ucc], files)
+         "ucc=" + ucc, "no-lkl=" + nolkl], files)
 
 
 def main() -> None:
@@ -2107,7 +2108,7 @@ main(int argc, char **argv)
     # practical as a second TFTP transfer on boards whose U-Boot boot script
     # is compiled in, so bake it in when it has been built.
     lklboot = ROOT / "build/arm64-lkl/lklboot.stripped"
-    if lklboot.is_file():
+    if lklboot.is_file() and os.environ.get("ARM64_NO_LKL") != "1":
         emit_array(lines, "arm64lklbootelf", lklboot.read_bytes())
         lines.append("#define ARM64_EMBED_LKL 1")
     # The gefs bring-up build embeds the files the re-root path needs
