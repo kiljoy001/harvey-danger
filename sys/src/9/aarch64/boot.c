@@ -295,6 +295,15 @@ initprocess(void *arg)
 	p->dot = cclone(p->slash);
 	devtabinit();
 	consoleuartinit(bootinfo);
+	if(bootinfo != nil && bootinfo->nvirtio > 0){
+		extern void ethervmmioinit(void);
+		extern void ethermediumlink(void);
+
+		ethervmmioinit();
+		ethermediumlink();
+		etherdevtab.reset();
+		ipdevtab.reset();
+	}
 	if(useruartbase == 0xfe660000ULL){
 		/* U-Boot may leave the RK3566 watchdog running; a long SDK
 		 * unpack would reset the board.  Disable it. */
@@ -664,6 +673,7 @@ arm64kernelstart(Fdtinfo *info)
 		    sizeof(arm64testaudioelf));
 	addbootfile("uartfs", (u8 *)arm64uartfself, sizeof(arm64uartfself));
 	addbootfile("gpufs", (u8 *)arm64gpufself, sizeof(arm64gpufself));
+	addbootfile("emmclog", (u8 *)arm64emmclogelf, sizeof(arm64emmclogelf));
 	addbootfile("adrenofs", (u8 *)arm64adrenofself, sizeof(arm64adrenofself));
 	addbootfile("npufs", (u8 *)arm64npufself, sizeof(arm64npufself));
 	addbootfile("gpiofs", (u8 *)arm64gpiofself, sizeof(arm64gpiofself));
@@ -682,6 +692,7 @@ arm64kernelstart(Fdtinfo *info)
 	addbootfile("mkdir", (u8 *)arm64mkdirelf, sizeof(arm64mkdirelf));
 	addbootfile("mount", (u8 *)arm64mountelf, sizeof(arm64mountelf));
 	addbootfile("mount9", (u8 *)arm64mount9elf, sizeof(arm64mount9elf));
+	addbootfile("netexport", (u8 *)arm64netexportelf, sizeof(arm64netexportelf));
 	addbootfile("usbpower", (u8 *)arm64usbpowerelf, sizeof(arm64usbpowerelf));
 	addbootfile("rc", (u8 *)arm64rcelf, sizeof(arm64rcelf));
 	addbootfile("echo", (u8 *)arm64echoelf, sizeof(arm64echoelf));

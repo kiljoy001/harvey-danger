@@ -178,7 +178,8 @@ def main() -> None:
                 "phys.c", "mmu.c", "user.c", "context.c", "arch.c",
                 "config.c", "qmalloc.c", "platform.c", "procarch.c", "syscall.c", "smp.c",
                 "boot.c", "devpnp.c", "vop2.c", "dw_hdmi.c", "devvop.c",
-                "devxhci.c", "rkiommu.c", "etheraarch64.c", "ethergmac.c")]
+                "devxhci.c", "rkiommu.c", "etheraarch64.c", "ethergmac.c",
+                "ethervmmio.c")]
     core_devices = {
         "dev.c", "devcap.c", "devcons.c", "devdup.c", "devenv.c",
         "devmnt.c", "devpipe.c", "devproc.c", "devramfs.c",

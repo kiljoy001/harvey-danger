@@ -38,6 +38,7 @@ EXT2SRV_BASE = 0xBA00000
 PROVISION_BASE = 0xBE00000
 GEFS_BASE = 0xC200000
 BIGTEST_BASE = 0xCA00000
+NETEXPORT_BASE = 0xCC00000
 RC_BASE = 0x2A00000
 ECHO_BASE = 0x2E00000
 CAT_BASE = 0x3200000
@@ -1113,6 +1114,48 @@ dataserve(void)
 	return 0;
 }
 
+static char netconfbuf[512];
+static int netconfloaded;
+
+/* net.conf is written by the 9vm host for a pod: ip= mask= port= root= */
+static int
+netconf(char *key, char *out, int n)
+{
+	char *p, *e;
+	int fd, m, kl, i;
+
+	if(!netconfloaded){
+		netconfloaded = 1;
+		fd = open("/mnt/host/net.conf", OREAD);
+		if(fd >= 0){
+			m = read(fd, netconfbuf, sizeof netconfbuf - 1);
+			close(fd);
+			if(m > 0)
+				netconfbuf[m] = 0;
+		}
+	}
+	kl = strlen(key);
+	for(p = netconfbuf; *p != 0; p = e){
+		e = strchr(p, '\n');
+		if(e == nil)
+			e = p + strlen(p);
+		if(strncmp(p, key, kl) == 0 && p[kl] == '='){
+			i = (int)(e - (p + kl + 1));
+			if(i >= n)
+				i = n - 1;
+			if(i < 0)
+				i = 0;
+			memmove(out, p + kl + 1, i);
+			out[i] = 0;
+			return 0;
+		}
+		if(*e == 0)
+			break;
+		e++;
+	}
+	return -1;
+}
+
 void
 main(int argc, char **argv)
 {
@@ -1329,9 +1372,35 @@ main(int argc, char **argv)
 				say("HARVEY-ARM64 NET-BIND FAIL\n");
 		}
 	}
+	/*
+	 * Host files from the microVM's virtio-9P device.  The kernel
+	 * exposes each tag as #9/<n>; 9vm-arm64 exports the runner's
+	 * -r directory as tag 0.  The root is the read-only boot
+	 * archive, so the mount point lives in the writable /mnt tree.
+	 */
 	{
-		char buf[256];
+		int hfd = open("#9/0", ORDWR);
+
+		if(hfd < 0){
+			say("HARVEY-ARM64 HOSTFS SKIP\n");
+		}else{
+			create("/mnt/host", OREAD, DMDIR|0777);
+			if(mount(hfd, -1, "/mnt/host", MREPL|MCREATE, "") < 0)
+				say("HARVEY-ARM64 HOSTFS MOUNT FAIL\n");
+			else
+				say("HARVEY-ARM64 HOSTFS PASS\n");
+			close(hfd);
+		}
+	}
+	{
+		char buf[256], ip[64], mask[64], port[16], root[128];
 		int fd, m, ok;
+
+		ip[0] = mask[0] = port[0] = root[0] = 0;
+		netconf("ip", ip, sizeof ip);
+		netconf("mask", mask, sizeof mask);
+		netconf("port", port, sizeof port);
+		netconf("root", root, sizeof root);
 
 		ok = 1;
 		if((fd = open("/net/ipifc/clone", ORDWR)) < 0){
@@ -1349,12 +1418,36 @@ main(int argc, char **argv)
 				say(buf);
 				ok = 0;
 			}
-			if(ok && write(fd, "add 192.168.2.248 255.255.255.0", 31) < 0){
-				snprint(buf, sizeof buf, "HARVEY-ARM64 NET-IFC FAIL add %r\n");
-				say(buf);
-				ok = 0;
+			if(ok){
+				if(ip[0] != 0)
+					snprint(buf, sizeof buf, "add %s %s", ip,
+					        mask[0] != 0 ? mask : "255.255.255.0");
+				else
+					snprint(buf, sizeof buf,
+					        "add 192.168.2.248 255.255.255.0");
+				if(write(fd, buf, strlen(buf)) < 0){
+					snprint(buf, sizeof buf, "HARVEY-ARM64 NET-IFC FAIL add %r\n");
+					say(buf);
+					ok = 0;
+				}
 			}
 			close(fd);
+		}
+		if(ok && port[0] != 0){
+			char addr[64];
+			char *av[] = { "/boot/netexport", addr,
+			               root[0] != 0 ? root : "/mnt/host/data", nil };
+
+			snprint(addr, sizeof addr, "tcp!*!%s", port);
+			pid = rfork(RFPROC|RFFDG|RFNOTEG);
+			if(pid == 0){
+				exec(av[0], av);
+				snprint(buf, sizeof buf, "HARVEY-ARM64 NET-EXPORT EXEC FAIL %r\n");
+				say(buf);
+				_exits("exec");
+			}
+			if(pid > 0)
+				say("HARVEY-ARM64 NET-EXPORT START\n");
 		}
 		if(ok){
 			if((fd = open("/net/ipifc/0/status", OREAD)) < 0)
@@ -1732,26 +1825,6 @@ main(int argc, char **argv)
 		}
 		say("HARVEY-ARM64 LKL SERVICES START\n");
 	}
-	/*
-	 * Host files from the microVM's virtio-9P device.  The kernel
-	 * exposes each tag as #9/<n>; 9vm-arm64 exports the runner's
-	 * -r directory as tag 0.  The root is the read-only boot
-	 * archive, so the mount point lives in the writable /mnt tree.
-	 */
-	{
-		int hfd = open("#9/0", ORDWR);
-
-		if(hfd < 0){
-			say("HARVEY-ARM64 HOSTFS SKIP\n");
-		}else{
-			create("/mnt/host", OREAD, DMDIR|0777);
-			if(mount(hfd, -1, "/mnt/host", MREPL|MCREATE, "") < 0)
-				say("HARVEY-ARM64 HOSTFS MOUNT FAIL\n");
-			else
-				say("HARVEY-ARM64 HOSTFS PASS\n");
-			close(hfd);
-		}
-	}
 	{
 		char *rcargv[] = { "/boot/rc", "-i", "-m", "/boot/rcmain", nil };
 		say("HARVEY-ARM64 RC START\n");
@@ -1800,6 +1873,9 @@ main(int argc, char **argv)
                             MKDIR_BASE, [])
     mount9bin, _ = build_elf(out, libc, "mount9", ROOT / "sys/src/cmd/mount9.c",
                             MOUNT9_BASE, [])
+    netexport, _ = build_elf(out, libc, "netexport",
+                             ROOT / "sys/src/cmd/netexport/netexport.c",
+                             NETEXPORT_BASE, [])
     mountbin, _ = build_elf(out, libc, "mount", ROOT / "sys/src/cmd/mount.c",
                             MOUNT_BASE,
                             [ROOT / "build/arm64-o9/libauth.a",
@@ -2476,6 +2552,7 @@ main(int argc, char **argv)
     emit_array(lines, "arm64mkdirelf", mkdirbin)
     emit_array(lines, "arm64mountelf", mountbin)
     emit_array(lines, "arm64mount9elf", mount9bin)
+    emit_array(lines, "arm64netexportelf", netexport)
     emit_array(lines, "arm64emmclogelf", emmclog)
     emit_array(lines, "arm64emmcfsimage", emmcfs)
     emit_array(lines, "arm64gmacfsimage", gmacfs)
@@ -2542,6 +2619,7 @@ main(int argc, char **argv)
         "mkdir": mkdirbin,
         "mount": mountbin,
         "mount9": mount9bin,
+        "netexport": netexport,
         "emmcfs": emmcfs,
         "ext2srv": ext2srv,
         "gmacfs": gmacfs,

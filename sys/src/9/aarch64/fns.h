@@ -13,6 +13,8 @@
 #define evenaddr(x) ((void)0)
 #define kmapinval() ((void)0)
 u64 PADDR(void *);
+struct Fdtvirtio;
+int arm64virtioapatures(struct Fdtvirtio *, int);
 
 KMap *kmap(Page *);
 Mach *getac(Proc *, int);

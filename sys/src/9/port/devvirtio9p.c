@@ -258,6 +258,17 @@ enum {
 static Fdtvirtio virtioaperture[Maxfdtvirtio];
 static int nvirtioaperture;
 
+/* Other virtio-mmio drivers (net) share the apertures the FDT gave us. */
+int
+arm64virtioapatures(Fdtvirtio *out, int max)
+{
+	int n = nvirtioaperture < max ? nvirtioaperture : max;
+
+	if(n > 0)
+		memmove(out, virtioaperture, (usize)n * sizeof *out);
+	return n;
+}
+
 void
 arm64virtio9pconfigure(Fdtinfo *info)
 {
