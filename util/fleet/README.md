@@ -16,15 +16,19 @@ The default bind is `127.0.0.1`.  For the tablet on the LAN, pass
 ```text
 schema=app
 
-name=cartoons
+name=media
+title=Media Player
 dis=files
 mode=once
-snap=fleet/cartoons.status
-context=files:remote/babyfs/usr/scott/cartoons
+snap=fleet/media.status
+context=media:remote/babyfs/usr/scott/cartoons
 ```
 
-`context=files:<path>` opens the tablet Files view at a virtual path
-when the tile is tapped.  `snap=fleet/<name>` reads the tile subtitle
+`context=media:<path>` opens Wada's media browser at a virtual path
+when the tile is tapped.  `context=files:<path>` still opens the
+generic Files view.  Media cover art lives in
+`fleet/media/thumbs/<fnv64>.thumb`; see the tablet's
+`docs/MEDIA.md` and `tools/media-thumbs.py`.  `snap=fleet/<name>` reads the tile subtitle
 from this directory.
 
 Keep `u9fs` on loopback or Ygg; `-a none` has no authentication.

@@ -1,10 +1,11 @@
 schema=app
 
-name=cartoons
+name=media
+title=Media Player
 dis=files
 mode=once
-snap=fleet/cartoons.status
-context=files:remote/babyfs/usr/scott/cartoons
+snap=fleet/media.status
+context=media:remote/babyfs/usr/scott/cartoons
 
 name=calendar
 title=Calendar
@@ -12,3 +13,28 @@ dis=calendar
 mode=once
 snap=fleet/calendar.status
 context=calendar:
+
+name=library
+title=Library
+dis=library
+mode=once
+snap=fleet/library.status
+context=library:
+
+name=chat
+title=Chat
+dis=chat
+mode=once
+snap=chat.status
+
+name=watch
+title=Watch
+dis=watch
+mode=once
+snap=reflex.status
+
+name=shell
+title=Shell
+dis=shell
+mode=once
+snap=shell.status

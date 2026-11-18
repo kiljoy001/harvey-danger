@@ -11,5 +11,9 @@ root=${1:-$(cd "$(dirname "$0")" && pwd)}
 port=${2:-5655}
 user=${3:-$(id -un)}
 bind=${4:-127.0.0.1}
+# 8 KiB reads make multi-MB media copies slow; u9fs can negotiate a
+# larger msize, and src/p9.c asks for up to 32 KiB when the server
+# offers it.
+msize=${MSIZE:-65536}
 exec socat "TCP4-LISTEN:${port},bind=${bind},reuseaddr,fork" \
-	"EXEC:/usr/local/bin/u9fs -a none -u ${user} ${root}"
+	"EXEC:/usr/local/bin/u9fs -a none -m ${msize} -u ${user} ${root}"
