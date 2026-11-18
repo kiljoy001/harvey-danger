@@ -42,23 +42,29 @@ enum { TlbSGI = 0 };	/* software-generated interrupt used for TLB shootdown */
  * touched until a driver asks for an interrupt, so a board with no IRQ
  * consumers behaves exactly as before.
  */
-enum { Nirqwait = 256 };
+enum { Nirqwait = 992, Nirqwaiter = 4 };
+typedef struct Irqwaiter Irqwaiter;
+struct Irqwaiter {
+	Rendez r;
+	u32 *countp;
+	u32 seen;
+	int used;
+};
 typedef struct Irqwait Irqwait;
 struct Irqwait {
-	Rendez r;
 	u32 count;
-	u32 seen;
-	int open;
+	int nused;
+	Irqwaiter w[Nirqwaiter];
 };
 static Irqwait irqwait[Nirqwait];
 
 static int
 irqready(void *a)
 {
-	Irqwait *w;
+	Irqwaiter *iw;
 
-	w = a;
-	return w->count != w->seen;
+	iw = a;
+	return *iw->countp != iw->seen;
 }
 
 static Irqwait *
@@ -69,30 +75,42 @@ irqslot(u32 irq)
 	return &irqwait[irq - 32];
 }
 
+/*
+ * Returns a waiter id >= 0, or -1.  A line may have several waiters
+ * (two LKL guests can both watch the PMIC arbiter line); each waiter
+ * sleeps on its own Rendez -- this kernel panics on two procs asleep
+ * on one Rendez ("double sleep") -- and keeps its own seen counter.
+ * The GIC line itself is programmed once, when the first waiter
+ * arrives, and masked when the last one leaves.
+ */
 int
 arm64irqenable(u32 irq)
 {
 	Irqwait *w;
 	u32 mask, prio, shift;
+	int i;
 
 	if(gicdist == nil || (w = irqslot(irq)) == nil)
 		return -1;
-	/*
-	 * One reader per line.  A second one would share the single rendez
-	 * and the single "seen" counter, which corrupts both (and panics the
-	 * kernel with "double sleep").  This also turns a leaked watcher from
-	 * a crashed guest into a clean open error instead of corruption.
-	 */
-	if(w->open)
+	for(i = 0; i < Nirqwaiter; i++)
+		if(!w->w[i].used)
+			break;
+	if(i >= Nirqwaiter)
 		return -1;
+	w->w[i].used = 1;
+	w->w[i].countp = &w->count;
+	w->w[i].seen = w->count;
+	if(w->nused++ > 0)
+		return i;
 	mask = 1U << (irq % 32);
 	prio = 0x400/4 + irq/4;
 	shift = (irq % 4) * 8;
 	gicdist[prio] = (gicdist[prio] & ~(0xffU << shift)) | (0xa0U << shift);
 	if(irq > 15)
 		if(isgicv3){
-			*(volatile u64 *)((u8 *)gicdist + 0x6000 + irq*8) = 0;
-			gicdist[0x080/4] |= mask;
+			*(volatile u32 *)((u8 *)gicdist + 0x6000 + irq*8) = 0;
+			*(volatile u32 *)((u8 *)gicdist + 0x6000 + irq*8 + 4) = 0;
+			gicdist[0x080/4 + irq/32] |= mask;
 		}else{
 			u32 t = 0x800/4 + (irq & ~3)/4;
 			u32 s = (irq & 3) * 8;
@@ -100,33 +118,44 @@ arm64irqenable(u32 irq)
 			gicdist[0x080/4] &= ~mask;
 		}
 	gicdist[0x100/4 + irq/32] = mask;
-	w->open = 1;
 	__asm__ volatile("dsb sy; isb" ::: "memory");
-	return 0;
+	return i;
 }
 
 void
-arm64irqdisable(u32 irq)
+arm64irqdisable(u32 irq, int id)
 {
 	Irqwait *w;
 
 	if(gicdist == nil || (w = irqslot(irq)) == nil)
 		return;
+	if(id < 0 || id >= Nirqwaiter || !w->w[id].used)
+		return;
+	w->w[id].used = 0;
+	if(--w->nused > 0)
+		return;
 	gicdist[0x180/4 + irq/32] = 1U << (irq % 32);
-	w->open = 0;
 	__asm__ volatile("dsb sy" ::: "memory");
 }
 
 int
-arm64irqwait(u32 irq)
+arm64irqwait(u32 irq, int id)
 {
 	Irqwait *w;
+	Irqwaiter *iw;
 
-	if((w = irqslot(irq)) == nil || !w->open)
+	if((w = irqslot(irq)) == nil)
 		return -1;
-	while(w->count == w->seen)
-		sleep(&w->r, irqready, w);
-	w->seen = w->count;
+	if(id < 0 || id >= Nirqwaiter || !w->w[id].used)
+		return -1;
+	iw = &w->w[id];
+	if(w->count == iw->seen && gicdist != nil && irq >= 32){
+		gicdist[0x100/4 + irq/32] = 1U << (irq % 32);
+		__asm__ volatile("dsb sy" ::: "memory");
+	}
+	while(w->count == iw->seen)
+		sleep(&iw->r, irqready, iw);
+	iw->seen = w->count;
 	return (int)w->count;
 }
 
@@ -135,10 +164,21 @@ irqnote(u32 irq)
 {
 	Irqwait *w;
 
-	if((w = irqslot(irq)) == nil || !w->open)
+	if(gicdist != nil && irq >= 32){
+		gicdist[0x180/4 + irq/32] = 1U << (irq % 32);
+		__asm__ volatile("dsb sy" ::: "memory");
+	}
+	if((w = irqslot(irq)) == nil || w->nused == 0)
 		return;
 	w->count++;
-	wakeup(&w->r);
+	/* wake every waiter; each re-checks its own seen counter */
+	{
+		int i;
+
+		for(i = 0; i < Nirqwaiter; i++)
+			if(w->w[i].used)
+				wakeup(&w->w[i].r);
+	}
 }
 #else
 #define irqnote(irq)
@@ -151,6 +191,7 @@ arm64timerinit(Fdtinfo *info)
 	u64 freq;
 	u32 mask;
 
+	fb_stripe(8, 0x00800080);	/* Slot 8: timerinit entered (Purple) */
 	if(info->gicdist == 0 || info->giccpu == 0 ||
 	   info->timerirq < 16 || info->timerirq >= 32)
 		return -1;
@@ -170,6 +211,7 @@ arm64timerinit(Fdtinfo *info)
 	__asm__ volatile("msr vbar_el1, %0; isb" :: "r"(arm64vectors) : "memory");
 	if(isgicv3){
 		dist[0x000/4] = 0x37;
+		fb_stripe(9, 0x00008080);	/* Slot 9: GICD_CTLR written (Dark Cyan) */
 	}else{
 		dist[0x000/4] = 0;
 		dist[0x180/4] = 0xffffffff;
@@ -198,11 +240,27 @@ arm64cpuirqinit(int cpu)
 
 	mask = 1U << timerirq;
 	if(isgicv3){
-		rd = giccpu + cpu*(0x20000/4);
+		u64 mpidr;
+
+		fb_stripe(10, 0x00808000);	/* Slot 10: cpuirqinit start */
+		__asm__ volatile("mrs %0, mpidr_el1" : "=r"(mpidr));
+		{
+			u32 core_idx = ((mpidr >> 8) & 1) * 4 + (mpidr & 3);
+			rd = giccpu + core_idx * (0x20000 / 4);
+			if((mpidr & 0xfff) == 0)
+				fb_stripe(11, 0x00ffffff);	/* White: MPIDR 0x000 */
+			else if((mpidr & 0xfff) == 0x100)
+				fb_stripe(11, 0x000000ff);	/* Blue: MPIDR 0x100 */
+			else
+				fb_stripe(11, 0x0000ff00);	/* Green: Other MPIDR */
+		}
 		sgi = rd + 0x10000/4;
 		rd[0x014/4] &= ~(1U<<1);
-		while(rd[0x014/4] & (1U<<2))
-			;
+		for(int to = 0; to < 1000000; to++){
+			if((rd[0x014/4] & (1U<<2)) == 0)
+				break;
+		}
+		fb_stripe(12, 0x0000ff80);	/* Slot 12: WAKER clear */
 		sgi[0x180/4] = 0xffffffff;
 		sgi[0x280/4] = 0xffffffff;
 		sgi[0x080/4] |= mask;
@@ -213,9 +271,11 @@ arm64cpuirqinit(int cpu)
 		sgi[0x100/4] = mask | (1U<<TlbSGI);
 		sgi[0x080/4] |= 1U<<TlbSGI;	/* group 1 */
 		sgi[0x400/4] &= ~0xffU;		/* SGI0 highest priority */
+		fb_stripe(13, 0x0000ffff);	/* Slot 13: sgi configured */
 		__asm__ volatile("msr S3_0_C12_C12_5, %0; isb" :: "r"((u64)7) : "memory");
 		__asm__ volatile("msr S3_0_C4_C6_0, %0; isb" :: "r"((u64)0xff) : "memory");
 		__asm__ volatile("msr S3_0_C12_C12_7, %0; isb" :: "r"((u64)1) : "memory");
+		fb_stripe(14, 0x00ff00ff);	/* Slot 14: ICC programmed */
 	}else{
 		/* GICv2 CPU interfaces are banked: every core uses the same
 		 * address and the GIC selects its bank. */

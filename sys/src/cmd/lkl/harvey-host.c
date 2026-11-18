@@ -15,8 +15,8 @@ enum {
 	Page		= 4096,
 	Threadstack	= 512*1024,
 	Ntls		= 16,
-	Ntid		= 64,
-	Nreap		= 64,
+	Ntid		= 256,
+	Nreap		= 256,
 };
 
 /*
@@ -86,6 +86,7 @@ struct Hthread {
 	int	id;
 	int	pid;
 	int	used;
+	int	donesem;
 };
 static Lock	thlk;
 static Hthread	threads[Ntid];
@@ -294,9 +295,22 @@ lkl_bug(const char *fmt, ...)
 	_exits("lkl bug");
 }
 
+char lkl_dmesg[65536];
+int lkl_dmesg_len;
+
 static void
 hprint(const char *str, int len)
 {
+	int n;
+
+	if(len > 0 && lkl_dmesg_len < sizeof(lkl_dmesg) - 1){
+		n = len;
+		if(lkl_dmesg_len + n >= sizeof(lkl_dmesg))
+			n = sizeof(lkl_dmesg) - 1 - lkl_dmesg_len;
+		memmove(lkl_dmesg + lkl_dmesg_len, str, n);
+		lkl_dmesg_len += n;
+		lkl_dmesg[lkl_dmesg_len] = 0;
+	}
 	HDBG("K: ");
 	say((char*)str, len);
 }
@@ -386,6 +400,10 @@ hmut_lock(struct lkl_mutex *mutex)
 	Mut *m = (Mut*)mutex;
 	int tid = curtid();
 
+	if((uintptr)m < 0x10000000ULL || (uintptr)m >= 0x8000000000ULL){
+		lkl_printf("host: bad mut %p in hmut_lock caller %p\n", m, __builtin_return_address(0));
+		return;
+	}
 	if(m->recursive){
 		lock(&m->lk);
 		if(m->owner == tid){
@@ -410,6 +428,10 @@ hmut_unlock(struct lkl_mutex *mutex)
 {
 	Mut *m = (Mut*)mutex;
 
+	if((uintptr)m < 0x10000000ULL || (uintptr)m >= 0x8000000000ULL){
+		lkl_printf("host: bad mut %p in hmut_unlock caller %p\n", m, __builtin_return_address(0));
+		return;
+	}
 	lock(&m->lk);
 	if(--m->count > 0){
 		unlock(&m->lk);
@@ -426,6 +448,8 @@ hmut_unlock(struct lkl_mutex *mutex)
 /* ---- threads ---- */
 
 extern void harvey_thread_tramp(void *sp, void *arg, void (*f)(void*));
+extern int harvey_rfork_thread(void *newsp, void *arg, void (*f)(void*), int flags);
+static void hthread_exit(void);
 
 void
 hthread_entry(void *arg, void (*f)(void*))
@@ -433,8 +457,7 @@ hthread_entry(void *arg, void (*f)(void*))
 	TS(curtid(), 'R', nil, 0);
 	HDBG("thread %d enter\n", curtid());
 	f(arg);
-	tls_cleanup(curtid());
-	_exits(nil);
+	hthread_exit();
 }
 
 static int
@@ -486,31 +509,62 @@ hthread_create(void (*f)(void*), void *arg)
 		return 0;
 	st = (uchar*)(((uintptr)raw + Threadstack - 1) & ~(uintptr)(Threadstack-1));
 	lock(&thlk);
-	id = nexttid++;
-	unlock(&thlk);
-	pid = rfork(RFPROC|RFMEM);
-	if(pid < 0){
+	for(i = 0; i < Ntid; i++)
+		if(!threads[i].used)
+			break;
+	if(i == Ntid){
+		unlock(&thlk);
 		free(raw);
 		return 0;
 	}
-	if(pid == 0){
-		h = (Sthdr*)st;
-		h->magic = Stackmagic;
-		h->id = id;
-		harvey_thread_tramp((void*)(st + Threadstack - 16), arg, f);
-		_exits("tramp returned");
-	}
-	lock(&thlk);
-	for(i = 0; i < Ntid; i++)
-		if(!threads[i].used){
-			threads[i].used = 1;
-			threads[i].id = id;
-			threads[i].pid = pid;
-			break;
-		}
+	id = nexttid++;
+	threads[i].used = 1;
+	threads[i].id = id;
+	threads[i].pid = 0;
+	threads[i].donesem = 0;
 	unlock(&thlk);
+	h = (Sthdr*)st;
+	h->magic = Stackmagic;
+	h->id = id;
+	pid = harvey_rfork_thread((void*)(st + Threadstack - 16), arg, f,
+		RFPROC|RFMEM|RFNOWAIT);
+	if(pid < 0){
+		lock(&thlk);
+		threads[i].used = 0;
+		unlock(&thlk);
+		free(raw);
+		return 0;
+	}
+	threads[i].pid = pid;
 	HDBG("thread %d pid %d f %p from %p\n", id, pid, f, RA());
 	return (lkl_thread_t)id;
+}
+
+/*
+ * Run fn(arg) on a Threadstack-aligned heap stack in BSEG so that the
+ * main thread's stack is shared across RFMEM children instead of living
+ * in private SSEG.
+ */
+void
+lklhost_run_shared(void (*fn)(void*), void *arg)
+{
+	uchar *raw, *st;
+	Sthdr *h;
+
+	if((raw = mallocz(2*Threadstack, 1)) == nil)
+		sysfatal("lklhost_run_shared: malloc");
+	st = (uchar*)(((uintptr)raw + Threadstack - 1) & ~(uintptr)(Threadstack-1));
+	h = (Sthdr*)st;
+	h->magic = Stackmagic;
+	h->id = Mainid;
+	harvey_thread_tramp((void*)(st + Threadstack - 16), arg, fn);
+	_exits("shared tramp returned");
+}
+
+int
+lklhost_spawn(void (*fn)(void*), void *arg)
+{
+	return hthread_create(fn, arg) != 0 ? 0 : -1;
 }
 
 /*
@@ -523,19 +577,23 @@ hthread_create(void (*f)(void*), void *arg)
 typedef struct Irqsrc Irqsrc;
 struct Irqsrc {
 	char	node[64];
+	char	waitfile[16];
 	int	irq;
 	int	reported;
 };
+
+static void coherentclean(void);
 
 static void
 irqwatch(void *x)
 {
 	Irqsrc *s = x;
 	char path[96], buf[32], msg[128];
-	int fd, n;
+	int fd, n, cnt = 0;
 
 	for(;;){
-		snprint(path, sizeof path, "#P/%s/wait", s->node);
+		snprint(path, sizeof path, "#P/%s/%s", s->node,
+			s->waitfile[0] ? s->waitfile : "wait");
 		if((fd = open(path, OREAD)) < 0){
 			/*
 			 * The previous reader of this line never closed it (a
@@ -563,26 +621,40 @@ irqwatch(void *x)
 			n = pread(fd, buf, sizeof buf, 0);
 			if(n <= 0)
 				break;
+			if(cnt < 20)
+				lkl_printf("lklhost: irq %d fired (#%d)\n", s->irq, ++cnt);
+			coherentclean();
 			lkl_trigger_irq(s->irq);
+			while(lkl_irq_busy(s->irq))
+				sleep(1);
+			if(++cnt > 200 && (cnt % 200) == 0)
+				sleep(1);
 		}
 		close(fd);
 	}
 }
 
 int
-lklhost_irqthread(char *node, int irq)
+lklhost_irqthread_wait(char *node, int irq, char *waitfile)
 {
 	Irqsrc *s;
 
 	if((s = mallocz(sizeof *s, 1)) == nil)
 		return -1;
 	snprint(s->node, sizeof s->node, "%s", node);
+	snprint(s->waitfile, sizeof s->waitfile, "%s", waitfile);
 	s->irq = irq;
 	if(hthread_create(irqwatch, s) == 0){
 		free(s);
 		return -1;
 	}
 	return 0;
+}
+
+int
+lklhost_irqthread(char *node, int irq)
+{
+	return lklhost_irqthread_wait(node, irq, "wait");
 }
 
 static void
@@ -593,7 +665,17 @@ hthread_detach(void)
 static void
 hthread_exit(void)
 {
-	tls_cleanup(curtid());
+	int i, id;
+
+	id = curtid();
+	tls_cleanup(id);
+	lock(&thlk);
+	for(i = 0; i < Ntid; i++)
+		if(threads[i].used && threads[i].id == id){
+			semrelease(&threads[i].donesem, 1);
+			break;
+		}
+	unlock(&thlk);
 	_exits(nil);
 }
 
@@ -625,7 +707,7 @@ add_reap(int pid)
 static int
 hthread_join(lkl_thread_t tid)
 {
-	int i, pid, want;
+	int i, *sem;
 
 	/* thread_join(self) is not a deadlock in the LKL host ABI; the POSIX
 	 * host returns an error and the kernel shutdown path ignores it. */
@@ -633,27 +715,23 @@ hthread_join(lkl_thread_t tid)
 		return -1;
 
 	lock(&thlk);
-	want = -1;
+	sem = nil;
 	for(i = 0; i < Ntid; i++)
 		if(threads[i].used && (lkl_thread_t)threads[i].id == tid){
-			want = threads[i].pid;
-			threads[i].used = 0;
+			sem = &threads[i].donesem;
 			break;
 		}
 	unlock(&thlk);
-	if(want < 0)
+	if(sem == nil)
 		return -1;
 
-	for(;;){
-		if(take_reap(want))
-			return 0;
-		pid = waitpid();
-		if(pid < 0)
-			return -1;
-		if(pid == want)
-			return 0;
-		add_reap(pid);
-	}
+	while(semacquire(sem, 1) < 0)
+		;
+
+	lock(&thlk);
+	threads[i].used = 0;
+	unlock(&thlk);
+	return 0;
 }
 
 static lkl_thread_t
@@ -777,18 +855,23 @@ unsigned long lkl_host_dma_pa(void*, unsigned long);
 static int
 dmaalloc(u64 size, u64 align, u64 *pa)
 {
+	static int ownfd = -1;
 	char buf[64];
-	int fd, n;
+	int n;
 
-	if((fd = open("#P/dma/alloc", ORDWR)) < 0)
+	/*
+	 * Instance RAM comes from allocowned, held open for the life of
+	 * this process: when the process exits or is killed, closing the
+	 * file returns the chunk to the arena.  (Plain alloc chunks are
+	 * only returned by an explicit free, which a killed guest never
+	 * gets to do; retries then exhausted the arena permanently.)
+	 */
+	if(ownfd < 0 && (ownfd = open("#P/dma/allocowned", ORDWR)) < 0)
 		return -1;
 	snprint(buf, sizeof buf, "%llud %llud\n", size, align);
-	if(write(fd, buf, strlen(buf)) != strlen(buf)){
-		close(fd);
+	if(write(ownfd, buf, strlen(buf)) != strlen(buf))
 		return -1;
-	}
-	n = pread(fd, buf, sizeof buf - 1, 0);
-	close(fd);
+	n = pread(ownfd, buf, sizeof buf - 1, 0);
 	if(n <= 0)
 		return -1;
 	buf[n] = 0;
@@ -821,13 +904,21 @@ raminit(unsigned long want)
 		return;
 	}
 	pa = base;
-	if(want != 0 && want < size){
-		if(dmaalloc(want, 0x200000, &pa) < 0 ||
+	if(want != 0){
+		/*
+		 * Never fall back to the whole arena: with more than one
+		 * LKL instance that hands this guest the same pages as
+		 * another live guest, and both kernels corrupt each
+		 * other.  Fail loudly instead.
+		 */
+		if(want >= size ||
+		   dmaalloc(want, 0x200000, &pa) < 0 ||
 		   pa < base || pa + want > base + size){
-			lkl_printf("host: dma alloc %lud failed; using whole arena\n",
-			       want);
-			pa = base;
-			want = 0;
+			lkl_printf("host: dma arena: want %#llux of %#llux: "
+				   "cannot reserve a disjoint chunk\n",
+				   want, size);
+			fprint(2, "lklboot: dma arena exhausted\n");
+			exits("arena");
 		}
 	}
 	if(want == 0)
@@ -837,6 +928,7 @@ raminit(unsigned long want)
 	lklramsize = want;
 	lkl_printf("host: arena va %p pa %#llux size %#llux%s\n",
 		   lklram, pa, want, pa == base ? "" : " (chunk)");
+	fprint(2, "lklboot: arena pa %#llux size %#llux\n", pa, want);
 }
 
 /*
@@ -851,7 +943,7 @@ raminit(unsigned long want)
  */
 void lkl_host_dma_sync(unsigned long, unsigned long, int);
 
-enum { Ncoal = 16 };
+enum { Ncoal = 128 };
 static struct {
 	unsigned long pa;
 	unsigned long size;
@@ -880,7 +972,7 @@ coherentclean(void)
 	int i;
 
 	for(i = 0; i < ncoal; i++)
-		lkl_host_dma_sync(coal[i].pa, coal[i].size, 0);
+		lkl_host_dma_sync(coal[i].pa, coal[i].size, 2);
 }
 
 void
@@ -992,7 +1084,7 @@ htimer_thread(void *x)
 			unlock(&t->lk);
 			/* the timer thread owns t from here */
 			free(t);
-			_exits(nil);
+			hthread_exit();
 		}
 		if(!t->armed){
 			unlock(&t->lk);
@@ -1020,7 +1112,7 @@ htimer_thread(void *x)
 		TS(curtid(), 'f', t, 0);
 		HDBG("fired\n");
 	}
-	_exits(nil);
+	hthread_exit();
 }
 
 /*
@@ -1092,6 +1184,10 @@ htimer_set_oneshot(void *timer, unsigned long delta)
 	vlong now;
 	uvlong far;
 
+	if((uintptr)t < 0x10000000ULL || (uintptr)t >= 0x8000000000ULL){
+		lkl_printf("host: bad timer %p in set_oneshot caller %p\n", t, __builtin_return_address(0));
+		return -1;
+	}
 	HDBG("arm %lud\n", delta);
 	now = nsec();
 	if(now < 0)
@@ -1119,6 +1215,10 @@ htimer_free(void *timer)
 {
 	Timer *t = timer;
 
+	if((uintptr)t < 0x10000000ULL || (uintptr)t >= 0x8000000000ULL){
+		lkl_printf("host: bad timer %p in free caller %p\n", t, __builtin_return_address(0));
+		return;
+	}
 	lock(&t->lk);
 	t->stop = 1;
 	t->armed = 0;
@@ -1149,11 +1249,38 @@ static struct {
 } mmio[Nmmio];
 static int nmmio;
 
+u32
+lklhost_mmio_r32(u64 pa)
+{
+	int i;
+
+	for(i = 0; i < nmmio; i++){
+		u64 grant = (mmio[i].len + 0x1fffffULL) & ~0x1fffffULL;
+		if(pa >= mmio[i].pa && pa + 4 <= mmio[i].pa + grant)
+			return *(volatile u32*)(mmio[i].va + (pa - mmio[i].pa));
+	}
+	return 0xdeadbeefU;
+}
+
+void
+lklhost_mmio_w32(u64 pa, u32 val)
+{
+	int i;
+
+	for(i = 0; i < nmmio; i++){
+		u64 grant = (mmio[i].len + 0x1fffffULL) & ~0x1fffffULL;
+		if(pa >= mmio[i].pa && pa + 4 <= mmio[i].pa + grant){
+			*(volatile u32*)(mmio[i].va + (pa - mmio[i].pa)) = val;
+			return;
+		}
+	}
+}
+
 static u64
 pnpnum(char *node, char *file)
 {
 	char path[80], buf[64];
-	int fd, n;
+	int fd, n, cnt = 0;
 	u64 v;
 
 	snprint(path, sizeof path, "#P/%s/%s", node, file);
@@ -1259,6 +1386,8 @@ hiomem_access(const volatile void *addr, void *val, int size, int write)
 				default: memmove((void*)p, val, size); break;
 				}
 			}else{
+				if((p - mmio[i].va) == 0xc40c)
+					coherentclean();
 				switch(size){
 				case 1: *(u8*)val = *(volatile u8*)p; break;
 				case 2: *(u16*)val = *(volatile u16*)p; break;
@@ -1425,7 +1554,7 @@ static int
 hresource(const char *path, int wr, const char *cmd, char *buf, int len)
 {
 	char pbuf[128], rpath[160];
-	int fd, n;
+	int fd, n, cnt = 0;
 
 	if(path == nil)
 		return -1;

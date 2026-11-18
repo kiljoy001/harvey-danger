@@ -180,7 +180,7 @@ arm64mmubuild(Fdtinfo *info)
 	 * architecturally unpredictable.
 	 */
 	extern u64 arm64dmabase, arm64dmasize;
-	if(arm64dmasize != 0 && (arm64dmabase % L2blocksz) == 0){
+	if(arm64dmabase != 0 && arm64dmasize != 0 && (arm64dmabase % L2blocksz) == 0){
 		for(pa = arm64dmabase; pa < arm64dmabase + arm64dmasize;
 		    pa += L2blocksz){
 			i = pa/L1blocksz;
@@ -196,7 +196,7 @@ arm64mmubuild(Fdtinfo *info)
 	device[1].base = info->gicdist;
 	device[1].size = 0x10000;
 	device[2].base = info->giccpu;
-	device[2].size = 0x20000;
+	device[2].size = info->gicversion == 3 ? 0x100000 : 0x20000;
 	regions = 3;
 	for(k = 0; k < info->nvirtio; k++)
 		device[regions++] = info->virtio[k];
@@ -245,6 +245,8 @@ arm64mmubuild(Fdtinfo *info)
 #endif
 	for(k = 0; k < regions; k++){
 		pa = device[k].base;
+		if(pa == 0 && k < 3)
+			continue;
 		if(pa == 0 || device[k].size == 0 ||
 		   pa >= Maxidentity || device[k].size > Maxidentity-pa)
 			return 0;

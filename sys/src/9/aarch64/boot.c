@@ -535,7 +535,14 @@ neverready(void *a)
 	return 0;
 }
 
-static Rendez smpidle;
+static int
+userprocdone(void *a)
+{
+	USED(a);
+	return userprocessphase == 2;
+}
+
+static Rendez smpidle[MACHMAX];
 
 static void
 worker(void *arg)
@@ -575,8 +582,10 @@ worker(void *arg)
 			arm64uartputs("HARVEY-ARM64 IPI PASS\n");
 		else
 			arm64uartputs("HARVEY-ARM64 IPI FAIL\n");
-		startuserprocess();
-		sleep(&userdone, neverready, nil);
+		if(useruartbase != 0){
+			startuserprocess();
+			sleep(&userdone, userprocdone, nil);
+		}
 		startinitprocess();
 	}else if(id >= 3){
 		print("HARVEY-ARM64 CPU%d-SCHED PASS\n", machp()->machno);
@@ -584,7 +593,7 @@ worker(void *arg)
 			sched();
 		print("HARVEY-ARM64 CPU%d-TIMER PASS\n", machp()->machno);
 		for(;;)
-			sleep(&smpidle, neverready, nil);
+			sleep(&smpidle[id < MACHMAX ? id : 0], neverready, nil);
 	}else{
 		workerphase |= 2;
 	}
@@ -655,6 +664,7 @@ arm64kernelstart(Fdtinfo *info)
 		    sizeof(arm64testaudioelf));
 	addbootfile("uartfs", (u8 *)arm64uartfself, sizeof(arm64uartfself));
 	addbootfile("gpufs", (u8 *)arm64gpufself, sizeof(arm64gpufself));
+	addbootfile("adrenofs", (u8 *)arm64adrenofself, sizeof(arm64adrenofself));
 	addbootfile("npufs", (u8 *)arm64npufself, sizeof(arm64npufself));
 	addbootfile("gpiofs", (u8 *)arm64gpiofself, sizeof(arm64gpiofself));
 	addbootfile("hubfs", (u8 *)arm64hubfself, sizeof(arm64hubfself));

@@ -27,6 +27,7 @@
 			"aux/aux.json",
 			"bzip2/bzip2.json",
 			"bc/build.json",
+			"browser/browser.json",
 			"cb/cb.json",
 			"cdfs/cdfs.json",
 			"cfs/build.json",

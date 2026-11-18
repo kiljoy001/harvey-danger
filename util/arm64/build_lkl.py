@@ -47,7 +47,7 @@ def build(out: Path, lkl_o: Path, lkl_inc: Path, libc: Path) -> Path:
         "-I", str(lkl_inc),
     ]
     objects = []
-    for name in ("harvey-host.c", "lklboot.c", "lklusb.c", "wifiscan.c"):
+    for name in ("harvey-host.c", "lklboot.c", "lklusb.c", "lkl9p.c", "wifiscan.c"):
         obj = out / (Path(name).stem + ".o")
         run(cflags + ["-c", str(src / name), "-o", str(obj)])
         objects.append(obj)
@@ -91,7 +91,7 @@ def build(out: Path, lkl_o: Path, lkl_inc: Path, libc: Path) -> Path:
         sid = SETUP_IDS[spec["setup"]]
         entries.append(
             f'\t{{"{fam}", "{spec["program"]}", "{spec["mem"]}", '
-            f'{memsz}UL, "{",".join(spec["devices"])}", '
+            f'{memsz}UL, "{" ".join(spec["devices"])}", '
             f'"{spec["dtb"]}", {sid}}},')
         dtb_entries.append(
             f'\t{{"{spec["dtb"]}", lkl_dtb_{fam}, lkl_dtb_{fam}_end}},')
@@ -149,7 +149,8 @@ SECTIONS {{
     elf = out / "lklboot"
     run([LD, "-static", "-z", "max-page-size=4096", "-T", str(script),
          "--allow-multiple-definition", "-e", "_main", "-u", "_main",
-         *map(str, objects), str(lkl_o), str(libc), "-o", str(elf)])
+         *map(str, objects), str(lkl_o),
+         str(ROOT / "build/arm64-o9/lib9p.a"), str(libc), "-o", str(elf)])
     return elf
 
 

@@ -589,18 +589,26 @@ extern "C" long double strtold(const char *s, char **end) {
 extern "C" void *malloc(size_t);
 extern "C" void free(void *);
 
+static const uint64_t kAlignedMagic = 0x484152564559414cULL; /* "HARVEYAL" */
+
 static void *harvey_aligned_alloc(size_t n, size_t align) {
     if (align < sizeof(void *)) align = sizeof(void *);
-    void *base = malloc(n + align + sizeof(void *));
+    /* malloc already returns 16-byte aligned, freeable pointers. */
+    if (align <= 16) return malloc(n);
+    void *base = malloc(n + align + 16);
     if (!base) return nullptr;
-    uintptr_t p = (uintptr_t)base + sizeof(void *);
+    uintptr_t p = (uintptr_t)base + 16;
     p = (p + align - 1) & ~(uintptr_t)(align - 1);
+    ((uint64_t *)p)[-2] = kAlignedMagic;
     ((void **)p)[-1] = base;
     return (void *)p;
 }
 
 static void harvey_aligned_free(void *p) {
-    if (p) free(((void **)p)[-1]);
+    if (!p) return;
+    if (((uint64_t *)p)[-2] == kAlignedMagic)
+        p = ((void **)p)[-1];
+    free(p);
 }
 
 /* APEX's malloc only guarantees 8-byte alignment, but x86-64 code compiled

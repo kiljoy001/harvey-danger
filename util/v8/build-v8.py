@@ -96,6 +96,7 @@ def main() -> None:
     shutil.copy2(HERE / "harvey" / "BUILD.gn", dest / "BUILD.gn")
     apply_patch(v8, HERE / "patches" / "v8-simd-harvey.patch")
     apply_patch(v8, HERE / "patches" / "v8-readonly-harvey.patch")
+    apply_patch(v8, HERE / "patches" / "v8-exit-harvey.patch")
     apply_patch(v8 / "third_party" / "abseil-cpp",
                 HERE / "patches" / "absl-harvey.patch")
 

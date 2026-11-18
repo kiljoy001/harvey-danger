@@ -24,6 +24,9 @@ struct Fdtnode {
 	u32 reglen;
 	u8 *intr;
 	u32 intrlen;
+	u8 *intrext;
+	u32 intrextlen;
+	u32 phandle;
 	u8 *compat;
 	u32 compatlen, pathlen, uarttype, gicversion;
 	u32 clas;
@@ -198,6 +201,40 @@ static const Fdtclass classtab[] = {
 	{ "rockchip,iommu-v2", Fdtclassiommu },
 	{ "rockchip,iommu", Fdtclassiommu },
 	{ "rockchip,rk3568-power-controller", Fdtclasspower },
+	/* Qualcomm SM6115 / Bengal (Moto G Power 2021). */
+	{ "qcom,bengal-gcc", Fdtclasscru },
+	{ "qcom,sm6115-gcc", Fdtclasscru },
+	{ "qcom,gcc-sm6115", Fdtclasscru },
+	{ "qcom,bengal-dispcc", Fdtclasscru },
+	{ "qcom,bengal-gpucc", Fdtclasscru },
+	{ "qcom,sm6115-gpucc", Fdtclasscru },
+	{ "qcom,kgsl-3d0", Fdtclassgpu },
+	{ "qcom,adreno", Fdtclassgpu },
+	{ "qcom,kgsl-smmu-v2", Fdtclassiommu },
+	{ "qcom,adreno-smmu", Fdtclassiommu },
+	{ "qcom,adreno-gmu-wrapper", Fdtclasspower },
+	{ "qcom,bengal-pinctrl", Fdtclassgpio },
+	{ "qcom,sm6115-pinctrl", Fdtclassgpio },
+	{ "qcom,sm6115-tlmm", Fdtclassgpio },
+	{ "qcom,spmi-pmic-arb", Fdtclasspower },
+	{ "qcom,sdhci-msm-v5", Fdtclassmmc },
+	{ "qcom,sm6115-sdhci", Fdtclassmmc },
+	{ "qcom,ufshc", Fdtclassmmc },
+	{ "qcom,sm6115-ufshc", Fdtclassmmc },
+	{ "qcom,qupv3-geni-se", Fdtclassi2c },
+	{ "qcom,geni-se-qup", Fdtclassi2c },
+	{ "qcom,i2c-geni", Fdtclassi2c },
+	{ "qcom,geni-i2c", Fdtclassi2c },
+	{ "qcom,spi-geni", Fdtclassspi },
+	{ "qcom,geni-spi", Fdtclassspi },
+	{ "qcom,msm-rng", Fdtclassrng },
+	{ "qcom,prng-ee", Fdtclassrng },
+	{ "qcom,tsens24xx", Fdtclasstsadc },
+	{ "qcom,sm6115-tsens", Fdtclasstsadc },
+	{ "qcom,qusb2phy", Fdtclassusb },
+	{ "qcom,sm6115-qusb2-phy", Fdtclassusb },
+	{ "qcom,dwc-usb3-msm", Fdtclassusb },
+	{ "qcom,sm6115-dwc3", Fdtclassusb },
 };
 
 static u32
@@ -305,7 +342,7 @@ fdtparse(void *blob, usize bytes, Fdtinfo *out)
 	Fdtalias aliases[Maxaliases];
 	Fdtconsole consoles[Maxconsoles];
 	u8 *stdoutpath, *want;
-	u32 stdoutlen;
+	u32 stdoutlen, gicphandle;
 	char path[Maxpath];
 	int ended;
 
@@ -328,8 +365,10 @@ fdtparse(void *blob, usize bytes, Fdtinfo *out)
 	s = p+soff;
 	str = p+stroff;
 	out->rambase = out->ramsize = out->uartbase = 0;
+	out->lklarena = 0;
 	out->uarttype = out->gicversion = 0;
 	out->gicdist = out->giccpu = 0;
+	gicphandle = 0;
 	out->timerirq = 0;
 	out->ncpu = 0;
 	out->psci_method = out->psci_cpuon = 0;
@@ -394,6 +433,9 @@ fdtparse(void *blob, usize bytes, Fdtinfo *out)
 			node->cpu = node->psci = 0;
 			node->method = node->cpuon = 0;
 			node->uarttype = node->gicversion = 0;
+			node->intrext = nil;
+			node->intrextlen = 0;
+			node->phandle = 0;
 			node->enabled = depth == 0 || nodes[depth-1].enabled;
 			node->reservedir = depth == 1 && same((char *)s+pos, "reserved-memory");
 			node->reserve = depth != 0 && nodes[depth-1].reservedir;
@@ -436,6 +478,14 @@ fdtparse(void *blob, usize bytes, Fdtinfo *out)
 					return -1;
 				stdoutpath = value;
 				stdoutlen = strnlen0(value, len);
+			}else if(depth == 2 && node->pathlen < Maxpath &&
+			         same(path, "/chosen") &&
+			         same((char *)str+off, "harvey,lkl-arena-size")){
+				/* Total DMA arena the LKL instances in this
+				 * image need; stamped by the pack tool from
+				 * the family table, not a board constant. */
+				if(len == 8)
+					out->lklarena = get8(value);
 			}else if(depth == 2 && node->pathlen < Maxpath &&
 			         same(path, "/aliases")){
 				if(len == 0 || strnlen0(value, len) < 0)
@@ -494,6 +544,11 @@ fdtparse(void *blob, usize bytes, Fdtinfo *out)
 			}else if(same((char *)str+off, "interrupts")){
 				node->intr = value;
 				node->intrlen = len;
+			}else if(same((char *)str+off, "interrupts-extended")){
+				node->intrext = value;
+				node->intrextlen = len;
+			}else if(same((char *)str+off, "phandle") && len == 4){
+				node->phandle = get4(value);
 			}
 			break;
 		case Fdtendnode:
@@ -570,6 +625,7 @@ fdtparse(void *blob, usize bytes, Fdtinfo *out)
 				   regpair(node, 1, &out->giccpu, &size) == 0){
 					out->gicdist = base;
 					out->gicversion = node->gicversion;
+					gicphandle = node->phandle;
 				}
 				if(node->virtio){
 					if(out->nvirtio == Maxfdtvirtio || size < 0x200 ||
@@ -608,8 +664,29 @@ fdtparse(void *blob, usize bytes, Fdtinfo *out)
 						dev->base2 = base;
 						dev->size2 = size;
 					}
+					if(node->clas == Fdtclasstsadc &&
+					   regpair(node, 1, &base, &size) == 0 &&
+					   base >= dev->base &&
+					   base + size - dev->base <= 64*1024)
+						dev->size = (base + size) - dev->base;
+					if(node->clas == Fdtclasspower){
+						u64 rbase, rsize, minb, maxe;
+						u32 ridx;
+
+						minb = dev->base;
+						maxe = dev->base + dev->size;
+						for(ridx = 1; ridx < 8 && regpair(node, ridx, &rbase, &rsize) == 0; ridx++){
+							if(rbase < minb)
+								minb = rbase;
+							if(rbase + rsize > maxe)
+								maxe = rbase + rsize;
+						}
+						dev->base = minb;
+						dev->size = maxe - minb;
+					}
 					dev->irq = 0;
 					dev->irqflags = 0;
+					dev->irq2 = 0;
 					if(node->intrlen >= 12){
 						u32 type, number;
 
@@ -618,6 +695,36 @@ fdtparse(void *blob, usize bytes, Fdtinfo *out)
 						dev->irqflags = get4(node->intr+8);
 						dev->irq = type == 0 ? number+32 :
 						           type == 1 ? number+16 : 0;
+					}
+					if(node->intrlen >= 24){
+						u32 type, number;
+
+						type = get4(node->intr+12);
+						number = get4(node->intr+16);
+						dev->irq2 = type == 0 ? number+32 :
+						            type == 1 ? number+16 : 0;
+					}
+					if(dev->irq == 0 && gicphandle != 0 &&
+					   node->intrext != nil){
+						u32 eoff;
+
+						for(eoff = 0; eoff + 16 <= node->intrextlen; eoff += 16){
+							u32 type, number;
+
+							if(get4(node->intrext+eoff) != gicphandle)
+								break;
+							type = get4(node->intrext+eoff+4);
+							number = get4(node->intrext+eoff+8);
+							if(dev->irq == 0){
+								dev->irqflags = get4(node->intrext+eoff+12);
+								dev->irq = type == 0 ? number+32 :
+								           type == 1 ? number+16 : 0;
+							}else if(dev->irq2 == 0){
+								dev->irq2 = type == 0 ? number+32 :
+								            type == 1 ? number+16 : 0;
+								break;
+							}
+						}
 					}
 					dev->clas = node->clas;
 					out->ndev++;
@@ -646,31 +753,27 @@ done:
 		want = stdoutpath;
 		for(wantlen = 0; wantlen < stdoutlen && want[wantlen] != ':'; wantlen++)
 			;
-		if(wantlen == 0)
-			return -1;
-		if(want[0] != '/'){
-			for(i = 0; i < naliases; i++)
-				if(samelen(want, wantlen, (char *)aliases[i].name)){
-					want = aliases[i].path;
-					wantlen = aliases[i].pathlen;
+		if(wantlen != 0){
+			if(want[0] != '/'){
+				for(i = 0; i < naliases; i++)
+					if(samelen(want, wantlen, (char *)aliases[i].name)){
+						want = aliases[i].path;
+						wantlen = aliases[i].pathlen;
+						break;
+					}
+			}
+			for(i = 0; i < nconsoles; i++)
+				if(samelen(want, wantlen, consoles[i].path)){
+					out->uartbase = consoles[i].base;
+					out->uarttype = consoles[i].type;
 					break;
 				}
-			if(i == naliases)
-				return -1;
 		}
-		for(i = 0; i < nconsoles; i++)
-			if(samelen(want, wantlen, consoles[i].path)){
-				out->uartbase = consoles[i].base;
-				out->uarttype = consoles[i].type;
-				break;
-			}
-		if(i == nconsoles)
-			return -1;
 	}else if(nconsoles == 1){
 		out->uartbase = consoles[0].base;
 		out->uarttype = consoles[0].type;
 	}
 	return out->nmemory != 0 && out->ramsize != 0 &&
-	       out->uartbase != 0 && out->gicdist != 0 &&
+	       out->gicdist != 0 &&
 	       out->gicversion != 0 && out->timerirq != 0 ? 0 : -1;
 }

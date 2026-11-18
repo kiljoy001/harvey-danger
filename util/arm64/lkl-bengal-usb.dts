@@ -1,0 +1,459 @@
+/*
+ * Device tree for Qualcomm Bengal / SM6115 (Moto G Power 2021 / borneo)
+ * running under LKL: clocks, TLMM GPIO/pinctrl, PRNG, TSENS, eMMC/SD
+ * (SDHCI), QUPv3 GENI (I2C/SPI), and DWC3 USB gadget.
+ *
+ * The bootloader leaves the SoC power rails and USB/storage PHYs powered
+ * on, so fixed regulators represent the active rails where needed.
+ */
+/dts-v1/;
+
+/ {
+	compatible = "qcom,bengal", "qcom,sm6115";
+	#address-cells = <2>;
+	#size-cells = <2>;
+
+	gic: interrupt-controller@17a00000 {
+		compatible = "arm,gic-v3";
+		reg = <0x0 0x17a00000 0x0 0x10000>,
+		      <0x0 0x17a60000 0x0 0x100000>;
+		interrupt-controller;
+		#interrupt-cells = <3>;
+		#address-cells = <0>;
+	};
+
+	xo_board: xo-board {
+		compatible = "fixed-clock";
+		#clock-cells = <0>;
+		clock-frequency = <19200000>;
+		clock-output-names = "xo_board";
+	};
+
+	sleep_clk: sleep-clk {
+		compatible = "fixed-clock";
+		#clock-cells = <0>;
+		clock-frequency = <32768>;
+		clock-output-names = "sleep_clk";
+	};
+
+	vreg_3p0: regulator-vreg-3p0 {
+		compatible = "regulator-fixed";
+		regulator-name = "vreg_3p0";
+		regulator-min-microvolt = <2960000>;
+		regulator-max-microvolt = <2960000>;
+		regulator-always-on;
+	};
+
+	vreg_1p8: regulator-vreg-1p8 {
+		compatible = "regulator-fixed";
+		regulator-name = "vreg_1p8";
+		regulator-min-microvolt = <1800000>;
+		regulator-max-microvolt = <1800000>;
+		regulator-always-on;
+	};
+
+	soc@0 {
+		compatible = "simple-bus";
+		#address-cells = <2>;
+		#size-cells = <2>;
+		ranges;
+
+		gcc: clock-controller@1400000 {
+			compatible = "qcom,gcc-sm6115";
+			reg = <0x0 0x01400000 0x0 0x1f0000>;
+			clocks = <&xo_board>, <&sleep_clk>;
+			clock-names = "bi_tcxo", "sleep_clk";
+			#clock-cells = <1>;
+			#reset-cells = <1>;
+			#power-domain-cells = <1>;
+			status = "okay";
+		};
+
+		tlmm: pinctrl@500000 {
+			compatible = "qcom,sm6115-tlmm";
+			reg = <0x0 0x00500000 0x0 0x400000>,
+			      <0x0 0x00900000 0x0 0x400000>,
+			      <0x0 0x00d00000 0x0 0x300000>;
+			reg-names = "west", "south", "east";
+			interrupt-parent = <&gic>;
+			interrupts = <0 227 4>;
+			gpio-controller;
+			gpio-ranges = <&tlmm 0 0 114>;
+			gpio-reserved-ranges = <14 4>;
+			#gpio-cells = <2>;
+			interrupt-controller;
+			#interrupt-cells = <2>;
+			status = "okay";
+
+			qup_spi2_default: qup-spi2-default-state {
+				pins = "gpio6", "gpio7", "gpio71", "gpio80";
+				function = "qup2";
+				drive-strength = <6>;
+				bias-pull-up;
+			};
+
+			ts_int_active: ts-int-active-state {
+				pins = "gpio67";
+				function = "gpio";
+				drive-strength = <8>;
+				bias-pull-up;
+				input-enable;
+			};
+
+			ts_reset_active: ts-reset-active-state {
+				pins = "gpio66";
+				function = "gpio";
+				drive-strength = <8>;
+				bias-pull-up;
+			};
+
+			qup_i2c0_default: qup-i2c0-default-state {
+				pins = "gpio0", "gpio1";
+				function = "qup0";
+				drive-strength = <2>;
+				bias-disable;
+			};
+
+			qup_i2c1_default: qup-i2c1-default-state {
+				pins = "gpio4", "gpio5";
+				function = "qup1";
+				drive-strength = <2>;
+				bias-disable;
+			};
+		};
+
+		rng@1b53000 {
+			compatible = "qcom,prng-ee";
+			reg = <0x0 0x01b53000 0x0 0x1000>;
+			clocks = <&gcc 84>;
+			clock-names = "core";
+			status = "okay";
+		};
+
+		tsens0: thermal-sensor@4411000 {
+			compatible = "qcom,sm6115-tsens", "qcom,tsens-v2";
+			reg = <0x0 0x04411000 0x0 0x1ff>,
+			      <0x0 0x04410000 0x0 0x8>;
+			interrupt-parent = <&gic>;
+			interrupts = <0 275 4>, <0 190 4>;
+			interrupt-names = "uplow", "critical";
+			#qcom,sensors = <16>;
+			#thermal-sensor-cells = <1>;
+			status = "okay";
+		};
+
+		sdhc_1: mmc@4744000 {
+			compatible = "qcom,sm6115-sdhci", "qcom,sdhci-msm-v5";
+			reg = <0x0 0x04744000 0x0 0x1000>;
+			reg-names = "hc";
+			interrupt-parent = <&gic>;
+			interrupts = <0 348 4>, <0 352 4>;
+			interrupt-names = "hc_irq", "pwr_irq";
+			clocks = <&gcc 106>, <&gcc 107>, <&xo_board>;
+			clock-names = "iface", "core", "xo";
+			vmmc-supply = <&vreg_3p0>;
+			vqmmc-supply = <&vreg_1p8>;
+			bus-width = <8>;
+			non-removable;
+			mmc-hs400-1_8v;
+			mmc-hs200-1_8v;
+			status = "okay";
+		};
+
+		sdhc_2: mmc@4784000 {
+			compatible = "qcom,sm6115-sdhci", "qcom,sdhci-msm-v5";
+			reg = <0x0 0x04784000 0x0 0x1000>;
+			reg-names = "hc";
+			interrupt-parent = <&gic>;
+			interrupts = <0 350 4>, <0 353 4>;
+			interrupt-names = "hc_irq", "pwr_irq";
+			clocks = <&gcc 111>, <&gcc 112>, <&xo_board>;
+			clock-names = "iface", "core", "xo";
+			vmmc-supply = <&vreg_3p0>;
+			vqmmc-supply = <&vreg_1p8>;
+			bus-width = <4>;
+			cd-gpios = <&tlmm 88 0>;
+			status = "okay";
+		};
+
+		qupv3_id_0: geniqup@4ac0000 {
+			compatible = "qcom,geni-se-qup";
+			reg = <0x0 0x04ac0000 0x0 0x2000>;
+			clocks = <&gcc 104>, <&gcc 105>;
+			clock-names = "m-ahb", "s-ahb";
+			#address-cells = <2>;
+			#size-cells = <2>;
+			ranges;
+			status = "okay";
+
+			i2c0: i2c@4a80000 {
+				pinctrl-names = "default";
+				pinctrl-0 = <&qup_i2c0_default>;
+				compatible = "qcom,geni-i2c";
+				reg = <0x0 0x04a80000 0x0 0x4000>;
+				interrupt-parent = <&gic>;
+				interrupts = <0 327 4>;
+				clocks = <&gcc 92>;
+				clock-names = "se";
+				#address-cells = <1>;
+				#size-cells = <0>;
+				status = "okay";
+			};
+
+			i2c1: i2c@4a84000 {
+				pinctrl-names = "default";
+				pinctrl-0 = <&qup_i2c1_default>;
+				compatible = "qcom,geni-i2c";
+				reg = <0x0 0x04a84000 0x0 0x4000>;
+				interrupt-parent = <&gic>;
+				interrupts = <0 328 4>;
+				clocks = <&gcc 94>;
+				clock-names = "se";
+				#address-cells = <1>;
+				#size-cells = <0>;
+				status = "okay";
+
+				lm3697: lm3697@37 {
+					/* disabled while the GENI I2C first-write wedge
+					 * is debugged; stage gate kept for that work */
+					status = "disabled";
+					lm3697,stage-limit = <4>;
+					compatible = "ti,lm3697";
+					reg = <0x37>;
+					enable-gpios = <&pmi632_gpios 6 0>;
+					#address-cells = <1>;
+					#size-cells = <0>;
+
+					led@0 {
+						reg = <0>;
+						led-sources = <0 1 2>;
+						function = "backlight";
+						default-state = "on";
+					};
+				};
+			};
+
+			spi2: spi@4a88000 {
+				compatible = "qcom,geni-spi";
+				reg = <0x0 0x04a88000 0x0 0x4000>;
+				interrupt-parent = <&gic>;
+				interrupts = <0 329 4>;
+				clocks = <&gcc 96>;
+				clock-names = "se";
+				#address-cells = <1>;
+				#size-cells = <0>;
+				pinctrl-names = "default";
+				pinctrl-0 = <&qup_spi2_default>;
+				status = "okay";
+
+				focaltech@0 {
+					compatible = "focaltech,fts";
+					reg = <0>;
+					pinctrl-names = "default";
+					pinctrl-0 = <&ts_int_active &ts_reset_active>;
+					spi-max-frequency = <2000000>;
+					focaltech,always_on_vio;
+					focaltech,share_reset_gpio;
+					focaltech,reset-gpio = <&tlmm 66 1>;
+					focaltech,irq-gpio = <&tlmm 67 2>;
+					focaltech,max-touch-number = <10>;
+					focaltech,display-coords = <0 0 720 1600>;
+					focaltech,stage-limit = <10>;
+					focaltech,name = "ft8009";
+					focaltech,family-id = <0xf0>;
+					focaltech,panel-supplier = "djnboe";
+					focaltech,report_gesture_key;
+					focaltech,dlfw_in_resume;
+				};
+			};
+		};
+
+		spmi_bus: spmi@1c40000 {
+			compatible = "qcom,spmi-pmic-arb";
+			reg = <0x0 0x01c40000 0x0 0x1100>,
+			      <0x0 0x01e00000 0x0 0x2000000>,
+			      <0x0 0x03e00000 0x0 0x100000>,
+			      <0x0 0x03f00000 0x0 0xa0000>,
+			      <0x0 0x01c0a000 0x0 0x26000>;
+			reg-names = "core", "chnls", "obsrvr", "intr", "cnfg";
+			interrupt-parent = <&gic>;
+			interrupt-names = "periph_irq";
+			interrupts = <0 183 4>;
+			qcom,ee = <0>;
+			qcom,channel = <0>;
+			#address-cells = <2>;
+			#size-cells = <0>;
+			interrupt-controller;
+			#interrupt-cells = <4>;
+			status = "okay";
+
+			pm6125_0: pmic@0 {
+				compatible = "qcom,pm6125", "qcom,spmi-pmic";
+				reg = <0x0 0>;
+				interrupt-parent = <&spmi_bus>;
+				#address-cells = <1>;
+				#size-cells = <0>;
+
+				pm6125_pon: pon@800 {
+					compatible = "qcom,pm8998-pon";
+					reg = <0x800>;
+					mode-bootloader = <0x2>;
+					mode-recovery = <0x1>;
+					pwrkey {
+						compatible = "qcom,pm8941-pwrkey";
+						interrupts = <0x0 0x8 0 3>;
+						debounce = <15625>;
+						bias-pull-up;
+						linux,code = <116>;
+					};
+				};
+
+				pm6125_rtc: rtc@6000 {
+					compatible = "qcom,pm8941-rtc";
+					reg = <0x6000>;
+					interrupts = <0x0 0x61 0x1 0>;
+				};
+
+				pm6125_temp: temp-alarm@2400 {
+					compatible = "qcom,spmi-temp-alarm";
+					reg = <0x2400>;
+					interrupts = <0x0 0x24 0 3>;
+					#thermal-sensor-cells = <0>;
+				};
+
+				pm6125_gpios: gpio@c000 {
+					compatible = "qcom,pm6125-gpio", "qcom,spmi-gpio";
+					reg = <0xc000>;
+					gpio-controller;
+					#gpio-cells = <2>;
+					interrupt-controller;
+					#interrupt-cells = <2>;
+				};
+			};
+
+			pmi632_2: pmic@2 {
+				compatible = "qcom,pmi632", "qcom,spmi-pmic";
+				reg = <0x2 0>;
+				interrupt-parent = <&spmi_bus>;
+				#address-cells = <1>;
+				#size-cells = <0>;
+
+				pmi632_temp: temp-alarm@2400 {
+					compatible = "qcom,spmi-temp-alarm";
+					reg = <0x2400>;
+					interrupts = <0x2 0x24 0 3>;
+					#thermal-sensor-cells = <0>;
+				};
+
+				pmi632_adc: adc@3100 {
+					compatible = "qcom,spmi-adc5";
+					reg = <0x3100>;
+					interrupts = <0x2 0x31 0 1>;
+					#address-cells = <1>;
+					#size-cells = <0>;
+					#io-channel-cells = <1>;
+
+					channel@0 {
+						reg = <0x00>;
+						label = "ref_gnd";
+						qcom,pre-scaling = <1 1>;
+					};
+					channel@1 {
+						reg = <0x01>;
+						label = "vref_1p25";
+						qcom,pre-scaling = <1 1>;
+					};
+					channel@6 {
+						reg = <0x06>;
+						label = "die_temp";
+						qcom,pre-scaling = <1 1>;
+					};
+					channel@83 {
+						reg = <0x83>;
+						label = "vph_pwr";
+						qcom,pre-scaling = <1 3>;
+					};
+					channel@84 {
+						reg = <0x84>;
+						label = "vbat_sns";
+						qcom,pre-scaling = <1 3>;
+					};
+					channel@8 {
+						reg = <0x08>;
+						label = "usb_in_v_div_16";
+						qcom,pre-scaling = <1 16>;
+					};
+				};
+
+				pmi632_gpios: gpio@c000 {
+					compatible = "qcom,pmi632-gpio", "qcom,spmi-gpio";
+					reg = <0xc000>;
+					gpio-controller;
+					#gpio-cells = <2>;
+					interrupt-controller;
+					#interrupt-cells = <2>;
+				};
+			};
+		};
+
+		dwc3@4e00000 {
+			compatible = "snps,dwc3";
+			reg = <0x0 0x4e00000 0x0 0xcd00>;
+			interrupt-parent = <&gic>;
+			interrupts = <0 255 4>;
+			dr_mode = "peripheral";
+			maximum-speed = "high-speed";
+			snps,disable-clk-gating;
+			snps,dis_u2_susphy_quirk;
+			snps,dis_enblslpm_quirk;
+			snps,has-lpm-erratum;
+			snps,hird-threshold = [10];
+			/* owned by the bengal_ctl control guest */
+			status = "disabled";
+		};
+	};
+
+	thermal-zones {
+		cpu-thermal {
+			polling-delay-passive = <250>;
+			polling-delay = <1000>;
+			thermal-sensors = <&tsens0 0>;
+
+			trips {
+				cpu-crit {
+					temperature = <110000>;
+					hysteresis = <1000>;
+					type = "critical";
+				};
+			};
+		};
+
+		pm6125-thermal {
+			polling-delay-passive = <0>;
+			polling-delay = <0>;
+			thermal-sensors = <&pm6125_temp>;
+
+			trips {
+				pm6125-trip0 {
+					temperature = <95000>;
+					hysteresis = <0>;
+					type = "passive";
+				};
+			};
+		};
+
+		pmi632-thermal {
+			polling-delay-passive = <0>;
+			polling-delay = <0>;
+			thermal-sensors = <&pmi632_temp>;
+
+			trips {
+				pmi632-trip0 {
+					temperature = <95000>;
+					hysteresis = <0>;
+					type = "passive";
+				};
+			};
+		};
+	};
+};

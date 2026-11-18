@@ -22,11 +22,15 @@ enum {
 	Qclaim,
 	Qowner,
 	Qrelease,
+	Qirq2,
+	Qwait2,
 	Qdma,
 	Qdmabase,
 	Qdmasize,
 	Qdmaalloc,
 	Qdmafree,
+	Qdmaallocowned,
+	Qdmaavail,
 	Qdmaclean,
 	Qdmainval,
 	Qdmacivac,
@@ -73,22 +77,28 @@ static int ndmahole;
 static u64 dmabump;
 static Lock dmalock;
 
-/* Most recent allocation, reported by reading #P/dma/alloc. */
-static struct {
-	u64 pa;
-	u64 len;
-} dmalast;
-
 /*
  * DMA commands are newline terminated: a text program may write the
  * command in several pieces, and a driver must not allocate once per
  * write.
+ *
+ * The allocation result is reported by reading the same file back.
+ * It is kept per open file, in Dmactl below: with more than one LKL
+ * instance (and native drivers) allocating at boot, a single global
+ * "last allocation" hands a caller another caller's chunk, and a
+ * guest then carves its RAM out of someone else's arena.
  */
 enum { Dmactlmax = 96 };
 typedef struct Dmactl Dmactl;
 struct Dmactl {
 	char buf[Dmactlmax];
 	int n;
+	u64 pa;		/* this file's most recent allocation */
+	u64 len;
+	/* allocowned: chunks freed when this file is closed */
+	u64 ownpa[8];
+	u64 ownlen[8];
+	int nown;
 };
 
 /*
@@ -203,20 +213,20 @@ dmaalloc(u64 size, u64 align)
 	return a;
 }
 
-static void
-dmafree(u64 pa, u64 len)
+static int
+dmafreeq(u64 pa, u64 len)
 {
 	Dmahole h;
 	int i, j;
 
 	if(len == 0 || pa < arm64dmabase ||
 	   pa - arm64dmabase > arm64dmasize || len > arm64dmasize - (pa - arm64dmabase))
-		error(Ebadarg);
+		return -1;
 	len = PGROUND(len);
 	lock(&dmalock);
 	if(ndmahole >= Maxdmahole){
 		unlock(&dmalock);
-		error(Enomem);
+		return -1;
 	}
 	h.base = pa;
 	h.size = len;
@@ -237,6 +247,88 @@ dmafree(u64 pa, u64 len)
 			i++;
 	}
 	unlock(&dmalock);
+	return 0;
+}
+
+static void
+dmafree(u64 pa, u64 len)
+{
+	if(dmafreeq(pa, len) < 0)
+		error(Ebadarg);
+}
+
+/*
+ * DMA garbage collection.  Every chunk handed out is recorded with
+ * its owner's pid.  A chunk whose owner no longer exists is garbage:
+ * the process died without freeing it (a killed guest, a crashed
+ * driver).  dmagc() returns such chunks to the hole list.  It runs
+ * before each new allocation and whenever availability is queried,
+ * so leaked carves are reclaimed by the next consumer that needs
+ * the space rather than accumulating for the rest of the boot.
+ * Pid reuse can only delay collection (the new proc's death frees
+ * it then); it can never free a live chunk early, because the entry
+ * is also removed on explicit free and on allocowned close.
+ */
+enum { Maxdmaown = 256 };
+typedef struct Dmaown Dmaown;
+struct Dmaown {
+	u64 pa;
+	u64 len;
+	int pid;	/* 0: kernel/unknown owner, never collected */
+};
+static Dmaown dmaown[Maxdmaown];
+static int ndmaown;
+
+static void
+dmaownadd(u64 pa, u64 len)
+{
+	Proc *up = externup();
+
+	lock(&dmalock);
+	if(ndmaown < Maxdmaown){
+		dmaown[ndmaown].pa = pa;
+		dmaown[ndmaown].len = len;
+		dmaown[ndmaown].pid = up != nil ? up->pid : 0;
+		ndmaown++;
+	}
+	unlock(&dmalock);
+}
+
+static void
+dmaownremove(u64 pa)
+{
+	int i;
+
+	lock(&dmalock);
+	for(i = 0; i < ndmaown; i++){
+		if(dmaown[i].pa == pa){
+			dmaown[i] = dmaown[--ndmaown];
+			break;
+		}
+	}
+	unlock(&dmalock);
+}
+
+static void
+dmagc(void)
+{
+	u64 pa[16], len[16];
+	int i, n;
+
+	n = 0;
+	lock(&dmalock);
+	for(i = 0; i < ndmaown && n < (int)nelem(pa); ){
+		if(dmaown[i].pid > 0 && psindex(dmaown[i].pid) < 0){
+			pa[n] = dmaown[i].pa;
+			len[n] = dmaown[i].len;
+			n++;
+			dmaown[i] = dmaown[--ndmaown];
+		}else
+			i++;
+	}
+	unlock(&dmalock);
+	for(i = 0; i < n; i++)
+		dmafreeq(pa[i], len[i]);
 }
 
 enum { Dclean, Dinval, Dcleaninval };
@@ -394,7 +486,7 @@ pnpgen(Chan *c, char *name, Dirtab *tab, int ntab, int s, Dir *dp)
 			return 1;
 		}
 		dev = DEV(c);
-		if(dev < 0 || dev >= (int)npnpdev || s < 0 || s > Qrelease-Qreg)
+		if(dev < 0 || dev >= (int)npnpdev || s < 0 || s > Qwait2-Qreg)
 			return -1;
 		q.type = QTFILE;
 		switch(s + Qreg){
@@ -445,6 +537,14 @@ pnpgen(Chan *c, char *name, Dirtab *tab, int ntab, int s, Dir *dp)
 		case Qrelease:
 			q.path = QPATH(dev, Qrelease);
 			devdir(c, q, "release", 0, eve, 0666, dp);
+			break;
+		case Qirq2:
+			q.path = QPATH(dev, Qirq2);
+			devdir(c, q, "irq2", 0, eve, 0444, dp);
+			break;
+		case Qwait2:
+			q.path = QPATH(dev, Qwait2);
+			devdir(c, q, "wait2", 0, eve, 0444, dp);
 			break;
 		default:
 			return -1;
@@ -497,6 +597,18 @@ pnpgen(Chan *c, char *name, Dirtab *tab, int ntab, int s, Dir *dp)
 			q.path = QPATH(npnpdev, Qdmacivac);
 			q.type = QTFILE;
 			devdir(c, q, "cleaninval", 0, eve, 0666, dp);
+			return 1;
+		}
+		if(s == 7){
+			q.path = QPATH(npnpdev, Qdmaallocowned);
+			q.type = QTFILE;
+			devdir(c, q, "allocowned", 0, eve, 0666, dp);
+			return 1;
+		}
+		if(s == 8){
+			q.path = QPATH(npnpdev, Qdmaavail);
+			q.type = QTFILE;
+			devdir(c, q, "avail", 0, eve, 0444, dp);
 			return 1;
 		}
 		return -1;
@@ -564,20 +676,33 @@ pnpopen(Chan *c, int omode)
 	if(c->qid.type & QTDIR){
 		if(m != OREAD)
 			error(Eperm);
-	}else if(t == Qdmaalloc || t == Qdmafree || t == Qdmaclean ||
+	}else if(t == Qdmaalloc || t == Qdmaallocowned || t == Qdmafree || t == Qdmaclean ||
 	         t == Qdmainval || t == Qdmacivac || t == Qteesmc ||
 	         t == Qclaim || t == Qrelease){
 		/* DMA control files and the SMC gate accept reads and writes. */
 	}else if(m != OREAD)
 		error(Eperm);
-	if(t == Qwait){
+	if(t == Qwait || t == Qwait2){
 		int dev;
+		u32 irq;
 
 		dev = DEV(c);
 		if(dev < 0 || dev >= (int)npnpdev)
 			error(Ebadarg);
-		if(arm64irqenable(pnpdev[dev].irq) < 0)
-			error("no interrupt");
+		irq = (t == Qwait2) ? pnpdev[dev].irq2 : pnpdev[dev].irq;
+		{
+			int *idp;
+
+			idp = mallocz(sizeof(int), 1);
+			if(idp == nil)
+				error(Enomem);
+			*idp = arm64irqenable(irq);
+			if(*idp < 0){
+				free(idp);
+				error("no interrupt");
+			}
+			c->aux = idp;
+		}
 	}
 	c->mode = openmode(omode);
 	c->flag |= COPEN;
@@ -591,11 +716,30 @@ pnpclose(Chan *c)
 	int dev;
 
 	/*
+	 * Closing an allocowned file releases every chunk allocated
+	 * through it.  Instance RAM is allocated this way, so a guest
+	 * that exits or is killed returns its arena carve instead of
+	 * leaking it for the rest of the boot.
+	 */
+	if(TYPE(c) == Qdmaallocowned && c->aux != nil){
+		Dmactl *ct = c->aux;
+		int i;
+
+		for(i = 0; i < ct->nown; i++){
+			dmafreeq(ct->ownpa[i], ct->ownlen[i]);
+			dmaownremove(ct->ownpa[i]);
+		}
+		ct->nown = 0;
+	}
+	/*
 	 * Closing the wait file must release the GIC line, or a reader that
 	 * exits leaves the line claimed and the next consumer gets -1.
 	 */
-	if(TYPE(c) == Qwait && (dev = DEV(c)) >= 0 && dev < (int)npnpdev)
-		arm64irqdisable(pnpdev[dev].irq);
+	if((TYPE(c) == Qwait || TYPE(c) == Qwait2) &&
+	   (dev = DEV(c)) >= 0 && dev < (int)npnpdev &&
+	   c->aux != nil)
+		arm64irqdisable(TYPE(c) == Qwait2 ? pnpdev[dev].irq2 : pnpdev[dev].irq,
+			*(int*)c->aux);
 	free(c->aux);
 	c->aux = nil;
 }
@@ -659,7 +803,7 @@ pnpwrite(Chan *c, void *a, i32 n, i64 off)
 		return n;
 	}
 	if((ct = c->aux) == nil){
-		ct = malloc(sizeof *ct);
+		ct = mallocz(sizeof *ct, 1);
 		if(ct == nil)
 			error(Enomem);
 		ct->n = 0;
@@ -683,20 +827,28 @@ pnpwrite(Chan *c, void *a, i32 n, i64 off)
 	p = buf;
 	switch(TYPE(c)){
 	case Qdmaalloc:
+	case Qdmaallocowned:
 		if(number(&p, &v) < 0)
 			error(Ebadarg);
 		if(number(&p, &len) < 0 || len == 0)
 			len = 4096;
+		dmagc();
 		pa = dmaalloc(v, len);
-		lock(&dmalock);
-		dmalast.pa = pa;
-		dmalast.len = PGROUND(v);
-		unlock(&dmalock);
+		dmaownadd(pa, PGROUND(v));
+		ct->pa = pa;
+		ct->len = PGROUND(v);
+		if(TYPE(c) == Qdmaallocowned &&
+		   ct->nown < (int)nelem(ct->ownpa)){
+			ct->ownpa[ct->nown] = pa;
+			ct->ownlen[ct->nown] = ct->len;
+			ct->nown++;
+		}
 		break;
 	case Qdmafree:
 		if(number(&p, &v) < 0 || number(&p, &len) < 0)
 			error(Ebadarg);
 		dmafree(v, len);
+		dmaownremove(v);
 		break;
 	case Qdmaclean:
 	case Qdmainval:
@@ -731,17 +883,33 @@ pnpread(Chan *c, void *a, i32 n, i64 off)
 		snprint(dbuf, sizeof dbuf, "0x%llx\n", arm64dmasize);
 		return readstr(off, a, n, dbuf);
 	}
-	if(TYPE(c) == Qdmaalloc){
+	if(TYPE(c) == Qdmaavail){
+		/* Free arena bytes: holes plus the untouched tail.  Lets a
+		 * supervisor check there is room before launching a guest
+		 * instead of retrying into an exhausted arena. */
 		char dbuf[64];
+		u64 avail;
+		int i;
 
+		dmagc();
 		lock(&dmalock);
-		if(dmalast.len == 0){
-			unlock(&dmalock);
-			return 0;
-		}
-		snprint(dbuf, sizeof dbuf, "0x%llx %llux\n", dmalast.pa,
-		        dmalast.len);
+		avail = dmabump == 0 ? arm64dmasize :
+			(arm64dmabase + arm64dmasize) - dmabump;
+		for(i = 0; i < ndmahole; i++)
+			avail += dmahole[i].size;
 		unlock(&dmalock);
+		snprint(dbuf, sizeof dbuf, "%llud\n", avail);
+		return readstr(off, a, n, dbuf);
+	}
+	if(TYPE(c) == Qdmaalloc || TYPE(c) == Qdmaallocowned){
+		char dbuf[64];
+		Dmactl *ct;
+
+		ct = c->aux;
+		if(ct == nil || ct->len == 0)
+			return 0;
+		snprint(dbuf, sizeof dbuf, "0x%llx %llux\n", ct->pa,
+		        ct->len);
 		return readstr(off, a, n, dbuf);
 	}
 	if(TYPE(c) == Qteeversion){
@@ -783,6 +951,9 @@ pnpread(Chan *c, void *a, i32 n, i64 off)
 	case Qirq:
 		snprint(buf, sizeof buf, "%u\n", d->irq);
 		break;
+	case Qirq2:
+		snprint(buf, sizeof buf, "%u\n", d->irq2);
+		break;
 	case Qirqflags:
 		snprint(buf, sizeof buf, "%u\n", d->irqflags);
 		break;
@@ -795,10 +966,13 @@ pnpread(Chan *c, void *a, i32 n, i64 off)
 	case Qconsole:
 		snprint(buf, sizeof buf, "%u\n", d->base == consolebase);
 		break;
-	case Qwait: {
+	case Qwait:
+	case Qwait2: {
 		int n;
 
-		n = arm64irqwait(d->irq);
+		if(c->aux == nil)
+			error("no interrupt");
+		n = arm64irqwait(TYPE(c) == Qwait2 ? d->irq2 : d->irq, *(int*)c->aux);
 		if(n < 0)
 			error("no interrupt");
 		snprint(buf, sizeof buf, "%d\n", n);

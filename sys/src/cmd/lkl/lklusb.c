@@ -15,6 +15,7 @@
 
 extern long	lkl_syscall(long, long*);
 extern int	lkl_printf(const char*, ...);
+extern char	*lklsrvname;
 
 typedef struct Uevent Uevent;
 struct Uevent {
@@ -83,6 +84,9 @@ enum {
 
 	AtFdcwd		= -100,
 	O_Rdonly	= 0,
+	O_Wronly	= 1,
+	O_Rdwr		= 2,
+	O_Nonblock	= 04000,
 };
 
 static int
@@ -99,15 +103,82 @@ lklsleep(long ms)
 }
 
 static long
-lklopen(char *path)
+lklopenflags(char *path, int flags)
 {
 	long p[6];
 
 	memset(p, 0, sizeof p);
 	p[0] = AtFdcwd;
 	p[1] = (long)path;
-	p[2] = O_Rdonly;
+	p[2] = flags;
 	return lkl_syscall(__lkl__NR_openat, p);
+}
+
+static long
+lklopen(char *path)
+{
+	return lklopenflags(path, O_Rdonly);
+}
+
+static long
+lklwrite(long fd, void *buf, long len)
+{
+	long p[6];
+
+	memset(p, 0, sizeof p);
+	p[0] = fd;
+	p[1] = (long)buf;
+	p[2] = len;
+	return lkl_syscall(__lkl__NR_write, p);
+}
+
+static long
+lklmkdir(char *path, int mode)
+{
+	long p[6];
+
+	memset(p, 0, sizeof p);
+	p[0] = AtFdcwd;
+	p[1] = (long)path;
+	p[2] = mode;
+	return lkl_syscall(__lkl__NR_mkdirat, p);
+}
+
+static long
+lklsymlink(char *target, char *linkpath)
+{
+	long p[6];
+
+	memset(p, 0, sizeof p);
+	p[0] = (long)target;
+	p[1] = AtFdcwd;
+	p[2] = (long)linkpath;
+	return lkl_syscall(__lkl__NR_symlinkat, p);
+}
+
+static long
+lklmount(char *src, char *tgt, char *fstype)
+{
+	long p[6];
+
+	memset(p, 0, sizeof p);
+	p[0] = (long)src;
+	p[1] = (long)tgt;
+	p[2] = (long)fstype;
+	return lkl_syscall(__lkl__NR_mount, p);
+}
+
+static long
+lklmknod(char *path, int mode, ulong dev)
+{
+	long p[6];
+
+	memset(p, 0, sizeof p);
+	p[0] = AtFdcwd;
+	p[1] = (long)path;
+	p[2] = mode;
+	p[3] = dev;
+	return lkl_syscall(__lkl__NR_mknodat, p);
 }
 
 static long
@@ -130,6 +201,26 @@ lklclose(long fd)
 	memset(p, 0, sizeof p);
 	p[0] = fd;
 	return lkl_syscall(__lkl__NR_close, p);
+}
+
+static int
+lklwritestr(char *path, char *val)
+{
+	long fd, n, len;
+
+	fd = lklopenflags(path, O_Wronly);
+	if(fd < 0){
+		lkl_printf("lklusb: open %s: %ld\n", path, fd);
+		return -1;
+	}
+	len = strlen(val);
+	n = lklwrite(fd, val, len);
+	lklclose(fd);
+	if(n != len){
+		lkl_printf("lklusb: write %s: %ld\n", path, n);
+		return -1;
+	}
+	return 0;
 }
 
 /*
@@ -186,14 +277,403 @@ translate(int code, int shift)
 	return 0;
 }
 
+static long
+lklgetdents64(long fd, void *buf, long len)
+{
+	long p[6];
+
+	memset(p, 0, sizeof p);
+	p[0] = fd;
+	p[1] = (long)buf;
+	p[2] = len;
+	return lkl_syscall(__lkl__NR_getdents64, p);
+}
+
+static int
+findudc(char *udc, int udcsize)
+{
+	long fd, n, off;
+	char *buf, *name;
+	ushort reclen;
+
+	fd = lklopen("/sys/class/udc");
+	if(fd < 0)
+		return -1;
+	buf = malloc(1024);
+	if(buf == nil){
+		lklclose(fd);
+		return -1;
+	}
+	n = lklgetdents64(fd, buf, 1024);
+	lklclose(fd);
+	for(off = 0; off + 20 <= n; off += reclen){
+		reclen = *(ushort*)(buf + off + 16);
+		if(reclen < 20 || off + reclen > n)
+			break;
+		name = buf + off + 19;
+		if(strcmp(name, ".") == 0 || strcmp(name, "..") == 0)
+			continue;
+		if(strncmp(name, "dummy", 5) == 0)
+			continue;
+		strecpy(udc, udc + udcsize, name);
+		free(buf);
+		return 0;
+	}
+	free(buf);
+	return -1;
+}
+
+static int
+setupgadget(char *udc, int udcsize)
+{
+	int i;
+	long r;
+
+	lklmkdir("/sys", 0755);
+	r = lklmount("sysfs", "/sys", "sysfs");
+	if(r < 0 && r != -16)	/* -EBUSY */
+		lkl_printf("lklusb: mount sysfs: %ld\n", r);
+	lklmkdir("/sys/kernel", 0755);
+	lklmkdir("/sys/kernel/config", 0755);
+	r = lklmount("configfs", "/sys/kernel/config", "configfs");
+	if(r < 0 && r != -16)
+		lkl_printf("lklusb: mount configfs: %ld\n", r);
+
+	for(i = 0; i < 30; i++){
+		if(findudc(udc, udcsize) == 0)
+			break;
+		lklsleep(100);
+	}
+	if(i >= 30)
+		return -1;
+
+	lkl_printf("lklusb: found UDC %s\n", udc);
+	if(strcmp(udc, "4e00000.dwc3") == 0){
+		extern u32 lklhost_mmio_r32(u64);
+		extern void lklhost_mmio_w32(u64, u32);
+		u32 hs = lklhost_mmio_r32(0x4ef8810ULL);
+		lkl_printf("lklusb: pre-bind qscratch GEN=%#ux HS=%#ux SS=%#ux\n",
+			lklhost_mmio_r32(0x4ef8808ULL), hs,
+			lklhost_mmio_r32(0x4ef8830ULL));
+		if(hs != 0xdeadbeefU)
+			lklhost_mmio_w32(0x4ef8810ULL, hs | (1U<<20) | (1U<<28));
+	}
+	lklmkdir("/sys/kernel/config/usb_gadget/g1", 0755);
+	lklwritestr("/sys/kernel/config/usb_gadget/g1/idVendor", "0x1d6b\n");
+	lklwritestr("/sys/kernel/config/usb_gadget/g1/idProduct", "0x0104\n");
+	lklwritestr("/sys/kernel/config/usb_gadget/g1/bcdDevice", "0x0100\n");
+	lklwritestr("/sys/kernel/config/usb_gadget/g1/bcdUSB", "0x0200\n");
+
+	lklmkdir("/sys/kernel/config/usb_gadget/g1/strings/0x409", 0755);
+	lklwritestr("/sys/kernel/config/usb_gadget/g1/strings/0x409/serialnumber", "harvey01\n");
+	lklwritestr("/sys/kernel/config/usb_gadget/g1/strings/0x409/manufacturer", "Harvey\n");
+	lklwritestr("/sys/kernel/config/usb_gadget/g1/strings/0x409/product", "Harvey ARM64 USB\n");
+
+	lklmkdir("/sys/kernel/config/usb_gadget/g1/configs/c.1", 0755);
+	lklmkdir("/sys/kernel/config/usb_gadget/g1/configs/c.1/strings/0x409", 0755);
+	lklwritestr("/sys/kernel/config/usb_gadget/g1/configs/c.1/strings/0x409/configuration", "CDC ACM\n");
+	lklwritestr("/sys/kernel/config/usb_gadget/g1/configs/c.1/MaxPower", "250\n");
+
+	lklmkdir("/sys/kernel/config/usb_gadget/g1/functions/acm.usb0", 0755);
+	lklsymlink("/sys/kernel/config/usb_gadget/g1/functions/acm.usb0",
+		"/sys/kernel/config/usb_gadget/g1/configs/c.1/acm.usb0");
+
+	r = lklwritestr("/sys/kernel/config/usb_gadget/g1/UDC", udc);
+	if(r < 0){
+		lkl_printf("lklusb: bind UDC %s failed: %ld\n", udc, r);
+		return -1;
+	}
+	lkl_printf("lklusb: bound CDC-ACM gadget to %s\n", udc);
+	{
+		extern u32 lklhost_mmio_r32(u64);
+		lklsleep(50);
+		lkl_printf("lklusb: dwc3 GCTL=%#ux PHY2=%#ux DCTL=%#ux DEVTEN=%#ux DSTS=%#ux EVTCNT=%#ux\n",
+			lklhost_mmio_r32(0x4e0c110ULL),
+			lklhost_mmio_r32(0x4e0c200ULL),
+			lklhost_mmio_r32(0x4e0c704ULL),
+			lklhost_mmio_r32(0x4e0c708ULL),
+			lklhost_mmio_r32(0x4e0c70cULL),
+			lklhost_mmio_r32(0x4e0c40cULL));
+	}
+	return 0;
+}
+
+typedef struct Ringbuf Ringbuf;
+struct Ringbuf {
+	Lock	lk;
+	uchar	data[8192];
+	int	head;
+	int	tail;
+	int	eof;
+};
+
+static int
+rbput(Ringbuf *rb, uchar *src, int n)
+{
+	int i;
+
+	lock(&rb->lk);
+	for(i = 0; i < n; i++){
+		int next = (rb->head + 1) % sizeof(rb->data);
+		if(next == rb->tail)
+			break;
+		rb->data[rb->head] = src[i];
+		rb->head = next;
+	}
+	unlock(&rb->lk);
+	return i;
+}
+
+static int
+rbget(Ringbuf *rb, uchar *dst, int max)
+{
+	int i;
+
+	lock(&rb->lk);
+	for(i = 0; i < max && rb->tail != rb->head; i++){
+		dst[i] = rb->data[rb->tail];
+		rb->tail = (rb->tail + 1) % sizeof(rb->data);
+	}
+	unlock(&rb->lk);
+	return i;
+}
+
+extern int harvey_rfork_call(void *newsp, void *arg, void (*fn)(void*), int flags);
+
+typedef struct Rcreaderarg Rcreaderarg;
+struct Rcreaderarg {
+	Ringbuf *rb;
+	int fd;
+};
+
+static void
+rcreader(void *v)
+{
+	Rcreaderarg *a = v;
+	uchar tmp[512];
+	long rn;
+
+	for(;;){
+		rn = read(a->fd, tmp, sizeof tmp);
+		if(rn <= 0){
+			a->rb->eof = 1;
+			exits(nil);
+		}
+		while(rbput(a->rb, tmp, rn) < rn)
+			sleep(5);
+	}
+}
+
+static void
+ensurettygs0(void)
+{
+	long fd, n;
+	char buf[32], *colon;
+	ulong maj, min, dev;
+
+	lklmkdir("/dev", 0755);
+	lklmount("devtmpfs", "/dev", "devtmpfs");
+	fd = lklopenflags("/dev/ttyGS0", O_Rdwr | O_Nonblock);
+	if(fd >= 0){
+		lklclose(fd);
+		return;
+	}
+	fd = lklopen("/sys/class/tty/ttyGS0/dev");
+	if(fd < 0){
+		lkl_printf("lklusb: /sys/class/tty/ttyGS0/dev: %ld\n", fd);
+		return;
+	}
+	n = lklread(fd, buf, sizeof(buf) - 1);
+	lklclose(fd);
+	if(n <= 0)
+		return;
+	buf[n] = 0;
+	colon = strchr(buf, ':');
+	if(colon == nil)
+		return;
+	*colon = 0;
+	maj = strtoul(buf, nil, 10);
+	min = strtoul(colon + 1, nil, 10);
+	dev = ((maj & 0xfff) << 8) | (min & 0xff) | ((min & ~0xffUL) << 12);
+	n = lklmknod("/dev/ttyGS0", 0020600, dev);
+	lkl_printf("lklusb: mknod /dev/ttyGS0 (%lud:%lud) -> %ld\n", maj, min, n);
+}
+
+static void
+usbgadgetservice(char *udc)
+{
+	long ttyfd, n, w, off;
+	int inpipe[2], outpipe[2], i;
+	Ringbuf *rb;
+	uchar *rxbuf, *txbuf;
+
+	USED(udc);
+	ensurettygs0();
+	ttyfd = -1;
+	for(i = 0; i < 50 && ttyfd < 0; i++){
+		ttyfd = lklopenflags("/dev/ttyGS0", O_Rdwr | O_Nonblock);
+		if(ttyfd < 0)
+			lklsleep(100);
+	}
+	if(ttyfd < 0){
+		lkl_printf("lklusb: /dev/ttyGS0 open failed: %ld\n", ttyfd);
+		return;
+	}
+	lkl_printf("lklusb: /dev/ttyGS0 open (fd %ld)\n", ttyfd);
+
+	if(pipe(inpipe) < 0 || pipe(outpipe) < 0){
+		lkl_printf("lklusb: pipe failed: %r\n");
+		lklclose(ttyfd);
+		return;
+	}
+
+	switch(rfork(RFPROC|RFFDG|RFNAMEG)){
+	case -1:
+		lkl_printf("lklusb: rfork rc failed: %r\n");
+		lklclose(ttyfd);
+		return;
+	case 0: {
+		char a0[16], a1[8], a2[8], a3[16];
+		char *rcargv[5];
+		snprint(a0, sizeof a0, "%s", "/boot/rc");
+		snprint(a1, sizeof a1, "%s", "-i");
+		snprint(a2, sizeof a2, "%s", "-m");
+		snprint(a3, sizeof a3, "%s", "/boot/rcmain");
+		rcargv[0] = a0;
+		rcargv[1] = a1;
+		rcargv[2] = a2;
+		rcargv[3] = a3;
+		rcargv[4] = nil;
+		dup(inpipe[0], 0);
+		dup(outpipe[1], 1);
+		dup(outpipe[1], 2);
+		close(inpipe[0]);
+		close(inpipe[1]);
+		close(outpipe[0]);
+		close(outpipe[1]);
+		exec(rcargv[0], rcargv);
+		exits("exec rc");
+	}
+	}
+	close(inpipe[0]);
+	close(outpipe[1]);
+
+	rb = mallocz(sizeof *rb, 1);
+	rxbuf = malloc(1024);
+	txbuf = malloc(1024);
+	if(rb == nil || rxbuf == nil || txbuf == nil){
+		lkl_printf("lklusb: malloc failed\n");
+		return;
+	}
+
+	/*
+	 * Harvey-only reader thread: drains rc stdout/stderr into the BSEG
+	 * ring buffer so only the T1 BSEG-stack thread touches LKL syscalls.
+	 */
+	{
+		uchar *rcst = mallocz(64*1024, 1);
+		Rcreaderarg *rcarg = mallocz(sizeof *rcarg, 1);
+		if(rcst == nil || rcarg == nil){
+			lkl_printf("lklusb: reader alloc failed\n");
+			return;
+		}
+		rcarg->rb = rb;
+		rcarg->fd = outpipe[0];
+		if(harvey_rfork_call(rcst + 64*1024 - 16, rcarg, rcreader,
+		    RFPROC|RFMEM|RFNOWAIT) < 0){
+			lkl_printf("lklusb: rfork reader failed: %r\n");
+			return;
+		}
+	}
+
+	for(;;){
+		int didwork = 0;
+
+		n = lklread(ttyfd, rxbuf, 1024);
+		if(n > 0){
+			write(inpipe[1], rxbuf, n);
+			didwork = 1;
+		}else if(n < 0 && n != -11){
+			/* Wait quietly if USB host isn't connected yet. */
+			lklsleep(50);
+		}
+
+		n = rbget(rb, txbuf, 1024);
+		if(n > 0){
+			off = 0;
+			while(off < n){
+				w = lklwrite(ttyfd, txbuf + off, n - off);
+				if(w > 0){
+					off += w;
+					continue;
+				}
+				if(w == -11){
+					lklsleep(5);
+					continue;
+				}
+				break;
+			}
+			didwork = 1;
+		}
+		if(!didwork)
+			lklsleep(5);
+	}
+}
+
+static void
+dwc3watch(void *arg)
+{
+	extern u32 lklhost_mmio_r32(u64);
+	int i;
+	u32 dctl, dsts, evt, cmd, prev = 0xdeadbeefU;
+
+	USED(arg);
+	for(i = 0; i < 10; i++){
+		dctl = lklhost_mmio_r32(0x4e0c704ULL);
+		dsts = lklhost_mmio_r32(0x4e0c70cULL);
+		evt = lklhost_mmio_r32(0x4e0c40cULL);
+		cmd = lklhost_mmio_r32(0x4e0c80cULL);
+		if(i == 0 || dsts != prev || evt != 0){
+			lkl_printf("lklusb: dwc3 t=%ds DCTL=%#ux DSTS=%#ux EVTCNT=%#ux DEP0CMD=%#ux\n",
+				i * 2, dctl, dsts, evt, cmd);
+			prev = dsts;
+		}
+		sleep(2000);
+	}
+	exits(nil);
+}
+
 void
 usbservice(void)
 {
 	long fd, n;
-	char path[32];
+	char path[32], udc[64];
 	Uevent ev;
 	int i, shift, kbd, logged;
 	char c;
+
+	if(setupgadget(udc, sizeof udc) == 0){
+		extern void lkl9p_start(char*);
+		ensurettygs0();
+		if(strcmp(udc, "4e00000.dwc3") == 0){
+			uchar *st = mallocz(16*1024, 1);
+			if(st != nil)
+				harvey_rfork_call(st + 16*1024 - 16, nil, dwc3watch,
+				    RFPROC|RFMEM|RFNOWAIT);
+		}
+		lkl9p_start(lklsrvname);
+		return;
+	}
+
+	/*
+	 * No UDC in this guest (the control guest owns USB): still
+	 * export the filesystem so drivers can be inspected and the
+	 * reboot watcher runs, then fall through to the input loop.
+	 */
+	{
+		extern void lkl9p_start(char*);
+		lkl9p_start(lklsrvname);
+	}
 
 	fd = -1;
 	for(i = 0; i < 200 && fd < 0; i++){

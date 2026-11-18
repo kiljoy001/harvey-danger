@@ -59,6 +59,7 @@ struct Fdtdev {
 	u64 size2;
 	u32 irq;	/* GIC interrupt ID (SPI+32, PPI+16); 0 when absent */
 	u32 irqflags;	/* trigger flags from the first interrupt cell */
+	u32 irq2;	/* second GIC interrupt ID; 0 when absent */
 	u32 clas;
 };
 
@@ -83,6 +84,7 @@ enum {
 struct Fdtinfo {
 	u64 rambase;
 	u64 ramsize;
+	u64 lklarena;	/* /chosen harvey,lkl-arena-size, 0 if absent */
 	u64 uartbase;
 	u32 uarttype;
 	u32 gicversion;
@@ -110,10 +112,12 @@ const char *fdtclassname(u32);
 int arm64timerinit(Fdtinfo *);
 void arm64timerstop(void);
 int arm64timerwait(void);
+void fb_stripe(int, u32);
+void fb_draw_hex(int, int, u64, u32);
 int arm64irqmaskprobe(void);
 int arm64irqenable(u32);
-void arm64irqdisable(u32);
-int arm64irqwait(u32);
+void arm64irqdisable(u32, int);
+int arm64irqwait(u32, int);
 u64 arm64timerdiag(void);
 extern volatile u32 arm64ticks;
 extern volatile u32 arm64el0irqs;

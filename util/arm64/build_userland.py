@@ -26,6 +26,7 @@ UARTFS_BASE = 0x1600000
 GPIOFS_BASE = 0x1A00000
 GPUS_BASE = 0xD000000
 NPUFS_BASE = 0xD400000
+ADRENOFS_BASE = 0xD800000
 HUBFS_BASE = 0x1E00000
 DRVMAN_BASE = 0x2200000
 I2CFS_BASE = 0x2600000
@@ -372,6 +373,11 @@ def build_gpiofs(out: Path, libc: Path) -> tuple[bytes, int]:
 def build_gpufs(out: Path, libc: Path) -> tuple[bytes, int]:
     return build_fs(out, libc, "gpufs",
                     ROOT / "sys/src/cmd/gpufs/gpufs.c", GPUS_BASE)
+
+
+def build_adrenofs(out: Path, libc: Path) -> tuple[bytes, int]:
+    return build_fs(out, libc, "adrenofs",
+                    ROOT / "sys/src/cmd/adrenofs/adrenofs.c", ADRENOFS_BASE)
 
 
 def build_npufs(out: Path, libc: Path) -> tuple[bytes, int]:
@@ -801,6 +807,9 @@ def userland_signature() -> str:
     gefs = os.environ.get("ARM64_BUILD_GEFS", "0")
     ucc = os.environ.get("UCC", "")
     nolkl = os.environ.get("ARM64_NO_LKL", "0")
+    lklboot = ROOT / "build/arm64-lkl/lklboot.stripped"
+    if lklboot.is_file() and nolkl != "1":
+        files.append(lklboot)
     return buildcache.signature(
         ["build_userland", "no-usbpower=" + variant, "gefs=" + gefs,
          "ucc=" + ucc, "no-lkl=" + nolkl], files)
@@ -1126,6 +1135,14 @@ main(int argc, char **argv)
 		_exits("namespace");
 	}
 	say("HARVEY-ARM64 DRIVER-NAMESPACE PASS\n");
+	/* Without this, /proc is an empty root directory: the ctl
+	 * supervisor's /proc/<pid> death check then fails instantly
+	 * and kills a healthy guest, and lklboot's wired pin (written
+	 * to /proc/<pid>/ctl) silently never applies. */
+	if(bind("#p", "/proc", MREPL|MCREATE) < 0)
+		say("HARVEY-ARM64 PROC-BIND FAIL\n");
+	else
+		say("HARVEY-ARM64 PROC-BIND PASS\n");
 	fd = create("/mnt/o9drvman-status", OREAD, DMDIR|0755);
 	if(fd >= 0)
 		close(fd);
@@ -1157,7 +1174,8 @@ main(int argc, char **argv)
 		}
 		if(strncmp(status, "pass", 4) != 0){
 			say("HARVEY-ARM64 DRIVER-MANAGER FAIL\n");
-			_exits("manager");
+			if(access("#P/mmc@fe2c0000/reg", 0) >= 0)
+				_exits("manager");
 		}
 	}
 	say("HARVEY-ARM64 DRIVER-MANAGER PASS\n");
@@ -1339,22 +1357,310 @@ main(int argc, char **argv)
 		}
 		_exits("ping");
 	}
+	/* Show the previous boot's guest-log tail, saved on eMMC by
+	 * the ctl supervisor before it gave up. */
+	{
+		int bfd;
+		static char bbuf[8192];
+		long bn, bo;
+
+		bfd = open("/mnt/data/boottail", OREAD);
+		if(bfd >= 0){
+			bn = 0;
+			while((bo = read(bfd, bbuf + bn, sizeof bbuf - 1 - bn)) > 0){
+				bn += bo;
+				if(bn >= (long)sizeof bbuf - 1)
+					break;
+			}
+			close(bfd);
+			bbuf[bn] = 0;
+			say("HARVEY-ARM64 PREV BOOTTAIL BEGIN\n");
+			if(bn > 0)
+				write(1, bbuf, bn);
+			say("\nHARVEY-ARM64 PREV BOOTTAIL END\n");
+			/* Hold the evidence on screen: without the
+			 * ctl console this text is the only channel,
+			 * and the fallback would erase it in seconds. */
+			say("HARVEY-ARM64 BOOTTAIL HOLD 90S\n");
+			sleep(90000);
+		}
+	}
 	/*
 	 * LKL driver families run a Linux kernel for one device and are
 	 * services, not commands: start them detached (-b) before the shell,
 	 * so nothing has to be typed and the console stays free.
 	 */
 	{
-		char *lkllist[][6] = {
+		char *lkllist[][8] = {
 			{ "/boot/lklboot", "-b", "-f", "wifi", nil },
 		};
+		char *bengallkl[] = { "/boot/lklboot", "-f", "bengal_usb", nil };
+		/* No -b for the ctl guest: the supervisor below tracks
+		 * this exact pid, and -b detaches by forking, so the
+		 * tracked parent exits instantly and every attempt is
+		 * misread as a dead guest. */
+		char *bengalctl[] = { "/boot/lklboot", "-f", "bengal_ctl", nil };
+		char *qemulkl[] = { "/boot/lklboot", "-c", "-n", "-t", "-f", "wifi", nil };
+		int hasrk = access("#P/mmc@fe2c0000/reg", AREAD) >= 0;
+		int hasbengal = access("#P/dwc3@4e00000/reg", AREAD) >= 0;
 		int n = sizeof(lkllist) / sizeof(lkllist[0]);
 		int i;
+		int ctlup = 0;
 
+		/* Control plane first: main starts only once the ctl guest
+		 * serves, so the two kernels never probe shared GCC/SPMI
+		 * registers at the same time.  The ctl guest occasionally
+		 * dies in early probe (a guest-kernel startup race), so
+		 * launch it under a pid, watch for its service, and on
+		 * timeout or early death kill, reap and retry. */
+		if(hasbengal){
+			int attempt;
+
+			for(attempt = 0; attempt < 3 && !ctlup; attempt++){
+				pid = rfork(RFPROC|RFFDG|RFNAMEG|RFENVG|RFREND|RFNOTEG);
+				if(pid == 0){
+					exec(bengalctl[0], bengalctl);
+					say("HARVEY-ARM64 LKLCTL EXEC FAIL\\n");
+					_exits("exec");
+				}
+				if(pid < 0){
+					say("HARVEY-ARM64 LKLCTL LAUNCH FAIL\\n");
+					break;
+				}
+				{
+					int t, cpid = pid, cfd;
+					char ppath[64];
+
+					for(t = 0; t < 600; t++){
+						if(access("/srv/lklctl", AREAD) >= 0){
+							ctlup = 1;
+							break;
+						}
+						snprint(ppath, sizeof ppath,
+							"/proc/%d", cpid);
+						if(access(ppath, AREAD) < 0)
+							break;	/* child died */
+						sleep(100);
+					}
+					if(!ctlup){
+						say("HARVEY-ARM64 LKLCTL TIMEOUT\\n");
+						snprint(ppath, sizeof ppath,
+							"/proc/%d/ctl", cpid);
+						cfd = open(ppath, OWRITE);
+						if(cfd >= 0){
+							write(cfd, "kill", 4);
+							close(cfd);
+						}
+						waitpid();
+						sleep(200);
+					}
+				}
+			}
+			say(ctlup ? "HARVEY-ARM64 LKLCTL UP\\n" :
+				    "HARVEY-ARM64 LKLCTL DOWN\\n");
+			if(!ctlup){
+				/* No control plane yet: show the guest log
+				 * tail on screen (the console this would
+				 * serve is the thing that is down), then
+				 * keep retrying.  A RAM-booted image is
+				 * lost on any reset anyway, so falling
+				 * back to the installed system buys
+				 * nothing here; power-cycling boots stock. */
+				int lfd, t;
+				static char tail[8192];
+				long ln, lo;
+
+				lfd = open("/dev/lkllog", OREAD);
+				ln = 0;
+				if(lfd >= 0){
+					/* keep only the last bytes: the
+					 * fault is at the end */
+					while((lo = read(lfd, tail + ln,
+					    sizeof tail - 1 - ln)) > 0){
+						ln += lo;
+						if(ln >= (long)sizeof tail - 1){
+							memmove(tail,
+							    tail + sizeof tail / 2,
+							    sizeof tail / 2);
+							ln = sizeof tail / 2;
+						}
+					}
+					close(lfd);
+				}
+				tail[ln] = 0;
+				say("HARVEY-ARM64 LKLLOG TAIL BEGIN\\n");
+				if(ln > 0)
+					write(1, tail, ln);
+				say("\\nHARVEY-ARM64 LKLLOG TAIL END\\n");
+				/* Persist the tail on eMMC too: the screen
+				 * copy dies with the boot, and the RAM
+				 * bootlog may be scribbled by the stock
+				 * system before the next Harvey boot can
+				 * read it.  /mnt/data is mounted by now. */
+				{
+					int dfd;
+
+					dfd = create("/mnt/data/boottail", OWRITE, 0666);
+					if(dfd >= 0){
+						if(ln > 0)
+							write(dfd, tail, ln);
+						/* prevlog holds this boot's
+						 * kernel prints up to now,
+						 * fault lines included */
+						{
+							int pfd;
+							static char pbuf[8192];
+							long pn, po;
+
+							pfd = open("/dev/prevlog", OREAD);
+							pn = 0;
+							if(pfd >= 0){
+								while((po = read(pfd, pbuf + pn, sizeof pbuf - 1 - pn)) > 0){
+									pn += po;
+									if(pn >= (long)sizeof pbuf - 1)
+										break;
+								}
+								close(pfd);
+							}
+							if(pn > 0){
+								write(dfd, "\n== PREVLOG ==\n", 15);
+								write(dfd, pbuf, pn);
+							}
+						}
+						close(dfd);
+					}
+				}
+				for(t = 4; t <= 8 && !ctlup; t++){
+					char msg[96];
+					int cpid2;
+
+					/* Guard: never launch a guest the
+					 * arena cannot hold.  Without this
+					 * a dead guest that leaked its carve
+					 * (or a simply-too-big family) gets
+					 * retried forever. */
+					{
+						int afd, ok;
+						char abuf[32];
+						long an;
+						uvlong avail, need;
+
+						need = 112ULL*1024*1024;
+						ok = 0;
+						avail = 0;
+						afd = open("#P/dma/avail", OREAD);
+						if(afd >= 0){
+							an = read(afd, abuf,
+							    sizeof abuf - 1);
+							close(afd);
+							if(an > 0){
+								char *p;
+
+								abuf[an] = 0;
+								for(p = abuf;
+								    *p >= '0' && *p <= '9'; p++)
+									avail = avail*10 + (*p - '0');
+								ok = 1;
+							}
+						}
+						if(ok && avail < need){
+							snprint(msg, sizeof msg,
+							    "HARVEY-ARM64 LKLCTL ARENA LOW %llud < %llud\\n",
+							    avail, need);
+							say(msg);
+							break;
+						}
+					}
+					snprint(msg, sizeof msg,
+					    "HARVEY-ARM64 LKLCTL RETRY %d\\n", t);
+					say(msg);
+					cpid2 = rfork(RFPROC|RFFDG|RFNAMEG|RFENVG|RFREND|RFNOTEG);
+					if(cpid2 == 0){
+						exec(bengalctl[0], bengalctl);
+						_exits("exec");
+					}
+					if(cpid2 < 0)
+						break;
+					{
+						int t2, cfd;
+						char ppath[64];
+
+						for(t2 = 0; t2 < 600; t2++){
+							if(access("/srv/lklctl", AREAD) >= 0){
+								ctlup = 1;
+								break;
+							}
+							snprint(ppath, sizeof ppath, "/proc/%d", cpid2);
+							if(access(ppath, AREAD) < 0)
+								break;
+							sleep(100);
+						}
+						if(!ctlup){
+							snprint(ppath, sizeof ppath, "/proc/%d/ctl", cpid2);
+							cfd = open(ppath, OWRITE);
+							if(cfd >= 0){
+								write(cfd, "kill", 4);
+								close(cfd);
+							}
+							waitpid();
+							sleep(500);
+						}
+					}
+				}
+				if(ctlup)
+					say("HARVEY-ARM64 LKLCTL UP (retry)\\n");
+				else{
+					/* Bounded tries, arena checked:
+					 * hand back to the installed
+					 * system so the host can drive
+					 * the next cycle over adb. */
+					int rfd;
+
+					say("HARVEY-ARM64 LKLCTL REBOOT TO ANDROID\\n");
+					sleep(2000);
+					rfd = open("/dev/reboot", OWRITE);
+					if(rfd >= 0){
+						write(rfd, "reboot", 6);
+						close(rfd);
+					}
+				}
+			}
+		}
+		if(hasbengal && rfork(RFPROC|RFNOWAIT|RFFDG) == 0){
+			int lfd, tfd;
+			char *rcav[] = { "/boot/rc", "-i", "-m", "/boot/rcmain", nil };
+			if(waitfor("/srv/lklctl", 300) >= 0){
+				lfd = open("/srv/lklctl", ORDWR);
+				create("/mnt/lklctl", OREAD, DMDIR|0755);
+				if(lfd >= 0 && mount(lfd, -1, "/mnt/lklctl", MREPL, "") >= 0){
+					say("HARVEY-ARM64 LKL MOUNTED\n");
+					tfd = -1;
+					for(i = 0; i < 50 && tfd < 0; i++){
+						tfd = open("/mnt/lklctl/dev/ttyGS0", ORDWR);
+						if(tfd < 0)
+							sleep(100);
+					}
+					if(tfd >= 0){
+						dup(tfd, 0);
+						dup(tfd, 1);
+						dup(tfd, 2);
+						if(tfd > 2)
+							close(tfd);
+						exec(rcav[0], rcav);
+					}
+				}
+			}
+			_exits("lklrc");
+		}
 		for(i = 0; i < n; i++){
+			char **av = hasrk ? lkllist[i] : (hasbengal ? bengallkl : qemulkl);
+			if(hasbengal && !ctlup){
+				say("HARVEY-ARM64 LKL MAIN SKIPPED (no ctl)\\n");
+				continue;
+			}
 			pid = rfork(RFPROC|RFNOWAIT|RFFDG|RFNAMEG|RFENVG|RFREND|RFNOTEG);
 			if(pid == 0){
-				exec(lkllist[i][0], lkllist[i]);
+				exec(av[0], av);
 				say("HARVEY-ARM64 LKL EXEC FAIL\n");
 				_exits("exec");
 			}
@@ -1393,6 +1699,7 @@ main(int argc, char **argv)
     uartfs, _ = build_uartfs(out, libc)
     gpiofs, _ = build_gpiofs(out, libc)
     gpufs, _ = build_gpufs(out, libc)
+    adrenofs, _ = build_adrenofs(out, libc)
     npufs, _ = build_npufs(out, libc)
     hubfs, _ = build_hubfs(out, libc)
     drvman, _ = build_drvman(out, libc)
@@ -2067,6 +2374,7 @@ main(int argc, char **argv)
     emit_array(lines, "arm64testaudioelf", testaudio)
     emit_array(lines, "arm64uartfself", uartfs)
     emit_array(lines, "arm64gpufself", gpufs)
+    emit_array(lines, "arm64adrenofself", adrenofs)
     emit_array(lines, "arm64npufself", npufs)
     emit_array(lines, "arm64gpiofself", gpiofs)
     emit_array(lines, "arm64hubfself", hubfs)
@@ -2131,6 +2439,7 @@ main(int argc, char **argv)
         "test-audio": testaudio,
         "uartfs": uartfs,
         "gpufs": gpufs,
+        "adrenofs": adrenofs,
         "npufs": npufs,
         "gpiofs": gpiofs,
         "hubfs": hubfs,

@@ -14,6 +14,8 @@
 #include <lkl/asm/unistd.h>
 #include "lklfamily.h"
 
+char	*lklsrvname = "lkl";
+
 extern struct lkl_host_operations lkl_harvey_ops;
 
 extern int	lkl_init(struct lkl_host_operations*);
@@ -28,6 +30,7 @@ extern void	lklhost_selftest(void);
 extern int	lklhost_mapdev(char*, u64*, u64*);
 extern int	lklhost_iomem(u64, void*, int, int);
 extern int	lklhost_irqthread(char*, int);
+extern int	lklhost_irqthread_wait(char*, int, char*);
 extern void	lklhost_raminit(unsigned long);
 extern int	lkl_printf(const char*, ...);
 extern void	usbservice(void);
@@ -91,7 +94,7 @@ selftest(void)
 		t1 = nsec();
 		d = (t1 - t0) / 1000000;
 		lkl_printf("selftest: nanosleep %d (%lldns) ret=%ld %lldms\n", i, sn, r, d);
-		if(r < 0 || d < 60 || d > 3000)
+		if(r < 0 || d < sn / 1000000 || d > 3000)
 			bad++;
 	}
 	/*
@@ -153,12 +156,12 @@ probe(char *node)
  * lands on this window.
  */
 static int
-nodeirq(char *node)
+nodeirqfile(char *node, char *file)
 {
 	char path[80], buf[32];
 	int fd, n;
 
-	snprint(path, sizeof path, "#P/%s/irq", node);
+	snprint(path, sizeof path, "#P/%s/%s", node, file);
 	if((fd = open(path, OREAD)) < 0)
 		return -1;
 	n = read(fd, buf, sizeof buf - 1);
@@ -167,6 +170,12 @@ nodeirq(char *node)
 		return -1;
 	buf[n] = 0;
 	return atoi(buf);
+}
+
+static int
+nodeirq(char *node)
+{
+	return nodeirqfile(node, "irq");
 }
 
 /*
@@ -273,22 +282,25 @@ mapdevice(char *node)
 static int
 mapfamily(Family *f)
 {
-	char devs[256], *p, *q;
+	char devs[512], *p, *q;
 	int bad;
 
 	snprint(devs, sizeof devs, "%s", f->devices);
 	bad = 0;
 	for(p = devs; *p != 0; p = q){
-		while(*p == ',' || *p == ' ')
+		while(*p == ' ')
 			p++;
 		if(*p == 0)
 			break;
-		for(q = p; *q != 0 && *q != ',' && *q != ' '; q++)
+		for(q = p; *q != 0 && *q != ' '; q++)
 			;
 		if(*q != 0)
 			*q++ = 0;
-		if(mapdevice(p) < 0)
-			bad = 1;
+		if(mapdevice(p) < 0){
+			if(strcmp(p, "dwc3@4e00000") == 0 ||
+			   strcmp(f->name, "bengal_usb") != 0)
+				bad = 1;
+		}
 	}
 	return bad ? -1 : 0;
 }
@@ -296,26 +308,33 @@ mapfamily(Family *f)
 static void
 watchfamily(Family *f)
 {
-	char devs[256], *p, *q;
+	char devs[512], *p, *q;
 	int irq;
 
 	snprint(devs, sizeof devs, "%s", f->devices);
 	for(p = devs; *p != 0; p = q){
-		while(*p == ',' || *p == ' ')
+		while(*p == ' ')
 			p++;
 		if(*p == 0)
 			break;
-		for(q = p; *q != 0 && *q != ',' && *q != ' '; q++)
+		for(q = p; *q != 0 && *q != ' '; q++)
 			;
 		if(*q != 0)
 			*q++ = 0;
 		irq = nodeirq(p);
-		if(irq <= 0)
-			continue;	/* no interrupt on this node */
-		if(lklhost_irqthread(p, irq) == 0)
-			lkl_printf("lklboot: %s irq %d watched\n", p, irq);
-		else
-			lkl_printf("lklboot: %s irq %d watch failed\n", p, irq);
+		if(irq > 0){
+			if(lklhost_irqthread(p, irq) == 0)
+				lkl_printf("lklboot: %s irq %d watched\n", p, irq);
+			else
+				lkl_printf("lklboot: %s irq %d watch failed\n", p, irq);
+		}
+		irq = nodeirqfile(p, "irq2");
+		if(irq > 0){
+			if(lklhost_irqthread_wait(p, irq, "wait2") == 0)
+				lkl_printf("lklboot: %s irq2 %d watched\n", p, irq);
+			else
+				lkl_printf("lklboot: %s irq2 %d watch failed\n", p, irq);
+		}
 	}
 }
 
@@ -440,13 +459,114 @@ setupfamily(Family *f)
 	}
 }
 
+extern void	lklhost_run_shared(void (*)(void*), void*);
+
+typedef struct Mainargs Mainargs;
+struct Mainargs {
+	char	*fname;
+	int	nohw;
+	int	kerneltest;
+	int	scan;
+};
+static Mainargs mainargs;
+
+static void
+runmain(void *arg)
+{
+	Mainargs *a = arg;
+	Family *f;
+	Dtb *dtb;
+	int famidx;
+
+	famidx = findfamily(a->fname);
+	if(famidx < 0){
+		fprint(2, "lklboot: no family %s\n", a->fname);
+		exits("family");
+	}
+	f = &lklfamilies[famidx];
+	dtb = finddtb(f->dtbname);
+	if(dtb == nil){
+		fprint(2, "lklboot: no dtb %s\n", f->dtbname);
+		exits("dtb");
+	}
+
+	lkl_printf("lklboot: family %s (%s), %s\n", f->name, f->program,
+		   f->mem);
+	/* stderr is the screen: name this instance so a later
+	 * "user fault pid N lklboot" line can be attributed. */
+	fprint(2, "lklboot: family %s pid %d\n", f->name, getpid());
+	lklhost_raminit(f->memsz + 16*1024*1024);
+	if(lkl_init(&lkl_harvey_ops) < 0){
+		say("lklboot: lkl_init failed\n");
+		exits("init");
+	}
+	say("lklboot: init ok\n");
+	setupfamily(f);
+	if(!a->nohw && mapfamily(f) < 0){
+		say("lklboot: device map failed\n");
+		exits("map");
+	}
+	if(a->nohw)
+		say("lklboot: hardware mapping skipped\n");
+	lkl_set_dtb(dtb->start, dtb->end - dtb->start);
+	if(strcmp(f->name, "bengal_ctl") == 0)
+		lklsrvname = "lklctl";
+	if(lkl_start_kernel("mem=%s%s", f->mem,
+	   f->setup == FamUsb ? " clk_ignore_unused" : "") < 0){
+		say("lklboot: lkl_start_kernel failed\n");
+		exits("start");
+	}
+	say("lklboot: kernel up\n");
+	/*
+	 * Start forwarding device interrupts now.  lkl_start_kernel() returns
+	 * once the guest reaches /init, i.e. after every initcall has run, and
+	 * the drivers that need interrupts probe from workqueues (MMC card
+	 * detection) or after this point (the WiFi SDIO power-on).
+	 */
+	if(!a->nohw)
+		watchfamily(f);
+
+	/*
+	 * The USB family's job starts after the kernel is up: wait for the
+	 * Linux input device and translate it to /dev/kbd.  Other families
+	 * keep their existing post-boot path.
+	 */
+	if(f->setup == FamUsb && !a->kerneltest)
+		usbservice();
+	if(f->setup == FamWifi && !a->kerneltest){
+		if(a->scan)
+			wifiscan();
+		wifiservice();
+	}
+
+	if(a->kerneltest){
+		selftest();
+		/*
+		 * lkl_sys_halt() runs the reboot syscall and unwinds the
+		 * kernel: it stops the idle task, joins the kernel threads
+		 * and frees the arena.
+		 */
+		if(lkl_sys_halt() < 0)
+			say("lklboot: halt failed\n");
+		lkl_cleanup();
+		say("lklboot: halted\n");
+		exits(nil);
+	}
+
+	/*
+	 * A driver server runs until it is stopped.  Halting here would
+	 * race device probe workqueues (the mmc block device attaches
+	 * asynchronously) against teardown.
+	 */
+	for(;;)
+		sleep(1000);
+}
+
 void
 main(int argc, char **argv)
 {
-	int fd, hosttest, kerneltest, console, nohw, background, scan, famidx;
+	int fd, hosttest, kerneltest, console, nohw, background, scan;
 	char *fname;
-	Family *f;
-	Dtb *dtb;
 
 	hosttest = 0;
 	kerneltest = 0;
@@ -494,6 +614,23 @@ main(int argc, char **argv)
 	if(background && rfork(RFPROC|RFNOTEG) != 0)
 		exits(nil);
 	/*
+	 * The guest kernel owns one virtual CPU cooperatively; its
+	 * per-CPU state is only valid under that ownership.  Wire this
+	 * process (and, by inheritance, every thread it spawns) to a
+	 * single physical CPU so guest threads can never execute in
+	 * parallel on separate cores while that state is in flux.
+	 */
+	{
+		char ctl[64];
+		int cfd;
+
+		snprint(ctl, sizeof ctl, "/proc/%d/ctl", getpid());
+		if((cfd = open(ctl, OWRITE)) >= 0){
+			write(cfd, "wired 1", 7);
+			close(cfd);
+		}
+	}
+	/*
 	 * Diagnostics go to /dev/lkllog, a synthetic file backed by a ring
 	 * buffer.  Writing to /dev/cons from these threads is not safe: the
 	 * console path busy-waits on the UART FIFO with interrupts masked,
@@ -527,80 +664,9 @@ main(int argc, char **argv)
 	if(argc > 0)
 		probe(argv[0]);
 
-	famidx = findfamily(fname);
-	if(famidx < 0){
-		fprint(2, "lklboot: no family %s\n", fname);
-		exits("family");
-	}
-	f = &lklfamilies[famidx];
-	dtb = finddtb(f->dtbname);
-	if(dtb == nil){
-		fprint(2, "lklboot: no dtb %s\n", f->dtbname);
-		exits("dtb");
-	}
-
-	lkl_printf("lklboot: family %s (%s), %s\n", f->name, f->program,
-		   f->mem);
-	lklhost_raminit(f->memsz + 16*1024*1024);
-	if(lkl_init(&lkl_harvey_ops) < 0){
-		say("lklboot: lkl_init failed\n");
-		exits("init");
-	}
-	say("lklboot: init ok\n");
-	setupfamily(f);
-	if(!nohw && mapfamily(f) < 0){
-		say("lklboot: device map failed\n");
-		exits("map");
-	}
-	if(nohw)
-		say("lklboot: hardware mapping skipped\n");
-	lkl_set_dtb(dtb->start, dtb->end - dtb->start);
-	if(lkl_start_kernel("mem=%s", f->mem) < 0){
-		say("lklboot: lkl_start_kernel failed\n");
-		exits("start");
-	}
-	say("lklboot: kernel up\n");
-	/*
-	 * Start forwarding device interrupts now.  lkl_start_kernel() returns
-	 * once the guest reaches /init, i.e. after every initcall has run, and
-	 * the drivers that need interrupts probe from workqueues (MMC card
-	 * detection) or after this point (the WiFi SDIO power-on).
-	 */
-	if(!nohw)
-		watchfamily(f);
-
-	/*
-	 * The USB family's job starts after the kernel is up: wait for the
-	 * Linux input device and translate it to /dev/kbd.  Other families
-	 * keep their existing post-boot path.
-	 */
-	if(f->setup == FamUsb && !kerneltest)
-		usbservice();
-	if(f->setup == FamWifi && !kerneltest){
-		if(scan)
-			wifiscan();
-		wifiservice();
-	}
-
-	if(kerneltest){
-		selftest();
-		/*
-		 * lkl_sys_halt() runs the reboot syscall and unwinds the
-		 * kernel: it stops the idle task, joins the kernel threads
-		 * and frees the arena.
-		 */
-		if(lkl_sys_halt() < 0)
-			say("lklboot: halt failed\n");
-		lkl_cleanup();
-		say("lklboot: halted\n");
-		exits(nil);
-	}
-
-	/*
-	 * A driver server runs until it is stopped.  Halting here would
-	 * race device probe workqueues (the mmc block device attaches
-	 * asynchronously) against teardown.
-	 */
-	for(;;)
-		sleep(1000);
+	mainargs.fname = fname;
+	mainargs.nohw = nohw;
+	mainargs.kerneltest = kerneltest;
+	mainargs.scan = scan;
+	lklhost_run_shared(runmain, &mainargs);
 }

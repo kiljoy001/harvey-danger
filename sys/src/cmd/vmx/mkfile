@@ -1,0 +1,58 @@
+</$objtype/mkfile
+
+BIN=/$objtype/bin
+TARG=vmx
+CLEANFILES=$O.vmxgdb test/$O.out test/$O.plan9 test/$O.device test/*.$O
+HFILES=dat.h fns.h x86.h virtio.h
+TESTDEP=test/$O.out
+VMOFILES=\
+	ksetup.$O \
+	exith.$O \
+	io.$O \
+	apic.$O \
+	ide.$O \
+	vga.$O \
+	pci.$O \
+	virtio.$O \
+	viogpu.$O \
+	viosnd.$O \
+	vesa.$O \
+	9p.$O \
+	x86.$O \
+
+OFILES=vmx.$O nanosec.$O $VMOFILES
+
+</sys/src/cmd/mkone
+
+default:V:	all
+
+all:V:	$O.out $O.vmxgdb
+
+install:V:	$BIN/vmxgdb
+
+$BIN/vmxgdb: $O.vmxgdb
+	cp $prereq $BIN/vmxgdb
+
+$O.vmxgdb: vmxgdb.$O
+	$LD $LDFLAGS -o $target $prereq
+
+test:V: $O.out $TESTDEP
+	test/$O.out
+
+test/$O.out: test/unit.$O $VMOFILES
+	$LD $LDFLAGS -o $target $prereq
+
+test/unit.$O: test/unit.c test/sound.c vmx.c $HFILES
+	$CC $CFLAGS -o $target test/unit.c
+
+test/$O.plan9: test/plan9.$O
+	$LD $LDFLAGS -o $target $prereq
+
+test/plan9.$O: test/plan9.c
+	$CC $CFLAGS -o $target test/plan9.c
+
+test/$O.device: test/device.$O
+	$LD $LDFLAGS -o $target $prereq
+
+test/device.$O: test/device.c
+	$CC $CFLAGS -o $target test/device.c

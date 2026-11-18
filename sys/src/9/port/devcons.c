@@ -266,6 +266,112 @@ kmesgputs(char *str, int n)
 }
 
 /*
+ * Persistent boot log in the SoC ramoops reserved region.  It survives
+ * warm resets, so console and guest logs from boots that never served
+ * a console can be read afterwards from /dev/prevlog.  Only the
+ * content predating the current boot is exposed there; this boot's
+ * own output follows it in the region.
+ */
+enum {
+	Bootlogsz	= 0xbf800,
+	Bootlogmagic	= 0x48424c47,		/* HBLG */
+};
+
+/*
+ * Physical address of the persistent region, published by arch code
+ * before consinit when it reserved a slice inside the mapped RAM
+ * window.  Zero means no persistent log on this machine: the log
+ * never arms and /dev/prevlog reads empty.  (The SoC ramoops address
+ * cannot be used blindly: on bengal it sits in a DRAM bank the kernel
+ * does not map, and touching it faults.)
+ */
+u64 bootlogpaaddr;
+
+typedef struct Bootlog Bootlog;
+struct Bootlog {
+	u32	magic;
+	u32	boot;
+	u32	len;
+	u32	rsvd;
+	char	data[Bootlogsz - 16];
+};
+
+static Bootlog *bootlog;
+static u32 bootlogprev;	/* bytes predating this boot */
+static Lock bootloglk;
+static int bootlogarmed;	/* set by bootlogready() once mappings are final */
+
+static void
+bootloginit(void)	/* called with bootloglk held */
+{
+	char sep[64];
+	int n;
+
+	bootlog = (Bootlog *)KADDR(bootlogpaaddr);
+	if(bootlog->magic != Bootlogmagic ||
+	   bootlog->len > sizeof bootlog->data){
+		bootlog->magic = Bootlogmagic;
+		bootlog->boot = 0;
+		bootlog->len = 0;
+	}
+	bootlogprev = bootlog->len;
+	bootlog->boot++;
+	n = snprint(sep, sizeof sep, "\n===== HARVEY BOOT %ud =====\n",
+		bootlog->boot);
+	if(bootlog->len + n > sizeof bootlog->data){
+		u32 d = sizeof bootlog->data / 2;
+
+		memmove(bootlog->data, bootlog->data + d,
+			bootlog->len - d);
+		bootlog->len -= d;
+		bootlogprev = bootlogprev > d ? bootlogprev - d : 0;
+	}
+	memmove(bootlog->data + bootlog->len, sep, n);
+	bootlog->len += n;
+}
+
+static void
+bootlogready(void)
+{
+	if(bootlogpaaddr == 0)
+		return;	/* no persistent region on this machine */
+	ilock(&bootloglk);
+	if(bootlog == nil)
+		bootloginit();
+	bootlogarmed = 1;
+	iunlock(&bootloglk);
+}
+
+static void
+bootlogputs(char *str, int n)
+{
+	u32 nn, d;
+
+	if(!bootlogarmed)
+		return;	/* early prints predate the final memory map */
+	ilock(&bootloglk);
+	if(bootlog == nil)
+		bootloginit();
+	if(n > (int)sizeof bootlog->data){
+		str += n - sizeof bootlog->data;
+		n = sizeof bootlog->data;
+	}
+	nn = bootlog->len;
+	if(nn + n >= sizeof bootlog->data){
+		d = nn + n - sizeof bootlog->data;
+		if(d){
+			memmove(bootlog->data, bootlog->data + d,
+				sizeof bootlog->data - d);
+			nn -= d;
+			bootlogprev = bootlogprev > d ? bootlogprev - d : 0;
+		}
+	}
+	memmove(bootlog->data + nn, str, n);
+	bootlog->len = nn + n;
+	iunlock(&bootloglk);
+}
+
+/*
  * LKL host log.  Same shape as kmesg, but user-writable: producers append
  * here instead of writing to the console.  Console output on this port
  * busy-waits on the UART FIFO inside print() with IRQs masked, so a slow
@@ -301,6 +407,7 @@ lkllogputs(char *str, int n)
 	nn += n;
 	lkllog.n = nn;
 	iunlock(&lkllog.lk);
+	bootlogputs(str, n);
 }
 
 /*
@@ -314,6 +421,7 @@ static void
 putstrn0(char *str, int n, int usewrite)
 {
 	kmesgputs(str, n);
+	bootlogputs(str, n);
 	if(consputs != nil && consputs != consuartputs)
 		consputs(str, n);
 	if(consuartputs != nil)
@@ -710,6 +818,7 @@ enum {
 	Qsyscall,
 	Qdebug,
 	Qlkllog,
+	Qprevlog,
 };
 
 enum {
@@ -727,6 +836,7 @@ static Dirtab consdir[] = {
 	{"hostowner", {Qhostowner}, 0, 0664},
 	{"kmesg", {Qkmesg}, 0, 0440},
 	{"lkllog", {Qlkllog}, 0, 0666},
+	{"prevlog", {Qprevlog}, 0, 0440},
 	{"kprint", {Qkprint, 0, QTEXCL}, 0, DMEXCL | 0440},
 	{"null", {Qnull}, 0, 0666},
 	{"osversion", {Qosversion}, 0, 0444},
@@ -789,6 +899,7 @@ readstr(i32 offset, char *buf, i32 n, char *str)
 static void
 consinit(void)
 {
+	bootlogready();
 	todinit();
 	/*
 	 * at 115200 baud, the 1024 char buffer takes 56 ms to process,
@@ -954,6 +1065,20 @@ consread(Chan *c, void *buf, i32 n, i64 off)
 			if(off + n > lkllog.n)
 				n = lkllog.n - off;
 			memmove(buf, lkllog.buf + off, n);
+		}
+		return n;
+
+	case Qprevlog:
+		bootlogready();
+		/* The whole persistent log, current boot included: the
+		 * current boot's tail is exactly what a supervisor needs
+		 * to save before giving up. */
+		if(bootlog == nil || off >= bootlog->len)
+			n = 0;
+		else {
+			if(off + n > bootlog->len)
+				n = bootlog->len - off;
+			memmove(buf, bootlog->data + off, n);
 		}
 		return n;
 

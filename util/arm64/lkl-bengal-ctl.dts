@@ -1,0 +1,111 @@
+/*
+ * Control guest for Qualcomm Bengal / SM6115 (borneo) under LKL.
+ *
+ * This tiny second LKL instance owns only the USB DWC3 gadget (the
+ * rc console) and the PMIC PON (reboot-to-bootloader), so a wedged
+ * main guest cannot take the console or the recovery path down
+ * with it.  Device assignment is partitioned in lkl-families.json:
+ * the main guest no longer maps dwc3@4e00000.
+ *
+ * The bootloader leaves the SoC power rails and USB PHY powered,
+ * so no regulator/PHY setup is needed here.
+ */
+/dts-v1/;
+
+/ {
+	compatible = "qcom,bengal", "qcom,sm6115";
+	#address-cells = <2>;
+	#size-cells = <2>;
+
+	gic: interrupt-controller@17a00000 {
+		compatible = "arm,gic-v3";
+		reg = <0x0 0x17a00000 0x0 0x10000>,
+		      <0x0 0x17a60000 0x0 0x100000>;
+		interrupt-controller;
+		#interrupt-cells = <3>;
+		#address-cells = <0>;
+	};
+
+	xo_board: xo-board {
+		compatible = "fixed-clock";
+		#clock-cells = <0>;
+		clock-frequency = <19200000>;
+		clock-output-names = "xo_board";
+	};
+
+	sleep_clk: sleep-clk {
+		compatible = "fixed-clock";
+		#clock-cells = <0>;
+		clock-frequency = <32768>;
+		clock-output-names = "sleep_clk";
+	};
+
+	soc@0 {
+		compatible = "simple-bus";
+		#address-cells = <2>;
+		#size-cells = <2>;
+		ranges;
+
+		/* No clock-controller node on purpose: the main guest owns
+		 * GCC.  Nothing here references clocks (bootloader leaves
+		 * the USB clocks running), so this guest never rewrites
+		 * clock registers under the main guest. */
+		spmi_bus: spmi@1c40000 {
+			compatible = "qcom,spmi-pmic-arb";
+			reg = <0x0 0x01c40000 0x0 0x1100>,
+			      <0x0 0x01e00000 0x0 0x2000000>,
+			      <0x0 0x03e00000 0x0 0x100000>,
+			      <0x0 0x03f00000 0x0 0xa0000>,
+			      <0x0 0x01c0a000 0x0 0x26000>;
+			reg-names = "core", "chnls", "obsrvr", "intr", "cnfg";
+			interrupt-parent = <&gic>;
+			interrupt-names = "periph_irq";
+			interrupts = <0 183 4>;
+			qcom,ee = <0>;
+			qcom,channel = <0>;
+			#address-cells = <2>;
+			#size-cells = <0>;
+			interrupt-controller;
+			#interrupt-cells = <4>;
+			status = "okay";
+
+			pm6125_0: pmic@0 {
+				compatible = "qcom,pm6125", "qcom,spmi-pmic";
+				reg = <0x0 0>;
+				interrupt-parent = <&spmi_bus>;
+				#address-cells = <1>;
+				#size-cells = <0>;
+
+				pm6125_pon: pon@800 {
+					compatible = "qcom,pm8998-pon";
+					reg = <0x800>;
+					mode-bootloader = <0x2>;
+					mode-recovery = <0x1>;
+
+					pwrkey {
+						compatible = "qcom,pm8941-pwrkey";
+						interrupts = <0x0 0x8 0 3>;
+						debounce = <15625>;
+						bias-pull-up;
+						linux,code = <116>;
+					};
+				};
+			};
+		};
+
+		dwc3@4e00000 {
+			compatible = "snps,dwc3";
+			reg = <0x0 0x4e00000 0x0 0xcd00>;
+			interrupt-parent = <&gic>;
+			interrupts = <0 255 4>;
+			dr_mode = "peripheral";
+			maximum-speed = "high-speed";
+			snps,disable-clk-gating;
+			snps,dis_u2_susphy_quirk;
+			snps,dis_enblslpm_quirk;
+			snps,has-lpm-erratum;
+			snps,hird-threshold = [10];
+			status = "okay";
+		};
+	};
+};

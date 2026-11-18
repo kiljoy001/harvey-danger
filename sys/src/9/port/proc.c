@@ -539,7 +539,7 @@ schedready(Sched *sch, Proc *p, int locked)
 	 * for another core, then this is wrong.
 	 */
 	up = externup();
-	if(up != p)
+	if(up != nil && up != p)
 		machp()->readied = p; /* group scheduling */
 
 	updatecpu(p);
