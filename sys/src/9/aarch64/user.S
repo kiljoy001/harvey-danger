@@ -73,8 +73,13 @@ arm64usercode:
 	subs	x3, x3, #1
 	b.ne	2b
 	add	x0, x0, #1
-	str	x0, [sp, #-8]!
-	ldr	x0, [sp], #8
+	/* Keep SP 16-byte aligned: SCTLR_EL1.SA is set on real cores,
+	 * and an 8-byte-aligned SP store raises an SP alignment fault
+	 * there (QEMU TCG does not model SA, so it only shows on KVM). */
+	sub	sp, sp, #16
+	str	x0, [sp]
+	ldr	x0, [sp]
+	add	sp, sp, #16
 	svc	#0
 	b	.
 1:
