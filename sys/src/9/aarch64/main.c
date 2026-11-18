@@ -233,6 +233,29 @@ fb_con_putc(int c)
 	__sync_lock_release(&fb_con_lock);
 }
 
+/* The console is polled and shared by every CPU; without this the
+ * secondaries interleave characters into the middle of a line.  Load/
+ * store-exclusive is only usable on Normal memory, so the lock is
+ * skipped until the MMU is on (early boot is uniprocessor anyway). */
+static volatile int uart_lock;
+
+static int
+uartlock(void)
+{
+	if(!arm64mmuactive())
+		return 0;
+	while(__sync_lock_test_and_set(&uart_lock, 1))
+		;
+	return 1;
+}
+
+static void
+uartunlock(int held)
+{
+	if(held)
+		__sync_lock_release(&uart_lock);
+}
+
 static void
 uartputc(int c)
 {
@@ -271,11 +294,14 @@ uartputc(int c)
 void
 arm64uartputs(char *s)
 {
+	int held = uartlock();
+
 	for(; *s != 0; s++){
 		if(*s == '\n')
 			uartputc('\r');
 		uartputc(*s);
 	}
+	uartunlock(held);
 }
 #define uartputs arm64uartputs
 
@@ -295,11 +321,15 @@ uarthex(usize n)
 {
 	int i, c;
 
+	int held;
+
 	uartputs("0x");
+	held = uartlock();
 	for(i = 15; i >= 0; i--){
 		c = (n >> (i * 4)) & 15;
 		uartputc(c < 10 ? '0' + c : 'a' + c - 10);
 	}
+	uartunlock(held);
 }
 
 #ifdef ARM64_RK3566_NPU_PROBE
