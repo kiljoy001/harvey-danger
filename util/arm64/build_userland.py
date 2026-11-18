@@ -229,6 +229,11 @@ SECTIONS {{
     return image, entry
 
 
+def _optional(path: Path) -> bytes | None:
+    """A boot-archive entry that only exists once its own build ran."""
+    return path.read_bytes() if path.is_file() else None
+
+
 def build_fs(out: Path, libc: Path, name: str, source: Path,
              base: int) -> tuple[bytes, int]:
     o9 = ROOT / "build/arm64-o9"
@@ -1193,9 +1198,10 @@ main(int argc, char **argv)
 	else
 		say("HARVEY-ARM64 PROC-BIND PASS\n");
 	/* Out-of-band boot log on the eMMC (native driver, no LKL
-	 * involved): start it before every other driver service so a
-	 * later guest can never take the evidence down with it. */
-	if(access("#P/sdhci@4744000/reg", AREAD) >= 0){
+	 * involved): disabled for now: it perturbs boot (clocks/card
+	 * probing before the guests), so do not start it. */
+	say("HARVEY-ARM64 EMMCLOG DISABLED\n");
+	if(0 && access("#P/sdhci@4744000/reg", AREAD) >= 0){
 		char *logargv[] = { "/boot/emmclog", "emmclog", nil };
 
 		pid = rfork(RFPROC|RFNOWAIT|RFFDG|RFNAMEG|RFENVG|RFREND|RFNOTEG);
@@ -1535,6 +1541,10 @@ main(int argc, char **argv)
 			sleep(90000);
 		}
 	}
+	/* DIAG: freeze here so the whole init transcript can be read
+	 * off the screen at leisure; remove with the ctl work. */
+	say("HARVEY-ARM64 DIAG HOLD 15S\n");
+	sleep(15000);
 	/*
 	 * LKL driver families run a Linux kernel for one device and are
 	 * services, not commands: start them detached (-b) before the shell,
@@ -2553,6 +2563,12 @@ main(int argc, char **argv)
     emit_array(lines, "arm64mountelf", mountbin)
     emit_array(lines, "arm64mount9elf", mount9bin)
     emit_array(lines, "arm64netexportelf", netexport)
+    disvm = _optional(ROOT / "build/arm64-emu/disvm")
+    hellodis = _optional(ROOT / "util/arm64/emu/hello/hello.dis")
+    assert disvm is not None and hellodis is not None, \
+        "run util/arm64/build_emu.py before build_userland.py"
+    emit_array(lines, "arm64disvmelf", disvm)
+    emit_array(lines, "arm64hellodis", hellodis)
     emit_array(lines, "arm64emmclogelf", emmclog)
     emit_array(lines, "arm64emmcfsimage", emmcfs)
     emit_array(lines, "arm64gmacfsimage", gmacfs)
@@ -2620,6 +2636,9 @@ main(int argc, char **argv)
         "mount": mountbin,
         "mount9": mount9bin,
         "netexport": netexport,
+        "disvm": _optional(ROOT / "build/arm64-emu/disvm"),
+        "hello.dis": _optional(ROOT / "util/arm64/emu/hello/hello.dis"),
+
         "emmcfs": emmcfs,
         "ext2srv": ext2srv,
         "gmacfs": gmacfs,
@@ -2655,7 +2674,8 @@ main(int argc, char **argv)
     if wcnfw.exists():
         programs["wcnmodem.bin"] = wcnfw.read_bytes()
     if args.archive is not None:
-        write_archive(args.archive, programs)
+        write_archive(args.archive,
+                      {k: v for k, v in programs.items() if v is not None})
     buildcache.record(stamp, sig)
 
 

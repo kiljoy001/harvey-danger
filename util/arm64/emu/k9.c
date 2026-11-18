@@ -1,0 +1,360 @@
+/*
+ * The only part of Inferno's kernel a Dis program actually needs:
+ * the k* entry points the Sys module and the module loader call.
+ *
+ * Every one is a thin wrapper over Harvey's libc.  This file replaces
+ * emu/port/chan.c, the dev* devices and the Inferno namespace: a Dis
+ * program opens, reads and writes Harvey paths directly.
+ */
+#include "dat.h"
+#include "fns.h"
+#include "error.h"
+
+/* This file hands libc-allocated objects around (dirstat's Dir); use
+ * libc's allocator, not emu's. */
+#undef	free
+#undef	malloc
+#undef	mallocz
+
+int
+kopen(char *s, int mode)
+{
+	int fd;
+
+	fd = open(s, mode);
+	return fd < 0 ? -1 : fd;
+}
+
+long
+kread(int fd, void *buf, long n)
+{
+	long r;
+
+	r = read(fd, buf, n);
+	return r < 0 ? -1 : r;
+}
+
+long
+kwrite(int fd, void *buf, long n)
+{
+	long r;
+
+	r = write(fd, buf, n);
+	return r < 0 ? -1 : r;
+}
+
+long
+kpread(int fd, void *buf, long n, vlong off)
+{
+	long r;
+
+	r = pread(fd, buf, n, off);
+	return r < 0 ? -1 : r;
+}
+
+long
+kpwrite(int fd, void *buf, long n, vlong off)
+{
+	long r;
+
+	r = pwrite(fd, buf, n, off);
+	return r < 0 ? -1 : r;
+}
+
+vlong
+kseek(int fd, vlong off, int start)
+{
+	return seek(fd, off, start);
+}
+
+int
+kclose(int fd)
+{
+	return close(fd);
+}
+
+int
+kcreate(char *s, int mode, ulong perm)
+{
+	int fd;
+
+	fd = create(s, mode, perm);
+	return fd < 0 ? -1 : fd;
+}
+
+int
+kremove(char *s)
+{
+	return remove(s);
+}
+
+/*
+ * Inferno marshals a Dir in the same 9P2000 layout Plan 9 uses, so
+ * convD2M/convM2D do the work.
+ */
+int
+kstat(char *s, uchar *buf, int n)
+{
+	Dir *d;
+	int r;
+
+	if((d = dirstat(s)) == nil)
+		return -1;
+	r = convD2M(d, buf, n);
+	free(d);
+	if(r <= BIT16SZ)
+		return -1;
+	return r;
+}
+
+int
+kfstat(int fd, uchar *buf, int n)
+{
+	Dir *d;
+	int r;
+
+	if((d = dirfstat(fd)) == nil)
+		return -1;
+	r = convD2M(d, buf, n);
+	free(d);
+	if(r <= BIT16SZ)
+		return -1;
+	return r;
+}
+
+Dir *
+kdirstat(char *s)
+{
+	return dirstat(s);
+}
+
+Dir *
+kdirfstat(int fd)
+{
+	return dirfstat(fd);
+}
+
+int
+kwstat(char *s, uchar *buf, int n)
+{
+	Dir d;
+
+	if(convM2D(buf, n, &d, nil) <= 0)
+		return -1;
+	return dirwstat(s, &d);
+}
+
+int
+kdirwstat(char *s, Dir *d)
+{
+	return dirwstat(s, d);
+}
+
+int
+kdirfwstat(int fd, Dir *d)
+{
+	return dirfwstat(fd, d);
+}
+
+long
+kdirread(int fd, Dir **d)
+{
+	return dirread(fd, d);
+}
+
+int
+kpipe(int *fd)
+{
+	return pipe(fd);
+}
+
+int
+kdup(int old, int new)
+{
+	return dup(old, new);
+}
+
+int
+kmount(int fd, int afd, char *old, int flag, char *spec)
+{
+	return mount(fd, afd, old, flag, spec, 0);
+}
+
+int
+kunmount(char *old, char *spec)
+{
+	return unmount(old, spec);
+}
+
+int
+kfd2path(int fd, char *buf, int n)
+{
+	return fd2path(fd, buf, n);
+}
+
+int
+kiounit(int fd)
+{
+	return iounit(fd);
+}
+
+int
+kfversion(int fd, int msize, char *vers, int *n)
+{
+	int r;
+
+	r = fversion(fd, msize, vers, n == nil ? 0 : *n);
+	if(r > 0 && n != nil)
+		*n = r;
+	return r;
+}
+
+int
+kfauth(int fd, char *aname, int n)
+{
+	USED(n);
+	return fauth(fd, aname);
+}
+
+void
+kwerrstr(char *fmt, ...)
+{
+	char buf[ERRMAX];
+	va_list arg;
+
+	va_start(arg, fmt);
+	vseprint(buf, buf + sizeof buf, fmt, arg);
+	va_end(arg);
+	werrstr("%s", buf);
+}
+
+int
+incref(Ref *r)
+{
+	return ++r->ref;
+}
+
+int
+decref(Ref *r)
+{
+	return --r->ref;
+}
+
+/*
+ * fd groups: the Sys module only refcounts these; the descriptors
+ * themselves are plain ints in the Dis FD object.
+ */
+Fgrp *
+newfgrp(Fgrp *old)
+{
+	Fgrp *f;
+
+	USED(old);
+	f = mallocz(sizeof *f, 1);
+	if(f != nil)
+		f->r.ref = 1;
+	return f;
+}
+
+void
+closefgrp(Fgrp *f)
+{
+	if(f == nil || decref(&f->r) != 0)
+		return;
+	free(f);
+}
+
+Pgrp *
+newpgrp(void)
+{
+	Pgrp *p;
+
+	p = mallocz(sizeof *p, 1);
+	if(p != nil)
+		p->r.ref = 1;
+	return p;
+}
+
+void
+closepgrp(Pgrp *p)
+{
+	if(p == nil || decref(&p->r) != 0)
+		return;
+	free(p);
+}
+
+Egrp *
+newegrp(void)
+{
+	Egrp *e;
+
+	e = mallocz(sizeof *e, 1);
+	if(e != nil)
+		e->r.ref = 1;
+	return e;
+}
+
+void
+closeegrp(Egrp *e)
+{
+	if(e == nil || decref(&e->r) != 0)
+		return;
+	free(e);
+}
+
+int
+kchdir(char *path)
+{
+	return chdir(path);
+}
+
+int
+kdial(char *dest, char *local, char *dir, int *cfdp)
+{
+	USED(dest); USED(local); USED(dir); USED(cfdp);
+	return -1;
+}
+
+int
+kannounce(char *addr, char *dir)
+{
+	USED(addr); USED(dir);
+	return -1;
+}
+
+int
+klisten(char *dir, char *newdir)
+{
+	USED(dir); USED(newdir);
+	return -1;
+}
+
+void
+kstrcpy(char *s, char *t, int ns)
+{
+	if(ns <= 0)
+		return;
+	strncpy(s, t, (usize)ns - 1);
+	s[ns-1] = 0;
+}
+
+void
+kstrdup(char **p, char *s)
+{
+	char *t;
+
+	*p = nil;
+	if(s == nil)
+		return;
+	t = strdup(s);
+	if(t == nil)
+		error("out of memory");
+	*p = t;
+}
+
+int
+kfgrpclose(Fgrp *f, int fd)
+{
+	USED(f);
+	return close(fd);
+}

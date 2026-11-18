@@ -33,19 +33,23 @@ BIG_PAGE = 0x10000
 # The interpreter proper: everything except the JIT back ends and the
 # platform dynload stubs.
 LIBINTERP = """
-alt conv crypt dec decgen gc geom heap heapaudit ipint keyring link load
-loader math mono prefab raise readmod runt sign stack string validstk xec
+alt conv dec gc geom heap link load loader math raise readmod
+runt stack string validstk xec
 """.split()
+
+# Left out on purpose: crypt, ipint, keyring, mono and sign pull in libmp
+# and libsec; heapaudit only exists to name every Type descriptor.  None
+# of them is needed to run a Dis module.
 
 # The parts of emu/port that are not the OS: allocation, errors, the
 # scheduler, the VM glue and printing.
 EMUPORT = """
-alloc cache discall dis env error errstr exception exptab latin1 print
+alloc cache discall dis env error errstr exception exptab inferno latin1 print
 proc qio random uqid
 """.split()
 
 # The Harvey host.
-HOST = ["sysfile9", "disvm"]
+HOST = ["k9", "stubs", "disvm"]
 
 
 def cflags() -> list[str]:

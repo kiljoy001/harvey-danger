@@ -693,6 +693,8 @@ arm64kernelstart(Fdtinfo *info)
 	addbootfile("mount", (u8 *)arm64mountelf, sizeof(arm64mountelf));
 	addbootfile("mount9", (u8 *)arm64mount9elf, sizeof(arm64mount9elf));
 	addbootfile("netexport", (u8 *)arm64netexportelf, sizeof(arm64netexportelf));
+	addbootfile("disvm", (u8 *)arm64disvmelf, sizeof(arm64disvmelf));
+	addbootfile("hello.dis", (u8 *)arm64hellodis, sizeof(arm64hellodis));
 	addbootfile("usbpower", (u8 *)arm64usbpowerelf, sizeof(arm64usbpowerelf));
 	addbootfile("rc", (u8 *)arm64rcelf, sizeof(arm64rcelf));
 	addbootfile("echo", (u8 *)arm64echoelf, sizeof(arm64echoelf));
