@@ -70,6 +70,7 @@ TESTXHCI_BASE = 0x5E00000
 TESTXHCI1_BASE = 0x6600000
 TESTAUDIO_BASE = 0x6E00000
 USBPOWER_BASE = 0x7600000
+EMMCLOG_BASE = 0x7E00000
 
 RC_SOURCES = [
     "code.c", "exec.c", "getflags.c", "glob.c", "havefork.c", "here.c",
@@ -443,6 +444,11 @@ def build_spifs(out: Path, libc: Path) -> tuple[bytes, int]:
 def build_sfcs(out: Path, libc: Path) -> tuple[bytes, int]:
     return build_fs(out, libc, "sfcs",
                     ROOT / "sys/src/cmd/sfcs/sfcs.c", SFCS_BASE)
+
+
+def build_emmclog(out: Path, libc: Path) -> tuple[bytes, int]:
+    return build_fs(out, libc, "emmclog",
+                    ROOT / "sys/src/cmd/emmclog/emmclog.c", EMMCLOG_BASE)
 
 
 def build_emmcfs(out: Path, libc: Path) -> tuple[bytes, int]:
@@ -1143,6 +1149,55 @@ main(int argc, char **argv)
 		say("HARVEY-ARM64 PROC-BIND FAIL\n");
 	else
 		say("HARVEY-ARM64 PROC-BIND PASS\n");
+	/* Out-of-band boot log on the eMMC (native driver, no LKL
+	 * involved): start it before every other driver service so a
+	 * later guest can never take the evidence down with it. */
+	if(access("#P/sdhci@4744000/reg", AREAD) >= 0){
+		char *logargv[] = { "/boot/emmclog", "emmclog", nil };
+
+		pid = rfork(RFPROC|RFNOWAIT|RFFDG|RFNAMEG|RFENVG|RFREND|RFNOTEG);
+		if(pid == 0){
+			exec(logargv[0], logargv);
+			_exits("exec");
+		}
+		if(pid < 0 || waitfor("/srv/emmclog", 100) < 0)
+			say("HARVEY-ARM64 EMMCLOG FAIL\n");
+		else{
+			int lfd;
+
+			create("/mnt/emmclog", OREAD, DMDIR|0755);
+			lfd = open("/srv/emmclog", ORDWR);
+			if(lfd >= 0 && mount(lfd, -1, "/mnt/emmclog", MREPL, "") >= 0){
+				say("HARVEY-ARM64 EMMCLOG PASS\n");
+				close(lfd);
+				/* Stream the guest log to the card: if a
+				 * guest later kills the SoC, the last
+				 * seconds before the death are already
+				 * durable, no failure path required. */
+				pid = rfork(RFPROC|RFNOWAIT|RFFDG|RFNAMEG|RFENVG|RFREND|RFNOTEG);
+				if(pid == 0){
+					static char sbuf[4096];
+					long soff, sn;
+					int sfd, ofd;
+
+					soff = 0;
+					ofd = open("/mnt/emmclog/log", OWRITE);
+					for(;;){
+						sfd = open("/dev/lkllog", OREAD);
+						if(sfd >= 0 && ofd >= 0){
+							while((sn = pread(sfd, sbuf, sizeof sbuf, soff)) > 0){
+								write(ofd, sbuf, sn);
+								soff += sn;
+							}
+							close(sfd);
+						}
+						sleep(3000);
+					}
+				}
+			}else
+				say("HARVEY-ARM64 EMMCLOG MOUNT FAIL\n");
+		}
+	}
 	fd = create("/mnt/o9drvman-status", OREAD, DMDIR|0755);
 	if(fd >= 0)
 		close(fd);
@@ -1364,7 +1419,9 @@ main(int argc, char **argv)
 		static char bbuf[8192];
 		long bn, bo;
 
-		bfd = open("/mnt/data/boottail", OREAD);
+		bfd = open("/mnt/emmclog/log", OREAD);
+		if(bfd < 0)
+			bfd = open("/mnt/data/boottail", OREAD);
 		if(bfd >= 0){
 			bn = 0;
 			while((bo = read(bfd, bbuf + bn, sizeof bbuf - 1 - bn)) > 0){
@@ -1500,8 +1557,14 @@ main(int argc, char **argv)
 				{
 					int dfd;
 
-					dfd = create("/mnt/data/boottail", OWRITE, 0666);
+					/* The on-card log appends and survives
+					 * the SoC; the /mnt/data copy is only a
+					 * fallback for boards without emmclog. */
+					dfd = open("/mnt/emmclog/log", OWRITE);
+					if(dfd < 0)
+						dfd = create("/mnt/data/boottail", OWRITE, 0666);
 					if(dfd >= 0){
+						write(dfd, "\n== BOOTTAIL ==\n", 15);
 						if(ln > 0)
 							write(dfd, tail, ln);
 						/* prevlog holds this boot's
@@ -1669,6 +1732,26 @@ main(int argc, char **argv)
 		}
 		say("HARVEY-ARM64 LKL SERVICES START\n");
 	}
+	/*
+	 * Host files from the microVM's virtio-9P device.  The kernel
+	 * exposes each tag as #9/<n>; 9vm-arm64 exports the runner's
+	 * -r directory as tag 0.  The root is the read-only boot
+	 * archive, so the mount point lives in the writable /mnt tree.
+	 */
+	{
+		int hfd = open("#9/0", ORDWR);
+
+		if(hfd < 0){
+			say("HARVEY-ARM64 HOSTFS SKIP\n");
+		}else{
+			create("/mnt/host", OREAD, DMDIR|0777);
+			if(mount(hfd, -1, "/mnt/host", MREPL|MCREATE, "") < 0)
+				say("HARVEY-ARM64 HOSTFS MOUNT FAIL\n");
+			else
+				say("HARVEY-ARM64 HOSTFS PASS\n");
+			close(hfd);
+		}
+	}
 	{
 		char *rcargv[] = { "/boot/rc", "-i", "-m", "/boot/rcmain", nil };
 		say("HARVEY-ARM64 RC START\n");
@@ -1723,6 +1806,7 @@ main(int argc, char **argv)
                              ROOT / "build/arm64-o9/libauthsrv.a",
                              ROOT / "build/arm64-o9/libsec.a",
                              ROOT / "build/arm64-o9/libndb.a"])
+    emmclog, _ = build_emmclog(out, libc)
     emmcfs, _ = build_emmcfs(out, libc)
     ext2srv, _ = build_ext2srv(out, libc)
     gmacfs, _ = build_gmacfs(out, libc)
@@ -2392,6 +2476,7 @@ main(int argc, char **argv)
     emit_array(lines, "arm64mkdirelf", mkdirbin)
     emit_array(lines, "arm64mountelf", mountbin)
     emit_array(lines, "arm64mount9elf", mount9bin)
+    emit_array(lines, "arm64emmclogelf", emmclog)
     emit_array(lines, "arm64emmcfsimage", emmcfs)
     emit_array(lines, "arm64gmacfsimage", gmacfs)
     emit_array(lines, "arm64usbpowerelf", usbpower)
