@@ -49,7 +49,7 @@ proc qio random uqid
 """.split()
 
 # The Harvey host.
-HOST = ["k9", "stubs", "disvm"]
+HOST = ["k9", "stubs", "libcfree", "disvm"]
 
 
 def cflags() -> list[str]:

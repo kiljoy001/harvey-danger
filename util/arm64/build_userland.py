@@ -822,6 +822,11 @@ def userland_signature() -> str:
     lklboot = ROOT / "build/arm64-lkl/lklboot.stripped"
     if lklboot.is_file() and nolkl != "1":
         files.append(lklboot)
+    # Inputs that are built by other scripts but embedded here.
+    for extra in ("build/arm64-emu/disvm", "util/arm64/emu/hello/hello.dis"):
+        p = ROOT / extra
+        if p.is_file():
+            files.append(p)
     return buildcache.signature(
         ["build_userland", "no-usbpower=" + variant, "gefs=" + gefs,
          "ucc=" + ucc, "no-lkl=" + nolkl], files)

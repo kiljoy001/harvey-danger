@@ -10,6 +10,8 @@
 #include "fns.h"
 #include "error.h"
 
+extern	void	k9_libcfree(void*);
+
 int
 kopen(char *s, int mode)
 {
@@ -83,6 +85,43 @@ kremove(char *s)
 }
 
 /*
+ * Inferno code frees the Dir it gets from kdirstat/kdirfstat/kdirread
+ * with emu's free.  libc's Dir and its strings belong to libc, so copy
+ * them into one emu block (structs followed by their strings).
+ */
+static Dir *
+dirdup(Dir *src, int n)
+{
+	Dir *d;
+	char *p;
+	usize size;
+	int i;
+
+	if(n <= 0 || src == nil)
+		return nil;
+	size = (usize)n * sizeof(Dir);
+	for(i = 0; i < n; i++)
+		size += strlen(src[i].name) + 1
+		      + strlen(src[i].uid) + 1
+		      + strlen(src[i].gid) + 1
+		      + strlen(src[i].muid) + 1;
+	d = emu_malloc(size);
+	if(d == nil)
+		return nil;
+	memmove(d, src, (usize)n * sizeof(Dir));
+	p = (char *)(d + n);
+	for(i = 0; i < n; i++){
+		#define DUP(f) do { \
+			usize l = strlen(src[i].f) + 1; \
+			memmove(p, src[i].f, l); d[i].f = p; p += l; \
+		} while(0)
+		DUP(name); DUP(uid); DUP(gid); DUP(muid);
+		#undef DUP
+	}
+	return d;
+}
+
+/*
  * Inferno marshals a Dir in the same 9P2000 layout Plan 9 uses, so
  * convD2M/convM2D do the work.
  */
@@ -119,13 +158,25 @@ kfstat(int fd, uchar *buf, int n)
 Dir *
 kdirstat(char *s)
 {
-	return dirstat(s);
+	Dir *d, *e;
+
+	if((d = dirstat(s)) == nil)
+		return nil;
+	e = dirdup(d, 1);
+	k9_libcfree(d);
+	return e;
 }
 
 Dir *
 kdirfstat(int fd)
 {
-	return dirfstat(fd);
+	Dir *d, *e;
+
+	if((d = dirfstat(fd)) == nil)
+		return nil;
+	e = dirdup(d, 1);
+	k9_libcfree(d);
+	return e;
 }
 
 int
@@ -153,7 +204,19 @@ kdirfwstat(int fd, Dir *d)
 long
 kdirread(int fd, Dir **d)
 {
-	return dirread(fd, d);
+	Dir *l;
+	int n;
+
+	n = dirread(fd, &l);
+	if(n <= 0){
+		*d = nil;
+		return n;
+	}
+	*d = dirdup(l, n);
+	k9_libcfree(l);
+	if(*d == nil)
+		return -1;
+	return n;
 }
 
 int
