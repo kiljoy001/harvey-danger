@@ -10,12 +10,6 @@
 #include "fns.h"
 #include "error.h"
 
-/* This file hands libc-allocated objects around (dirstat's Dir); use
- * libc's allocator, not emu's. */
-#undef	free
-#undef	malloc
-#undef	mallocz
-
 int
 kopen(char *s, int mode)
 {
@@ -101,7 +95,8 @@ kstat(char *s, uchar *buf, int n)
 	if((d = dirstat(s)) == nil)
 		return -1;
 	r = convD2M(d, buf, n);
-	free(d);
+	/* dirstat's Dir comes from libc's allocator; leaking one per stat
+	 * is cheaper than mixing the two allocators. */
 	if(r <= BIT16SZ)
 		return -1;
 	return r;
@@ -116,7 +111,6 @@ kfstat(int fd, uchar *buf, int n)
 	if((d = dirfstat(fd)) == nil)
 		return -1;
 	r = convD2M(d, buf, n);
-	free(d);
 	if(r <= BIT16SZ)
 		return -1;
 	return r;
@@ -342,13 +336,16 @@ void
 kstrdup(char **p, char *s)
 {
 	char *t;
+	usize n;
 
 	*p = nil;
 	if(s == nil)
 		return;
-	t = strdup(s);
+	n = strlen(s) + 1;
+	t = emu_malloc(n);
 	if(t == nil)
 		error("out of memory");
+	memmove(t, s, n);
 	*p = t;
 }
 

@@ -69,18 +69,14 @@ main(int argc, char **argv)
 	p = newproc();
 	if(p == nil)
 		exits("no proc");
-	e = mallocz(sizeof *e, 1);
-	if(e == nil)
-		exits("no env");
+	/* newproc() owns the Osenv (embedded defenv); do not replace it,
+	 * the VM frees it with its own allocator later. */
+	e = p->env;
 	e->fgrp = newfgrp(nil);
 	e->pgrp = newpgrp();
 	e->egrp = newegrp();
-	e->errstr = e->errbuf0;
-	e->syserrstr = e->errbuf1;
-	e->user = strdup("none");
 	if(e->fgrp == nil || e->pgrp == nil || e->egrp == nil)
 		exits("no fd group");
-	p->env = e;
 	up = p;
 	up->pid = up->sigid = getpid();
 	strncpy(up->text, "disvm", sizeof up->text - 1);

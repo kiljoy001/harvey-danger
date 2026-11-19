@@ -1541,10 +1541,6 @@ main(int argc, char **argv)
 			sleep(90000);
 		}
 	}
-	/* DIAG: freeze here so the whole init transcript can be read
-	 * off the screen at leisure; remove with the ctl work. */
-	say("HARVEY-ARM64 DIAG HOLD 15S\n");
-	sleep(15000);
 	/*
 	 * LKL driver families run a Linux kernel for one device and are
 	 * services, not commands: start them detached (-b) before the shell,
