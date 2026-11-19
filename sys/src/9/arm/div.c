@@ -1,18 +1,20 @@
 /*
  * This file is part of the Harvey operating system. It is subject to the
- * license terms of the GNU GPL v2 in LICENSE.gpl found in the top-level
- * directory of this distribution at http://www.gnu.org/licenses/gpl-2.0.txt
+ * license terms of the GNU GPL v2 in the top-level directory of this
+ * distribution at http://www.gnu.org/licenses/gpl-2.0.txt
  *
  * ARMv7 has no integer divide instruction (Cortex-A7 included), and the
  * freestanding link has no compiler runtime, so supply the EABI helpers
- * clang emits for "/" and "%".  Small structs are returned in r0/r1 and
- * r0-r3 under AAPCS, which is exactly what __aeabi_*mod requires.
+ * clang emits.
+ *
+ * The 32-bit *mod helpers return a two-word struct, which AAPCS passes
+ * back in r0/r1.  The 64-bit ones cannot be written this way (a 16-byte
+ * result uses a hidden pointer), so __aeabi_uldivmod and
+ * __aeabi_ldivmod live in l.S.
  */
 
 typedef unsigned int u32;
 typedef int i32;
-typedef unsigned long long u64;
-typedef long long i64;
 
 static u32
 udivmod(u32 n, u32 d, u32 *rp)
@@ -103,67 +105,74 @@ __aeabi_idivmod(i32 n, i32 d)
 	return r;
 }
 
-static u64
-udivmod64(u64 n, u64 d, u64 *rp)
+/*
+ * Clang emits these for aligned copies on ARM EABI targets.
+ */
+void *
+__aeabi_memcpy4(void *d, const void *s, unsigned int n)
 {
-	u64 q, r;
-	int i;
+	unsigned char *dp = d;
+	const unsigned char *sp = s;
 
-	q = 0;
-	r = 0;
-	if(d == 0){
-		if(rp != 0)
-			*rp = 0;
-		return 0;
-	}
-	for(i = 63; i >= 0; i--){
-		r = (r << 1) | ((n >> i) & 1);
-		if(r >= d){
-			r -= d;
-			q |= 1ULL << i;
-		}
-	}
-	if(rp != 0)
-		*rp = r;
-	return q;
+	while(n-- > 0)
+		*dp++ = *sp++;
+	return d;
 }
 
-struct u64pair {
-	u64 quot;
-	u64 rem;
-};
-
-struct u64pair
-__aeabi_uldivmod(u64 n, u64 d)
+void *
+__aeabi_memcpy8(void *d, const void *s, unsigned int n)
 {
-	struct u64pair r;
-
-	r.quot = udivmod64(n, d, &r.rem);
-	return r;
+	return __aeabi_memcpy4(d, s, n);
 }
 
-struct i64pair {
-	i64 quot;
-	i64 rem;
-};
-
-struct i64pair
-__aeabi_ldivmod(i64 n, i64 d)
+void *
+__aeabi_memmove4(void *d, const void *s, unsigned int n)
 {
-	struct i64pair r;
-	u64 rem;
-	int neg;
+	unsigned char *dp = d;
+	const unsigned char *sp = s;
 
-	neg = n < 0;
-	if(n < 0)
-		n = -n;
-	if(d < 0)
-		d = -d;
-	r.quot = (i64)udivmod64((u64)n, (u64)d, &rem);
-	r.rem = (i64)rem;
-	if(neg){
-		r.quot = -r.quot;
-		r.rem = -r.rem;
+	if(dp < sp){
+		while(n-- > 0)
+			*dp++ = *sp++;
+	}else{
+		dp += n;
+		sp += n;
+		while(n-- > 0)
+			*--dp = *--sp;
 	}
-	return r;
+	return d;
+}
+
+void *
+__aeabi_memmove8(void *d, const void *s, unsigned int n)
+{
+	return __aeabi_memmove4(d, s, n);
+}
+
+void *
+__aeabi_memset4(void *d, unsigned int n, int c)
+{
+	unsigned char *dp = d;
+
+	while(n-- > 0)
+		*dp++ = c;
+	return d;
+}
+
+void *
+__aeabi_memset8(void *d, unsigned int n, int c)
+{
+	return __aeabi_memset4(d, n, c);
+}
+
+void *
+__aeabi_memclr4(void *d, unsigned int n)
+{
+	return __aeabi_memset4(d, n, 0);
+}
+
+void *
+__aeabi_memclr8(void *d, unsigned int n)
+{
+	return __aeabi_memset4(d, n, 0);
 }

@@ -9,6 +9,60 @@
  */
 
 typedef int i32;
+typedef unsigned int u32;
+
+/* taslock.c is not linked, so supply the statistics block it defines. */
+struct Lockstats {
+	u32 locks;
+	u32 glare;
+	u32 inglare;
+};
+struct Lockstats lockstats;
+
+/* wait statistics live in taslock.c on other ports */
+struct Waitstats {
+	int on;
+	int npcs;
+	int *type;
+	u32 *pcs;
+	int *ns;
+	unsigned long long *wait;
+	unsigned long long *total;
+};
+struct Waitstats waitstats;
+
+typedef struct KernelLock KernelLock;
+struct KernelLock {
+	u32 key;
+	int isilock;
+	u32 pl;
+	u32 _pc;
+	void *p;
+	void *m;
+	unsigned long long lockcycles;
+};
+KernelLock waitstatslk;
+
+void
+startwaitstats(int on)
+{
+	waitstats.on = on;
+}
+
+void
+clearwaitstats(void)
+{
+	waitstats.on = 0;
+	waitstats.npcs = 0;
+}
+
+void
+addwaitstat(unsigned int pc, unsigned long long t0, int type)
+{
+	(void)pc;
+	(void)t0;
+	(void)type;
+}
 
 struct LibcLock {
 	i32 key;

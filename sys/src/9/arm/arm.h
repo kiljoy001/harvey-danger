@@ -58,6 +58,8 @@ void arm32cacheflush(void);
 void arm32mmuenable(void);
 u32 arm32cntfrq(void);
 void arm32setcntvctl(u32);
+u32 arm32cntvtval(void);
+u32 arm32cntvctl(void);
 void arm32setcntvtval(u32);
 u32 arm32id(void);
 u32 arm32dfar(void);
@@ -72,6 +74,7 @@ void uartinit(void);
 void uartputc(int);
 int uartgetc(void);
 void putstr(char *);
+void arm32conswrite(char *, int);
 void delay(int);
 void microdelay(int);
 void coherence(void);
@@ -86,6 +89,6 @@ void arm32irqhandler(void);
 void arm32svchandler(void);
 void arm32unexpected(u32);
 void arm32prefetchabort(u32);
-void arm32dataabort(u32);
+void arm32dataabort(u32, u32, u32);
 
 #endif

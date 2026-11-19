@@ -53,6 +53,19 @@ extern Mach arm32machs[];
 void arm32setmach(Mach *);
 void arm32cpuirqinit(int);
 void arm32ipi(void);
+void arm32gicinit(void);
+void arm32timerinit(void);
+void arm32timerirq(void);
+void arm32timerprobe(void);
+u64 arm32fastnow(void);
+void arm32clocktick(void);
+void arm32setportclock(int);
+int arm32portclock(void);
+void arm32kernelinit(void);
+void arm32physinit(u32);
+u32 arm32physfreepages(void);
+void links(void);
+void setmachsched(Mach *);
 int arm32ipiprobe(void);
 static inline Proc *
 externup(void)
@@ -90,7 +103,7 @@ void dumpmmuwalk(void);
 u32 cr3get(void);
 void stacksnippet(void);
 int incref(Ref *);
-int arm32clocktimerfree(void *);
+
 int decref(Ref *);
 
 #endif

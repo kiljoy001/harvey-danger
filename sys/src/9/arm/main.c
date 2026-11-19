@@ -15,12 +15,6 @@
 
 
 enum {
-	GicdCtlr	= 0x000,
-	GicdIsenabler	= 0x100,
-	GicdIpriority	= 0x400,
-	GicdItargets	= 0x800,
-	GiccCtlr	= 0x000,
-	GiccPmr		= 0x004,
 	GiccIar		= 0x00c,
 	GiccEoir	= 0x010,
 
@@ -28,11 +22,11 @@ enum {
 	Tickhz		= 100,
 };
 
-#define gicd(r)	(*(volatile u32*)((u32)GICD + (r)))
 #define gicc(r)	(*(volatile u32*)((u32)GICC + (r)))
 
-static u32 timerinterval;
 static volatile u32 ticks;
+
+extern void (*consuartputs)(char *, int);
 
 /*
  * Context switch self-test: two coroutines trade control through the
@@ -152,35 +146,6 @@ printk(char *fmt, ...)
 	__builtin_va_end(ap);
 }
 
-static void
-gicinit(void)
-{
-	gicd(GicdCtlr) = 0;
-	gicc(GiccCtlr) = 0;
-
-	/* Priority 0xa0 for the timer, and route it to cpu 0. */
-	gicd(GicdIpriority + (Timerirq & ~3)) = 0xa0a0a0a0;
-	gicd(GicdItargets + (Timerirq & ~3)) = 0x01010101;
-
-	gicc(GiccPmr) = 0xf0;
-	gicc(GiccCtlr) = 1;
-	gicd(GicdCtlr) = 1;
-
-	/* PPI 16..31 live in ISENABLER0. */
-	gicd(GicdIsenabler) = 1 << Timerirq;
-}
-
-static void
-timerstart(void)
-{
-	u32 freq;
-
-	freq = arm32cntfrq();
-	timerinterval = freq / Tickhz;
-	arm32setcntvtval(timerinterval);
-	arm32setcntvctl(1);		/* enable, unmasked */
-}
-
 void
 arm32irqhandler(void)
 {
@@ -191,10 +156,14 @@ arm32irqhandler(void)
 		return;
 
 	if(id == Timerirq){
-		arm32setcntvtval(timerinterval);
-		ticks++;
-		if((ticks % Tickhz) == 0){
-			printk("arm32: tick %d\n", (u32)(ticks / Tickhz));
+		arm32clocktick();
+		if(arm32portclock())
+			arm32timerirq();
+		else {
+			arm32timerprobe();
+			ticks++;
+			if((ticks % Tickhz) == 0)
+				printk("arm32: tick %d\n", (u32)(ticks / Tickhz));
 		}
 	}
 	gicc(GiccEoir) = id;
@@ -221,10 +190,18 @@ arm32prefetchabort(u32 pc)
 }
 
 void
-arm32dataabort(u32 pc)
+arm32dataabort(u32 pc, u32 sp, u32 lr)
 {
+	u32 i, w;
+
 	printk("arm32: data abort at %p far %p fsr %p\n",
 		pc, arm32dfar(), arm32dfsr());
+	printk("arm32: svc sp %p lr %p\n", sp, lr);
+	for(i = 0; i < 24; i++){
+		w = ((u32*)sp)[i];
+		if(w >= 0x40010000 && w < (u32)&arm32l1)
+			printk("  [%p] %p\n", sp + 4*i, w);
+	}
 	hardhalt();
 }
 
@@ -235,6 +212,15 @@ arm32dataabort(u32 pc)
  * then repeat it with interrupts off: the tick count must not move.
  */
 static void
+spin(u32 n)
+{
+	volatile u32 i;
+
+	for(i = 0; i < n; i++)
+		;
+}
+
+static void
 splprobe(void)
 {
 	u32 old, t0, elapsed, n;
@@ -242,20 +228,20 @@ splprobe(void)
 	n = 1000000;
 	do {
 		t0 = ticks;
-		delay(n);
+		spin(n);
 		elapsed = ticks - t0;
 		n *= 2;
-	} while(elapsed < 5 && n < 200000000);
+	} while(elapsed < 5 && n < 128000000);
 
 	old = splhi();
 	t0 = ticks;
-	delay(n);
+	spin(n);
 	printk("arm32: splhi %s (%d ticks per delay)\n",
 		ticks == t0? "ok": "FAILED", elapsed);
 	splx(old);
 
 	t0 = ticks;
-	delay(n);
+	spin(n);
 	printk("arm32: splx %s\n", ticks != t0? "ok": "FAILED");
 }
 
@@ -265,6 +251,13 @@ arm32main(u32 dtb)
 	u32 *vecs, *p;
 
 	uartinit();
+	consuartputs = arm32conswrite;
+
+	/* One Mach for the uniprocessor bring-up. */
+	arm32setmach(&arm32machs[0]);
+	machp()->machno = 0;
+	machp()->online = 1;
+
 	printk("\nHARVEY-ARM32 VIRT\n");
 	printk("arm32: cpu id %p dtb %p (unused)\n", arm32id(), dtb);
 	printk("arm32: kernel %p..%p\n", (u32)0x40010000, (u32)&arm32l1);
@@ -282,8 +275,8 @@ arm32main(u32 dtb)
 
 	contextprobe();
 
-	gicinit();
-	timerstart();
+	arm32gicinit();
+	arm32timerinit();
 	printk("arm32: timer %d Hz, tick %d Hz\n", arm32cntfrq(), Tickhz);
 
 	__asm__ volatile("cpsie i" ::: "memory");
@@ -319,6 +312,12 @@ arm32main(u32 dtb)
 
 	splprobe();
 
+	/*
+	 * Hand over to the shared kernel: allocator, process table, console,
+	 * clock, devices and the first scheduled kernel process.
+	 */
+	printk("arm32: starting kernel init\n");
+	arm32kernelinit();
 	for(;;)
 		__asm__ volatile("wfi");
 }

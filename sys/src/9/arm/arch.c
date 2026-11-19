@@ -64,3 +64,14 @@ putstr(char *s)
 		uartputc(*s++);
 }
 
+
+/*
+ * The kernel's print() (port/print.c) formats into a buffer and hands it
+ * to the console layer through consuartputs.  Route that at the PL011.
+ */
+void
+arm32conswrite(char *s, int n)
+{
+	while(n-- > 0)
+		uartputc(*s++);
+}

@@ -43,17 +43,23 @@ CFLAGS = [
     "-fno-pie",
     "-fcommon",
     "-nostdlib",
+    "-D__HARVEY__",
     "-O2",
     "-g",
     "-Wall",
     "-Wno-unused-parameter",
     "-I", str(ARCH),
     "-I", str(ROOT / "sys/src/9/port"),
+    "-I", str(ROOT / "sys/src/9/ip"),
     "-I", str(ROOT / "sys/include"),
 ]
 
-SOURCES = ["l.S", "context.S", "main.c", "mmu.c", "arch.c", "div.c",
-           "lock.c", "console.c", "mach.c", "platform.c", "qmalloc.c"]
+SOURCES = [
+    "l.S", "context.S",
+    "main.c", "start.c", "mmu.c", "arch.c", "div.c", "lock.c", "console.c",
+    "mach.c", "platform.c", "qmalloc.c", "phys.c", "config.c", "procarch.c",
+    "timer.c",
+]
 LIBC = ROOT / "sys/src/libc"
 
 
@@ -86,10 +92,26 @@ def build_klibc(out: Path) -> Path:
     return archive
 
 
-PORT_SOURCES = [
-    "../port/allocb.c",
-    "../port/qio.c",
-]
+# Every port source that compiles for ARMv7, except the three that are
+# architecture- or header-specific (devkprof, devregress, ethermii) and
+# taslock.c, whose lock() is replaced by the simpler one in lock.c.
+PORT_EXCLUDE = {
+    "../port/devkprof.c",
+    "../port/devregress.c",
+    "../port/ethermii.c",
+    "../port/taslock.c",
+    # need crypto libraries or the embedded boot archive
+    "../port/devcap.c",
+    "../port/devssl.c",
+    "../port/devtls.c",
+    "../port/devroot.c",
+}
+
+
+def port_sources() -> list[str]:
+    manifest = ROOT / "sys/src/9/port/port.json"
+    entries = json.loads(manifest.read_text())[0]["SourceFiles"]
+    return [name for name in entries if name not in PORT_EXCLUDE]
 
 
 def build_port(out: Path) -> list[Path]:
@@ -97,11 +119,12 @@ def build_port(out: Path) -> list[Path]:
     objdir = out / "port"
     objdir.mkdir(parents=True, exist_ok=True)
     objects = []
-    for name in PORT_SOURCES:
+    for name in port_sources():
         source = ARCH / name
         obj = objdir / (name.replace("/", "_").replace("..", "") + ".o")
-        subprocess.run([CC, *CFLAGS, "-D__HARVEY__",
+        subprocess.run([CC, *CFLAGS,
                         "-I", str(ROOT / "sys/src/9/port"),
+    "-I", str(ROOT / "sys/src/9/ip"),
                         "-I", str(ROOT / "sys/include"),
                         "-c", str(source), "-o", str(obj)],
                        check=True, capture_output=True)
@@ -115,7 +138,8 @@ def main() -> None:
     args = parser.parse_args()
     out = args.out
     out.mkdir(parents=True, exist_ok=True)
-    for mode, name in (("errstr.h", "errstr.h"), ("sys.h", "sys.h")):
+    for mode, name in (("errstr.h", "errstr.h"), ("sys.h", "sys.h"),
+                       ("systab.c", "systab.c")):
         subprocess.run([sys.executable, str(ROOT.parent / "9vm/mksys.py"),
                         f"-mode={mode}", "-o", str(out / name),
                         str(ROOT / "sys/src/sysconf.json")],
@@ -123,16 +147,18 @@ def main() -> None:
     CFLAGS.extend(["-I", str(out)])
 
     objects = []
-    for name in SOURCES:
+    for name in SOURCES + ["systab.c"]:
+        source = out / name if name == "systab.c" else ARCH / name
         obj = out / (name.replace("/", "_") + ".o")
-        run([CC, *CFLAGS, "-c", str(ARCH / name), "-o", str(obj)])
+        run([CC, *CFLAGS, "-c", str(source), "-o", str(obj)])
         objects.append(obj)
 
     klibc = build_klibc(out)
+    portobjs = build_port(out)
     elf = out / "harvey-arm32"
     run([LD, "-nostdlib", "-static", "-T", str(ARCH / "kernel.ld"),
          "-z", "max-page-size=0x1000", "-o", str(elf),
-         *map(str, objects), str(klibc)])
+         *map(str, objects), *map(str, portobjs), str(klibc)])
 
     # A flat binary is handy for boards whose loaders do not parse ELF.
     binfile = out / "harvey-arm32.bin"

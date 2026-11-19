@@ -40,7 +40,7 @@ enum {
 u64
 rdtsc(void)
 {
-	return sys->ticks * Ustotick;
+	return arm32fastnow();
 }
 
 u64
@@ -297,76 +297,10 @@ kbdputsc(int c, int external)
 }
 
 /*
- * The pieces of the port layer that qmalloc reaches before the scheduler
- * and the page allocator exist.  They are deliberately minimal: enough to
- * allocate, format and report, with no sleeping.
+ * Interrupt locks: taslock.c is not linked (its lock() would be used by
+ * the kernel libc's formatter, which has a smaller Lock), so provide the
+ * interrupt-disabling variants here.
  */
-void
-panic(char *fmt, ...)
-{
-	char buf[256];
-	va_list arg;
-
-	va_start(arg, fmt);
-	vsnprint(buf, sizeof buf, fmt, arg);
-	va_end(arg);
-	hi("panic: ");
-	hi(buf);
-	hardhalt();
-}
-
-void
-error(char *s)
-{
-	if(s != nil)
-		hi(s);
-	hardhalt();
-}
-
-i32
-readstr(i32 offset, char *va, i32 n, char *s)
-{
-	i32 len;
-
-	len = strlen(s);
-	if(offset >= len)
-		return 0;
-	if(offset + n > len)
-		n = len - offset;
-	memmove(va, s + offset, n);
-	return n;
-}
-
-int
-return0(void *x)
-{
-	USED(x);
-	return 0;
-}
-
-void
-tsleep(Rendez *r, int (*f)(void*), void *a, i64 ms)
-{
-	int i;
-
-	USED(r);
-	for(i = 0; i < 1000; i++){
-		if(f != nil && f(a))
-			return;
-		microdelay((int)(ms * 1000));
-	}
-}
-
-u64
-physalloc(u64 size, int *color, void *va)
-{
-	USED(color);
-	USED(va);
-	/* The page allocator arrives with pageinit(). */
-	USED(size);
-	return 0;
-}
-
 void
 ilock(Lock *l)
 {
@@ -381,16 +315,84 @@ iunlock(Lock *l)
 		unlock(l);
 }
 
-int
-arm32clocktimerfree(void *p)
-{
-	USED(p);
-	return 0;
-}
-
 void
 hardhalt(void)
 {
 	for(;;)
 		__asm__ volatile("wfi");
+}
+
+int
+islo(void)
+{
+	return 0;
+}
+
+int
+userureg(Ureg *u)
+{
+	USED(u);
+	return 1;
+}
+
+void
+mmuput(usize va, Page *p, u32 len)
+{
+	USED(va);
+	USED(p);
+	USED(len);
+	panic("mmuput: user segments are not supported yet");
+}
+
+void
+sysrforkchild(Proc *p, Proc *up)
+{
+	USED(p);
+	USED(up);
+	panic("sysrforkchild: user processes are not supported yet");
+}
+
+usize
+sysexecstack(usize n, int up)
+{
+	USED(n);
+	USED(up);
+	return 0;
+}
+
+void *
+sysexecregs(usize entry, u32 sargs, void *v)
+{
+	USED(entry);
+	USED(sargs);
+	USED(v);
+	return nil;
+}
+
+void
+sysprocsetup(Proc *p)
+{
+	USED(p);
+}
+
+void
+dumpgpr(Ureg *u)
+{
+	USED(u);
+}
+
+int
+infected_with_std(void)
+{
+	return 0;
+}
+
+void
+disinfect_std(void)
+{
+}
+
+void
+arm32ipi(void)
+{
 }

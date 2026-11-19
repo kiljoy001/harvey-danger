@@ -18,6 +18,8 @@ SECTIONS
 		*(.text*)
 	}
 
+	etext = .;
+
 	.rodata : {
 		*(.rodata*)
 	}
@@ -35,5 +37,6 @@ SECTIONS
 		__bss_end = .;
 	}
 
+	end = .;
 	__image_end = .;
 }

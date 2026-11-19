@@ -4,11 +4,16 @@ ARMv7-A QEMU "virt" kernel.
     sh util/arm/run_qemu.sh
 
 The same core is intended for the SC8830 (goyave) tablet; see
-ports/goyave for the board work.  This target is board-independent:
+ports/goyave for the board work.  What boots today:
 
   - identity-mapped 1 MiB sections, caches enabled after the map exists
   - high vectors at 0xffff0000 (VBAR is ignored by a non-secure PL1
     guest), copied from a position-independent table at boot
-  - PL011 console, GIC-400 and the ARM virtual timer at 100 Hz
-  - the scheduler's setlabel/gotolabel primitive, self-tested at boot
-  - the kernel libc (libc/klibc.json) linked in, proven by snprint()
+  - PL011 console, GIC-400 and the ARM virtual timer
+  - the kernel libc (libc/klibc.json) with the ARM EABI helpers
+  - the shared port layer: quicksmart allocator, physical page
+    allocator, page cache, process table, console, clock and the
+    scheduler, with a kernel process running on it
+
+Not yet: user processes (trap/syscall entry, 4 KiB user page tables),
+devices beyond the console, and the SC8830 board drivers.

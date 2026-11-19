@@ -513,7 +513,7 @@ mallocsummary(void)
 void
 free(void *ap)
 {
-	if(arm32clocktimerfree(ap))
+	if(arm64clocktimerfree(ap))
 		panic("free of live clock timer %#p", ap);
 	MLOCK;
 	qfreeinternal(ap);
