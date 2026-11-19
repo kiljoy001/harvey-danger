@@ -6,13 +6,13 @@
  * ARMv7-A QEMU "virt" bring-up: console, vectors, GIC and generic timer.
  */
 #include "u.h"
+#include "../port/lib.h"
 #include "mem.h"
+#include "dat.h"
+#include "fns.h"
 #include "arm.h"
 #include "context.h"
 
-/* The kernel libc's formatting routine, used here to prove the shared
- * C runtime (fmt, locks, varargs) works on ARMv7. */
-int snprint(char *, int, const char *, ...);
 
 enum {
 	GicdCtlr	= 0x000,
@@ -293,6 +293,24 @@ arm32main(u32 dtb)
 
 		snprint(buf, sizeof buf, "klibc %d %s %x", 42, "ok", 0xbeef);
 		printk("arm32: snprint '%s'\n", buf);
+	}
+
+	/* The kernel allocator (sys/src/9/arm/qmalloc.c). */
+	print("arm32: kernel libc print works\n");
+	mallocinit();
+	{
+		void *a, *b;
+
+		a = malloc(1000);
+		b = malloc(2000);
+		if(a == nil || b == nil || a == b){
+			printk("arm32: kernel malloc FAILED\n");
+		} else {
+			memmove(a, "allocator", 10);
+			printk("arm32: kernel malloc ok '%s'\n", a);
+		}
+		free(a);
+		free(b);
 	}
 
 	/* Let the timer tick once, then check that masking works. */

@@ -17,6 +17,7 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -47,9 +48,12 @@ CFLAGS = [
     "-Wall",
     "-Wno-unused-parameter",
     "-I", str(ARCH),
+    "-I", str(ROOT / "sys/src/9/port"),
+    "-I", str(ROOT / "sys/include"),
 ]
 
-SOURCES = ["l.S", "context.S", "main.c", "mmu.c", "arch.c", "div.c", "lock.c"]
+SOURCES = ["l.S", "context.S", "main.c", "mmu.c", "arch.c", "div.c",
+           "lock.c", "console.c", "mach.c", "platform.c", "qmalloc.c"]
 LIBC = ROOT / "sys/src/libc"
 
 
@@ -82,12 +86,41 @@ def build_klibc(out: Path) -> Path:
     return archive
 
 
+PORT_SOURCES = [
+    "../port/allocb.c",
+    "../port/qio.c",
+]
+
+
+def build_port(out: Path) -> list[Path]:
+    """The first slice of the shared kernel that the bring-up exercises."""
+    objdir = out / "port"
+    objdir.mkdir(parents=True, exist_ok=True)
+    objects = []
+    for name in PORT_SOURCES:
+        source = ARCH / name
+        obj = objdir / (name.replace("/", "_").replace("..", "") + ".o")
+        subprocess.run([CC, *CFLAGS, "-D__HARVEY__",
+                        "-I", str(ROOT / "sys/src/9/port"),
+                        "-I", str(ROOT / "sys/include"),
+                        "-c", str(source), "-o", str(obj)],
+                       check=True, capture_output=True)
+        objects.append(obj)
+    return objects
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--out", type=Path, default=DEFAULT_OUT)
     args = parser.parse_args()
     out = args.out
     out.mkdir(parents=True, exist_ok=True)
+    for mode, name in (("errstr.h", "errstr.h"), ("sys.h", "sys.h")):
+        subprocess.run([sys.executable, str(ROOT.parent / "9vm/mksys.py"),
+                        f"-mode={mode}", "-o", str(out / name),
+                        str(ROOT / "sys/src/sysconf.json")],
+                       check=True, stdout=subprocess.DEVNULL)
+    CFLAGS.extend(["-I", str(out)])
 
     objects = []
     for name in SOURCES:

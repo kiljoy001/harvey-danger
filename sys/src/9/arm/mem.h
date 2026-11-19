@@ -21,7 +21,6 @@
 #define HZ		100
 #define KGUARD		(4*KiB)
 #define PGROUND(s)	ROUND(s, BY2PG)
-#define ROUND(s, sz)	(((s)+(sz-1))&~(sz-1))
 #define BY2SE		4
 #define BY2WD		4
 #define BY2V		8
@@ -70,19 +69,9 @@
 
 #define BLOCKALIGN	64
 
-#define PTEMAPMEM	(1024*1024)
-#define PTEPERTAB	(PTEMAPMEM/BY2PG)
 #define SEGMAPSIZE	1984
 #define SSEGMAPSIZE	16
 #define PPN(x)		((x)&~(BY2PG-1))
-
-/* Artificial bits used by the port's segment code. */
-#define PTEVALID	(1<<0)
-#define PTERONLY	0
-#define PTEWRITE	(1<<1)
-#define PTECACHED	0
-#define PTEUNCACHED	(1<<2)
-#define PTENOEXEC	(1<<4)
 
 #define HOWMANY(x, y)	(((x) + (y) - 1) / (y))
 #define ROUNDUP(x, y)	(HOWMANY((x), (y)) * (y))

@@ -24,7 +24,7 @@ void dumpgpr(Ureg *);
 int CASW(u32 *, u32, u32);
 int userureg(Ureg *);
 int fpudevprocio(Proc *, void *, i32, usize, int);
-u32 rdtsc(void);
+u64 rdtsc(void);
 int backtrace_list(usize, usize, usize *, usize);
 void archfmtinstall(void);
 void hi(char *);
@@ -80,6 +80,9 @@ void intrac(Proc *);
 void DONE(void);
 void runacore(void);
 void hardhalt(void);
+void putstr(char *);
+void uartputc(int);
+void uartinit(void);
 int infected_with_std(void);
 void disinfect_std(void);
 void ureg2gdb(Ureg *, usize *);
@@ -87,6 +90,7 @@ void dumpmmuwalk(void);
 u32 cr3get(void);
 void stacksnippet(void);
 int incref(Ref *);
+int arm32clocktimerfree(void *);
 int decref(Ref *);
 
 #endif

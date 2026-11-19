@@ -49,16 +49,3 @@ _tas32(int *p)
 {
 	return __atomic_exchange_n(p, 1, __ATOMIC_ACQUIRE);
 }
-
-/*
- * The kernel libc's %r formatting reads the last error string through
- * errstr(); the kernel keeps that per-process, but no process state is
- * involved yet.
- */
-int
-errstr(char *buf, unsigned int n)
-{
-	if(n > 0)
-		buf[0] = 0;
-	return 0;
-}
