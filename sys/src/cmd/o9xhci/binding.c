@@ -18,6 +18,7 @@ static int boardmode;
 static uchar *boardmmio, *boarddma;
 static u32 boardmmiosz, boarddmasz;
 static u64 boarddmabase;
+static int boarddmactl=-1;	/* the chunk's #P/dma/N/ctl, held open */
 enum { Bigpage = 2*1024*1024 };
 
 static long
@@ -74,38 +75,44 @@ mapreg(u64 base, usize size, char *outname, int outlen)
 	return nil;
 }
 
+/*
+ * The controller's memory: one Xarena chunk of #P's arena, mapped
+ * cacheable into this process alone.  Its ctl stays open, which keeps
+ * the chunk.
+ */
 static int
 board_dma(void)
 {
-	char buf[128], *p;
-	u64 base, size;
+	char buf[128], *f[8];
 	unsigned i;
+	int n;
 
-	fprint(2,"o9xhci: dma: read grant\n");
-	if(readtext("#P/dma/base",buf,sizeof buf)<0)
+	fprint(2,"o9xhci: dma: take a chunk\n");
+	boarddmactl=open("#P/dma/clone",ORDWR);
+	if(boarddmactl<0)
 		return -1;
-	base=strtoull(buf,&p,0);
-	if(*p!=0 && *p!='\n' && *p!=' ')
+	snprint(buf,sizeof buf,"alloc %ud %ud cached\n",(unsigned)Xarena,(unsigned)Bigpage);
+	if(write(boarddmactl,buf,strlen(buf))!=strlen(buf) ||
+	   write(boarddmactl,"map\n",4)!=4)
 		return -1;
-	if(readtext("#P/dma/size",buf,sizeof buf)<0)
+	n=pread(boarddmactl,buf,sizeof buf-1,0);
+	if(n<=0)
 		return -1;
-	size=strtoull(buf,&p,0);
-	if(base==0 || size<Xarena)
+	buf[n]=0;
+	/* "<n> pa <pa> len <len> cached va <va>" */
+	if(tokenize(buf,f,nelem(f))!=8)
 		return -1;
-	fprint(2,"o9xhci: dma: attach %llux+%llux\n",base,size);
-	boarddma=segattach(0,"dma",0,size);
-	if(boarddma==(void*)-1)
-		return -1;
-	boarddmabase=base;
-	boarddmasz=size;
-	fprint(2,"o9xhci: dma mapped at %p\n",boarddma);
-	for(i=0; i<size; i+=Bigpage){
+	boarddmabase=strtoull(f[2],nil,0);
+	boarddmasz=strtoull(f[4],nil,0);
+	boarddma=(uchar*)(uintptr)strtoull(f[7],nil,0);
+	fprint(2,"o9xhci: dma %llux+%ux mapped at %p\n",boarddmabase,boarddmasz,boarddma);
+	for(i=0; i<boarddmasz; i+=Bigpage){
 		boarddma[i]=0x5a;
 		fprint(2,"o9xhci: dma page %ud write %ux\n",i/Bigpage,boarddma[i]);
 	}
-	boarddma[size-1]=0xa5;
+	boarddma[boarddmasz-1]=0xa5;
 	fprint(2,"o9xhci: dma last write ok\n");
-	if(boarddma[0]!=0x5a || boarddma[size-1]!=0xa5){
+	if(boarddma[0]!=0x5a || boarddma[boarddmasz-1]!=0xa5){
 		fprint(2,"o9xhci: dma self-test failed\n");
 		return -1;
 	}
@@ -170,23 +177,17 @@ bwrite32(void *u, Xword off, Xword v)
 	return 0;
 }
 /*
- * The #P/dma grant is mapped cached, so the controller's view of memory
+ * The #P/dma chunk is mapped cached, so the controller's view of memory
  * must be maintained explicitly: clean after the CPU writes a ring or a
  * TRB, invalidate before the CPU reads an event.
  */
 static void
 dmamaint(char *op, u64 pa, u64 len)
 {
-	char path[32], buf[64];
-	int f;
+	char buf[64];
 
-	snprint(path, sizeof path, "#P/dma/%s", op);
-	f=open(path,OWRITE);
-	if(f<0)
-		return;
-	snprint(buf, sizeof buf, "0x%llx 0x%llx\n", pa, len);
-	write(f, buf, strlen(buf));
-	close(f);
+	snprint(buf, sizeof buf, "%s %#llux %#llux\n", op, pa-boarddmabase, len);
+	write(boarddmactl, buf, strlen(buf));
 }
 static int
 breadmem(void *u, Xaddr a, void *buf, Xword n)
@@ -293,7 +294,7 @@ board_start(void)
 	}
 	fprint(2,"o9xhci: usbpower ready\n");
 	if(board_dma()<0){
-		fprint(2,"o9xhci: no #P/dma grant\n");
+		fprint(2,"o9xhci: no #P/dma chunk\n");
 		return -1;
 	}
 	fprint(2,"o9xhci: dma %llux+%ux\n",boarddmabase,boarddmasz);

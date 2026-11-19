@@ -125,7 +125,7 @@ static Gmac gmac;
 
 static void gmacpoll(void);
 
-extern u64 arm64dmabase, arm64dmasize;
+extern u64 arm64dmakern;
 
 static u32
 rd(Gmac *g, int off)
@@ -205,14 +205,16 @@ descwr(u8 *d, u32 a, u32 b, u32 c, u32 e)
 	p[3] = e;
 }
 
-static void
+static int
 dmainit(Gmac *g)
 {
 	u64 pa;
 
-	/* take the top 128 KiB of the reserved DMA region */
-	pa = arm64dmabase + arm64dmasize - DmaSize;
-	arm64dmasize -= DmaSize;
+	/* the top 128 KiB of the DMA arena's kernel block (mmu.c maps it
+	 * Device, so the descriptors need no cache maintenance) */
+	if(arm64dmakern == 0)
+		return -1;
+	pa = arm64dmakern + 2*1024*1024 - DmaSize;
 	g->dmapa = pa;
 	g->dma = (u8 *)KADDR(pa);
 	memset(g->dma, 0, DmaSize);
@@ -225,6 +227,7 @@ dmainit(Gmac *g)
 	g->rxcpa = pa + RxDescOff;
 	g->txbpa = pa + TxBufOff;
 	g->rxbpa = pa + RxBufOff;
+	return 0;
 }
 
 static void
@@ -611,7 +614,10 @@ gmacreset(Ether *ether)
 	default: g->speed = 10; break;
 	}
 	setspeed(g, g->speed);
-	dmainit(g);
+	if(dmainit(g) < 0){
+		print("gmac: no DMA arena kernel block\n");
+		return -1;
+	}
 	dmacfg(g);
 
 	memmove(ether->ea, mac, Eaddrlen);

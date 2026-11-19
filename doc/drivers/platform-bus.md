@@ -50,18 +50,61 @@ process through `owner`.
 
 ## DMA
 
+`#P` owns the DMA arena, a physically contiguous reservation below the
+kernel's page allocator.  A driver gets memory from it as **chunks**, each
+held through a file:
+
 ```
-#P/dma/base              arena physical base
-#P/dma/size              arena size
-#P/dma/alloc             write "<user-va> <len>", read back "<pa> <len>"
-#P/dma/free              write "<user-va> <len>"
-#P/dma/clean|inval|cleaninval   cache maintenance, "<user-va> <len>"
+#P/dma/clone             open: a new chunk; the fd is now #P/dma/N/ctl
+#P/dma/avail             "<free bytes> <largest free piece>"
+#P/dma/N/ctl             write "alloc <size> [<align>] [cached|uncached]"
+                         write "map"         maps the chunk into the caller
+                         write "clean|inval|cleaninval <off> <len>"
+                         read  "<N> pa <pa> len <len> <type> va <va>"
+#P/dma/N/data            read and write the chunk through the kernel
 ```
 
-A driver maps the arena once with `segattach(0, "dma", 0, size)` and then
-asks the kernel for aligned chunks, so two drivers cannot be handed the
-same page.  DMA addresses are physical and must stay below 4 GiB while a
-32-bit ADMA engine is in use.
+```c
+ctl = open("#P/dma/clone", ORDWR);
+write(ctl, "alloc 65536 4096 cached\n", 24);
+write(ctl, "map\n", 4);
+pread(ctl, buf, sizeof buf - 1, 0);	/* pa for the device, va for us */
+```
+
+The rules:
+
+* **The ctl is the capability.**  A chunk's files open by name only for a
+  process that already holds its ctl open: the clone fd, or a copy a child
+  inherited.  No process can map another's chunk, and the arena as a whole
+  has no segment to attach.
+* **A chunk is mapped only into who asks, and only the chunk.**  `map`
+  attaches exactly the chunk's pages; a chunk whose address and size are
+  2 MiB aligned is mapped with 2 MiB pages.
+* **The memory type is chosen per chunk.**  `cached` (normal write-back,
+  the default) for data the CPU works on, maintained with `clean`/`inval`
+  around ownership changes; `uncached` (normal non-cacheable) for
+  descriptor rings and buffers a device and the CPU share.  RAM is never
+  mapped Device.  The kernel's own alias of the arena stays write-back, and
+  an uncached chunk is cleaned and invalidated through it when handed out.
+* **New chunks are zeroed**, so a chunk never shows its previous owner's
+  data.
+* **Lifetime is the files and the mappings.**  A chunk returns to the arena
+  once its last file is closed and its last mapping gone: a driver that
+  exits or is killed gives its memory back, never while it is still mapped.
+  Nothing is freed by address.
+
+`clean`, `inval` and `cleaninval` take offsets into the chunk.  DMA
+addresses are physical and must stay below 4 GiB while a 32-bit ADMA engine
+is in use.  The arena's top 2 MiB is the kernel's own (ethergmac's
+descriptors) and is never handed out.
+
+The OP-TEE static shared memory is not in the arena: its cache maintenance
+is `#P/tee/clean`, `/inval` and `/cleaninval`, taking `"<pa> <len>"` inside
+it.
+
+This isolates chunks from the CPU's side only: a device can still be
+programmed with any physical address.  Per-device IOMMU contexts are what
+close that.
 
 ## Worked example
 

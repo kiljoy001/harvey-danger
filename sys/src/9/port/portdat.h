@@ -396,6 +396,7 @@ struct Image {
 #define PTEUSER (1 << 2)
 #define PTENOEXEC (1 << 3)
 #define PTEUNCACHED (1 << 4)
+#define PTENCRAM (1 << 5)	/* uncached normal memory (RAM, not registers) */
 
 struct Pte {
 	Page **first;  /* First used entry */
@@ -427,6 +428,7 @@ enum {
 	SG_CEXEC = 0x200,  /* Detach at exec */
 	SG_ZIO = 0x400,	   /* used for zero copy */
 	SG_KZIO = 0x800,   /* kernel zero copy segment */
+	SG_NCRAM = 0x1000, /* Physseg is RAM shared with devices, uncached */
 };
 extern char *segtypes[]; /* port/segment.c */
 
@@ -453,6 +455,10 @@ struct Physseg {
 	Page *(*pgalloc)(Segment *, usize); /* Allocation if we need it */
 	void (*pgfree)(Page *);
 	usize gva; /* optional global virtual address */
+	/* called once a segment of this Physseg is freed (its last
+	 * reference gone), so the owner of the memory can account for
+	 * its mappings */
+	void (*release)(Physseg *);
 };
 
 struct Sema {

@@ -835,100 +835,76 @@ hmem_free(void *p)
 }
 
 /*
- * Guest RAM arena.  LKL takes its whole mem= region from page_alloc once,
- * and every DMA buffer is inside that region.  Use the physically
- * contiguous #P/dma segment so a guest pointer can be translated to a real
- * device address.  The kernel maps the "dma" physseg uncached, so the DMA
- * path needs no cache maintenance.
+ * Guest RAM.  LKL takes its whole mem= region from page_alloc once, and
+ * every DMA buffer is inside that region.  It is one chunk of #P's DMA
+ * arena, physically contiguous so a guest pointer translates to a real
+ * device address: this process holds the chunk's ctl open for its whole
+ * life, and the chunk is mapped cacheable, so the DMA path does its own
+ * cache maintenance (lkl_host_dma_sync).  The guest sees only its own
+ * chunk; when the process exits #P takes the memory back.
  */
 static uchar *lklram;
 static u64 lklrampa, lklramsize, lklramoff;
+static int lklramctl = -1;	/* the chunk's #P/dma/N/ctl */
 
-static u64 pnpnum(char*, char*);
 unsigned long lkl_host_dma_pa(void*, unsigned long);
 
-/*
- * Allocate a chunk of the arena from the kernel's bump allocator and
- * return its physical base.  Each LKL family instance takes a disjoint
- * chunk so two guests can run at once.
- */
+/* Reads the chunk's "<n> pa <pa> len <len> <type> va <va>". */
 static int
-dmaalloc(u64 size, u64 align, u64 *pa)
+ramstat(u64 *pa, u64 *len, uintptr *va)
 {
-	static int ownfd = -1;
-	char buf[64];
+	char buf[128], *f[8];
 	int n;
 
-	/*
-	 * Instance RAM comes from allocowned, held open for the life of
-	 * this process: when the process exits or is killed, closing the
-	 * file returns the chunk to the arena.  (Plain alloc chunks are
-	 * only returned by an explicit free, which a killed guest never
-	 * gets to do; retries then exhausted the arena permanently.)
-	 */
-	if(ownfd < 0 && (ownfd = open("#P/dma/allocowned", ORDWR)) < 0)
-		return -1;
-	snprint(buf, sizeof buf, "%llud %llud\n", size, align);
-	if(write(ownfd, buf, strlen(buf)) != strlen(buf))
-		return -1;
-	n = pread(ownfd, buf, sizeof buf - 1, 0);
+	n = pread(lklramctl, buf, sizeof buf - 1, 0);
 	if(n <= 0)
 		return -1;
 	buf[n] = 0;
-	*pa = strtoull(buf, nil, 0);
+	if(tokenize(buf, f, nelem(f)) != 8)
+		return -1;
+	*pa = strtoull(f[2], nil, 0);
+	*len = strtoull(f[4], nil, 0);
+	*va = strtoull(f[7], nil, 0);
 	return 0;
 }
 
+static int
+ramcmd(char *cmd)
+{
+	return write(lklramctl, cmd, strlen(cmd)) == strlen(cmd) ? 0 : -1;
+}
+
+/*
+ * Takes want bytes of the arena for the guest, 2 MiB aligned (so #P maps
+ * it with 2 MiB pages).  want 0 only reports whether that has happened:
+ * the guest never falls back to more of the arena than it asked for.
+ */
 static void
 raminit(unsigned long want)
 {
-	u64 base, size, pa;
-	void *va;
+	char cmd[64];
+	u64 pa, len;
+	uintptr va;
 
-	if(lklram != nil)
+	if(lklram != nil || want == 0)
 		return;
-	base = pnpnum("dma", "base");
-	size = pnpnum("dma", "size");
-	if(base == ~0ULL || size == ~0ULL || size < 64*1024*1024){
-		lkl_printf("host: no dma arena (base %#llux size %#llux)\n",
-		       base, size);
+	if((lklramctl = open("#P/dma/clone", ORDWR)) < 0){
+		lkl_printf("host: no #P/dma: %r\n");
 		return;
 	}
-	/*
-	 * Map the whole segment so any allocated chunk has a virtual
-	 * address; use only [pa, pa+want) of it.
-	 */
-	va = segattach(0, "dma", 0, size);
-	if(va == (void*)-1){
-		lkl_printf("host: segattach dma %#llux: %r\n", size);
-		return;
+	snprint(cmd, sizeof cmd, "alloc %lud 0x200000 cached\n", want);
+	if(ramcmd(cmd) < 0 || ramcmd("map\n") < 0 ||
+	   ramstat(&pa, &len, &va) < 0 || len < want || va == 0){
+		lkl_printf("host: dma arena: cannot take %#lux: %r\n", want);
+		fprint(2, "lklboot: dma arena exhausted\n");
+		exits("arena");
 	}
-	pa = base;
-	if(want != 0){
-		/*
-		 * Never fall back to the whole arena: with more than one
-		 * LKL instance that hands this guest the same pages as
-		 * another live guest, and both kernels corrupt each
-		 * other.  Fail loudly instead.
-		 */
-		if(want >= size ||
-		   dmaalloc(want, 0x200000, &pa) < 0 ||
-		   pa < base || pa + want > base + size){
-			lkl_printf("host: dma arena: want %#llux of %#llux: "
-				   "cannot reserve a disjoint chunk\n",
-				   want, size);
-			fprint(2, "lklboot: dma arena exhausted\n");
-			exits("arena");
-		}
-	}
-	if(want == 0)
-		want = size;
-	lklram = va + (pa - base);
+	lklram = (uchar*)va;
 	lklrampa = pa;
 	lklramsize = want;
-	lkl_printf("host: arena va %p pa %#llux size %#llux%s\n",
-		   lklram, pa, want, pa == base ? "" : " (chunk)");
-	fprint(2, "lklboot: arena pa %#llux size %#llux\n", pa, want);
+	lkl_printf("host: arena va %p pa %#llux size %#llux\n",
+		   lklram, pa, (u64)want);
+	fprint(2, "lklboot: arena pa %#llux size %#llux\n", pa, (u64)want);
 }
 
 /*
@@ -979,18 +955,16 @@ void
 lkl_host_dma_sync(unsigned long pa, unsigned long size, int op)
 {
 	static char *name[] = { "clean", "inval", "cleaninval" };
-	static int fd[3] = { -1, -1, -1 };
-	char buf[64], path[32];
+	char buf[64];
 
-	if(size == 0 || op < 0 || op > 2)
+	/* the chunk's ctl takes offsets into the guest's RAM */
+	if(size == 0 || op < 0 || op > 2 || lklramctl < 0 ||
+	   pa < lklrampa || pa - lklrampa > lklramsize ||
+	   size > lklramsize - (pa - lklrampa))
 		return;
-	if(fd[op] < 0){
-		snprint(path, sizeof path, "#P/dma/%s", name[op]);
-		if((fd[op] = open(path, OWRITE)) < 0)
-			return;
-	}
-	snprint(buf, sizeof buf, "0x%lux 0x%lux\n", pa, size);
-	pwrite(fd[op], buf, strlen(buf), 0);
+	snprint(buf, sizeof buf, "%s %#lux %#lux\n", name[op],
+		(unsigned long)(pa - lklrampa), size);
+	ramcmd(buf);
 }
 
 /*

@@ -676,8 +676,8 @@ dataio(u8 *buf, int n, int write)
 }
 
 /*
- * ADMA2.  The data buffer and the descriptor table live in the #P/dma
- * region: physically contiguous, and mapped once with segattach.  PIO
+ * ADMA2.  The data buffer and the descriptor table live in one #P/dma
+ * chunk: physically contiguous, mapped into this process alone.  PIO
  * costs about a microsecond per 4-byte access to the buffer data port on
  * this SoC; one ADMA2 descriptor moves the whole transfer in hardware.
  */
@@ -691,86 +691,55 @@ enum {
 
 enum { Dclean, Dinval, Dcivac, Ndmafile };
 
-static u8 *dmava;
-static u64 dmabase, dmasize;
 static u64 dmaalign = 4096;
-static int dmafile[Ndmafile];
+static int dmactl = -1;		/* the chunk's #P/dma/N/ctl, held open */
+static u64 chunkpa;		/* the data buffer, then the descriptors */
 static u64 datapa, descpa;
 static u8 *datava, *descva;
-
-static u64
-readnum(char *path)
-{
-	char buf[64];
-	int fd, n;
-
-	if((fd = open(path, OREAD)) < 0)
-		fail("emmc: open %s: %r", path);
-	n = read(fd, buf, sizeof buf - 1);
-	close(fd);
-	if(n <= 0)
-		fail("emmc: read %s: %r", path);
-	buf[n] = 0;
-	return strtoull(buf, nil, 0);
-}
-
-/* #P/dma/alloc: "<size> <align>\n", then read back "<pa> <len>\n". */
-static u64
-dmaalloc(u64 size, u64 align)
-{
-	char buf[64];
-	int fd, n;
-
-	if((fd = open("#P/dma/alloc", ORDWR)) < 0)
-		fail("emmc: no #P/dma/alloc: %r");
-	snprint(buf, sizeof buf, "%llud %llud\n", size, align);
-	if(write(fd, buf, strlen(buf)) != strlen(buf))
-		fail("emmc: dma alloc: %r");
-	n = pread(fd, buf, sizeof buf - 1, 0);
-	close(fd);
-	if(n <= 0)
-		fail("emmc: dma alloc read: %r");
-	buf[n] = 0;
-	return strtoull(buf, nil, 0);
-}
 
 static void
 dmainit(void)
 {
+	char buf[128], *f[8];
+	u8 *va;
+	int n;
+
 	if(datava != nil)
 		return;
-	dmabase = readnum("#P/dma/base");
-	dmasize = readnum("#P/dma/size");
-	if(dmabase == 0 || dmasize == 0)
-		fail("emmc: no dma region");
-	dmava = segattach(0, "dma", 0, dmasize);
-	if(dmava == (void *)-1)
-		fail("emmc: segattach dma: %r");
-	datapa = dmaalloc(Dmadata, dmaalign);
-	descpa = dmaalloc(Dmadesc, 4096);
-	datava = dmava + (datapa - dmabase);
-	descva = dmava + (descpa - dmabase);
-	memset(datava, 0, Dmadata);
-	memset(descva, 0, Dmadesc);
+	if((dmactl = open("#P/dma/clone", ORDWR)) < 0)
+		fail("emmc: no #P/dma/clone: %r");
+	snprint(buf, sizeof buf, "alloc %llud %llud cached\n",
+		(u64)(Dmadata + Dmadesc), dmaalign);
+	if(write(dmactl, buf, strlen(buf)) != strlen(buf))
+		fail("emmc: dma alloc: %r");
+	if(write(dmactl, "map\n", 4) != 4)
+		fail("emmc: dma map: %r");
+	n = pread(dmactl, buf, sizeof buf - 1, 0);
+	if(n <= 0)
+		fail("emmc: dma chunk read: %r");
+	buf[n] = 0;
+	/* "<n> pa <pa> len <len> cached va <va>"; #P zeroes the chunk */
+	if(tokenize(buf, f, nelem(f)) != 8)
+		fail("emmc: dma chunk: %s", buf);
+	chunkpa = strtoull(f[2], nil, 0);
+	va = (u8*)(uintptr)strtoull(f[7], nil, 0);
+	datapa = chunkpa;
+	datava = va;
+	descpa = chunkpa + Dmadata;
+	descva = va + Dmadata;
 	if(verbose)
-		print("emmc: dma %#llux data %#llux desc %#llux\n",
-		      dmabase, datapa, descpa);
+		print("emmc: dma data %#llux desc %#llux\n", datapa, descpa);
 }
 
 static void
 dmacache(int op, u64 pa, u64 len)
 {
 	static char *name[Ndmafile] = { "clean", "inval", "cleaninval" };
-	char buf[64], path[32];
+	char buf[64];
 
-	if(dmafile[op] == 0){
-		snprint(path, sizeof path, "#P/dma/%s", name[op]);
-		if((dmafile[op] = open(path, OWRITE)) < 0)
-			fail("emmc: open %s: %r", path);
-	}
-	snprint(buf, sizeof buf, "0x%llx 0x%llx\n", pa, len);
-	if(pwrite(dmafile[op], buf, strlen(buf), 0) != strlen(buf))
-		fail("emmc: #P/dma/%s: %r", name[op]);
+	snprint(buf, sizeof buf, "%s %#llux %#llux\n", name[op], pa - chunkpa, len);
+	if(write(dmactl, buf, strlen(buf)) != strlen(buf))
+		fail("emmc: dma %s: %r", name[op]);
 }
 
 /* One Transfer descriptor per Admamax bytes, End on the last. */

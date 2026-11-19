@@ -222,14 +222,15 @@ sysbrk_(Ar0 *ar0, ...)
 	ar0->i = -1;
 }
 
+static usize segattachps1(Proc*, int, Physseg*, usize, usize, int);
+
 static usize
 segattach(Proc *p, int attr, char *name, usize va, usize len)
 {
 	Proc *up = externup();
 	int sno;
-	Segment *s, *os;
+	Segment *s;
 	Physseg *ps;
-	u32 pgsz;
 
 	/* BUG: Only ok for now */
 	if((va != 0 && va < UTZERO) || (va & KZERO) == KZERO)
@@ -271,6 +272,54 @@ segattach(Proc *p, int attr, char *name, usize va, usize len)
 			break;
 	if(ps->name == nil)
 		error("segment not found");
+	va = segattachps1(p, attr, ps, va, len, sno);
+
+clean_out:
+	poperror();
+	qunlock(p->seglock);
+	qunlock(&memgrplock);
+	return va;
+}
+
+/*
+ * Attaches a physical segment the caller describes itself, not one
+ * named in physseg[]: a device (#P's DMA chunks) hands a process only
+ * the memory it was given, with no global name another process could
+ * attach.  Returns the virtual address.
+ */
+usize
+segattachps(Proc *p, int attr, Physseg *ps, usize va, usize len)
+{
+	Proc *up = externup();
+	int sno;
+
+	qlock(&memgrplock);
+	qlock(p->seglock);
+	if(waserror()){
+		qunlock(p->seglock);
+		qunlock(&memgrplock);
+		nexterror();
+	}
+	for(sno = 0; sno < NSEG; sno++)
+		if(p->seg[sno] == nil)
+			break;
+	if(sno == NSEG)
+		error("too many segments in process");
+	va = segattachps1(p, attr, ps, va, len, sno);
+	poperror();
+	qunlock(p->seglock);
+	qunlock(&memgrplock);
+	return va;
+}
+
+/* The shared part of segattach and segattachps, with the locks held
+ * and a free segment slot sno. */
+static usize
+segattachps1(Proc *p, int attr, Physseg *ps, usize va, usize len, int sno)
+{
+	Proc *up = externup();
+	Segment *s, *os;
+	u32 pgsz;
 
 	/*
 	 * Physseg.size is still a limit in BIGPGSZ units, but the mapping
@@ -330,11 +379,6 @@ segattach(Proc *p, int attr, char *name, usize va, usize len)
 
 	if(p == up && up->prepagemem)
 		nixprepage(sno);
-
-clean_out:
-	poperror();
-	qunlock(p->seglock);
-	qunlock(&memgrplock);
 	return va;
 }
 

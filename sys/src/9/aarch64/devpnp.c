@@ -25,20 +25,19 @@ enum {
 	Qirq2,
 	Qwait2,
 	Qdma,
-	Qdmabase,
-	Qdmasize,
-	Qdmaalloc,
-	Qdmafree,
-	Qdmaallocowned,
+	Qdmaclone,
 	Qdmaavail,
-	Qdmaclean,
-	Qdmainval,
-	Qdmacivac,
+	Qchunkdir,	/* #P/dma/N; DEV is N */
+	Qchunkctl,
+	Qchunkdata,
 	Qtee,
 	Qteesmc,
 	Qteeversion,
 	Qteeshbase,
 	Qteeshsize,
+	Qteeclean,
+	Qteeinval,
+	Qteecivac,
 };
 
 /* 6 type bits: the DMA control files are past the old 4-bit field. */
@@ -62,11 +61,25 @@ extern u64 arm64dmabase, arm64dmasize;
 extern u64 arm64teeshmbase, arm64teeshmsize;
 
 /*
- * DMA sub-allocation inside the reserved arena.  A driver maps the arena
- * once with segattach("dma") and then asks here for aligned chunks; the
- * kernel owns the free list so two drivers cannot hand out the same page.
+ * The DMA arena.  #P owns it: a driver opens #P/dma/clone and holds a
+ * chunk, #P/dma/N, for as long as it keeps that file open or the chunk
+ * mapped.  Its ctl file allocates the memory ("alloc <size> [<align>]
+ * [cached|uncached]"), maps it into the caller ("map"), and cleans or
+ * invalidates ranges of it; its data file reads and writes it through
+ * the kernel.  No process can map the arena as a whole, or a chunk it
+ * was not given: a chunk's files open by name only for a process that
+ * already holds its ctl (the clone, or a copy inherited from it), and
+ * nothing is freed by address.
+ *
+ * The memory is zeroed when allocated, so a chunk never shows what its
+ * previous owner left.  It goes back to the arena once the last file
+ * on it is closed and the last mapping of it gone.
  */
-enum { Maxdmahole = 64 };
+enum {
+	Maxdmahole = 256,
+	Maxdmachunk = 256,
+	Dmactlmax = 128,
+};
 typedef struct Dmahole Dmahole;
 struct Dmahole {
 	u64 base;
@@ -77,28 +90,25 @@ static int ndmahole;
 static u64 dmabump;
 static Lock dmalock;
 
-/*
- * DMA commands are newline terminated: a text program may write the
- * command in several pieces, and a driver must not allocate once per
- * write.
- *
- * The allocation result is reported by reading the same file back.
- * It is kept per open file, in Dmactl below: with more than one LKL
- * instance (and native drivers) allocating at boot, a single global
- * "last allocation" hands a caller another caller's chunk, and a
- * guest then carves its RAM out of someone else's arena.
- */
-enum { Dmactlmax = 96 };
+typedef struct Dmachunk Dmachunk;
+struct Dmachunk {
+	int	inuse;		/* the slot is taken */
+	int	nchan;		/* open files on it */
+	int	nmap;		/* segments mapping it */
+	int	allocating;	/* an alloc is under way */
+	u64	pa;		/* 0 until allocated */
+	u64	len;
+	int	cached;
+	usize	va;		/* where the latest map put it */
+	Physseg	ps;		/* the segment its maps use */
+};
+static Dmachunk dmachunk[Maxdmachunk];
+
+/* A ctl write may arrive in pieces; a command ends at a newline. */
 typedef struct Dmactl Dmactl;
 struct Dmactl {
 	char buf[Dmactlmax];
 	int n;
-	u64 pa;		/* this file's most recent allocation */
-	u64 len;
-	/* allocowned: chunks freed when this file is closed */
-	u64 ownpa[8];
-	u64 ownlen[8];
-	int nown;
 };
 
 /*
@@ -170,13 +180,72 @@ teesmcok(u64 fn, u64 hi, u64 lo)
 	return 0;
 }
 
+/* The end of the memory #P hands out: the arena less the kernel's
+ * own top block (mmu.c). */
+static u64
+dmaend(void)
+{
+	extern u64 arm64dmakern;
+
+	return arm64dmakern != 0 ? arm64dmakern : arm64dmabase + arm64dmasize;
+}
+
+/* Inserts a hole, keeping the list sorted and coalesced.  Called with
+ * dmalock held.  Returns -1 if the list is full: the range is then
+ * leaked, and said so. */
+static int
+dmaputhole(u64 base, u64 size)
+{
+	int i, j;
+
+	if(size == 0)
+		return 0;
+	if(base + size == dmabump){
+		/* the arena's tail: lower the bump instead */
+		dmabump = base;
+		while(ndmahole > 0 &&
+		      dmahole[ndmahole-1].base + dmahole[ndmahole-1].size == dmabump)
+			dmabump = dmahole[--ndmahole].base;
+		return 0;
+	}
+	for(i = 0; i < ndmahole && dmahole[i].base < base; i++)
+		;
+	if(i > 0 && dmahole[i-1].base + dmahole[i-1].size == base){
+		dmahole[i-1].size += size;
+		if(i < ndmahole && base + size == dmahole[i].base){
+			dmahole[i-1].size += dmahole[i].size;
+			for(j = i; j + 1 < ndmahole; j++)
+				dmahole[j] = dmahole[j+1];
+			ndmahole--;
+		}
+		return 0;
+	}
+	if(i < ndmahole && base + size == dmahole[i].base){
+		dmahole[i].base = base;
+		dmahole[i].size += size;
+		return 0;
+	}
+	if(ndmahole >= Maxdmahole){
+		print("#P/dma: hole list full: %#llux+%#llux leaked\n", base, size);
+		return -1;
+	}
+	for(j = ndmahole; j > i; j--)
+		dmahole[j] = dmahole[j-1];
+	dmahole[i].base = base;
+	dmahole[i].size = size;
+	ndmahole++;
+	return 0;
+}
+
+/* Carves size bytes aligned to align: from a hole when one fits (its
+ * slack before the aligned start stays a hole), else from the tail. */
 static u64
 dmaalloc(u64 size, u64 align)
 {
-	u64 a, end;
+	u64 a, end, hbase;
 	int i;
 
-	if(size == 0 || size > arm64dmasize)
+	if(size == 0 || arm64dmasize == 0 || size > dmaend() - arm64dmabase)
 		error(Ebadarg);
 	if(align == 0)
 		align = 4096;
@@ -187,24 +256,35 @@ dmaalloc(u64 size, u64 align)
 	if(dmabump == 0)
 		dmabump = arm64dmabase;
 	for(i = 0; i < ndmahole; i++){
-		a = (dmahole[i].base + align - 1) & ~(align - 1);
-		end = dmahole[i].base + dmahole[i].size;
-		if(a + size > end)
+		hbase = dmahole[i].base;
+		a = (hbase + align - 1) & ~(align - 1);
+		end = hbase + dmahole[i].size;
+		if(a < hbase || a + size > end)
 			continue;
-		if(a + size == end)
-			dmahole[i].size = a - dmahole[i].base;
-		else{
+		if(a > hbase && a + size < end && ndmahole >= Maxdmahole)
+			continue;	/* splitting needs a slot we lack */
+		/* take [a, a+size); keep what is left on either side */
+		if(a + size < end){
 			dmahole[i].base = a + size;
-			dmahole[i].size = end - dmahole[i].base;
-		}
-		if(dmahole[i].size == 0){
-			dmahole[i] = dmahole[--ndmahole];
+			dmahole[i].size = end - (a + size);
+			if(a > hbase)
+				dmaputhole(hbase, a - hbase);
+		}else if(a > hbase)
+			dmahole[i].size = a - hbase;
+		else{
+			for(; i + 1 < ndmahole; i++)
+				dmahole[i] = dmahole[i+1];
+			ndmahole--;
 		}
 		unlock(&dmalock);
 		return a;
 	}
 	a = (dmabump + align - 1) & ~(align - 1);
-	if(a + size > arm64dmabase + arm64dmasize){
+	if(a < dmabump || a + size > dmaend()){
+		unlock(&dmalock);
+		error(Enomem);
+	}
+	if(a > dmabump && dmaputhole(dmabump, a - dmabump) < 0){
 		unlock(&dmalock);
 		error(Enomem);
 	}
@@ -213,123 +293,62 @@ dmaalloc(u64 size, u64 align)
 	return a;
 }
 
-static int
-dmafreeq(u64 pa, u64 len)
+/* Frees a chunk whose last file and mapping are gone.  Called with
+ * dmalock held. */
+static void
+dmachunkput(Dmachunk *ck)
 {
-	Dmahole h;
-	int i, j;
-
-	if(len == 0 || pa < arm64dmabase ||
-	   pa - arm64dmabase > arm64dmasize || len > arm64dmasize - (pa - arm64dmabase))
-		return -1;
-	len = PGROUND(len);
-	lock(&dmalock);
-	if(ndmahole >= Maxdmahole){
-		unlock(&dmalock);
-		return -1;
-	}
-	h.base = pa;
-	h.size = len;
-	for(i = 0; i < ndmahole && dmahole[i].base < pa; i++)
-		;
-	for(j = ndmahole; j > i; j--)
-		dmahole[j] = dmahole[j-1];
-	dmahole[i] = h;
-	ndmahole++;
-	/* coalesce with the next and previous holes */
-	for(i = 0; i + 1 < ndmahole; ){
-		if(dmahole[i].base + dmahole[i].size == dmahole[i+1].base){
-			dmahole[i].size += dmahole[i+1].size;
-			for(j = i + 1; j + 1 < ndmahole; j++)
-				dmahole[j] = dmahole[j+1];
-			ndmahole--;
-		}else
-			i++;
-	}
-	unlock(&dmalock);
-	return 0;
+	if(!ck->inuse || ck->nchan > 0 || ck->nmap > 0)
+		return;
+	if(ck->len != 0)
+		dmaputhole(ck->pa, ck->len);
+	memset(ck, 0, sizeof *ck);
 }
 
+/* Physseg.release: a segment mapping the chunk is gone. */
 static void
-dmafree(u64 pa, u64 len)
+dmachunkrelease(Physseg *ps)
 {
-	if(dmafreeq(pa, len) < 0)
-		error(Ebadarg);
+	Dmachunk *ck;
+
+	ck = (Dmachunk*)((uchar*)ps - offsetof(Dmachunk, ps));
+	lock(&dmalock);
+	if(ck->nmap > 0)
+		ck->nmap--;
+	dmachunkput(ck);
+	unlock(&dmalock);
 }
 
 /*
- * DMA garbage collection.  Every chunk handed out is recorded with
- * its owner's pid.  A chunk whose owner no longer exists is garbage:
- * the process died without freeing it (a killed guest, a crashed
- * driver).  dmagc() returns such chunks to the hole list.  It runs
- * before each new allocation and whenever availability is queried,
- * so leaked carves are reclaimed by the next consumer that needs
- * the space rather than accumulating for the rest of the boot.
- * Pid reuse can only delay collection (the new proc's death frees
- * it then); it can never free a live chunk early, because the entry
- * is also removed on explicit free and on allocowned close.
+ * Whether the calling process holds a chunk's ctl open.  The ctl is
+ * the chunk's capability: opening its files by name requires it.
  */
-enum { Maxdmaown = 256 };
-typedef struct Dmaown Dmaown;
-struct Dmaown {
-	u64 pa;
-	u64 len;
-	int pid;	/* 0: kernel/unknown owner, never collected */
-};
-static Dmaown dmaown[Maxdmaown];
-static int ndmaown;
-
-static void
-dmaownadd(u64 pa, u64 len)
+static int
+dmaholds(int n)
 {
 	Proc *up = externup();
+	Fgrp *f;
+	Chan *c;
+	int i, held;
 
-	lock(&dmalock);
-	if(ndmaown < Maxdmaown){
-		dmaown[ndmaown].pa = pa;
-		dmaown[ndmaown].len = len;
-		dmaown[ndmaown].pid = up != nil ? up->pid : 0;
-		ndmaown++;
-	}
-	unlock(&dmalock);
-}
-
-static void
-dmaownremove(u64 pa)
-{
-	int i;
-
-	lock(&dmalock);
-	for(i = 0; i < ndmaown; i++){
-		if(dmaown[i].pa == pa){
-			dmaown[i] = dmaown[--ndmaown];
+	f = up->fgrp;
+	if(f == nil)
+		return 0;
+	held = 0;
+	lock(&f->r.l);
+	for(i = 0; i <= f->maxfd; i++){
+		c = f->fd[i];
+		if(c != nil && c->dev != nil && c->dev->dc == 'P' &&
+		   (c->flag & COPEN) && TYPE(c) == Qchunkctl && DEV(c) == n){
+			held = 1;
 			break;
 		}
 	}
-	unlock(&dmalock);
+	unlock(&f->r.l);
+	return held;
 }
 
-static void
-dmagc(void)
-{
-	u64 pa[16], len[16];
-	int i, n;
-
-	n = 0;
-	lock(&dmalock);
-	for(i = 0; i < ndmaown && n < (int)nelem(pa); ){
-		if(dmaown[i].pid > 0 && psindex(dmaown[i].pid) < 0){
-			pa[n] = dmaown[i].pa;
-			len[n] = dmaown[i].len;
-			n++;
-			dmaown[i] = dmaown[--ndmaown];
-		}else
-			i++;
-	}
-	unlock(&dmalock);
-	for(i = 0; i < n; i++)
-		dmafreeq(pa[i], len[i]);
-}
+static void dmacache(int, u64, u64);
 
 enum { Dclean, Dinval, Dcleaninval };
 
@@ -444,6 +463,7 @@ pnpfamily(int clas)
 static int
 pnpgen(Chan *c, char *name, Dirtab *tab, int ntab, int s, Dir *dp)
 {
+	Proc *up = externup();
 	Qid q;
 	Fdtdev *d;
 	int dev;
@@ -558,57 +578,47 @@ pnpgen(Chan *c, char *name, Dirtab *tab, int ntab, int s, Dir *dp)
 			return 1;
 		}
 		if(s == 0){
-			q.path = QPATH(npnpdev, Qdmabase);
+			q.path = QPATH(0, Qdmaclone);
 			q.type = QTFILE;
-			devdir(c, q, "base", 0, eve, 0444, dp);
+			devdir(c, q, "clone", 0, eve, 0666, dp);
 			return 1;
 		}
 		if(s == 1){
-			q.path = QPATH(npnpdev, Qdmasize);
-			q.type = QTFILE;
-			devdir(c, q, "size", 0, eve, 0444, dp);
-			return 1;
-		}
-		if(s == 2){
-			q.path = QPATH(npnpdev, Qdmaalloc);
-			q.type = QTFILE;
-			devdir(c, q, "alloc", 0, eve, 0666, dp);
-			return 1;
-		}
-		if(s == 3){
-			q.path = QPATH(npnpdev, Qdmafree);
-			q.type = QTFILE;
-			devdir(c, q, "free", 0, eve, 0666, dp);
-			return 1;
-		}
-		if(s == 4){
-			q.path = QPATH(npnpdev, Qdmaclean);
-			q.type = QTFILE;
-			devdir(c, q, "clean", 0, eve, 0666, dp);
-			return 1;
-		}
-		if(s == 5){
-			q.path = QPATH(npnpdev, Qdmainval);
-			q.type = QTFILE;
-			devdir(c, q, "inval", 0, eve, 0666, dp);
-			return 1;
-		}
-		if(s == 6){
-			q.path = QPATH(npnpdev, Qdmacivac);
-			q.type = QTFILE;
-			devdir(c, q, "cleaninval", 0, eve, 0666, dp);
-			return 1;
-		}
-		if(s == 7){
-			q.path = QPATH(npnpdev, Qdmaallocowned);
-			q.type = QTFILE;
-			devdir(c, q, "allocowned", 0, eve, 0666, dp);
-			return 1;
-		}
-		if(s == 8){
-			q.path = QPATH(npnpdev, Qdmaavail);
+			q.path = QPATH(0, Qdmaavail);
 			q.type = QTFILE;
 			devdir(c, q, "avail", 0, eve, 0444, dp);
+			return 1;
+		}
+		/* then the chunks in use, by slot */
+		for(dev = 0, s -= 2; dev < Maxdmachunk; dev++)
+			if(dmachunk[dev].inuse && s-- == 0)
+				break;
+		if(dev == Maxdmachunk)
+			return -1;
+		snprint(up->genbuf, sizeof up->genbuf, "%d", dev);
+		q.path = QPATH(dev, Qchunkdir);
+		q.type = QTDIR;
+		devdir(c, q, up->genbuf, 0, eve, DMDIR|0555, dp);
+		return 1;
+	case Qchunkdir:
+		dev = DEV(c);
+		if(s == DEVDOTDOT){
+			q.path = QPATH(npnpdev, Qdma);
+			q.type = QTDIR;
+			devdir(c, q, "dma", 0, eve, DMDIR|0555, dp);
+			return 1;
+		}
+		if(dev < 0 || dev >= Maxdmachunk || !dmachunk[dev].inuse)
+			return -1;
+		q.type = QTFILE;
+		if(s == 0){
+			q.path = QPATH(dev, Qchunkctl);
+			devdir(c, q, "ctl", 0, eve, 0666, dp);
+			return 1;
+		}
+		if(s == 1){
+			q.path = QPATH(dev, Qchunkdata);
+			devdir(c, q, "data", dmachunk[dev].len, eve, 0666, dp);
 			return 1;
 		}
 		return -1;
@@ -641,6 +651,25 @@ pnpgen(Chan *c, char *name, Dirtab *tab, int ntab, int s, Dir *dp)
 			q.path = QPATH(npnpdev, Qteeshsize);
 			q.type = QTFILE;
 			devdir(c, q, "shmsize", 0, eve, 0444, dp);
+			return 1;
+		}
+		/* cache maintenance of the static shared memory, "<pa> <len>" */
+		if(s == 4){
+			q.path = QPATH(npnpdev, Qteeclean);
+			q.type = QTFILE;
+			devdir(c, q, "clean", 0, eve, 0600, dp);
+			return 1;
+		}
+		if(s == 5){
+			q.path = QPATH(npnpdev, Qteeinval);
+			q.type = QTFILE;
+			devdir(c, q, "inval", 0, eve, 0600, dp);
+			return 1;
+		}
+		if(s == 6){
+			q.path = QPATH(npnpdev, Qteecivac);
+			q.type = QTFILE;
+			devdir(c, q, "cleaninval", 0, eve, 0600, dp);
 			return 1;
 		}
 		return -1;
@@ -676,12 +705,44 @@ pnpopen(Chan *c, int omode)
 	if(c->qid.type & QTDIR){
 		if(m != OREAD)
 			error(Eperm);
-	}else if(t == Qdmaalloc || t == Qdmaallocowned || t == Qdmafree || t == Qdmaclean ||
-	         t == Qdmainval || t == Qdmacivac || t == Qteesmc ||
-	         t == Qclaim || t == Qrelease){
-		/* DMA control files and the SMC gate accept reads and writes. */
+	}else if(t == Qdmaclone || t == Qchunkctl || t == Qchunkdata ||
+	         t == Qteesmc || t == Qteeclean || t == Qteeinval ||
+	         t == Qteecivac || t == Qclaim || t == Qrelease){
+		/* DMA chunks, the SMC gate and claims accept writes. */
 	}else if(m != OREAD)
 		error(Eperm);
+	if(t == Qdmaclone){
+		int n;
+
+		/* a new chunk: this file becomes its ctl */
+		lock(&dmalock);
+		for(n = 0; n < Maxdmachunk; n++)
+			if(!dmachunk[n].inuse)
+				break;
+		if(n == Maxdmachunk){
+			unlock(&dmalock);
+			error("#P/dma: no free chunk");
+		}
+		memset(&dmachunk[n], 0, sizeof dmachunk[n]);
+		dmachunk[n].inuse = 1;
+		dmachunk[n].nchan = 1;
+		unlock(&dmalock);
+		c->qid.path = QPATH(n, Qchunkctl);
+		c->qid.type = QTFILE;
+	}else if(t == Qchunkctl || t == Qchunkdata){
+		int n;
+
+		n = DEV(c);
+		if(n < 0 || n >= Maxdmachunk || !dmaholds(n))
+			error(Eperm);
+		lock(&dmalock);
+		if(!dmachunk[n].inuse){
+			unlock(&dmalock);
+			error(Eperm);
+		}
+		dmachunk[n].nchan++;
+		unlock(&dmalock);
+	}
 	if(t == Qwait || t == Qwait2){
 		int dev;
 		u32 irq;
@@ -716,20 +777,23 @@ pnpclose(Chan *c)
 	int dev;
 
 	/*
-	 * Closing an allocowned file releases every chunk allocated
-	 * through it.  Instance RAM is allocated this way, so a guest
-	 * that exits or is killed returns its arena carve instead of
-	 * leaking it for the rest of the boot.
+	 * A chunk lives while a file on it is open or a segment maps it:
+	 * a driver that exits or is killed returns its memory once both
+	 * are gone, never while it is still mapped.
 	 */
-	if(TYPE(c) == Qdmaallocowned && c->aux != nil){
-		Dmactl *ct = c->aux;
-		int i;
+	if((TYPE(c) == Qchunkctl || TYPE(c) == Qchunkdata) &&
+	   (c->flag & COPEN)){
+		Dmachunk *ck;
 
-		for(i = 0; i < ct->nown; i++){
-			dmafreeq(ct->ownpa[i], ct->ownlen[i]);
-			dmaownremove(ct->ownpa[i]);
+		dev = DEV(c);
+		if(dev >= 0 && dev < Maxdmachunk){
+			ck = &dmachunk[dev];
+			lock(&dmalock);
+			if(ck->nchan > 0)
+				ck->nchan--;
+			dmachunkput(ck);
+			unlock(&dmalock);
 		}
-		ct->nown = 0;
 	}
 	/*
 	 * Closing the wait file must release the GIC line, or a reader that
@@ -744,12 +808,161 @@ pnpclose(Chan *c)
 	c->aux = nil;
 }
 
+/*
+ * A chunk's ctl commands:
+ *	alloc <size> [<align>] [cached|uncached]
+ *	map
+ *	clean|inval|cleaninval <off> <len>
+ */
+static void
+dmachunkctl(int n, char *cmd)
+{
+	Proc *up = externup();
+	Dmachunk *ck;
+	char *f[5];
+	int nf, cached, op;
+	u64 size, align, pa, off, len;
+	usize va;
+
+	if(n < 0 || n >= Maxdmachunk)
+		error(Ebadarg);
+	ck = &dmachunk[n];
+	nf = tokenize(cmd, f, nelem(f));
+	if(nf == 0)
+		error(Ebadarg);
+	if(strcmp(f[0], "alloc") == 0){
+		if(nf < 2 || nf > 4)
+			error(Ebadarg);
+		size = strtoull(f[1], nil, 0);
+		align = nf > 2 ? strtoull(f[2], nil, 0) : 4096;
+		cached = 1;
+		if(nf > 3){
+			if(strcmp(f[3], "uncached") == 0)
+				cached = 0;
+			else if(strcmp(f[3], "cached") != 0)
+				error(Ebadarg);
+		}
+		/* one alloc per chunk, even from threads sharing its ctl */
+		lock(&dmalock);
+		if(ck->len != 0 || ck->allocating){
+			unlock(&dmalock);
+			error("#P/dma: chunk already allocated");
+		}
+		ck->allocating = 1;
+		unlock(&dmalock);
+		if(waserror()){
+			ck->allocating = 0;
+			nexterror();
+		}
+		pa = dmaalloc(size, align);
+		poperror();
+		size = PGROUND(size);
+		/*
+		 * Zero it, through the kernel's write-back alias, and
+		 * push that out of the caches: a device, or an uncached
+		 * mapping, then sees zeros, and no line of the previous
+		 * owner's data is left to be written back later.
+		 */
+		memset(KADDR(pa), 0, size);
+		dmacache(Dcleaninval, pa, size);
+		lock(&dmalock);
+		ck->pa = pa;
+		ck->len = size;
+		ck->cached = cached;
+		ck->ps.attr = SG_PHYSICAL | SG_READ | SG_WRITE |
+			(cached ? SG_CACHED : SG_NCRAM);
+		ck->ps.name = "dmachunk";
+		ck->ps.pa = pa;
+		ck->ps.size = (size + BIGPGSZ - 1) / BIGPGSZ;
+		/* 2 MiB pages where the chunk allows: a guest's RAM then
+		 * costs 512 times fewer page-table entries */
+		if((pa | size) & (BIGPGSZ - 1))
+			ck->ps.pgszi = getpgszi(PGSZ);
+		else
+			ck->ps.pgszi = getpgszi(BIGPGSZ);
+		ck->ps.release = dmachunkrelease;
+		ck->allocating = 0;
+		unlock(&dmalock);
+		return;
+	}
+	if(ck->len == 0)
+		error("#P/dma: chunk not allocated");
+	if(strcmp(f[0], "map") == 0){
+		if(nf != 1)
+			error(Ebadarg);
+		lock(&dmalock);
+		ck->nmap++;	/* the segment's reference, taken before it exists */
+		unlock(&dmalock);
+		if(waserror()){
+			lock(&dmalock);
+			ck->nmap--;
+			dmachunkput(ck);
+			unlock(&dmalock);
+			nexterror();
+		}
+		va = segattachps(up, SG_READ | SG_WRITE, &ck->ps, 0, ck->len);
+		poperror();
+		ck->va = va;
+		return;
+	}
+	if(strcmp(f[0], "clean") == 0)
+		op = Dclean;
+	else if(strcmp(f[0], "inval") == 0)
+		op = Dinval;
+	else if(strcmp(f[0], "cleaninval") == 0)
+		op = Dcleaninval;
+	else
+		error(Ebadarg);
+	if(nf != 3)
+		error(Ebadarg);
+	off = strtoull(f[1], nil, 0);
+	len = strtoull(f[2], nil, 0);
+	if(len == 0 || off > ck->len || len > ck->len - off)
+		error(Ebadarg);
+	dmacache(op, ck->pa + off, len);
+}
+
+/* Reads or writes a chunk through the kernel's alias.  An uncached
+ * chunk's range is cleaned and invalidated around the access, so the
+ * alias neither reads stale lines nor leaves dirty ones. */
+static i32
+dmachunkio(Chan *c, void *a, i32 n, i64 off, int write)
+{
+	Dmachunk *ck;
+	u64 pa;
+	int dev;
+
+	dev = DEV(c);
+	if(dev < 0 || dev >= Maxdmachunk)
+		error(Ebadarg);
+	ck = &dmachunk[dev];
+	if(ck->len == 0)
+		error("#P/dma: chunk not allocated");
+	if(off < 0 || (u64)off >= ck->len){
+		if(write)
+			error("#P/dma: write past the chunk");
+		return 0;
+	}
+	if((u64)n > ck->len - off)
+		n = ck->len - off;
+	pa = ck->pa + off;
+	if(!ck->cached)
+		dmacache(Dcleaninval, pa, n);
+	if(write)
+		memmove(KADDR(pa), a, n);
+	else
+		memmove(a, KADDR(pa), n);
+	if(!ck->cached)
+		dmacache(Dcleaninval, pa, n);
+	return n;
+}
+
 static i32
 pnpwrite(Chan *c, void *a, i32 n, i64 off)
 {
 	Dmactl *ct;
 	char buf[Dmactlmax], *p;
-	u64 v, len, pa;
+	u64 v, len;
 	int i, done;
 
 	USED(off);
@@ -802,22 +1015,24 @@ pnpwrite(Chan *c, void *a, i32 n, i64 off)
 		unlock(&teelock);
 		return n;
 	}
+	if(TYPE(c) == Qchunkdata)
+		return dmachunkio(c, a, n, off, 1);
 	if((ct = c->aux) == nil){
 		ct = mallocz(sizeof *ct, 1);
 		if(ct == nil)
 			error(Enomem);
-		ct->n = 0;
 		c->aux = ct;
 	}
 	done = 0;
-	for(i = 0; i < n; i++){
+	for(i = 0; i < n && !done; i++){
 		if(ct->n >= Dmactlmax-1){
 			ct->n = 0;
 			error(Ebadarg);
 		}
-		ct->buf[ct->n++] = ((char*)a)[i];
 		if(((char*)a)[i] == '\n')
 			done = 1;
+		else
+			ct->buf[ct->n++] = ((char*)a)[i];
 	}
 	if(!done)
 		return n;
@@ -826,37 +1041,17 @@ pnpwrite(Chan *c, void *a, i32 n, i64 off)
 	ct->n = 0;
 	p = buf;
 	switch(TYPE(c)){
-	case Qdmaalloc:
-	case Qdmaallocowned:
-		if(number(&p, &v) < 0)
-			error(Ebadarg);
-		if(number(&p, &len) < 0 || len == 0)
-			len = 4096;
-		dmagc();
-		pa = dmaalloc(v, len);
-		dmaownadd(pa, PGROUND(v));
-		ct->pa = pa;
-		ct->len = PGROUND(v);
-		if(TYPE(c) == Qdmaallocowned &&
-		   ct->nown < (int)nelem(ct->ownpa)){
-			ct->ownpa[ct->nown] = pa;
-			ct->ownlen[ct->nown] = ct->len;
-			ct->nown++;
-		}
+	case Qchunkctl:
+		dmachunkctl(DEV(c), buf);
 		break;
-	case Qdmafree:
-		if(number(&p, &v) < 0 || number(&p, &len) < 0)
+	case Qteeclean:
+	case Qteeinval:
+	case Qteecivac:
+		if(number(&p, &v) < 0 || number(&p, &len) < 0 ||
+		   !inrange(v, len, arm64teeshmbase, arm64teeshmsize))
 			error(Ebadarg);
-		dmafree(v, len);
-		dmaownremove(v);
-		break;
-	case Qdmaclean:
-	case Qdmainval:
-	case Qdmacivac:
-		if(number(&p, &v) < 0 || number(&p, &len) < 0)
-			error(Ebadarg);
-		dmacache(TYPE(c) == Qdmaclean ? Dclean :
-		         TYPE(c) == Qdmainval ? Dinval : Dcleaninval, v, len);
+		dmacache(TYPE(c) == Qteeclean ? Dclean :
+		         TYPE(c) == Qteeinval ? Dinval : Dcleaninval, v, len);
 		break;
 	default:
 		error(Eperm);
@@ -873,45 +1068,44 @@ pnpread(Chan *c, void *a, i32 n, i64 off)
 
 	if(c->qid.type & QTDIR)
 		return devdirread(c, a, n, nil, 0, pnpgen);
-	if(TYPE(c) == Qdmabase){
-		char dbuf[64];
-		snprint(dbuf, sizeof dbuf, "0x%llx\n", arm64dmabase);
-		return readstr(off, a, n, dbuf);
-	}
-	if(TYPE(c) == Qdmasize){
-		char dbuf[64];
-		snprint(dbuf, sizeof dbuf, "0x%llx\n", arm64dmasize);
-		return readstr(off, a, n, dbuf);
-	}
 	if(TYPE(c) == Qdmaavail){
-		/* Free arena bytes: holes plus the untouched tail.  Lets a
-		 * supervisor check there is room before launching a guest
-		 * instead of retrying into an exhausted arena. */
+		/* Free arena bytes, holes and the untouched tail, and the
+		 * largest piece: lets a supervisor check there is room
+		 * before launching a guest instead of retrying into an
+		 * exhausted arena. */
 		char dbuf[64];
-		u64 avail;
+		u64 avail, big, tail;
 		int i;
 
-		dmagc();
 		lock(&dmalock);
-		avail = dmabump == 0 ? arm64dmasize :
-			(arm64dmabase + arm64dmasize) - dmabump;
-		for(i = 0; i < ndmahole; i++)
+		tail = arm64dmasize == 0 ? 0 :
+			dmaend() - (dmabump == 0 ? arm64dmabase : dmabump);
+		avail = big = tail;
+		for(i = 0; i < ndmahole; i++){
 			avail += dmahole[i].size;
+			if(dmahole[i].size > big)
+				big = dmahole[i].size;
+		}
 		unlock(&dmalock);
-		snprint(dbuf, sizeof dbuf, "%llud\n", avail);
+		snprint(dbuf, sizeof dbuf, "%llud %llud\n", avail, big);
 		return readstr(off, a, n, dbuf);
 	}
-	if(TYPE(c) == Qdmaalloc || TYPE(c) == Qdmaallocowned){
-		char dbuf[64];
-		Dmactl *ct;
+	if(TYPE(c) == Qchunkctl){
+		/* "<n> pa <pa> len <len> cached|uncached va <va>" */
+		char dbuf[128];
+		Dmachunk *ck;
 
-		ct = c->aux;
-		if(ct == nil || ct->len == 0)
-			return 0;
-		snprint(dbuf, sizeof dbuf, "0x%llx %llux\n", ct->pa,
-		        ct->len);
+		dev = DEV(c);
+		if(dev < 0 || dev >= Maxdmachunk)
+			error(Ebadarg);
+		ck = &dmachunk[dev];
+		snprint(dbuf, sizeof dbuf, "%d pa %#llux len %#llux %s va %#p\n",
+			dev, ck->pa, ck->len, ck->cached ? "cached" : "uncached",
+			ck->va);
 		return readstr(off, a, n, dbuf);
 	}
+	if(TYPE(c) == Qchunkdata)
+		return dmachunkio(c, a, n, off, 0);
 	if(TYPE(c) == Qteeversion){
 		return readstr(off, a, n, "optee-smc-gate 1\n");
 	}

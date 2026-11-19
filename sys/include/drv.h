@@ -2,7 +2,7 @@
  * drv.h - the userspace driver kit.
  *
  * A driver owns a device through #P: it finds the node, maps its registers,
- * waits for its interrupt, allocates DMA from the kernel's shared region, and
+ * waits for its interrupt, allocates DMA chunks from #P's arena, and
  * publishes a 9P service.  This header is the whole of that boilerplate;
  * the driver keeps its register logic and its file semantics.
  *
@@ -51,10 +51,6 @@ struct Drv {
 
 	void	*regs;		/* mapped, adjusted to base */
 	int	waitfd;		/* #P/<name>/wait, -1 until first wait */
-
-	void	*dmava;		/* the #P/dma window */
-	u64	dmabase;
-	u64	dmasize;
 };
 
 /* Discovery: scan #P for a node of this class.  wantconsole prefers the
@@ -80,11 +76,12 @@ void	drw(Drv*, u32 off, u32 v);
 int	drvwaitfd(Drv*);
 int	drvwait(Drv*);
 
-/* DMA: the shared region is mapped once; drvdma returns a user address and
- * the physical address the device needs.  Clean/inval around ownership
- * changes where the device is not cache-coherent.  drvpa maps a physical
- * address already inside the arena. */
-int	drvdmamap(Drv*);
+/* DMA: each drvdma is a chunk of #P's arena of its own (#P/dma/clone),
+ * mapped cacheable into this process alone; it returns the user address
+ * and the physical address the device needs.  Clean/inval around
+ * ownership changes where the device is not cache-coherent.  drvpa maps
+ * a physical address inside one of this process's chunks.  drvdmafree
+ * gives a chunk back; so does the process exiting. */
 void	*drvdma(Drv*, u64 size, u64 align, u64 *pa);
 void	drvdmafree(u64 pa, u64 size);
 int	drvdmacache(int op, u64 pa, u64 len);

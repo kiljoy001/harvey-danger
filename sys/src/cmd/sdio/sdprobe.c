@@ -549,69 +549,42 @@ struct IdmacDesc {
 	u32 des0, des1, des2, des3;
 };
 
-static u8 *dmava;
-static u64 dmabase, dmasize, datapa, descpa;
+/* One #P/dma chunk: the data page, then the descriptor page.  Its
+ * ctl stays open, which keeps the chunk. */
+static int dmactl = -1;
+static u64 datapa, descpa;
 static u8 *datava, *descva;
-
-static u64
-readnum(char *path)
-{
-	char buf[64];
-	int fd, n;
-
-	if((fd = open(path, OREAD)) < 0)
-		return 0;
-	n = read(fd, buf, sizeof buf - 1);
-	close(fd);
-	if(n <= 0)
-		return 0;
-	buf[n] = 0;
-	return strtoull(buf, nil, 0);
-}
-
-static u64
-dmaalloc(u64 size, u64 align)
-{
-	char buf[64];
-	int fd, n;
-
-	if((fd = open("#P/dma/alloc", ORDWR)) < 0)
-		return 0;
-	snprint(buf, sizeof buf, "%llud %llud\n", size, align);
-	if(write(fd, buf, strlen(buf)) != strlen(buf)){
-		close(fd);
-		return 0;
-	}
-	n = pread(fd, buf, sizeof buf - 1, 0);
-	close(fd);
-	if(n <= 0)
-		return 0;
-	buf[n] = 0;
-	return strtoull(buf, nil, 0);
-}
 
 static int
 dmainit(void)
 {
+	char buf[128], *f[8];
+	u8 *va;
+	int n;
+
 	if(datava != nil)
 		return 0;
-	dmabase = readnum("#P/dma/base");
-	dmasize = readnum("#P/dma/size");
-	if(dmabase == 0 || dmasize == 0)
+	if((dmactl = open("#P/dma/clone", ORDWR)) < 0)
 		return -1;
-	dmava = segattach(0, "dma", 0, dmasize);
-	if(dmava == (void*)-1){
-		dmava = nil;
+	if(write(dmactl, "alloc 8192 4096 cached\n", 23) != 23 ||
+	   write(dmactl, "map\n", 4) != 4 ||
+	   (n = pread(dmactl, buf, sizeof buf - 1, 0)) <= 0){
+		close(dmactl);
+		dmactl = -1;
 		return -1;
 	}
-	datapa = dmaalloc(4096, 4096);
-	descpa = dmaalloc(4096, 4096);
-	if(datapa == 0 || descpa == 0)
+	buf[n] = 0;
+	/* "<n> pa <pa> len <len> cached va <va>"; #P zeroes the chunk */
+	if(tokenize(buf, f, nelem(f)) != 8){
+		close(dmactl);
+		dmactl = -1;
 		return -1;
-	datava = dmava + (datapa - dmabase);
-	descva = dmava + (descpa - dmabase);
-	memset(datava, 0, 4096);
-	memset(descva, 0, 4096);
+	}
+	datapa = strtoull(f[2], nil, 0);
+	descpa = datapa + 4096;
+	va = (u8*)(uintptr)strtoull(f[7], nil, 0);
+	datava = va;
+	descva = va + 4096;
 	print("sdprobe: idmac data %#llux desc %#llux\n", datapa, descpa);
 	return 0;
 }
@@ -620,13 +593,9 @@ static void
 dmaclean(u64 pa, u64 len)
 {
 	char buf[64];
-	int fd;
 
-	if((fd = open("#P/dma/cleaninval", OWRITE)) < 0)
-		return;
-	snprint(buf, sizeof buf, "%#llux %#llux\n", pa, len);
-	write(fd, buf, strlen(buf));
-	close(fd);
+	snprint(buf, sizeof buf, "cleaninval %#llux %#llux\n", pa - datapa, len);
+	write(dmactl, buf, strlen(buf));
 }
 
 static int

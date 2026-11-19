@@ -476,22 +476,10 @@ physseginit(Fdtinfo *info)
 		if(addphysseg(&seg) == 0)
 			n++;
 	}
-	if(arm64dmabase != 0 && arm64dmasize != 0){
-		memset(&seg, 0, sizeof seg);
-		/*
-		 * Cached: drivers touch these buffers with the CPU.  They do
-		 * the maintenance themselves through #P/dma/clean, /inval and
-		 * /cleaninval, so an uncached mapping only costs performance
-		 * (an uncached 64 KiB memmove is milliseconds).
-		 */
-		seg.attr = SG_PHYSICAL | SG_READ | SG_WRITE | SG_CACHED;
-		seg.pgszi = -1;	/* addphysseg defaults to base pages */
-		seg.name = "dma";
-		seg.pa = arm64dmabase;
-		seg.size = arm64dmasize / BIGPGSZ;
-		if(addphysseg(&seg) == 0)
-			n++;
-	}
+	/*
+	 * The DMA arena has no segment of its own: #P/dma hands each
+	 * driver only the chunks it allocated (devpnp.c).
+	 */
 	if(arm64teeshmbase != 0 && arm64teeshmsize != 0){
 		memset(&seg, 0, sizeof seg);
 		seg.attr = SG_PHYSICAL | SG_READ | SG_WRITE | SG_CACHED;

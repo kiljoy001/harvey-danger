@@ -130,7 +130,9 @@ write, readdir, seek, rename, write/reboot/read back).
 - **The arena must sit below 4 GiB** while any enabled controller uses 32-bit
   DMA descriptors (the eMMC ADMA2 path does).  Verify per SoC whether 64-bit
   descriptors are supported before relaxing this.
-- Cache maintenance for DMA goes through `#P/dma/clean|inval|cleaninval`.
+- The guest RAM is one `#P/dma` chunk, mapped cacheable into the LKL
+  process alone; cache maintenance for DMA goes through its ctl
+  (`clean|inval|cleaninval <off> <len>`).
 - DMA on stack or static kernel buffers is invalid; drivers use `kmalloc` or
   `dma_alloc_coherent`.  This is documented, not worked around.
 

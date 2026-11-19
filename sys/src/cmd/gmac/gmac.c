@@ -2,7 +2,7 @@
  * gmac: RK3566 GMAC (snps,dwmac-4.20a) driver.
  *
  * Runs against the #P grant for ethernet@fe010000.  The MAC is a
- * DesignWare GMAC4: descriptor rings in the #P/dma region, MTL queues,
+ * DesignWare GMAC4: descriptor rings in a #P/dma chunk, MTL queues,
  * MDIO for the YT8531 PHY.
  *
  *   gmac probe            MAC/GRF/MDIO identity and link state
@@ -109,7 +109,8 @@ enum {
 
 static u8 *mmio, *grf, *cru;
 static u8 *dma, *txdesc, *rxdesc, *txbuf, *rxbuf;
-static u64 dmabase, dmasize, dmadatapa, txcpa, rxcpa, txbpa, rxbpa;
+static u64 dmadatapa, txcpa, rxcpa, txbpa, rxbpa;
+static int dmactl = -1, dmachunkno;	/* the chunk's #P/dma/N/ctl, held open */
 static int dmafd[3];
 static int csr = 1;
 static int speed = 1000;
@@ -187,45 +188,42 @@ mapnode(char *node, u64 want)
 	return m;
 }
 
-static u64
-readnum(char *path)
+
+/*
+ * The rings and buffers are one chunk of #P's arena, mapped cacheable
+ * into this process alone.  Its ctl stays open for the driver's life,
+ * which keeps the chunk.
+ */
+static u8*
+dmachunk(u64 size, u64 align, u64 *pa)
 {
-	char buf[64];
-	int fd, n;
+	char buf[128], *f[8];
+	int n;
 
-	if((fd = open(path, OREAD)) < 0)
-		sysfatal("gmac: open %s: %r", path);
-	n = read(fd, buf, sizeof buf - 1);
-	close(fd);
-	if(n <= 0)
-		sysfatal("gmac: read %s: %r", path);
-	buf[n] = 0;
-	return strtoull(buf, nil, 0);
-}
-
-static u64
-dmaalloc(u64 size, u64 align)
-{
-	char buf[64];
-	int fd, n;
-
-	if((fd = open("#P/dma/alloc", ORDWR)) < 0)
-		sysfatal("gmac: no #P/dma/alloc: %r");
-	snprint(buf, sizeof buf, "%llud %llud\n", size, align);
-	if(write(fd, buf, strlen(buf)) != strlen(buf))
+	if((dmactl = open("#P/dma/clone", ORDWR)) < 0)
+		sysfatal("gmac: no #P/dma/clone: %r");
+	snprint(buf, sizeof buf, "alloc %llud %llud cached\n", size, align);
+	if(write(dmactl, buf, strlen(buf)) != strlen(buf))
 		sysfatal("gmac: dma alloc: %r");
-	n = pread(fd, buf, sizeof buf - 1, 0);
-	close(fd);
+	if(write(dmactl, "map\n", 4) != 4)
+		sysfatal("gmac: dma map: %r");
+	n = pread(dmactl, buf, sizeof buf - 1, 0);
 	if(n <= 0)
-		sysfatal("gmac: dma alloc read: %r");
+		sysfatal("gmac: dma chunk read: %r");
 	buf[n] = 0;
-	return strtoull(buf, nil, 0);
+	/* "<n> pa <pa> len <len> cached va <va>" */
+	if(tokenize(buf, f, nelem(f)) != 8)
+		sysfatal("gmac: dma chunk: %s", buf);
+	dmachunkno = atoi(f[0]);
+	*pa = strtoull(f[2], nil, 0);
+	return (u8*)(uintptr)strtoull(f[7], nil, 0);
 }
 
 /*
- * Open the maintenance file on every call.  The driver is used from
- * two processes (the 9P server forks), and a cached descriptor opened
- * before the fork is not valid in the child.
+ * Open the chunk's ctl on every call.  The driver is used from two
+ * processes (the 9P server forks), and a cached descriptor opened
+ * before the fork is not valid in the child; the child holds the
+ * chunk's ctl through the copied file table, so it may open it by name.
  */
 static void
 dmacache(int op, u64 pa, u64 len)
@@ -234,12 +232,13 @@ dmacache(int op, u64 pa, u64 len)
 	char buf[64], path[32];
 	int fd;
 
-	snprint(path, sizeof path, "#P/dma/%s", name[op]);
+	snprint(path, sizeof path, "#P/dma/%d/ctl", dmachunkno);
 	if((fd = open(path, OWRITE)) < 0)
 		sysfatal("gmac: open %s: %r", path);
-	snprint(buf, sizeof buf, "0x%llx 0x%llx\n", pa, len);
+	snprint(buf, sizeof buf, "%s %#llux %#llux\n", name[op],
+		pa - dmadatapa, len);
 	if(write(fd, buf, strlen(buf)) != strlen(buf))
-		sysfatal("gmac: #P/dma/%s: %r", name[op]);
+		sysfatal("gmac: %s %s: %r", path, name[op]);
 	close(fd);
 }
 
@@ -530,18 +529,12 @@ dmainit(void)
 {
 	u64 pa;
 
-	dmabase = readnum("#P/dma/base");
-	dmasize = readnum("#P/dma/size");
-	dma = segattach(0, "dma", 0, dmasize);
-	if(dma == (void *)-1)
-		sysfatal("gmac: segattach dma: %r");
-	dmadatapa = dmaalloc(DmaSize, 4096);
-	memset(dma + (dmadatapa - dmabase), 0, DmaSize);
+	dma = dmachunk(DmaSize, 4096, &dmadatapa);	/* #P zeroes it */
 	pa = dmadatapa;
-	txdesc = dma + (pa + TxDescOff - dmabase);
-	rxdesc = dma + (pa + RxDescOff - dmabase);
-	txbuf = dma + (pa + TxBufOff - dmabase);
-	rxbuf = dma + (pa + RxBufOff - dmabase);
+	txdesc = dma + TxDescOff;
+	rxdesc = dma + RxDescOff;
+	txbuf = dma + TxBufOff;
+	rxbuf = dma + RxBufOff;
 	txcpa = pa + TxDescOff;
 	rxcpa = pa + RxDescOff;
 	txbpa = pa + TxBufOff;

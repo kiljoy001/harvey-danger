@@ -262,124 +262,145 @@ drvwait(Drv *d)
 	return 0;
 }
 
-static u64
-readnum(char *path)
-{
-	char buf[64];
-
-	if(readtext(path, buf, sizeof buf) < 0)
-		return 0;
-	return strtoull(buf, nil, 0);
-}
-
 /*
- * Map the DMA arena once.  The physical addresses the device needs are
- * offsets into this same window; drvpa turns one back into a user address.
+ * This process's DMA chunks.  #P hands each out as a file: the chunk
+ * lives while its ctl is open or it is mapped, so holding the ctl here
+ * keeps it, and closing it (with the mapping gone) gives it back.
  */
-int
-drvdmamap(Drv *d)
-{
-	void *m;
+enum { Maxchunk = 64 };
+typedef struct Drvchunk Drvchunk;
+struct Drvchunk {
+	int	ctl;		/* #P/dma/N/ctl, -1 if the slot is free */
+	u64	pa;
+	u64	len;
+	u8	*va;
+};
+static Drvchunk chunks[Maxchunk];
+static int nchunks;
+static QLock chunklk;
 
-	if(d->dmava != nil)
-		return 0;
-	print("drvdma: map readnum\n");
-	d->dmabase = readnum("#P/dma/base");
-	d->dmasize = readnum("#P/dma/size");
-	print("drvdma: map base=0x%llux size=0x%llux\n", d->dmabase, d->dmasize);
-	if(d->dmasize == 0)
-		return -1;
-	print("drvdma: map segattach\n");
-	m = segattach(0, "dma", 0, d->dmasize);
-	print("drvdma: map segattach done m=%p\n", m);
-	if(m == (void *)-1){
-		d->dmasize = 0;
-		return -1;
-	}
-	d->dmava = m;
-	return 0;
+static Drvchunk*
+chunkat(u64 pa, u64 len)
+{
+	int i;
+
+	for(i = 0; i < nchunks; i++)
+		if(chunks[i].ctl >= 0 && pa >= chunks[i].pa &&
+		   pa - chunks[i].pa < chunks[i].len &&
+		   len <= chunks[i].len - (pa - chunks[i].pa))
+			return &chunks[i];
+	return nil;
+}
+
+static int
+chunkcmd(int ctl, char *cmd)
+{
+	return write(ctl, cmd, strlen(cmd)) == strlen(cmd) ? 0 : -1;
 }
 
 /*
- * Allocate from the arena.  The kernel's allocator answers with the physical
- * address; the driver gets the matching user address and the physical one it
- * must program into the device.
+ * Allocate a chunk.  The driver gets its user address and the physical
+ * one it must program into the device.
  */
 void *
 drvdma(Drv *d, u64 size, u64 align, u64 *pa)
 {
-	char buf[64];
-	int fd, n;
-	u64 p;
+	char buf[128], *f[8];
+	Drvchunk *c;
+	int ctl, i, n;
 
-	print("drvdma: alloc open size=0x%llux\n", size);
-	if((fd = open("#P/dma/alloc", ORDWR)) < 0)
+	USED(d);
+	if((ctl = open("#P/dma/clone", ORDWR)) < 0)
 		return nil;
-	snprint(buf, sizeof buf, "%llud %llud\n", size, align);
-	print("drvdma: alloc write\n");
-	if(write(fd, buf, strlen(buf)) != strlen(buf)){
-		close(fd);
+	snprint(buf, sizeof buf, "alloc %llud %llud cached\n", size, align);
+	if(chunkcmd(ctl, buf) < 0 || chunkcmd(ctl, "map\n") < 0 ||
+	   (n = pread(ctl, buf, sizeof buf - 1, 0)) <= 0){
+		close(ctl);
 		return nil;
 	}
-	print("drvdma: alloc pread\n");
-	n = pread(fd, buf, sizeof buf - 1, 0);
-	close(fd);
-	print("drvdma: alloc pread done n=%d\n", n);
-	if(n <= 0)
-		return nil;
 	buf[n] = 0;
-	p = strtoull(buf, nil, 0);
-	print("drvdma: alloc pa=0x%llux\n", p);
-
-	if(d->dmava == nil && drvdmamap(d) < 0)
+	/* "<n> pa <pa> len <len> cached va <va>" */
+	if(tokenize(buf, f, nelem(f)) != 8){
+		close(ctl);
 		return nil;
-	if(p < d->dmabase || p - d->dmabase >= d->dmasize)
-		return nil;
+	}
+	qlock(&chunklk);
+	for(i = 0; i < nchunks; i++)
+		if(chunks[i].ctl < 0)
+			break;
+	if(i == nchunks){
+		if(nchunks == Maxchunk){
+			qunlock(&chunklk);
+			close(ctl);
+			werrstr("drvdma: too many chunks");
+			return nil;
+		}
+		nchunks++;
+	}
+	c = &chunks[i];
+	c->ctl = ctl;
+	c->pa = strtoull(f[2], nil, 0);
+	c->len = strtoull(f[4], nil, 0);
+	c->va = (u8*)(uintptr)strtoull(f[7], nil, 0);
+	qunlock(&chunklk);
 	if(pa != nil)
-		*pa = p;
-	return (u8 *)d->dmava + (p - d->dmabase);
+		*pa = c->pa;
+	return c->va;
 }
 
 void
 drvdmafree(u64 pa, u64 size)
 {
-	char buf[64];
-	int fd;
+	Drvchunk *c;
 
-	if((fd = open("#P/dma/free", OWRITE)) < 0)
-		return;
-	snprint(buf, sizeof buf, "%#llux %llud\n", pa, size);
-	write(fd, buf, strlen(buf));
-	close(fd);
+	USED(size);
+	qlock(&chunklk);
+	c = chunkat(pa, 1);
+	if(c != nil && c->pa == pa){
+		segdetach(c->va);
+		close(c->ctl);
+		c->ctl = -1;
+	}
+	qunlock(&chunklk);
 }
 
 int
 drvdmacache(int op, u64 pa, u64 len)
 {
 	static char *name[] = { "clean", "inval", "cleaninval" };
-	char buf[64], path[32];
-	int fd, ok;
+	char buf[64];
+	Drvchunk *c;
+	int ok;
 
 	if(op < 0 || op >= (int)nelem(name))
 		return -1;
-	snprint(path, sizeof path, "#P/dma/%s", name[op]);
-	if((fd = open(path, OWRITE)) < 0)
+	qlock(&chunklk);
+	c = chunkat(pa, len);
+	if(c == nil){
+		qunlock(&chunklk);
+		werrstr("drvdmacache: %#llux+%llud is in no chunk", pa, len);
 		return -1;
-	snprint(buf, sizeof buf, "%#llux %llud\n", pa, len);
-	ok = write(fd, buf, strlen(buf)) == strlen(buf);
-	close(fd);
+	}
+	snprint(buf, sizeof buf, "%s %#llux %llud\n", name[op], pa - c->pa, len);
+	ok = chunkcmd(c->ctl, buf) == 0;
+	qunlock(&chunklk);
 	return ok ? 0 : -1;
 }
 
-/* A physical address inside the mapped DMA arena, or nil if it is elsewhere
- * (for example memory the kernel allocated for a caller). */
+/* A physical address inside one of this process's chunks, or nil if it
+ * is elsewhere (for example memory the kernel allocated for a caller). */
 void *
 drvpa(Drv *d, u64 pa)
 {
-	if(d->dmava == nil || pa < d->dmabase ||
-	   pa - d->dmabase >= d->dmasize)
-		return nil;
-	return (u8 *)d->dmava + (pa - d->dmabase);
+	Drvchunk *c;
+	void *va;
+
+	USED(d);
+	qlock(&chunklk);
+	c = chunkat(pa, 1);
+	va = c != nil ? c->va + (pa - c->pa) : nil;
+	qunlock(&chunklk);
+	return va;
 }
 
 void

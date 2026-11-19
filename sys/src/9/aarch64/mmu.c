@@ -17,11 +17,18 @@ static const u64 Maxidentity = 16ULL * 1024 * 1024 * 1024;
 static u64 kernelroot;
 u64 arm64kernelmair, arm64kerneltcr, arm64kernelsctlr;
 extern u64 arm64dmabase, arm64dmasize;
+/* The DMA arena's top 2 MiB block, kept for the kernel's own device
+ * memory (ethergmac's descriptors) and mapped Device; #P never hands
+ * it out.  0 when there is no arena. */
+u64 arm64dmakern;
 
 enum {
 	Ptevalid = 1,
 	Ptetable = 2,
+	/* MAIR indices: 0 normal write-back, 1 Device-nGnRE, 2 normal
+	 * non-cacheable (arm64kernelmair) */
 	Pteattrdevice = 1 << 2,
+	Pteattrnc = 2 << 2,
 	Pteinnershare = 3 << 8,
 	Pteaccessed = 1 << 10,
 };
@@ -174,22 +181,28 @@ arm64mmubuild(Fdtinfo *info)
 		l2[j] = blockpte(pa, 1);
 	}
 	/*
-	 * The DMA arena is handed to user space through #P/dma as a Device
-	 * segment.  Map the kernel identity alias with the same attributes:
-	 * two mappings of one physical range with different cacheability are
-	 * architecturally unpredictable.
+	 * The DMA arena stays normal write-back memory in the kernel's
+	 * identity map, like the rest of RAM.  #P maps each chunk into its
+	 * owner either the same way (cached) or normal non-cacheable, and
+	 * cleans and invalidates a non-cacheable chunk through this alias
+	 * when it hands it out, so no dirty line can later land on memory
+	 * a device is using (the arrangement Linux uses for coherent DMA).
+	 * RAM is never mapped Device in user space.
+	 *
+	 * The arena's top block is the kernel's own (arm64dmakern): Device
+	 * here, and outside what #P allocates.
 	 */
 	extern u64 arm64dmabase, arm64dmasize;
-	if(arm64dmabase != 0 && arm64dmasize != 0 && (arm64dmabase % L2blocksz) == 0){
-		for(pa = arm64dmabase; pa < arm64dmabase + arm64dmasize;
-		    pa += L2blocksz){
-			i = pa/L1blocksz;
-			j = (pa%L1blocksz)/L2blocksz;
-			if(root[i] == 0 || (root[i] & Ptevalid) == 0)
-				return 0;
-			l2 = (u64 *)(root[i] & ~(u64)(Pagesz-1));
-			l2[j] = blockpte(pa, 0);
-		}
+	if(arm64dmabase != 0 && arm64dmasize >= 2*L2blocksz &&
+	   (arm64dmabase % L2blocksz) == 0 && (arm64dmasize % L2blocksz) == 0){
+		pa = arm64dmabase + arm64dmasize - L2blocksz;
+		i = pa/L1blocksz;
+		j = (pa%L1blocksz)/L2blocksz;
+		if(root[i] == 0 || (root[i] & Ptevalid) == 0)
+			return 0;
+		l2 = (u64 *)(root[i] & ~(u64)(Pagesz-1));
+		l2[j] = blockpte(pa, 0);
+		arm64dmakern = pa;
 	}
 	device[0].base = info->uartbase;
 	device[0].size = Pagesz;
@@ -295,7 +308,7 @@ arm64mmuon(u64 rootpa)
 	tcr = (mmfr<<32) | (1ULL<<23) | (25ULL<<16) |
 	      (3ULL<<12) | (1ULL<<10) | (1ULL<<8) | 25;
 	__asm__ volatile("dsb sy" ::: "memory");
-	arm64kernelmair = 0x04ff;
+	arm64kernelmair = 0x4404ff;	/* see Pteattrnc */
 	arm64kerneltcr = tcr;
 	__asm__ volatile("msr mair_el1, %0" :: "r"(arm64kernelmair) : "memory");
 	__asm__ volatile("msr tcr_el1, %0" :: "r"(arm64kerneltcr) : "memory");
@@ -436,7 +449,9 @@ mmuput(usize va, Page *page, u32 attr)
 			entry |= 3ULL << 6;
 		if(attr & PTENOEXEC)
 			entry |= 1ULL << 54;
-		if(attr & PTEUNCACHED)
+		if(attr & PTENCRAM)
+			entry |= Pteattrnc | Pteinnershare;
+		else if(attr & PTEUNCACHED)
 			entry |= Pteattrdevice;
 		else
 			entry |= Pteinnershare;
