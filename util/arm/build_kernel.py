@@ -22,6 +22,21 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
+
+
+def mksys() -> Path:
+    """mksys.py lives in the sibling 9vm repo; allow an override so this
+    works from a git worktree outside ~/Repo."""
+    explicit = os.environ.get("MKSYS")
+    candidates = [
+        Path(explicit) if explicit else None,
+        ROOT.parent / "9vm/mksys.py",
+        Path.home() / "Repo/9vm/mksys.py",
+    ]
+    for candidate in candidates:
+        if candidate is not None and candidate.is_file():
+            return candidate
+    raise SystemExit("mksys.py not found; set MKSYS=/path/to/9vm/mksys.py")
 ARCH = ROOT / "sys/src/9/arm"
 DEFAULT_OUT = ROOT / "build/arm32-kernel"
 
@@ -140,7 +155,7 @@ def main() -> None:
     out.mkdir(parents=True, exist_ok=True)
     for mode, name in (("errstr.h", "errstr.h"), ("sys.h", "sys.h"),
                        ("systab.c", "systab.c")):
-        subprocess.run([sys.executable, str(ROOT.parent / "9vm/mksys.py"),
+        subprocess.run([sys.executable, str(mksys()),
                         f"-mode={mode}", "-o", str(out / name),
                         str(ROOT / "sys/src/sysconf.json")],
                        check=True, stdout=subprocess.DEVNULL)
