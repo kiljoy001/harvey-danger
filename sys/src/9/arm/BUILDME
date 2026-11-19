@@ -1,0 +1,9 @@
+ARMv7-A QEMU "virt" kernel.
+
+    python3 util/arm/build_kernel.py
+    sh util/arm/run_qemu.sh
+
+The same core is intended for the SC8830 (goyave) tablet; see
+ports/goyave for the board work.  This target is board-independent:
+identity-mapped 1 MiB sections, PL011 console, GIC-400 and the ARM
+generic timer.
