@@ -83,6 +83,30 @@ userprobe(void *arg)
 	diag("user probe: returned from user mode\n");
 }
 
+#if ARM32DIAG
+/*
+ * A process that never yields: with clock-driven preemption it must
+ * still be interrupted so ready processes get the CPU.
+ */
+static void
+kspin(void *arg)
+{
+	volatile u32 n;
+	u32 lastt;
+
+	USED(arg);
+	lastt = 0;
+	for(;;){
+		n++;
+		if((n % 100000) == 0 && sys->ticks != lastt){
+			lastt = sys->ticks;
+			diag("spin %d ticks %d\n", (int)(n/100000),
+				(int)sys->ticks);
+		}
+	}
+}
+#endif
+
 static void
 ktest(void *arg)
 {
@@ -144,6 +168,14 @@ arm32kernelinit(void)
 	p->noswap = 1;
 	kprocchild(p, ktest, nil);
 	ready(p);
+
+#if ARM32DIAG
+	p = newproc();
+	p->kp = 1;
+	p->noswap = 1;
+	kprocchild(p, kspin, nil);
+	ready(p);
+#endif
 
 
 	diag("arm32: starting scheduler\n");

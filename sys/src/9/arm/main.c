@@ -154,13 +154,17 @@ printk(char *fmt, ...)
 void
 arm32irqhandler(void)
 {
+	Proc *up;
 	u32 id;
+	int clock;
 
 	id = gicc(GiccIar) & 0x3ff;
 	if(id >= 1020)			/* spurious */
 		return;
 
+	clock = 0;
 	if(id == Timerirq){
+		clock = 1;
 		arm32clocktick();
 		if(arm32portclock())
 			arm32timerirq();
@@ -172,6 +176,17 @@ arm32irqhandler(void)
 		}
 	}
 	gicc(GiccEoir) = id;
+
+	/*
+	 * Preempt on the way out of the clock interrupt, after the EOI.
+	 * hzclock() has set delaysched if another process should run; the
+	 * scheduler resumes this handler when this process is next chosen.
+	 */
+	if(clock){
+		up = machp()->externup;
+		if(up != nil && up->delaysched && up->state == Running)
+			sched();
+	}
 }
 
 void
