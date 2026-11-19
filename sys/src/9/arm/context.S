@@ -27,6 +27,7 @@
 	.global slim_setlabel
 slim_setlabel:
 	push	{r4-r11, lr}
+	sub	sp, sp, #4		/* keep the stack 8-byte aligned */
 	str	sp, [r0]
 	mov	r0, #0
 	bx	lr
@@ -38,6 +39,7 @@ slim_setlabel:
 	.global gotolabel
 gotolabel:
 	ldr	sp, [r0]
+	add	sp, sp, #4
 	mov	r0, #1			/* setlabel returns 1 when resumed */
 	pop	{r4-r11, pc}
 
@@ -51,9 +53,10 @@ gotolabel:
 	.global labelstart
 labelstart:
 	bic	r2, r2, #7
-	sub	r2, r2, #36		/* 8 registers + pc */
+	sub	r2, r2, #40		/* pad + 8 registers + pc */
 	mov	r3, #0
-	str	r1, [r2, #32]
+	str	r3, [r2, #0]
+	str	r1, [r2, #36]
 	str	r3, [r2, #0]
 	str	r3, [r2, #4]
 	str	r3, [r2, #8]
@@ -62,6 +65,7 @@ labelstart:
 	str	r3, [r2, #20]
 	str	r3, [r2, #24]
 	str	r3, [r2, #28]
+	str	r3, [r2, #32]
 	str	r2, [r0]
 	bx	lr
 

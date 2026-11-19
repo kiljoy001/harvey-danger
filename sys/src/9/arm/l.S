@@ -131,12 +131,12 @@ arm32svc:
 	 */
 	srsdb	sp!, #0x13		/* user pc, psr */
 	cpsid	if, #0x13
-	sub	sp, sp, #(15*4)
+	sub	sp, sp, #(16*4)		/* 15 registers + pad: keep 8-byte sp */
 	stmia	sp, {r0-r14}^		/* user r0-r12, sp, lr */
 	mov	r0, sp
 	bl	arm32syscall
 	ldmia	sp, {r0-r14}^
-	add	sp, sp, #(15*4)		/* frame -> pc, psr */
+	add	sp, sp, #(16*4)		/* frame -> pc, psr */
 	rfeia	sp!
 
 /*

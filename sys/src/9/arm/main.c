@@ -44,9 +44,9 @@ taska(void)
 	if(slim_setlabel(&alabel) == 0)
 		gotolabel(&blabel);
 	if(phase != 2)
-		printk("arm32: context switch FAILED\n");
+		diag("arm32: context switch FAILED\n");
 	else
-		printk("arm32: context switch ok\n");
+		diag("arm32: context switch ok\n");
 	phase = 3;
 	gotolabel(&bootlabel);
 }
@@ -55,7 +55,7 @@ static void
 taskb(void)
 {
 	if(phase != 1)
-		printk("arm32: context order FAILED\n");
+		diag("arm32: context order FAILED\n");
 	phase = 2;
 	gotolabel(&alabel);
 }
@@ -69,7 +69,7 @@ contextprobe(void)
 	if(slim_setlabel(&bootlabel) == 0)
 		gotolabel(&alabel);
 	if(phase != 3)
-		printk("arm32: context probe did not return\n");
+		diag("arm32: context probe did not return\n");
 }
 
 static void
@@ -163,7 +163,7 @@ arm32irqhandler(void)
 			arm32timerprobe();
 			ticks++;
 			if((ticks % Tickhz) == 0)
-				printk("arm32: tick %d\n", (u32)(ticks / Tickhz));
+				diag("arm32: tick %d\n", (u32)(ticks / Tickhz));
 		}
 	}
 	gicc(GiccEoir) = id;
@@ -230,13 +230,13 @@ splprobe(void)
 	old = splhi();
 	t0 = ticks;
 	spin(n);
-	printk("arm32: splhi %s (%d ticks per delay)\n",
+	diag("arm32: splhi %s (%d ticks per delay)\n",
 		ticks == t0? "ok": "FAILED", elapsed);
 	splx(old);
 
 	t0 = ticks;
 	spin(n);
-	printk("arm32: splx %s\n", ticks != t0? "ok": "FAILED");
+	diag("arm32: splx %s\n", ticks != t0? "ok": "FAILED");
 }
 
 void
@@ -252,12 +252,12 @@ arm32main(u32 dtb)
 	machp()->machno = 0;
 	machp()->online = 1;
 
-	printk("\nHARVEY-ARM32 VIRT\n");
-	printk("arm32: cpu id %p dtb %p (unused)\n", arm32id(), dtb);
-	printk("arm32: kernel %p..%p\n", (u32)0x40010000, (u32)&arm32l1);
+	diag("\nHARVEY-ARM32 VIRT\n");
+	diag("arm32: cpu id %p dtb %p (unused)\n", arm32id(), dtb);
+	diag("arm32: kernel %p..%p\n", (u32)0x40010000, (u32)&arm32l1);
 
 	arm32mmuinit();
-	printk("arm32: mmu on\n");
+	diag("arm32: mmu on\n");
 
 	/* Copy the vectors to 0xffff0000 and switch SCTLR.V. */
 	vecs = (u32*)HVECTORS;
@@ -265,25 +265,25 @@ arm32main(u32 dtb)
 		*vecs++ = *p++;
 	coherence();
 	arm32sethighvectors();
-	printk("arm32: vectors %p\n", (u32)HVECTORS);
+	diag("arm32: vectors %p\n", (u32)HVECTORS);
 
 	contextprobe();
 
 	arm32gicinit();
 	arm32timerinit();
-	printk("arm32: timer %d Hz, tick %d Hz\n", arm32cntfrq(), Tickhz);
+	diag("arm32: timer %d Hz, tick %d Hz\n", arm32cntfrq(), Tickhz);
 
 	__asm__ volatile("cpsie i" ::: "memory");
-	printk("arm32: interrupts on\n");
+	diag("arm32: interrupts on\n");
 	{
 		char buf[64];
 
 		snprint(buf, sizeof buf, "klibc %d %s %x", 42, "ok", 0xbeef);
-		printk("arm32: snprint '%s'\n", buf);
+		diag("arm32: snprint '%s'\n", buf);
 	}
 
 	/* The kernel allocator (sys/src/9/arm/qmalloc.c). */
-	print("arm32: kernel libc print works\n");
+	diag("arm32: kernel libc print works\n");
 	mallocinit();
 	{
 		void *a, *b;
@@ -291,10 +291,10 @@ arm32main(u32 dtb)
 		a = malloc(1000);
 		b = malloc(2000);
 		if(a == nil || b == nil || a == b){
-			printk("arm32: kernel malloc FAILED\n");
+			diag("arm32: kernel malloc FAILED\n");
 		} else {
 			memmove(a, "allocator", 10);
-			printk("arm32: kernel malloc ok '%s'\n", a);
+			diag("arm32: kernel malloc ok '%s'\n", a);
 		}
 		free(a);
 		free(b);
@@ -310,7 +310,7 @@ arm32main(u32 dtb)
 	 * Hand over to the shared kernel: allocator, process table, console,
 	 * clock, devices and the first scheduled kernel process.
 	 */
-	printk("arm32: starting kernel init\n");
+	diag("arm32: starting kernel init\n");
 	arm32kernelinit();
 	for(;;)
 		__asm__ volatile("wfi");

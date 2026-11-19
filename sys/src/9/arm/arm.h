@@ -10,6 +10,19 @@
 
 #define USED(x)		((void)(x))
 
+/*
+ * Boot-time diagnostics (self-test results, per-tick messages).  Off by
+ * default: the console belongs to whoever is using the board.
+ */
+#ifndef ARM32DIAG
+#define ARM32DIAG	0
+#endif
+#if ARM32DIAG
+#define diag(...)	printk(__VA_ARGS__)
+#else
+#define diag(...)	do { } while(0)
+#endif
+
 /* Program status register: modes and bits. */
 #define PsrMusr		0x10
 #define PsrMfiq		0x11

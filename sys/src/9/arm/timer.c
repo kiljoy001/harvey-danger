@@ -113,6 +113,11 @@ timerset(u64 when)
 	ticks = (delta * timerfreq + 999999) / 1000000;
 	if(ticks == 0)
 		ticks = 1;
+	/*
+	 * Remember the interval just programmed: the next interrupt adds
+	 * exactly this much to the software clock.
+	 */
+	lastus = (u32)delta;
 	arm32setcntvtval((u32)ticks);
 	arm32setcntvctl(1);
 }

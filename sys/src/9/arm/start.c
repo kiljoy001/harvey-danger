@@ -35,7 +35,7 @@ mmuprobe(void)
 	up = externup();
 	pg = newpage(1, nil, 0, PGSZ, -1);
 	if(pg == nil){
-		printk("mmu user map FAILED (no page)\n");
+		diag("mmu user map FAILED (no page)\n");
 		return;
 	}
 	k = KADDR(pg->pa);
@@ -47,7 +47,7 @@ mmuprobe(void)
 	ok = u[0] == 0x5a && u[PGSZ/2] == 0x5a && u[PGSZ-1] == 0x5a;
 	arm32mmuswitch(0);
 
-	printk("mmu user map %s\n", ok? "ok": "FAILED");
+	diag("mmu user map %s\n", ok? "ok": "FAILED");
 }
 
 extern char arm32userprog_start[], arm32userprog_end[];
@@ -69,7 +69,7 @@ userprobe(void *arg)
 	code = newpage(1, nil, 0, PGSZ, -1);
 	stack = newpage(1, nil, 0, PGSZ, -1);
 	if(code == nil || stack == nil){
-		printk("user probe FAILED (no pages)\n");
+		diag("user probe FAILED (no pages)\n");
 		return;
 	}
 	n = arm32userprog_end - arm32userprog_start;
@@ -77,10 +77,10 @@ userprobe(void *arg)
 	mmuput(0x10000000, code, PTEVALID|PTEWRITE);
 	mmuput(0x3ff00000, stack, PTEVALID|PTEWRITE);
 
-	print("user probe: entering user mode\n");
+	diag("user probe: entering user mode\n");
 	arm32mmuswitch(up->MMU.mmul1pa);
 	arm32enteruser(0x10000000, 0x3ff00000 + PGSZ - 16);
-	print("user probe: returned from user mode\n");
+	diag("user probe: returned from user mode\n");
 }
 
 static void
@@ -92,13 +92,13 @@ ktest(void *arg)
 	USED(arg);
 	mmuprobe();
 	for(i = 0; i < 3; i++){
-		print("arm32: scheduler alive pid %d ticks %lud\n",
-			up->pid, sys->ticks);
-		delay(100);
+		diag("arm32: scheduler alive pid %d ticks %lud\n",
+			up->pid, (ulong)sys->ticks);
+		tsleep(&up->sleep, return0, 0, 100);
 	}
 	/* Ends with exits(0) from user mode. */
 	userprobe(nil);
-	print("arm32: user probe returned\n");
+	diag("arm32: user probe returned\n");
 }
 
 void
@@ -113,21 +113,21 @@ arm32kernelinit(void)
 	conf.nimage = 32;
 	eve = "root";
 
-	print("arm32: physinit done npage %lud upages %lud\n",
+	diag("arm32: physinit done npage %lud upages %lud\n",
 		conf.npage, conf.upages);
 
 	procinit0();
 	printinit();
-	print("arm32: printinit done\n");
+	diag("arm32: printinit done\n");
 	timersinit();
 	psinit(conf.nproc);
-	print("arm32: psinit done\n");
+	diag("arm32: psinit done\n");
 	links();
 
 	devtabreset();
-	print("arm32: devtabreset done\n");
+	diag("arm32: devtabreset done\n");
 	pageinit();
-	print("arm32: pageinit done\n");
+	diag("arm32: pageinit done\n");
 
 	/*
 	 * From here the timer interrupt belongs to the port clock: it
@@ -145,6 +145,6 @@ arm32kernelinit(void)
 	ready(p);
 
 
-	print("arm32: starting scheduler\n");
+	diag("arm32: starting scheduler\n");
 	schedinit();
 }
