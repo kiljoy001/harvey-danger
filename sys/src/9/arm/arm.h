@@ -49,17 +49,16 @@
 
 /* Exception entry points, in l.S. */
 extern void arm32vectors(void);
+extern void arm32vectors_end(void);
 void arm32setttbr0(u32);
 void arm32setdacr(u32);
-void arm32setvbar(u32);
+void arm32sethighvectors(void);
 void arm32tlbflush(void);
 void arm32cacheflush(void);
 void arm32mmuenable(void);
 u32 arm32cntfrq(void);
-u32 arm32cntvctl(void);
 void arm32setcntvctl(u32);
 void arm32setcntvtval(u32);
-u32 arm32cntpct(void);
 u32 arm32id(void);
 u32 arm32dfar(void);
 u32 arm32dfsr(void);

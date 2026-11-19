@@ -24,6 +24,7 @@
 #define BI2BY		8
 
 #define MAXMACH		4
+#define MACHMAX		MAXMACH
 #define MACHSIZE	BY2PG
 #define L1SIZE		(4*BY2PG)	/* 4096 section entries */
 

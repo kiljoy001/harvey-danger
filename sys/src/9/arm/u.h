@@ -60,8 +60,27 @@ union FPdbleword
 	};
 };
 
+/*
+ * setjmp saves r4-r11, sp and lr (plus a magic word).  The offsets match
+ * the ARM setjmp in sys/src/libc/arm.
+ */
 typedef u32 jmp_buf[32];
 
 #define JMPBUFDPC	0
+#define JMPBUFPC	10
+#define JMPBUFSP	11
+#define JMPBUFARG1	0
+#define JMPBUFARG2	1
+
+typedef u32 mpdigit;	/* for /sys/include/mp.h */
+
+typedef __builtin_va_list va_list;
+
+#define va_start(v,l)	__builtin_va_start(v,l)
+#define va_end(v)	__builtin_va_end(v)
+#define va_arg(v,l)	__builtin_va_arg(v,l)
+#define va_copy(v,l)	__builtin_va_copy(v,l)
+
+#define getcallerpc(...)	((usize)__builtin_return_address(0))
 
 #endif

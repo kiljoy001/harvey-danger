@@ -65,15 +65,15 @@ arm32mmuinit(void)
 	for(pa = 0; pa < PHYSDRAM; pa += MiB)
 		arm32l1[pa >> 20] = section(pa, AttrDevice);
 
+	/*
+	 * The high-vector page lives at 0xffff0000.  There is no RAM there,
+	 * so point that section at the first MiB of DRAM (below the image).
+	 */
+	arm32l1[0xfff] = section(PHYSDRAM, AttrNormal);
+
 	arm32setttbr0((u32)arm32l1);
 	arm32setdacr(0x55555555);	/* all domains: client */
 	arm32tlbflush();
 	arm32cacheflush();
 	arm32mmuenable();
-}
-
-void
-arm32mmuoff(void)
-{
-	/* Not used yet; kept for the fault path and future SMP bring-up. */
 }

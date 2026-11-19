@@ -45,7 +45,7 @@ CFLAGS = [
     "-I", str(ARCH),
 ]
 
-SOURCES = ["l.S", "main.c", "mmu.c", "arch.c"]
+SOURCES = ["l.S", "context.S", "main.c", "mmu.c", "arch.c"]
 
 
 def run(cmd: list[str]) -> None:

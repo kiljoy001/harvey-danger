@@ -35,21 +35,35 @@ _start:
 	b	2b
 
 /*
- * Exception vectors.  VBAR points here, so the table is at its linked
- * address rather than 0x00000000.
+ * Exception vectors.
+ *
+ * A non-secure PL1 guest ignores writes to VBAR, so the table is copied
+ * to the high-vector page (0xffff0000) once the MMU maps it.  The entries
+ * therefore have to be position-independent: eight LDRs whose literal
+ * pool follows the table, copied along with it.
  */
-	.section .text.vectors, "ax"
+	.section .vectors, "ax"
 	.balign 32
 	.global arm32vectors
 arm32vectors:
-	b	arm32reset		/* 0x00 reset */
-	b	arm32undef		/* 0x04 undefined instruction */
-	b	arm32svc		/* 0x08 supervisor call */
-	b	arm32pabort		/* 0x0c prefetch abort */
-	b	arm32dabort		/* 0x10 data abort */
-	b	arm32reserved		/* 0x14 reserved */
-	b	arm32irq		/* 0x18 interrupt request */
-	b	arm32fiq		/* 0x1c fast interrupt */
+	ldr	pc, [pc, #24]		/* 0x00 reset */
+	ldr	pc, [pc, #24]		/* 0x04 undefined instruction */
+	ldr	pc, [pc, #24]		/* 0x08 supervisor call */
+	ldr	pc, [pc, #24]		/* 0x0c prefetch abort */
+	ldr	pc, [pc, #24]		/* 0x10 data abort */
+	ldr	pc, [pc, #24]		/* 0x14 reserved */
+	ldr	pc, [pc, #24]		/* 0x18 interrupt request */
+	ldr	pc, [pc, #24]		/* 0x1c fast interrupt */
+	.word	arm32reset
+	.word	arm32undef
+	.word	arm32svc
+	.word	arm32pabort
+	.word	arm32dabort
+	.word	arm32reserved
+	.word	arm32irq
+	.word	arm32fiq
+	.global arm32vectors_end
+arm32vectors_end:
 
 arm32reset:
 	b	arm32fault
@@ -129,9 +143,11 @@ arm32setdacr:
 	isb
 	bx	lr
 
-	.global arm32setvbar
-arm32setvbar:
-	mcr	p15, 0, r0, c12, c0, 0
+	.global arm32sethighvectors
+arm32sethighvectors:
+	mrc	p15, 0, r0, c1, c0, 0
+	orr	r0, r0, #(1 << 13)	/* V: vectors at 0xffff0000 */
+	mcr	p15, 0, r0, c1, c0, 0
 	isb
 	bx	lr
 
@@ -169,11 +185,6 @@ arm32cntfrq:
 	mrc	p15, 0, r0, c14, c0, 0
 	bx	lr
 
-	.global arm32cntvctl
-arm32cntvctl:
-	mrc	p15, 0, r0, c14, c3, 1
-	bx	lr
-
 	.global arm32setcntvctl
 arm32setcntvctl:
 	mcr	p15, 0, r0, c14, c3, 1
@@ -184,12 +195,6 @@ arm32setcntvctl:
 arm32setcntvtval:
 	mcr	p15, 0, r0, c14, c3, 0
 	isb
-	bx	lr
-
-	.global arm32cntpct
-arm32cntpct:
-	isb
-	mrc	p15, 0, r0, c14, c0, 1
 	bx	lr
 
 	.global arm32id

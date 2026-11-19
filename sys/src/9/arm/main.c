@@ -8,6 +8,7 @@
 #include "u.h"
 #include "mem.h"
 #include "arm.h"
+#include "context.h"
 
 enum {
 	GicdCtlr	= 0x000,
@@ -27,7 +28,51 @@ enum {
 #define gicc(r)	(*(volatile u32*)((u32)GICC + (r)))
 
 static u32 timerinterval;
-static u32 ticks;
+static volatile u32 ticks;
+
+/*
+ * Context switch self-test: two coroutines trade control through the
+ * primitive the shared scheduler will use.
+ */
+static Label bootlabel, alabel, blabel;
+static u8 astack[8192] __attribute__((aligned(8)));
+static u8 bstack[8192] __attribute__((aligned(8)));
+static volatile int phase;
+
+static void
+taska(void)
+{
+	phase = 1;
+	if(slim_setlabel(&alabel) == 0)
+		gotolabel(&blabel);
+	if(phase != 2)
+		printk("arm32: context switch FAILED\n");
+	else
+		printk("arm32: context switch ok\n");
+	phase = 3;
+	gotolabel(&bootlabel);
+}
+
+static void
+taskb(void)
+{
+	if(phase != 1)
+		printk("arm32: context order FAILED\n");
+	phase = 2;
+	gotolabel(&alabel);
+}
+
+static void
+contextprobe(void)
+{
+	phase = 0;
+	labelstart(&alabel, taska, astack + sizeof(astack));
+	labelstart(&blabel, taskb, bstack + sizeof(bstack));
+	if(slim_setlabel(&bootlabel) == 0)
+		gotolabel(&alabel);
+	if(phase != 3)
+		printk("arm32: context probe did not return\n");
+}
 
 static void
 putdec(u32 v)
@@ -179,19 +224,59 @@ arm32dataabort(u32 pc)
 	hardhalt();
 }
 
+/*
+ * Verify that interrupts are really masked by splhi.  The generic counter
+ * is not readable in this guest (CNTVCT traps unless CNTHCTL.PL1VCTEN is
+ * set by a hypervisor), so calibrate a busy-wait against timer ticks and
+ * then repeat it with interrupts off: the tick count must not move.
+ */
+static void
+splprobe(void)
+{
+	u32 old, t0, elapsed, n;
+
+	n = 1000000;
+	do {
+		t0 = ticks;
+		delay(n);
+		elapsed = ticks - t0;
+		n *= 2;
+	} while(elapsed < 5 && n < 200000000);
+
+	old = splhi();
+	t0 = ticks;
+	delay(n);
+	printk("arm32: splhi %s (%d ticks per delay)\n",
+		ticks == t0? "ok": "FAILED", elapsed);
+	splx(old);
+
+	t0 = ticks;
+	delay(n);
+	printk("arm32: splx %s\n", ticks != t0? "ok": "FAILED");
+}
+
 void
 arm32main(u32 dtb)
 {
+	u32 *vecs, *p;
+
 	uartinit();
 	printk("\nHARVEY-ARM32 VIRT\n");
 	printk("arm32: cpu id %p dtb %p (unused)\n", arm32id(), dtb);
 	printk("arm32: kernel %p..%p\n", (u32)0x40010000, (u32)&arm32l1);
 
-	arm32setvbar((u32)arm32vectors);
-	printk("arm32: vectors %p\n", (u32)arm32vectors);
-
 	arm32mmuinit();
 	printk("arm32: mmu on\n");
+
+	/* Copy the vectors to 0xffff0000 and switch SCTLR.V. */
+	vecs = (u32*)HVECTORS;
+	for(p = (u32*)arm32vectors; p < (u32*)arm32vectors_end; )
+		*vecs++ = *p++;
+	coherence();
+	arm32sethighvectors();
+	printk("arm32: vectors %p\n", (u32)HVECTORS);
+
+	contextprobe();
 
 	gicinit();
 	timerstart();
@@ -199,6 +284,12 @@ arm32main(u32 dtb)
 
 	__asm__ volatile("cpsie i" ::: "memory");
 	printk("arm32: interrupts on\n");
+
+	/* Let the timer tick once, then check that masking works. */
+	while(ticks == 0)
+		;
+
+	splprobe();
 
 	for(;;)
 		__asm__ volatile("wfi");
