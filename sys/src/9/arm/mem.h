@@ -14,8 +14,12 @@
 #define MiB	1048576u
 #define GiB	1073741824u
 
-#define BY2PG		(4*KiB)
+#define PGSZ		(4*KiB)
+#define BIGPGSZ		(2*MiB)
 #define PGSHIFT		12
+#define NPGSZ		2
+#define HZ		100
+#define KGUARD		(4*KiB)
 #define PGROUND(s)	ROUND(s, BY2PG)
 #define ROUND(s, sz)	(((s)+(sz-1))&~(sz-1))
 #define BY2SE		4
@@ -45,10 +49,22 @@
 #define L1		(KZERO+0x4000)
 #define L2		(KZERO+0x8000)
 
+#define BY2PG		PGSZ
+#define PGSHFT		12
+
+/*
+ * User address space for 32-bit processes: text starts above the zero
+ * page, the stack and the NIX call pages sit just under the kernel's
+ * identity-mapped RAM at 0x40000000.
+ */
 #define UZERO		0
 #define UTZERO		(UZERO+BY2PG)
+#define UTROUND(x)	PGROUND(x)
 #define USTKTOP		0x40000000
 #define USTKSIZE	(8*1024*1024)
+#define TSTKTOP		(USTKTOP-USTKSIZE)
+#define NIXCALL		(TSTKTOP-USTKSIZE)
+#define HEAPTOP		(NIXCALL-32*MiB)
 
 #define HVECTORS	0xffff0000
 
@@ -68,8 +84,13 @@
 #define PTEUNCACHED	(1<<2)
 #define PTENOEXEC	(1<<4)
 
+#define HOWMANY(x, y)	(((x) + (y) - 1) / (y))
+#define ROUNDUP(x, y)	(HOWMANY((x), (y)) * (y))
+#define ROUNDDN(x, y)	(((x) / (y)) * (y))
 #define MIN(a, b)	((a) < (b)? (a): (b))
 #define MAX(a, b)	((a) > (b)? (a): (b))
+#define ALIGNED(p, a)	(!(((usize)(p)) & ((a) - 1)))
+#define BIGPGROUND(x)	ROUNDUP((x), BIGPGSZ)
 
 /*
  * QEMU virt device map.

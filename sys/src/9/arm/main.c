@@ -10,6 +10,10 @@
 #include "arm.h"
 #include "context.h"
 
+/* The kernel libc's formatting routine, used here to prove the shared
+ * C runtime (fmt, locks, varargs) works on ARMv7. */
+int snprint(char *, int, const char *, ...);
+
 enum {
 	GicdCtlr	= 0x000,
 	GicdIsenabler	= 0x100,
@@ -284,6 +288,12 @@ arm32main(u32 dtb)
 
 	__asm__ volatile("cpsie i" ::: "memory");
 	printk("arm32: interrupts on\n");
+	{
+		char buf[64];
+
+		snprint(buf, sizeof buf, "klibc %d %s %x", 42, "ok", 0xbeef);
+		printk("arm32: snprint '%s'\n", buf);
+	}
 
 	/* Let the timer tick once, then check that masking works. */
 	while(ticks == 0)
