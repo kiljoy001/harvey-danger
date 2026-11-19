@@ -20,6 +20,7 @@
 #include "mem.h"
 #include "dat.h"
 #include "fns.h"
+#include "arm.h"
 #include <pool.h>
 
 typedef double Align;
@@ -664,7 +665,7 @@ mallocinit(void)
 	tailptr = tailbase;
 	tailsize = NUNITS(sizeof(kheap));
 	tailnunits = NUNITS(sizeof(kheap));
-	print("base %#p ptr %#p nunits %u\n", tailbase, tailptr, tailnunits);
+	diag("base %#p ptr %#p nunits %u\n", tailbase, tailptr, tailnunits);
 }
 
 /*
