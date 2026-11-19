@@ -86,7 +86,7 @@ void hardhalt(void);
 void arm32main(u32);
 void printk(char *, ...);
 void arm32irqhandler(void);
-void arm32svchandler(void);
+void arm32enteruser(u32, u32);
 void arm32unexpected(u32);
 void arm32prefetchabort(u32);
 void arm32dataabort(u32, u32, u32);

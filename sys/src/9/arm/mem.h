@@ -31,7 +31,7 @@
 #define MACHSIZE	BY2PG
 #define L1SIZE		(4*BY2PG)	/* 4096 section entries */
 
-#define KSTACK		(8*KiB)
+#define KSTACK		(32*KiB)
 #define STACKALIGN(sp)	((sp) & ~7)
 
 /*

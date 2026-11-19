@@ -55,10 +55,10 @@ CFLAGS = [
 ]
 
 SOURCES = [
-    "l.S", "context.S",
+    "l.S", "context.S", "userprog.S",
     "main.c", "start.c", "mmu.c", "arch.c", "div.c", "lock.c", "console.c",
     "mach.c", "platform.c", "qmalloc.c", "phys.c", "config.c", "procarch.c",
-    "timer.c",
+    "timer.c", "syscall.c",
 ]
 LIBC = ROOT / "sys/src/libc"
 

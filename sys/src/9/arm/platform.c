@@ -336,15 +336,6 @@ userureg(Ureg *u)
 }
 
 void
-mmuput(usize va, Page *p, u32 len)
-{
-	USED(va);
-	USED(p);
-	USED(len);
-	panic("mmuput: user segments are not supported yet");
-}
-
-void
 sysrforkchild(Proc *p, Proc *up)
 {
 	USED(p);

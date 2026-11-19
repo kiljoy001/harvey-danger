@@ -14,6 +14,10 @@ ports/goyave for the board work.  What boots today:
   - the shared port layer: quicksmart allocator, physical page
     allocator, page cache, process table, console, clock and the
     scheduler, with a kernel process running on it
+  - user mode: 4 KiB page tables per process, SVC entry that builds a
+    Ureg, systab dispatch and a return path to user space.  The boot
+    self-test maps a page at 0x10000000, runs a user program that calls
+    an invalid syscall and then exits(0).
 
-Not yet: user processes (trap/syscall entry, 4 KiB user page tables),
+Not yet: blocking in the kernel (a sleeping process is not woken yet),
 devices beyond the console, and the SC8830 board drivers.

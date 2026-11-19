@@ -20,17 +20,85 @@ enum {
 
 static int portclock;
 
+/*
+ * User address space self-test: map one page at a user virtual address
+ * and read it back through the process page table.
+ */
+static void
+mmuprobe(void)
+{
+	Proc *up;
+	Page *pg;
+	u8 *k, *u;
+	int ok;
+
+	up = externup();
+	pg = newpage(1, nil, 0, PGSZ, -1);
+	if(pg == nil){
+		printk("mmu user map FAILED (no page)\n");
+		return;
+	}
+	k = KADDR(pg->pa);
+	memset(k, 0x5a, PGSZ);
+	mmuput(0x10000000, pg, PTEVALID|PTEWRITE);
+
+	arm32mmuswitch(up->MMU.mmul1pa);
+	u = (u8*)0x10000000;
+	ok = u[0] == 0x5a && u[PGSZ/2] == 0x5a && u[PGSZ-1] == 0x5a;
+	arm32mmuswitch(0);
+
+	printk("mmu user map %s\n", ok? "ok": "FAILED");
+}
+
+extern char arm32userprog_start[], arm32userprog_end[];
+
+/*
+ * Copy the user program into a page, give it a stack and enter user mode.
+ * The process should come back through exits(0).
+ */
+static void
+userprobe(void *arg)
+{
+	Proc *up;
+	Page *code, *stack;
+	u32 n;
+
+	USED(arg);
+
+	up = externup();
+	code = newpage(1, nil, 0, PGSZ, -1);
+	stack = newpage(1, nil, 0, PGSZ, -1);
+	if(code == nil || stack == nil){
+		printk("user probe FAILED (no pages)\n");
+		return;
+	}
+	n = arm32userprog_end - arm32userprog_start;
+	memmove(KADDR(code->pa), arm32userprog_start, n);
+	mmuput(0x10000000, code, PTEVALID|PTEWRITE);
+	mmuput(0x3ff00000, stack, PTEVALID|PTEWRITE);
+
+	print("user probe: entering user mode\n");
+	arm32mmuswitch(up->MMU.mmul1pa);
+	arm32enteruser(0x10000000, 0x3ff00000 + PGSZ - 16);
+	print("user probe: returned from user mode\n");
+}
+
 static void
 ktest(void *arg)
 {
-	USED(arg);
-	for(;;){
-		Proc *up = externup();
+	Proc *up = externup();
+	int i;
 
+	USED(arg);
+	mmuprobe();
+	for(i = 0; i < 3; i++){
 		print("arm32: scheduler alive pid %d ticks %lud\n",
 			up->pid, sys->ticks);
-		delay(1000);
+		delay(100);
 	}
+	/* Ends with exits(0) from user mode. */
+	userprobe(nil);
+	print("arm32: user probe returned\n");
 }
 
 void
@@ -75,6 +143,7 @@ arm32kernelinit(void)
 	p->noswap = 1;
 	kprocchild(p, ktest, nil);
 	ready(p);
+
 
 	print("arm32: starting scheduler\n");
 	schedinit();

@@ -2,8 +2,8 @@
  * This file is part of the Harvey operating system. It is subject to the
  * GNU GPL v2 in the top-level LICENSE.gpl file.
  *
- * The exception frame the trap code builds and the port layer treats as
- * the saved user state.  Layout follows Plan 9's ARM port.
+ * The frame the SVC handler builds: r0-r12, the user bank's sp and lr,
+ * then the interrupted pc and psr.
  */
 #ifndef HARVEY_ARM_UREG_H
 #define HARVEY_ARM_UREG_H
@@ -24,11 +24,10 @@ struct Ureg {
 	u32	r10;
 	u32	r11;
 	u32	r12;
-	u32	sp;		/* r13 */
-	u32	lr;		/* r14 */
-	u32	pc;		/* r15 */
+	u32	sp;
+	u32	lr;
+	u32	pc;
 	u32	psr;
-	u32	type;
 };
 
 #endif

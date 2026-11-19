@@ -71,19 +71,19 @@ mmuprocinit(Proc *p)
 void
 mmuswitch(Proc *p)
 {
-	/* One address space until user processes are supported. */
-	USED(p);
+	arm32mmuswitch(p->MMU.mmul1pa);
 }
 
 void
 mmurelease(Proc *p)
 {
-	USED(p);
+	arm32mmurelease(p);
 }
 
 void
 mmuidle(void)
 {
+	arm32mmuswitch(0);
 }
 
 usize
@@ -109,14 +109,12 @@ setkernur(Ureg *r, Proc *p)
 void
 setregisters(Ureg *r, char *target, char *source, int n)
 {
-	u32 psr, type;
+	u32 psr;
 
 	psr = r->psr;
-	type = r->type;
 	memmove(target, source, n);
 	/* /proc/regs must not be able to change the mode. */
 	r->psr = (r->psr & ~0x1f) | (psr & 0x1f);
-	r->type = type;
 }
 
 void

@@ -170,12 +170,6 @@ arm32irqhandler(void)
 }
 
 void
-arm32svchandler(void)
-{
-	printk("arm32: unexpected svc\n");
-}
-
-void
 arm32unexpected(u32 pc)
 {
 	printk("arm32: unexpected exception at %p\n", pc);

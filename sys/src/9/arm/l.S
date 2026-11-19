@@ -122,17 +122,64 @@ arm32irq:
  */
 	.balign 4
 arm32svc:
-	push	{r0-r3, r12, lr}
-	bl	arm32svchandler
-	pop	{r0-r3, r12, lr}
-	movs	pc, lr
+	/*
+	 * SVC from user mode.  The S-bit form of STM/LDM (the ^ suffix)
+	 * accesses the user bank, which is how the user's r13/r14 reach
+	 * the Ureg without switching modes (CPS to user cannot be undone).
+	 *
+	 * Frame (low to high): r0-r12, sp, lr, type, pc, psr.
+	 */
+	srsdb	sp!, #0x13		/* user pc, psr */
+	cpsid	if, #0x13
+	sub	sp, sp, #(15*4)
+	stmia	sp, {r0-r14}^		/* user r0-r12, sp, lr */
+	mov	r0, sp
+	bl	arm32syscall
+	ldmia	sp, {r0-r14}^
+	add	sp, sp, #(15*4)		/* frame -> pc, psr */
+	rfeia	sp!
+
+/*
+ * void arm32enteruser(u32 entry, u32 sp)
+ *
+ * Enter user mode for the first time.  The SVC bank keeps the kernel
+ * stack; only the user bank's sp is set.
+ */
+	.balign 4
+	.global arm32enteruser
+arm32enteruser:
+	/*
+	 * Restore the user register bank from a zeroed frame (S-bit LDM
+	 * writes the user bank, including its sp), then return through
+	 * SPSR so the first fetch is from user memory.  Switching modes
+	 * with MSR would fetch the next instruction from kernel text,
+	 * which is mapped privileged-only.
+	 */
+	stmdb	sp!, {r0, r1}		/* entry, user sp */
+	sub	sp, sp, #(15*4)
+	mov	r2, #0
+	mov	r3, sp
+	mov	r4, #15
+1:	str	r2, [r3], #4
+	subs	r4, r4, #1
+	bne	1b
+	add	r5, sp, #(15*4)
+	ldr	r6, [r5, #4]		/* user sp */
+	str	r6, [sp, #(13*4)]
+	ldmia	sp, {r0-r14}^		/* user bank: r0-r12, sp, lr */
+	add	sp, sp, #(15*4)
+	ldr	r4, [sp]		/* entry */
+	mov	r5, #0x10		/* user mode, IRQs enabled */
+	msr	spsr_cxsf, r5
+	add	sp, sp, #8
+	movs	pc, r4
 
 	.balign 4
 arm32pabort:
-	mov	r0, lr
+	mov	r0, lr			/* faulting PC + 4 */
 	bl	arm32prefetchabort
-4:	wfi
-	b	4b
+2:	wfi
+	b	2b
 
 	.balign 4
 arm32dabort:
@@ -143,8 +190,8 @@ arm32dabort:
 	mov	r2, lr
 	cps	#0x17
 	bl	arm32dataabort
-5:	wfi
-	b	5b
+3:	wfi
+	b	3b
 
 /*
  * Coprocessor helpers.  Kept in assembly so the C code stays readable.
