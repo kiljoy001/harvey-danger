@@ -3,7 +3,10 @@
 Hardware reconnaissance for the Samsung Galaxy Tab E Lite / Tab 3 Lite
 (`SM-T113` Wi-Fi, `SM-T116` 3G), as a candidate Harvey target.
 
-**Status:** Phase 0 (source and hardware inventory) done. No device attached
+**Status:** Phase 0 (source and hardware inventory) done; Phase 1 started as
+the board-independent `sys/src/9/arm` ARMv7-A core, which now boots on QEMU
+`virt` (MMU, high vectors, PL011, GIC-400, timer, scheduler context switch).
+No device attached
 yet; the DTB, kernel source and reference ports are in hand.
 
 ## Device
