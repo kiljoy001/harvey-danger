@@ -160,6 +160,8 @@ def main() -> None:
                         str(ROOT / "sys/src/sysconf.json")],
                        check=True, stdout=subprocess.DEVNULL)
     CFLAGS.extend(["-I", str(out)])
+    if os.environ.get("ARM32DIAG") == "1":
+        CFLAGS.append("-DARM32DIAG=1")
 
     objects = []
     for name in SOURCES + ["systab.c"]:

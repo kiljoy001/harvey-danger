@@ -3,8 +3,9 @@
  * license terms of the GNU GPL v2 in LICENSE.gpl found in the top-level
  * directory of this distribution at http://www.gnu.org/licenses/gpl-2.0.txt
  *
- * The scheduler's coroutine primitive.  A Label is one saved stack; the
- * shared proc code stores one in each Proc and Mach.
+ * The scheduler's coroutine primitive.  A Label holds the stack pointer,
+ * the resume pc and the callee-saved registers, so resuming does not
+ * depend on anything still being intact on the stack.
  */
 #ifndef HARVEY_ARM_CONTEXT_H
 #define HARVEY_ARM_CONTEXT_H
@@ -12,6 +13,15 @@
 typedef struct Label Label;
 struct Label {
 	u32 sp;
+	u32 pc;
+	u32 r4;
+	u32 r5;
+	u32 r6;
+	u32 r7;
+	u32 r8;
+	u32 r9;
+	u32 r10;
+	u32 r11;
 };
 
 int slim_setlabel(Label *) __attribute__((returns_twice));

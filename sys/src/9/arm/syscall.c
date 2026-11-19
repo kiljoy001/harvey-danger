@@ -27,7 +27,7 @@ arm32syscall(Ureg *u)
 		panic("syscall without a process");
 	number = u->r7;
 	if(number == 8)		/* exits */
-		print("arm32: user process called exits(%d)\n", (int)u->r0);
+		diag("arm32: user process called exits(%d)\n", (int)u->r0);
 	up->dbgreg = u;
 	up->pc = u->pc;
 	up->scallnr = number;

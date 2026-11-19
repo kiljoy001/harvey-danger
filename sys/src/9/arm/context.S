@@ -22,13 +22,21 @@
  * int slim_setlabel(Label *l)
  *
  * Returns 0 on the initial call and 1 when gotolabel resumes the label.
+ * Nothing is pushed on the stack: the resume state lives in the Label.
  */
 	.balign 4
 	.global slim_setlabel
 slim_setlabel:
-	push	{r4-r11, lr}
-	sub	sp, sp, #4		/* keep the stack 8-byte aligned */
-	str	sp, [r0]
+	str	sp, [r0, #0]
+	str	lr, [r0, #4]
+	str	r4, [r0, #8]
+	str	r5, [r0, #12]
+	str	r6, [r0, #16]
+	str	r7, [r0, #20]
+	str	r8, [r0, #24]
+	str	r9, [r0, #28]
+	str	r10, [r0, #32]
+	str	r11, [r0, #36]
 	mov	r0, #0
 	bx	lr
 
@@ -38,35 +46,37 @@ slim_setlabel:
 	.balign 4
 	.global gotolabel
 gotolabel:
-	ldr	sp, [r0]
-	add	sp, sp, #4
-	mov	r0, #1			/* setlabel returns 1 when resumed */
-	pop	{r4-r11, pc}
+	ldr	sp, [r0, #0]
+	ldr	lr, [r0, #4]
+	ldr	r4, [r0, #8]
+	ldr	r5, [r0, #12]
+	ldr	r6, [r0, #16]
+	ldr	r7, [r0, #20]
+	ldr	r8, [r0, #24]
+	ldr	r9, [r0, #28]
+	ldr	r10, [r0, #32]
+	ldr	r11, [r0, #36]
+	mov	r0, #1
+	bx	lr
 
 /*
  * void labelstart(Label *l, void (*fn)(void), void *stacktop)
- *
- * Build the frame gotolabel expects: r4-r11, then the entry point
- * popped into pc.
  */
 	.balign 4
 	.global labelstart
 labelstart:
 	bic	r2, r2, #7
-	sub	r2, r2, #40		/* pad + 8 registers + pc */
 	mov	r3, #0
-	str	r3, [r2, #0]
-	str	r1, [r2, #36]
-	str	r3, [r2, #0]
-	str	r3, [r2, #4]
-	str	r3, [r2, #8]
-	str	r3, [r2, #12]
-	str	r3, [r2, #16]
-	str	r3, [r2, #20]
-	str	r3, [r2, #24]
-	str	r3, [r2, #28]
-	str	r3, [r2, #32]
-	str	r2, [r0]
+	str	r2, [r0, #0]
+	str	r1, [r0, #4]
+	str	r3, [r0, #8]
+	str	r3, [r0, #12]
+	str	r3, [r0, #16]
+	str	r3, [r0, #20]
+	str	r3, [r0, #24]
+	str	r3, [r0, #28]
+	str	r3, [r0, #32]
+	str	r3, [r0, #36]
 	bx	lr
 
 /*

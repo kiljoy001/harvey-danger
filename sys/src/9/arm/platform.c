@@ -387,3 +387,4 @@ void
 arm32ipi(void)
 {
 }
+

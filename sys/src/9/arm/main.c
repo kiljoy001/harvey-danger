@@ -118,8 +118,13 @@ printk(char *fmt, ...)
 			uartputc(*fmt);
 			continue;
 		}
-		switch(*++fmt){
+		fmt++;
+		/* skip Plan 9 length/format modifiers: %lud, %lux */
+		while(*fmt == 'l' || *fmt == 'u')
+			fmt++;
+		switch(*fmt){
 		case 'd':
+		case 'u':
 			putdec(__builtin_va_arg(ap, u32));
 			break;
 		case 'x':

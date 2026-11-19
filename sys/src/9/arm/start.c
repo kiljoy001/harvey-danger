@@ -92,9 +92,10 @@ ktest(void *arg)
 	USED(arg);
 	mmuprobe();
 	for(i = 0; i < 3; i++){
-		diag("arm32: scheduler alive pid %d ticks %lud\n",
-			up->pid, (ulong)sys->ticks);
+		diag("arm32: loop %d pid %d ticks %lud\n",
+			i, up->pid, (ulong)sys->ticks);
 		tsleep(&up->sleep, return0, 0, 100);
+		diag("arm32: woke %d ticks %d\n", i, (int)sys->ticks);
 	}
 	/* Ends with exits(0) from user mode. */
 	userprobe(nil);
