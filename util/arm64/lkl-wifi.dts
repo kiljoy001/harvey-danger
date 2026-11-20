@@ -24,6 +24,13 @@
 		#address-cells = <0>;
 	};
 
+	/* Marker for the UWE5622 OTT probe: the Unisoc Wi-Fi driver
+	 * only creates its platform device when this node is present,
+	 * so Bengal guests (no such chip) skip the SDIO probe. */
+	uwe5622-wifi {
+		compatible = "sprd,unisoc-wifi-ott";
+	};
+
 	mmc@fe2c0000 {
 		compatible = "rockchip,rk3568-dw-mshc", "rockchip,rk3288-dw-mshc";
 		reg = <0x0 0xfe2c0000 0x0 0x4000>;

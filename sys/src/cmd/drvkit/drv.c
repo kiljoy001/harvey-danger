@@ -283,11 +283,15 @@ drvdmamap(Drv *d)
 
 	if(d->dmava != nil)
 		return 0;
+	print("drvdma: map readnum\n");
 	d->dmabase = readnum("#P/dma/base");
 	d->dmasize = readnum("#P/dma/size");
+	print("drvdma: map base=0x%llux size=0x%llux\n", d->dmabase, d->dmasize);
 	if(d->dmasize == 0)
 		return -1;
+	print("drvdma: map segattach\n");
 	m = segattach(0, "dma", 0, d->dmasize);
+	print("drvdma: map segattach done m=%p\n", m);
 	if(m == (void *)-1){
 		d->dmasize = 0;
 		return -1;
@@ -308,19 +312,24 @@ drvdma(Drv *d, u64 size, u64 align, u64 *pa)
 	int fd, n;
 	u64 p;
 
+	print("drvdma: alloc open size=0x%llux\n", size);
 	if((fd = open("#P/dma/alloc", ORDWR)) < 0)
 		return nil;
 	snprint(buf, sizeof buf, "%llud %llud\n", size, align);
+	print("drvdma: alloc write\n");
 	if(write(fd, buf, strlen(buf)) != strlen(buf)){
 		close(fd);
 		return nil;
 	}
+	print("drvdma: alloc pread\n");
 	n = pread(fd, buf, sizeof buf - 1, 0);
 	close(fd);
+	print("drvdma: alloc pread done n=%d\n", n);
 	if(n <= 0)
 		return nil;
 	buf[n] = 0;
 	p = strtoull(buf, nil, 0);
+	print("drvdma: alloc pa=0x%llux\n", p);
 
 	if(d->dmava == nil && drvdmamap(d) < 0)
 		return nil;

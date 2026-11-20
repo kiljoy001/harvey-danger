@@ -17,24 +17,30 @@ struct Driver {
 	char *prog;	/* /boot program that owns this class */
 	char *srv;	/* /srv/<name> the program posts */
 	char *arg;	/* optional single argument */
+	char *compat;	/* required substring of a node's compatible, or nil */
 };
 
 /* Universal class -> program registry.  One program serves every instance of
- * its class; the program discovers its instances itself through #P. */
+ * its class; the program discovers its instances itself through #P.
+ * The compat gate keeps a SoC-specific program (the Rockchip drivers)
+ * from being launched for another SoC's node that merely shares the
+ * class name: a Qualcomm QRNG is class "rng" but must never receive
+ * Rockchip RNG register writes.  Observed on borneo (SM6115), where
+ * gpio/gpu/i2c/rng/tsadc/spi/usb all collided this way. */
 static Driver drivers[] = {
-	{ "uart",	"/boot/uartfs",	"uart", nil },
-	{ "gpio",	"/boot/gpiofs",	"gpio", nil },
-	{ "gpu",	"/boot/gpufs",	"gpu", nil },
-	{ "i2c",	"/boot/i2cfs",	"i2c", nil },
-	{ "rng",	"/boot/rngfs",	"rng", nil },
-	{ "wdt",	"/boot/wdtfs",	"wdt", nil },
-	{ "saradc",	"/boot/saradcfs",	"saradc", nil },
-	{ "tsadc",	"/boot/tsadcfs",	"tsadc", nil },
-	{ "pwm",	"/boot/pwmfs",	"pwm", nil },
-	{ "spi",	"/boot/spifs",	"spi", nil },
-	{ "sfc",	"/boot/sfcs",	"sfc", nil },
-	{ "usb",	"/boot/usbpower",	"usbpower", nil },
-	{ nil,	nil,	nil },
+	{ "uart",	"/boot/uartfs",	"uart", nil, nil },
+	{ "gpio",	"/boot/gpiofs",	"gpio", nil, "rockchip," },
+	{ "gpu",	"/boot/gpufs",	"gpu", nil, "arm,mali" },
+	{ "i2c",	"/boot/i2cfs",	"i2c", nil, "rockchip," },
+	{ "rng",	"/boot/rngfs",	"rng", nil, "rockchip," },
+	{ "wdt",	"/boot/wdtfs",	"wdt", nil, "rockchip," },
+	{ "saradc",	"/boot/saradcfs",	"saradc", nil, "rockchip," },
+	{ "tsadc",	"/boot/tsadcfs",	"tsadc", nil, "rockchip," },
+	{ "pwm",	"/boot/pwmfs",	"pwm", nil, "rockchip," },
+	{ "spi",	"/boot/spifs",	"spi", nil, "rockchip," },
+	{ "sfc",	"/boot/sfcs",	"sfc", nil, "rockchip," },
+	{ "usb",	"/boot/usbpower",	"usbpower", nil, "rockchip," },
+	{ nil,	nil,	nil, nil, nil },
 };
 
 /* Drivers for devices that are not #P classes: they sit on top of another
@@ -143,8 +149,9 @@ void
 main(int argc, char **argv)
 {
 	uchar dirbuf[16384];
-	char strs[512], path[128], cls[32], srvpath[64];
+	char strs[512], path[128], cls[32], comp[128], srvpath[64];
 	char present[32][24];
+	char presentcompat[32][160];
 	int npresent, fd, i, j;
 	long n, m;
 	Dir d;
@@ -186,8 +193,24 @@ main(int argc, char **argv)
 		for(j = 0; j < npresent; j++)
 			if(strcmp(present[j], cls) == 0)
 				break;
-		if(j == npresent && npresent < (int)(sizeof present / sizeof present[0]))
-			strcpy(present[npresent++], cls);
+		if(j == npresent && npresent < (int)(sizeof present / sizeof present[0])){
+			strcpy(present[npresent], cls);
+			presentcompat[npresent][0] = 0;
+			npresent++;
+		}
+		if(j < npresent){
+			snprint(path, sizeof path, "#P/%s/compatible", d.name);
+			if(readfile(path, comp, sizeof comp) >= 0){
+				for(m = 0; comp[m] != 0 && comp[m] != '\n'; m++)
+					;
+				comp[m] = 0;
+				if(strlen(presentcompat[j]) + strlen(comp) + 2 <
+				   sizeof presentcompat[j]){
+					strcat(presentcompat[j], comp);
+					strcat(presentcompat[j], " ");
+				}
+			}
+		}
 	}
 	for(i = 0; drivers[i].class != nil; i++){
 		for(j = 0; j < npresent; j++)
@@ -196,6 +219,13 @@ main(int argc, char **argv)
 		if(j == npresent)
 			continue;
 		drv = &drivers[i];
+		if(drv->compat != nil &&
+		   strstr(presentcompat[j], drv->compat) == nil){
+			say("HARVEY-ARM64 DRVMAN ");
+			say(drv->class);
+			say(" SKIP incompatible\n");
+			continue;
+		}
 		snprint(srvpath, sizeof srvpath, "/srv/%s", drv->srv);
 		if(launch(drv) < 0){
 			say("HARVEY-ARM64 DRVMAN ");

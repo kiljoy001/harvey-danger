@@ -107,6 +107,36 @@ def build(out: Path, lkl_o: Path, lkl_inc: Path, libc: Path) -> Path:
     run(cflags + ["-I", str(src), "-c", str(tables), "-o", str(obj)])
     objects.append(obj)
 
+    # Firmware blobs under util/arm64/fw/ are embedded and staged by
+    # lkl9p into the guest /lib/firmware/<relative path>, so Linux
+    # request_firmware works without a guest rootfs image.
+    fwdir = ROOT / "util/arm64/fw"
+    fwfiles = sorted(p for p in fwdir.rglob("*") if p.is_file()) \
+        if fwdir.is_dir() else []
+    fwasm = out / "lkl-fw.S"
+    fwasm.write_text(".section .rodata\n" + "".join(
+        f".balign 8\n.global lklfw_{i}\n.global lklfw_{i}_end\n"
+        f"lklfw_{i}:\n\t.incbin \"{p.relative_to(fwdir)}\"\n"
+        f"lklfw_{i}_end:\n"
+        for i, p in enumerate(fwfiles)))
+    obj = out / "lkl-fw.o"
+    run([CC, "--target=aarch64-none-elf", "-c", "-I", str(fwdir),
+         str(fwasm), "-o", str(obj)])
+    objects.append(obj)
+    fwtables = out / "lkl-fw-tables.c"
+    fwtables.write_text(
+        "#include <u.h>\n#include \"lklfw.h\"\n" +
+        "".join(f"extern uchar lklfw_{i}[], lklfw_{i}_end[];\n"
+                for i in range(len(fwfiles))) +
+        "Lklfw lklfwfiles[] = {\n" + "\n".join(
+            f'\t{{"/lib/firmware/{p.relative_to(fwdir)}", '
+            f'lklfw_{i}, lklfw_{i}_end}},'
+            for i, p in enumerate(fwfiles)) + "\n};\n"
+        f"int nlklfwfiles = {len(fwfiles)};\n")
+    obj = out / "lkl-fw-tables.o"
+    run(cflags + ["-I", str(src), "-c", str(fwtables), "-o", str(obj)])
+    objects.append(obj)
+
     script = out / "lkl.ld"
     script.write_text(f"""ENTRY(_main)
 PHDRS {{

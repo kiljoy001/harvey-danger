@@ -209,6 +209,24 @@ arm64usertrap1(Arm64ureg *r)
 				else
 					print("ARM64 repeat fault unmapped\n");
 			}
+			if(faultrepeat >= 1000){
+				/*
+				 * The mapping exists but the access keeps
+				 * aborting (bus error on a device page, e.g.
+				 * a register in a powered-down block).
+				 * fault() below would keep "succeeding" and
+				 * retry the instruction forever, wedging
+				 * the proc and its console.  Kill it instead.
+				 * Seen with adrenofs reading GPU registers
+				 * on SM6115 before clocks/GDSC came up.
+				 */
+				print("ARM64 repeat fault pid %d %s: killing after %u aborts far %#p pc %#p\n",
+				      p->pid, p->text, faultrepeat, r->far, r->elr);
+				faultrepeat = 0;
+				lastfaultfar = 0;
+				lastfaultpc = 0;
+				pexit("user fault: repeat abort", 1);
+			}
 		}else{
 			lastfaultfar = r->far;
 			lastfaultpc = r->elr;

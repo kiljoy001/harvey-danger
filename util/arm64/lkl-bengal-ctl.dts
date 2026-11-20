@@ -93,19 +93,30 @@
 			};
 		};
 
-		dwc3@4e00000 {
-			compatible = "snps,dwc3";
-			reg = <0x0 0x4e00000 0x0 0xcd00>;
-			interrupt-parent = <&gic>;
-			interrupts = <0 255 4>;
-			dr_mode = "peripheral";
-			maximum-speed = "high-speed";
-			snps,disable-clk-gating;
-			snps,dis_u2_susphy_quirk;
-			snps,dis_enblslpm_quirk;
-			snps,has-lpm-erratum;
-			snps,hird-threshold = [10];
+		ssusb@4ef8800 {
+			compatible = "qcom,dwc3";
+			reg = <0x0 0x4ef8800 0x0 0x400>;
+			#address-cells = <2>;
+			#size-cells = <2>;
+			ranges;
+			qcom,select-utmi-as-pipe-clk;
 			status = "okay";
+
+			dwc3@4e00000 {
+				compatible = "snps,dwc3";
+				reg = <0x0 0x4e00000 0x0 0xcd00>;
+				interrupt-parent = <&gic>;
+				interrupts = <0 255 4>;
+				dr_mode = "peripheral";
+				maximum-speed = "high-speed";
+				tx-fifo-resize;
+				snps,disable-clk-gating;
+				snps,dis_u2_susphy_quirk;
+				snps,dis_enblslpm_quirk;
+				snps,has-lpm-erratum;
+				snps,hird-threshold = [10];
+				status = "okay";
+			};
 		};
 	};
 };

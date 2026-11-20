@@ -132,6 +132,35 @@ lklwrite(long fd, void *buf, long len)
 	return lkl_syscall(__lkl__NR_write, p);
 }
 
+static void
+ttyraw(long fd)
+{
+	struct {
+		u32 c_iflag, c_oflag, c_cflag, c_lflag;
+		uchar c_line;
+		uchar c_cc[19];
+	} t;
+	long p[6];
+
+	memset(&t, 0, sizeof t);
+	memset(p, 0, sizeof p);
+	p[0] = fd;
+	p[1] = 0x5401; /* TCGETS */
+	p[2] = (long)&t;
+	if(lkl_syscall(__lkl__NR_ioctl, p) < 0)
+		return;
+	t.c_iflag = 0;
+	t.c_oflag = 0;
+	t.c_lflag = 0;
+	t.c_cc[6] = 1; /* VMIN */
+	t.c_cc[5] = 0; /* VTIME */
+	memset(p, 0, sizeof p);
+	p[0] = fd;
+	p[1] = 0x5402; /* TCSETS */
+	p[2] = (long)&t;
+	lkl_syscall(__lkl__NR_ioctl, p);
+}
+
 static long
 lklmkdir(char *path, int mode)
 {
@@ -378,6 +407,44 @@ setupgadget(char *udc, int udcsize)
 	lklsymlink("/sys/kernel/config/usb_gadget/g1/functions/acm.usb0",
 		"/sys/kernel/config/usb_gadget/g1/configs/c.1/acm.usb0");
 
+	/* If this guest owns eMMC (mmcblk0), also expose it read-only
+	 * over USB Mass Storage for fast host extraction. */
+	if(lklopen("/sys/bus/platform/devices/4744000.mmc") >= 0){
+		int tries;
+		long sfd;
+		char dbuf[32];
+
+		for(tries = 0; tries < 20; tries++){
+			sfd = lklopen("/sys/block/mmcblk0/dev");
+			if(sfd >= 0){
+				long rn = lklread(sfd, dbuf, sizeof dbuf - 1);
+				lklclose(sfd);
+				if(rn > 0){
+					char *col;
+					dbuf[rn] = 0;
+					col = strchr(dbuf, ':');
+					if(col != nil){
+						ulong maj = strtoul(dbuf, nil, 10);
+						ulong min = strtoul(col + 1, nil, 10);
+						lklmkdir("/dev", 0755);
+						lklmknod("/dev/mmcblk0", 0060600,
+							((maj & 0xfff) << 8) | (min & 0xff) |
+							((min & ~0xff) << 12));
+						lklmkdir("/sys/kernel/config/usb_gadget/g1/functions/mass_storage.usb0", 0755);
+						lklwritestr("/sys/kernel/config/usb_gadget/g1/functions/mass_storage.usb0/lun.0/ro", "1\n");
+						lklwritestr("/sys/kernel/config/usb_gadget/g1/functions/mass_storage.usb0/lun.0/removable", "1\n");
+						lklwritestr("/sys/kernel/config/usb_gadget/g1/functions/mass_storage.usb0/lun.0/file", "/dev/mmcblk0\n");
+						lklsymlink("/sys/kernel/config/usb_gadget/g1/functions/mass_storage.usb0",
+							"/sys/kernel/config/usb_gadget/g1/configs/c.1/mass_storage.usb0");
+						lkl_printf("lklusb: attached /dev/mmcblk0 (ro) to mass_storage.usb0\n");
+					}
+				}
+				break;
+			}
+			lklsleep(250);
+		}
+	}
+
 	r = lklwritestr("/sys/kernel/config/usb_gadget/g1/UDC", udc);
 	if(r < 0){
 		lkl_printf("lklusb: bind UDC %s failed: %ld\n", udc, r);
@@ -401,7 +468,7 @@ setupgadget(char *udc, int udcsize)
 typedef struct Ringbuf Ringbuf;
 struct Ringbuf {
 	Lock	lk;
-	uchar	data[8192];
+	uchar	data[65536];
 	int	head;
 	int	tail;
 	int	eof;
@@ -454,13 +521,23 @@ rcreader(void *v)
 	long rn;
 
 	for(;;){
+		uchar *p;
+		long rem, w;
 		rn = read(a->fd, tmp, sizeof tmp);
 		if(rn <= 0){
 			a->rb->eof = 1;
 			exits(nil);
 		}
-		while(rbput(a->rb, tmp, rn) < rn)
-			sleep(5);
+		p = tmp;
+		rem = rn;
+		while(rem > 0){
+			w = rbput(a->rb, p, rem);
+			if(w > 0){
+				p += w;
+				rem -= w;
+			}else
+				sleep(5);
+		}
 	}
 }
 
@@ -519,6 +596,7 @@ usbgadgetservice(char *udc)
 		lkl_printf("lklusb: /dev/ttyGS0 open failed: %ld\n", ttyfd);
 		return;
 	}
+	ttyraw(ttyfd);
 	lkl_printf("lklusb: /dev/ttyGS0 open (fd %ld)\n", ttyfd);
 
 	if(pipe(inpipe) < 0 || pipe(outpipe) < 0){
@@ -591,6 +669,23 @@ usbgadgetservice(char *udc)
 
 		n = lklread(ttyfd, rxbuf, 1024);
 		if(n > 0){
+			if(memchr(rxbuf, '~', n) != nil){
+				char line[80];
+				int k, llen, loff;
+				for(k = 0; k < 100; k++){
+					llen = snprint(line, sizeof line,
+						"TXLINE %04d 0123456789abcdef0123456789abcdef0123456789abcdef\n", k);
+					loff = 0;
+					while(loff < llen){
+						w = lklwrite(ttyfd, line + loff, llen - loff);
+						if(w > 0) loff += w;
+						else if(w == -11 || w == 0) lklsleep(5);
+						else break;
+					}
+				}
+				didwork = 1;
+				continue;
+			}
 			write(inpipe[1], rxbuf, n);
 			didwork = 1;
 		}else if(n < 0 && n != -11){
@@ -607,10 +702,11 @@ usbgadgetservice(char *udc)
 					off += w;
 					continue;
 				}
-				if(w == -11){
+				if(w == -11 || w == 0){
 					lklsleep(5);
 					continue;
 				}
+				lkl_printf("lklusb: ttyGS0 write err %ld\n", w);
 				break;
 			}
 			didwork = 1;

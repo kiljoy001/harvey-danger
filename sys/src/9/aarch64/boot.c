@@ -699,6 +699,7 @@ arm64kernelstart(Fdtinfo *info)
 	addbootfile("rc", (u8 *)arm64rcelf, sizeof(arm64rcelf));
 	addbootfile("echo", (u8 *)arm64echoelf, sizeof(arm64echoelf));
 	addbootfile("cat", (u8 *)arm64catelf, sizeof(arm64catelf));
+	addbootfile("b64", (u8 *)arm64b64elf, sizeof(arm64b64elf));
 	addbootfile("ls", (u8 *)arm64lself, sizeof(arm64lself));
 	addbootfile("rtc", (u8 *)arm64rtcelf, sizeof(arm64rtcelf));
 	addbootfile("emmc", (u8 *)arm64emmcelf, sizeof(arm64emmcelf));

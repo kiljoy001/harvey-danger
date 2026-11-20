@@ -236,6 +236,7 @@ probe_regs(Adreno *a)
 static void
 a610_hw_init(Adreno *a)
 {
+	print("adrenofs: hw_init gbif\n");
 	/* A610 GBIF/VBIF QoS */
 	gwr(a, RegGbifQsbSide0, 0x00071620);
 	gwr(a, RegGbifQsbSide1, 0x00071620);
@@ -243,7 +244,9 @@ a610_hw_init(Adreno *a)
 	gwr(a, RegGbifQsbSide3, 0x00071620);
 	gwr(a, RegRbbmClientQos, 0x3);
 	gwr(a, RegGbifHalt, 0x0);
+	print("adrenofs: hw_init gbif done\n");
 
+	print("adrenofs: hw_init hwcg\n");
 	/* A610 HWCG (skipping GMU_GX registers per A610 errata) */
 	gwr(a, RegRbbmClockCntlSp0, 0x22222222);
 	gwr(a, RegRbbmClockCntl2Sp0, 0x02222220);
@@ -259,7 +262,9 @@ a610_hw_init(Adreno *a)
 	gwr(a, RegRbbmClockCntlUche, 0x22222222);
 	gwr(a, RegRbbmIsdbCnt, 0x00000182);
 	gwr(a, RegRbbmClockCntl, 0xaaa8aa82);
+	print("adrenofs: hw_init hwcg done\n");
 
+	print("adrenofs: hw_init uche/cp\n");
 	/* UCHE & CP A610 sizing */
 	gwr(a, RegUcheFilterCntl, 0x804);
 	gwr(a, RegUcheCacheWays, 0x4);
@@ -267,6 +272,7 @@ a610_hw_init(Adreno *a)
 	gwr(a, RegCpRoqThresholds1, 0x40201b16);
 	gwr(a, RegCpMemPoolSize, 48);
 	gwr(a, RegCpMemPoolDbgAddr, 47);
+	print("adrenofs: hw_init uche/cp done\n");
 }
 
 static int
@@ -278,12 +284,15 @@ sqe_test(Adreno *a)
 	int i;
 
 	a->sqeok = 0;
-	if(!a->powered && power_on(a) < 0)
-		return -1;
 
+	print("adrenofs: sqe stage dma alloc sqe\n");
 	sqe = drvdma(&a->gpu, 64*1024, 4096, &sqepa);
+	print("adrenofs: sqe stage dma alloc rb\n");
 	rb = drvdma(&a->gpu, RbSize, 4096, &rbpa);
+	print("adrenofs: sqe stage dma alloc mem\n");
 	memptrs = drvdma(&a->gpu, 4096, 4096, &mempa);
+	print("adrenofs: sqe stage dma done sqe=%p rb=%p mem=%p\n",
+		sqe, rb, memptrs);
 	if(sqe == nil || rb == nil || memptrs == nil){
 		snprint(a->why, sizeof a->why, "drvdma failed: %r");
 		return -1;
@@ -294,10 +303,27 @@ sqe_test(Adreno *a)
 	memset(memptrs, 0, 4096);
 	fencepa = mempa + 64;
 
+	print("adrenofs: sqe stage cache clean\n");
 	drvdmacache(DrvClean, sqepa, sizeof a630_sqe_fw);
+	print("adrenofs: sqe stage cache sqe done\n");
 	drvdmacache(DrvClean, mempa, 4096);
+	print("adrenofs: sqe stage cache mem done\n");
+	/* Power up only after the DMA arena is attached: on boot13
+	 * segattach("dma") wedged the console when it ran after
+	 * power_on's GPUCC register writes (adrenofs -d, which never
+	 * powers the GPU, attaches the same arena cleanly). */
+	print("adrenofs: sqe stage power_on\n");
+	if(power_on(a) < 0){
+		drvdmafree(sqepa, 64*1024);
+		drvdmafree(rbpa, RbSize);
+		drvdmafree(mempa, 4096);
+		return -1;
+	}
+	probe_regs(a);
+	print("adrenofs: sqe stage hw_init\n");
 
 	a610_hw_init(a);
+	print("adrenofs: sqe stage rb/sqe program\n");
 
 	/* Program RB0 and SQE microcode */
 	gwr(a, RegCpRbBase, (u32int)rbpa);
@@ -332,8 +358,10 @@ sqe_test(Adreno *a)
 	rb[wptr++] = (u32int)(fencepa >> 32);
 	rb[wptr++] = 0x1337beef;
 
+	print("adrenofs: sqe stage hw_init done, submitting ring\n");
 	drvdmacache(DrvClean, rbpa, wptr * 4);
 	gwr(a, RegCpRbWptr, wptr);
+	print("adrenofs: sqe stage ring submitted, waiting fence\n");
 
 	for(i = 0; i < 500; i++){
 		drvdmacache(DrvInval, mempa, 4096);
@@ -348,11 +376,49 @@ sqe_test(Adreno *a)
 	}
 	a->rbbm_status = grd(a, RegRbbmStatus);
 	a->rbbm_int0 = grd(a, RegRbbmInt0Status);
+	print("adrenofs: sqe stage wait done sqeok=%d rptr=%ud wptr=%ud fence=0x%ux rbbm=0x%ux int0=0x%ux\n",
+		a->sqeok, a->rb_rptr, a->rb_wptr, a->fence_val,
+		a->rbbm_status, a->rbbm_int0);
+	if(!a->sqeok)
+		snprint(a->why, sizeof a->why,
+			"sqe fence timeout rptr=%ud wptr=%ud fence=0x%ux rbbm=0x%ux",
+			a->rb_rptr, a->rb_wptr, a->fence_val, a->rbbm_status);
 
 	drvdmafree(sqepa, 64*1024);
 	drvdmafree(rbpa, RbSize);
 	drvdmafree(mempa, 4096);
 	return a->sqeok ? 0 : -1;
+}
+
+/*
+ * DMA-only probe (-d): allocate, map, touch and free one buffer
+ * through #P/dma without powering the GPU.  Isolates the drvkit
+ * DMA path (alloc write, arena segattach, cache op) that wedged
+ * the console at "sqe stage dma" on boot8.
+ */
+static int
+dma_probe(Adreno *a)
+{
+	u32int *buf;
+	u64int pa;
+	int i;
+
+	print("adrenofs: dma probe alloc\n");
+	buf = drvdma(&a->gpu, 64*1024, 4096, &pa);
+	print("adrenofs: dma probe alloc done buf=%p pa=0x%llux\n", buf, pa);
+	if(buf == nil){
+		snprint(a->why, sizeof a->why, "drvdma failed: %r");
+		return -1;
+	}
+	for(i = 0; i < 1024; i++)
+		buf[i] = 0x5a000000 | i;
+	print("adrenofs: dma probe touch done buf[1023]=0x%ux\n", buf[1023]);
+	drvdmacache(DrvClean, pa, 4096);
+	print("adrenofs: dma probe cache clean done\n");
+	drvdmafree(pa, 64*1024);
+	print("adrenofs: dma probe free done\n");
+	snprint(a->why, sizeof a->why, "ok");
+	return 0;
 }
 
 static int
@@ -456,7 +522,7 @@ static DrvFile files[] = {
 static void
 usage(void)
 {
-	fprint(2, "usage: adrenofs [-i] [-t]\n");
+	fprint(2, "usage: adrenofs [-i] [-t] [-d]\n");
 	exits("usage");
 }
 
@@ -464,7 +530,7 @@ void
 main(int argc, char **argv)
 {
 	DrvSrv *s;
-	int info = 0, test = 0;
+	int info = 0, test = 0, dmaprobe = 0;
 	char buf[1024];
 
 	ARGBEGIN{
@@ -474,26 +540,47 @@ main(int argc, char **argv)
 	case 't':
 		test = 1;
 		break;
+	case 'd':
+		dmaprobe = 1;
+		break;
 	default:
 		usage();
 	}ARGEND
 	if(argc != 0)
 		usage();
 
-	if(drvfind(&adreno.gpu, "gpu", 0) == 0 && drvmap(&adreno.gpu) == 0)
+	print("adrenofs: stage find gpu\n");
+	if(drvfindexact(&adreno.gpu, "qcom,kgsl-3d0@5900000") == 0 &&
+	   drvmap(&adreno.gpu) == 0)
 		adreno.hasgpu = 1;
+	print("adrenofs: stage find gpucc hasgpu=%d\n", adreno.hasgpu);
 	if(drvfindexact(&adreno.gpucc, "qcom,gpucc@5990000") == 0 &&
 	   drvmap(&adreno.gpucc) == 0)
 		adreno.hasgpucc = 1;
-	if(drvfind(&adreno.iommu, "iommu", 0) == 0 && drvmap(&adreno.iommu) == 0)
+	print("adrenofs: stage find iommu hasgpucc=%d\n", adreno.hasgpucc);
+	if(drvfindexact(&adreno.iommu, "qcom,kgsl-iommu@59a0000") == 0 &&
+	   drvmap(&adreno.iommu) == 0)
 		adreno.hasiommu = 1;
+	print("adrenofs: stage find gcc hasiommu=%d\n", adreno.hasiommu);
 	if(drvfindexact(&adreno.gcc, "qcom,gcc@1400000") == 0 &&
 	   drvmap(&adreno.gcc) == 0)
 		adreno.hasgcc = 1;
+	print("adrenofs: stage found hasgpu=%d hasgpucc=%d hasgcc=%d\n",
+		adreno.hasgpu, adreno.hasgpucc, adreno.hasgcc);
 
-	if(adreno.hasgpu && adreno.hasgpucc){
+	if(dmaprobe){
+		int rc = dma_probe(&adreno);
+
+		print("HARVEY-ARM64 ADRENO DMA %s\n", rc == 0 ? "PASS" : "FAIL");
+		exits(rc == 0 ? nil : "dma");
+	}
+
+	if(adreno.hasgpu && adreno.hasgpucc && !test){
+		print("adrenofs: stage power_on\n");
 		power_on(&adreno);
+		print("adrenofs: stage probe_regs powered=%d\n", adreno.powered);
 		probe_regs(&adreno);
+		print("adrenofs: stage probed\n");
 	}
 	if(test)
 		sqe_test(&adreno);

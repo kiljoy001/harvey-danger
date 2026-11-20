@@ -17,6 +17,7 @@
 #include <fcall.h>
 #include <thread.h>
 #include <9p.h>
+#include "lklfw.h"
 
 extern long	lkl_syscall(long, long*);
 extern int	lkl_printf(const char*, ...);
@@ -49,6 +50,7 @@ proccreate(void (*fn)(void*), void *arg, uint stack)
 }
 
 enum {
+	LklNrIoctl	= 29,
 	LklNrMknodat	= 33,
 	LklNrMkdirat	= 34,
 	LklNrUnlinkat	= 35,
@@ -503,6 +505,22 @@ doopen(Req *r, LklFid *lf)
 		respond(r, lklerr(-fd));
 		return;
 	}
+	if(strcmp(lf->path, "/dev/ttyGS0") == 0){
+		struct {
+			u32 c_iflag, c_oflag, c_cflag, c_lflag;
+			uchar c_line;
+			uchar c_cc[19];
+		} t;
+		memset(&t, 0, sizeof t);
+		if(sys0(LklNrIoctl, fd, 0x5401, (long)&t, 0, 0, 0) >= 0){
+			t.c_iflag = 0;
+			t.c_oflag = 0;
+			t.c_lflag = 0;
+			t.c_cc[6] = 1;
+			t.c_cc[5] = 0;
+			sys0(LklNrIoctl, fd, 0x5402, (long)&t, 0, 0, 0);
+		}
+	}
 	lf->fd = fd;
 	respond(r, nil);
 }
@@ -658,6 +676,24 @@ dowrite(Req *r, LklFid *lf, WorkItem *wi)
 			return;
 		}
 		r->ofcall.count = (u32)n;
+		respond(r, nil);
+		return;
+	}
+	if(r->ifcall.count >= 6 && memcmp(r->ifcall.data, "TXTEST", 6) == 0){
+		char line[80];
+		int k, llen, loff;
+		for(k = 0; k < 100; k++){
+			llen = snprint(line, sizeof line,
+				"TXLINE %04d 0123456789abcdef0123456789abcdef0123456789abcdef\n", k);
+			loff = 0;
+			while(loff < llen){
+				n = sys0(LklNrWrite, lf->fd, (long)(line + loff), llen - loff, 0, 0, 0);
+				if(n > 0) loff += n;
+				else if(n == -LklEagain) sleep(5);
+				else break;
+			}
+		}
+		r->ofcall.count = r->ifcall.count;
 		respond(r, nil);
 		return;
 	}
@@ -929,6 +965,96 @@ rebootwatch(void *arg)
 }
 
 static void
+mkblocknodes(void *arg)
+{
+	static char *names[] = {
+		"mmcblk0", "mmcblk0boot0", "mmcblk0boot1",
+	};
+	int tries, i;
+	char spath[96], npath[96], dbuf[32];
+
+	USED(arg);
+	lklmkdirat(LklAtFdcwd, "/dev", 0755);
+	for(tries = 0; tries < 120; tries++){
+		int missing = 0;
+
+		for(i = -77; i < (int)nelem(names); i++){
+			long sfd, n;
+			unsigned int maj, min;
+			char *colon, name[32];
+
+			if(i < 0)
+				snprint(name, sizeof name, "mmcblk0p%d", -i);
+			else
+				snprint(name, sizeof name, "%s", names[i]);
+			snprint(npath, sizeof npath, "/dev/%s", name);
+			sfd = lklopenat(LklAtFdcwd, npath, LklOrdonly, 0);
+			if(sfd >= 0){
+				lklclose(sfd);
+				continue;
+			}
+			snprint(spath, sizeof spath,
+				"/sys/class/block/%s/dev", name);
+			sfd = lklopenat(LklAtFdcwd, spath, LklOrdonly, 0);
+			if(sfd < 0){
+				/* partitions appear after the card */
+				if(i >= 0)
+					missing = 1;
+				continue;
+			}
+			n = sys0(LklNrRead, sfd, (long)dbuf,
+				 sizeof dbuf - 1, 0, 0, 0);
+			lklclose(sfd);
+			if(n <= 0)
+				continue;
+			dbuf[n] = 0;
+			colon = strchr(dbuf, ':');
+			if(colon == nil)
+				continue;
+			maj = strtoul(dbuf, nil, 10);
+			min = strtoul(colon + 1, nil, 10);
+			/* Linux dev_t encoding, as for input nodes */
+			n = sys0(LklNrMknodat, LklAtFdcwd, (long)npath, 0060600,
+			     ((maj & 0xfff) << 8) | (min & 0xff) |
+			     ((min & ~0xff) << 12), 0, 0);
+			lkl_printf("lkl9p: mknod %s (%ud:%ud) -> %ld\n",
+				   npath, maj, min, n);
+		}
+		if(!missing)
+			break;
+		sleep(500);
+	}
+	/* Read-only mount of Bengal firmware partitions when present. */
+	{
+		long pfd = lklopenat(LklAtFdcwd, "/dev/mmcblk0p31", LklOrdonly, 0);
+		if(pfd >= 0){
+			long r;
+
+			lklclose(pfd);
+			lklmkdirat(LklAtFdcwd, "/fw", 0555);
+			lklmkdirat(LklAtFdcwd, "/fw/modem", 0555);
+			lklmkdirat(LklAtFdcwd, "/fw/bt", 0555);
+			lklmkdirat(LklAtFdcwd, "/fw/dsp", 0555);
+			r = sys0(LklNrMount, (long)"/dev/mmcblk0p31", (long)"/fw/modem",
+				 (long)"vfat", 1, 0, 0);
+			if(r < 0)
+				r = sys0(LklNrMount, (long)"/dev/mmcblk0p31",
+					 (long)"/fw/modem", (long)"ext4", 1, 0, 0);
+			lkl_printf("lkl9p: mount /fw/modem -> %ld\n", r);
+			r = sys0(LklNrMount, (long)"/dev/mmcblk0p33", (long)"/fw/bt",
+				 (long)"vfat", 1, 0, 0);
+			if(r < 0)
+				r = sys0(LklNrMount, (long)"/dev/mmcblk0p33",
+					 (long)"/fw/bt", (long)"ext4", 1, 0, 0);
+			lkl_printf("lkl9p: mount /fw/bt -> %ld\n", r);
+			r = sys0(LklNrMount, (long)"/dev/mmcblk0p35", (long)"/fw/dsp",
+				 (long)"ext4", 1, 0, 0);
+			lkl_printf("lkl9p: mount /fw/dsp -> %ld\n", r);
+		}
+	}
+}
+
+static void
 mkinputnodes(void *arg)
 {
 	int en, tries;
@@ -980,6 +1106,49 @@ mkinputnodes(void *arg)
 	}
 }
 
+/* Stage embedded firmware (util/arm64/fw/) into the guest
+ * /lib/firmware so request_firmware finds it. */
+static void
+mkfwfiles(void)
+{
+	int i, j;
+	char dir[256];
+
+	for(i = 0; i < nlklfwfiles; i++){
+		Lklfw *f = &lklfwfiles[i];
+		long fd, off, len;
+
+		for(j = 1; f->path[j] != 0; j++){
+			if(f->path[j] == '/' && j < (int)sizeof(dir) - 1){
+				memmove(dir, f->path, j);
+				dir[j] = 0;
+				lklmkdirat(LklAtFdcwd, dir, 0755);
+			}
+		}
+		fd = lklopenat(LklAtFdcwd, f->path,
+			LklOwronly | LklOcreat | LklOtrunc, 0644);
+		if(fd < 0){
+			lkl_printf("lkl9p: fw %s open failed\n", f->path);
+			continue;
+		}
+		len = f->end - f->start;
+		for(off = 0; off < len; ){
+			long chunk = len - off, n;
+
+			if(chunk > 32768)
+				chunk = 32768;
+			n = sys0(LklNrWrite, fd, (long)(f->start + off),
+				chunk, 0, 0, 0);
+			if(n <= 0)
+				break;
+			off += n;
+		}
+		lklclose(fd);
+		lkl_printf("lkl9p: fw %s (%ld bytes) -> %ld\n",
+			f->path, len, off);
+	}
+}
+
 void
 lkl9p_start(char *srvname)
 {
@@ -988,6 +1157,7 @@ lkl9p_start(char *srvname)
 
 	lklmkdirat(LklAtFdcwd, "/proc", 0555);
 	sys0(LklNrMount, (long)"proc", (long)"/proc", (long)"proc", 0, 0, 0);
+	mkfwfiles();
 	/*
 	 * Input event nodes for inspection (there is no devtmpfs in
 	 * this kernel: CONFIG_DEVTMPFS makes LKL fault early, so nodes
@@ -996,6 +1166,8 @@ lkl9p_start(char *srvname)
 	 */
 	if(lklhost_spawn(mkinputnodes, nil) < 0)
 		lkl_printf("lkl9p: input node thread spawn failed\n");
+	if(lklhost_spawn(mkblocknodes, nil) < 0)
+		lkl_printf("lkl9p: block node thread spawn failed\n");
 	dfd = lklopenat(LklAtFdcwd, "/dmesg", LklOwronly | LklOcreat | LklOtrunc, 0444);
 	if(dfd >= 0){
 		if(lkl_dmesg_len > 0)

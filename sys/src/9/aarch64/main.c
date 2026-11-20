@@ -751,7 +751,7 @@ arm64main(usize dtb)
 		 * /chosen/harvey,lkl-arena-size.  The constant is only
 		 * a fallback for unstamped images. */
 		u64 sz = info.lklarena != 0 ? info.lklarena :
-			160ULL * 1024 * 1024;
+			320ULL * 1024 * 1024;
 		if(info.nreserve < Maxfdtreserve &&
 		   info.ramsize >= sz + (64ULL * 1024 * 1024)){
 			u64 base = (info.rambase + info.ramsize - sz) & ~(2ULL*1024*1024 - 1);

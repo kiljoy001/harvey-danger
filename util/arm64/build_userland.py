@@ -42,6 +42,7 @@ NETEXPORT_BASE = 0xCC00000
 RC_BASE = 0x2A00000
 ECHO_BASE = 0x2E00000
 CAT_BASE = 0x3200000
+B64_BASE = 0x3200000
 LS_BASE = 0x3600000
 RNGFS_BASE = 0x3A00000
 WDTFS_BASE = 0x4E00000
@@ -1959,6 +1960,72 @@ main(int argc, char **argv)
 	exits(nil);
 }
 ''', CAT_BASE, libc)
+    b64, _ = build_program(out, "b64", r'''#include <u.h>
+#include <libc.h>
+
+static char tbl[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+static u32
+crc32_blk(uchar *p, int n)
+{
+	u32 c = 0xffffffffU;
+	int i, k;
+
+	for(i = 0; i < n; i++){
+		c ^= p[i];
+		for(k = 0; k < 8; k++)
+			c = (c >> 1) ^ (0xedb88320U & -(c & 1));
+	}
+	return c ^ 0xffffffffU;
+}
+
+void
+main(int argc, char **argv)
+{
+	uchar buf[192], out[300];
+	int fd, n, i, j;
+	vlong off = 0, rem = -1;
+
+	fd = argc > 1 ? open(argv[1], OREAD) : 0;
+	if(fd < 0)
+		sysfatal("open: %r");
+	if(argc > 2)
+		off = strtoll(argv[2], nil, 0);
+	if(argc > 3)
+		rem = strtoll(argv[3], nil, 0);
+	if(off > 0 && seek(fd, off, 0) < 0)
+		sysfatal("seek: %r");
+	write(1, "---BEGIN---\n", 12);
+	sleep(3);
+	while(rem != 0){
+		int want = sizeof buf;
+		if(rem > 0 && rem < want)
+			want = (int)rem;
+		n = read(fd, buf, want);
+		if(n <= 0)
+			break;
+		j = snprint((char *)out, sizeof out, "C %llx %ux ",
+			    off, crc32_blk(buf, n));
+		for(i = 0; i < n; i += 3){
+			u32 v = (u32)buf[i] << 16;
+			if(i + 1 < n) v |= (u32)buf[i + 1] << 8;
+			if(i + 2 < n) v |= (u32)buf[i + 2];
+			out[j++] = tbl[(v >> 18) & 0x3f];
+			out[j++] = tbl[(v >> 12) & 0x3f];
+			out[j++] = (i + 1 < n) ? tbl[(v >> 6) & 0x3f] : '=';
+			out[j++] = (i + 2 < n) ? tbl[v & 0x3f] : '=';
+		}
+		out[j++] = '\n';
+		write(1, out, j);
+		off += n;
+		if(rem > 0)
+			rem -= n;
+		sleep(3);
+	}
+	write(1, "---END---\n", 10);
+	exits(nil);
+}
+''', B64_BASE, libc)
     ls, _ = build_program(out, "ls", r'''#include <u.h>
 #include <libc.h>
 
@@ -2577,6 +2644,7 @@ main(int argc, char **argv)
     emit_array(lines, "arm64rcelf", rc)
     emit_array(lines, "arm64echoelf", echo)
     emit_array(lines, "arm64catelf", cat)
+    emit_array(lines, "arm64b64elf", b64)
     emit_array(lines, "arm64lself", ls)
     emit_array(lines, "arm64pingelf", ping)
     emit_array(lines, "arm64rtcelf", rtc)
@@ -2647,6 +2715,7 @@ main(int argc, char **argv)
         "rc": rc,
         "echo": echo,
         "cat": cat,
+        "b64": b64,
         "ls": ls,
         "ping": ping,
         "rtc": rtc,
