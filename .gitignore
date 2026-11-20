@@ -110,3 +110,7 @@ apex
 /util/fleet/media.status
 /util/fleet/test.mp4
 /util/fleet/autonomy
+
+# Device firmware: vendor blobs, kept local and never committed.
+# build_lkl.py embeds whatever is here; see doc/drivers/borneo-support-matrix.md.
+util/arm64/fw/
