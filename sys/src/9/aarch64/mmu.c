@@ -471,6 +471,36 @@ mmuput(usize va, Page *page, u32 attr)
 		arm64mmuswitch(p->MMU.rootpa);
 }
 
+/* Print p's own translation of va, level by level (repeat-fault reports). */
+void
+arm64mmudumpva(Proc *p, u64 va)
+{
+	u64 *root, *l2, *l3, e1, e2, e3;
+	u32 i1, i2, i3;
+
+	i1 = (va >> 30) & 511;
+	i2 = (va >> 21) & 511;
+	i3 = (va >> 12) & 511;
+	if(p->MMU.rootpa == 0){
+		print("  walk: no root\n");
+		return;
+	}
+	root = (u64 *)p->MMU.rootpa;
+	e1 = root[i1];
+	print("  walk: root %#p l1[%ud] %#llux%s\n", root, i1, e1,
+	      e1 == ((u64 *)arm64mmukernelroot())[i1] ? " (kernel's)" : "");
+	if((e1 & (Ptevalid | Ptetable)) != (Ptevalid | Ptetable))
+		return;
+	l2 = (u64 *)(e1 & ~(u64)(PGSZ - 1));
+	e2 = l2[i2];
+	print("  walk: l2[%ud] %#llux\n", i2, e2);
+	if((e2 & (Ptevalid | Ptetable)) != (Ptevalid | Ptetable))
+		return;
+	l3 = (u64 *)(e2 & ~(u64)(PGSZ - 1));
+	e3 = l3[i3];
+	print("  walk: l3[%ud] %#llux\n", i3, e3);
+}
+
 void
 arm64mmurelease(Proc *p)
 {

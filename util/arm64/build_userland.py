@@ -1289,7 +1289,15 @@ main(int argc, char **argv)
 		}
 	}
 	say("HARVEY-ARM64 DRIVER-MANAGER PASS\n");
-	{
+	/*
+	 * The native drvkit services below start only where what they
+	 * drive is present: on a board whose devices an LKL guest drives
+	 * (borneo), drvman starts no Rockchip driver, so there is no fan
+	 * sensor or PWM to steer and no native eMMC.
+	 */
+	if(access("/srv/tsadc", AEXIST) < 0 || access("/srv/pwm", AEXIST) < 0)
+		say("HARVEY-ARM64 FANCTL SKIP no tsadc or pwm\n");
+	else{
 		char *fansrv[] = { "/boot/fanctl", "fanctl", nil };
 		pid = rfork(RFPROC|RFNOWAIT|RFFDG|RFNAMEG|RFENVG|RFREND|RFNOTEG);
 		if(pid == 0){
@@ -1316,7 +1324,10 @@ main(int argc, char **argv)
 		else
 			say("HARVEY-ARM64 HUBFS FAIL\n");
 	}
-	{
+	/* emmcfs is embedded only by the gefs bring-up build */
+	if(access("/boot/emmcfs", AEXEC) < 0)
+		say("HARVEY-ARM64 EMMCFS SKIP not in this build\n");
+	else{
 		char *emmcfsargv[] = { "/boot/emmcfs", "emmcfs", nil };
 		pid = rfork(RFPROC|RFNOWAIT|RFFDG|RFNAMEG|RFENVG|RFREND|RFNOTEG);
 		if(pid == 0){
@@ -1370,8 +1381,14 @@ main(int argc, char **argv)
 			snprint(msg, sizeof msg, "HARVEY-ARM64 NET-IP FAIL %r\n");
 			say(msg);
 		}else if(bind("#l", "/net", MAFTER|MCREATE) < 0){
-			snprint(msg, sizeof msg, "HARVEY-ARM64 NET-ETH FAIL %r\n");
-			say(msg);
+			/* no Ethernet driver here: an LKL guest owns the network */
+			rerrstr(msg, sizeof msg);
+			if(strstr(msg, "no free devices") != nil)
+				say("HARVEY-ARM64 NET-ETH SKIP no ethernet device\n");
+			else{
+				snprint(msg, sizeof msg, "HARVEY-ARM64 NET-ETH FAIL %r\n");
+				say(msg);
+			}
 		}else if((fd = open("/net/ether0/addr", OREAD)) < 0)
 			say("HARVEY-ARM64 NET-BIND FAIL\n");
 		else{
@@ -1415,7 +1432,10 @@ main(int argc, char **argv)
 		netconf("root", root, sizeof root);
 
 		ok = 1;
-		if((fd = open("/net/ipifc/clone", ORDWR)) < 0){
+		if(access("/net/ether0", AEXIST) < 0){
+			say("HARVEY-ARM64 NET-IFC SKIP no ethernet device\n");
+			ok = 0;
+		}else if((fd = open("/net/ipifc/clone", ORDWR)) < 0){
 			snprint(buf, sizeof buf, "HARVEY-ARM64 NET-IFC FAIL open %r\n");
 			say(buf);
 			ok = 0;
@@ -1917,17 +1937,38 @@ main(void)
     echo, _ = build_program(out, "echo", r'''#include <u.h>
 #include <libc.h>
 
+/*
+ * As Plan 9's echo: the line goes out in one write, so a ctl file sees
+ * "<name> shared" as one message, and a refused write is reported.
+ */
 void
 main(int argc, char **argv)
 {
-	int i;
+	int nflag, i, len;
+	char *buf, *p;
 
-	for(i = 1; i < argc; i++){
-		if(i > 1)
-			write(1, " ", 1);
-		write(1, argv[i], strlen(argv[i]));
+	nflag = 0;
+	if(argc > 1 && strcmp(argv[1], "-n") == 0)
+		nflag = 1;
+	len = 1;
+	for(i = 1+nflag; i < argc; i++)
+		len += strlen(argv[i])+1;
+	buf = malloc(len);
+	if(buf == nil)
+		exits("no memory");
+	p = buf;
+	for(i = 1+nflag; i < argc; i++){
+		strcpy(p, argv[i]);
+		p += strlen(p);
+		if(i < argc-1)
+			*p++ = ' ';
 	}
-	write(1, "\n", 1);
+	if(!nflag)
+		*p++ = '\n';
+	if(write(1, buf, p-buf) < 0){
+		fprint(2, "echo: write error: %r\n");
+		exits("write error");
+	}
 	exits(nil);
 }
 ''', ECHO_BASE, libc)

@@ -93,13 +93,26 @@ Motorola's is the CAF variant with GPI/DMA and ipc logging.
   claim held open on fd 3 makes `owner` read its name, lets a child
   open `regs`, keeps a second claim out, and ends when the block
   closes fd 3, after which the device can be claimed again.
-- Probe with `/boot/cat /env/x > '#P/<node>/claim'`: the boot
-  `echo` ignores write errors and writes each word separately.
-- Unchanged from before: the `bengal_usb` list's `wifi@c800000` is
-  the guest's name and is not in `#P` (`claim ... file does not
-  exist`; `qcom,icnss@C800000` maps the same window), and the boot
-  log still ends in a repeated user fault, now `memmove` in
-  `lklboot` (`far 0x146433de pc 0x109cf028`) after the `/fw` mounts.
+- The "ARM64 repeat fault" lines at the end of earlier boot logs were
+  a false alarm: the detector compared consecutive faults on any
+  process, and each of `lklboot`'s threads (separate processes with
+  their own page tables) takes its own first fault on a shared heap
+  page, at the same address and pc.  It now keys on CPU and process;
+  no report since.
+- Cleaned up the same day, verified on the phone: the boot `echo`
+  writes its line in one write and reports a refused write (it wrote
+  each word separately, so `echo x shared` reached a claim file as
+  three messages); `wifi@c800000`, the guest's name for the WCN3990,
+  left the `bengal_usb` list (`qcom,icnss@C800000` maps the same
+  window); `drvman` starts a child only when its parent service is up,
+  so it no longer waits out `npufs` and init's deadline, and writes
+  each status line whole; init skips `fanctl` without TSADC and PWM,
+  `emmcfs` when the build has none, and the IP interface without
+  Ethernet, each with the reason.  The console now comes up 15 s after
+  `fastboot boot`, against 30-40 s.
+- The guest's WCN3990 node uses IRQs 358-369; `lklboot` forwards only
+  the two `#P` lists for `qcom,icnss@C800000` (390, 391).  WiFi needs
+  the rest.
 
 ## Observed on hardware, 2026-11-18 (RAM-boot, no flash)
 
@@ -128,7 +141,8 @@ phone (`HARVEY BOOT 1`). Observed, not inferred:
   `qcom,icnss@C800000`, BT slim codec) — see the boot7 section.
   The Unisoc driver is an artifact of the shared LKL kernel
   config (its BSP creates a device without a DT node).
-- Native Rockchip services run wrongly on Bengal and fail:
+- (Fixed 2026-11-19 on `pdma`, see that section.)  Native Rockchip
+  services ran wrongly on Bengal and failed:
   `gpufs` (no PMU at `0xfdd90000`), `tsadcfs` (no GRF),
   `spifs` (no CRU), `gpiofs` (no GPIO banks in `#P`), native
   `emmcfs`, `fanctl`. They need board gating in init/drvman.

@@ -43,7 +43,6 @@
 			"i2c@4a80000",
 			"i2c@4a84000",
 			"spi@4a88000",
-			"wifi@c800000",
 			"qcom,icnss@C800000"
 		],
 		"dtb": "lkl-bengal-usb.dtb",

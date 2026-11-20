@@ -33,8 +33,19 @@ static volatile u32 diagstage;
 static volatile u64 diagresult;
 #ifdef ARM64_FULL_KERNEL
 static volatile u32 processactive;
-static u64 lastfaultfar, lastfaultpc;
-static unsigned faultrepeat;
+/*
+ * The last user fault on each CPU, to spot one that keeps retrying.  It
+ * is kept per process: the threads of one program share pages but each
+ * has its own page table, so each takes its own first fault on a shared
+ * page, at the same address and pc, and that is not a retry.
+ */
+typedef struct Lastfault Lastfault;
+struct Lastfault {
+	Proc *proc;
+	u64 far, pc;
+	unsigned n;
+};
+static Lastfault lastfault[MACHMAX];
 #endif
 
 static void
@@ -169,7 +180,40 @@ arm64userloadelf(u64 codepage, u64 datapage, const u8 *image, usize n,
 		ARM64USERBASE, image, n, entry);
 }
 
+static /*
+ * Why a fault keeps coming back: the process, its caller, the segment
+ * and page fault() found for the address, and the process's own walk.
+ */
 static void
+repeatreport(Proc *p, Arm64ureg *r)
+{
+	extern void arm64mmudumpva(Proc *, u64);
+	Segment *s;
+	Pte *pte;
+	Page *pg;
+	usize soff;
+	u64 pgsz;
+
+	print("  pid %d %s lr %#p sp %#p newtlb %d cpu %d\n", p->pid, p->text,
+	      r->x[30], r->sp0, p->newtlb, machp()->machno);
+	s = seg(p, r->far, 0);
+	if(s == nil){
+		print("  no segment\n");
+	}else{
+		pgsz = sys->pgsz[s->pgszi];
+		soff = (r->far & ~(pgsz - 1)) - s->base;
+		pg = nil;
+		pte = s->map[soff / s->ptemapmem];
+		if(pte != nil)
+			pg = pte->pages[(soff & (s->ptemapmem - 1)) / pgsz];
+		print("  seg %s %#p-%#p pgsz %#llux ref %d page %#p pa %#p\n",
+		      segtypes[s->type & SG_TYPE], s->base, s->top, pgsz,
+		      s->r.ref, pg, pg != nil ? pg->pa : 0);
+	}
+	arm64mmudumpva(p, r->far);
+}
+
+void
 arm64usertrap1(Arm64ureg *r)
 {
 	u32 ec;
@@ -177,6 +221,7 @@ arm64usertrap1(Arm64ureg *r)
 	ec = (r->esr>>26)&63;
 #ifdef ARM64_FULL_KERNEL
 	Proc *p;
+	Lastfault *lf;
 	int ftype, insyscall;
 	extern volatile int pnpprobing[];
 
@@ -206,8 +251,9 @@ arm64usertrap1(Arm64ureg *r)
 		 * mapping succeeded but the access still aborts: usually a bus
 		 * error on the physical page.  Say so instead of looping silently.
 		 */
-		if(r->far == lastfaultfar && r->elr == lastfaultpc){
-			if(++faultrepeat == 3){
+		lf = &lastfault[machp()->machno];
+		if(lf->proc == p && r->far == lf->far && r->elr == lf->pc){
+			if(++lf->n == 3){
 				u64 pa;
 
 				print("ARM64 repeat fault esr %#llux far %#p pc %#p\n",
@@ -216,8 +262,9 @@ arm64usertrap1(Arm64ureg *r)
 					print("ARM64 repeat fault maps %#p\n", pa);
 				else
 					print("ARM64 repeat fault unmapped\n");
+				repeatreport(p, r);
 			}
-			if(faultrepeat >= 1000){
+			if(lf->n >= 1000){
 				/*
 				 * The mapping exists but the access keeps
 				 * aborting (bus error on a device page, e.g.
@@ -229,16 +276,16 @@ arm64usertrap1(Arm64ureg *r)
 				 * on SM6115 before clocks/GDSC came up.
 				 */
 				print("ARM64 repeat fault pid %d %s: killing after %u aborts far %#p pc %#p\n",
-				      p->pid, p->text, faultrepeat, r->far, r->elr);
-				faultrepeat = 0;
-				lastfaultfar = 0;
-				lastfaultpc = 0;
+				      p->pid, p->text, lf->n, r->far, r->elr);
+				lf->proc = nil;
+				lf->n = 0;
 				pexit("user fault: repeat abort", 1);
 			}
 		}else{
-			lastfaultfar = r->far;
-			lastfaultpc = r->elr;
-			faultrepeat = 0;
+			lf->proc = p;
+			lf->far = r->far;
+			lf->pc = r->elr;
+			lf->n = 0;
 		}
 		ftype = (ec == 0x20 || ec == 0x21) ? FT_EXEC :
 			((r->esr & (1ULL<<6)) != 0 ? FT_WRITE : FT_READ);
