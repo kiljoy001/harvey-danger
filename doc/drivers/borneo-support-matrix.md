@@ -89,6 +89,9 @@ phone (`HARVEY BOOT 1`). Observed, not inferred:
   `chip id = 0x8009`, `input1` registered, IRQ 1029, firmware
   `focaltech-djnboe-ft8009-07-000-borneo.bin` (180224 B) loaded.
   Probe **working**; coordinate reports not yet exercised.
+  The firmware is a vendor blob and is not in the repository: copy it
+  from the phone's stock firmware into `util/arm64/fw/` (ignored by git)
+  before `build_lkl.py`, which embeds whatever that directory holds.
 - PMIC (LKL): SPMI arbiter v5, RTC registered, `pm8941_pwrkey`
   as `input0`. GENI I2C x2 and GENI SPI probed, no wedge at probe.
 - WiFi (initial, wrong): guest attempted **Unisoc Marlin SDIO**
