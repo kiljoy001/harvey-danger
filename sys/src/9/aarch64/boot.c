@@ -455,6 +455,7 @@ bootarchive(void)
 static int
 physseginit(Fdtinfo *info)
 {
+	extern int pnpsegattach(Physseg *);
 	Physseg seg;
 	u64 base, end;
 	u32 i;
@@ -464,6 +465,7 @@ physseginit(Fdtinfo *info)
 	memset(&seg, 0, sizeof seg);
 	seg.attr = SG_PHYSICAL | SG_READ | SG_WRITE;
 	seg.pgszi = -1;	/* addphysseg defaults to base pages */
+	seg.attach = pnpsegattach;	/* only the device's claim holder */
 	for(i = 0; i < info->ndev; i++){
 		base = info->dev[i].base & ~(u64)(BIGPGSZ - 1);
 		end = (info->dev[i].base + info->dev[i].size + BIGPGSZ - 1) &

@@ -131,13 +131,12 @@ probe(char *node)
 	uchar ver[2];
 	int fd;
 
+	/* the claim lasts while its file is open: keep it */
 	snprint(path, sizeof path, "#P/%s/claim", node);
 	if((fd = open(path, OWRITE)) < 0)
 		lkl_printf("probe: claim %s: %r\n", node);
-	else{
-		write(fd, "lkld", 4);
-		close(fd);
-	}
+	else if(write(fd, "lkld", 4) != 4)
+		lkl_printf("probe: claim %s: %r\n", node);
 	if(lklhost_mapdev(node, &base, &size) < 0){
 		lkl_printf("probe: map %s: %r\n", node);
 		return;
@@ -185,6 +184,8 @@ nodeirq(char *node)
  * identify clock (parent 5), which is what the working vendor sequence
  * uses.  The LKL driver divides it further for 400 kHz.
  */
+static int claimdevice(char*, int);
+
 static void
 setemmcclock(void)
 {
@@ -192,7 +193,8 @@ setemmcclock(void)
 	u64 base, size;
 	u32 v;
 
-	if(lklhost_mapdev(node, &base, &size) < 0){
+	/* the CRU serves every block on the SoC: claimed shared */
+	if(claimdevice(node, 1) < 0 || lklhost_mapdev(node, &base, &size) < 0){
 		lkl_printf("lklboot: map %s: %r\n", node);
 		return;
 	}
@@ -253,24 +255,69 @@ finddtb(char *name)
 }
 
 /*
- * Claim and map one #P device window.  Every driver's ioremap() resolves
- * through lklhost_mapdev()'s mmio[] table, so the family manifest lists
- * every window its drivers touch, not only the controller.
+ * A family's device: "<node>", or "<node>+" for one another family
+ * drives too (lkl-families.json), claimed shared.  Strips the mark.
  */
 static int
-mapdevice(char *node)
+nodeshared(char *node)
 {
-	char path[96];
-	u64 base, size;
-	int fd;
+	int n;
 
+	n = strlen(node);
+	if(n > 0 && node[n-1] == '+'){
+		node[n-1] = 0;
+		return 1;
+	}
+	return 0;
+}
+
+/*
+ * Claim a #P device: #P maps a window only for its claim's holder.  The
+ * claim lasts while its file is open, so it is kept for the guest's life.
+ * Shared for a block other drivers touch too: one the family marks, or a
+ * SoC-wide block (the clock and reset unit, a GRF, a GPIO bank).
+ */
+static int
+claimdevice(char *node, int shared)
+{
+	char path[96], class[32], *who;
+	int fd, n;
+
+	snprint(path, sizeof path, "#P/%s/class", node);
+	if((fd = open(path, OREAD)) >= 0){
+		n = read(fd, class, sizeof class - 1);
+		close(fd);
+		class[n > 0 ? n : 0] = 0;
+		if(strncmp(class, "cru", 3) == 0 || strncmp(class, "grf", 3) == 0 ||
+		   strncmp(class, "gpio", 4) == 0)
+			shared = 1;
+	}
 	snprint(path, sizeof path, "#P/%s/claim", node);
 	if((fd = open(path, OWRITE)) < 0){
 		lkl_printf("lklboot: claim %s: %r\n", node);
 		return -1;
 	}
-	write(fd, "lkld", 4);
-	close(fd);
+	who = shared ? "lkld shared" : "lkld";
+	if(write(fd, who, strlen(who)) != strlen(who)){
+		lkl_printf("lklboot: claim %s: %r\n", node);
+		close(fd);
+		return -1;
+	}
+	return 0;
+}
+
+/*
+ * Claim and map one #P device window.  Every driver's ioremap() resolves
+ * through lklhost_mapdev()'s mmio[] table, so the family manifest lists
+ * every window its drivers touch, not only the controller.
+ */
+static int
+mapdevice(char *node, int shared)
+{
+	u64 base, size;
+
+	if(claimdevice(node, shared) < 0)
+		return -1;
 	if(lklhost_mapdev(node, &base, &size) < 0){
 		lkl_printf("lklboot: map %s: %r\n", node);
 		return -1;
@@ -296,7 +343,7 @@ mapfamily(Family *f)
 			;
 		if(*q != 0)
 			*q++ = 0;
-		if(mapdevice(p) < 0){
+		if(mapdevice(p, nodeshared(p)) < 0){
 			if(strcmp(p, "dwc3@4e00000") == 0 ||
 			   strcmp(f->name, "bengal_usb") != 0)
 				bad = 1;
@@ -321,6 +368,7 @@ watchfamily(Family *f)
 			;
 		if(*q != 0)
 			*q++ = 0;
+		nodeshared(p);
 		irq = nodeirq(p);
 		if(irq > 0){
 			if(lklhost_irqthread(p, irq) == 0)
@@ -349,7 +397,8 @@ wcnmap(char *node)
 {
 	u64 base, size;
 
-	if(lklhost_mapdev(node, &base, &size) < 0){
+	/* CRU, pinmux and GRF blocks other drivers use too: shared */
+	if(claimdevice(node, 1) < 0 || lklhost_mapdev(node, &base, &size) < 0){
 		lkl_printf("lklboot: map %s: %r\n", node);
 		return ~0ULL;
 	}

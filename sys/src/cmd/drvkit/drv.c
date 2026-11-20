@@ -191,6 +191,34 @@ drvfindreg(Drv *d, u64 base)
  * device memory and there is nothing to flush.
  */
 int
+drvclaim(Drv *d)
+{
+	char path[160], *name;
+	int fd;
+
+	if(d->claimed)
+		return 0;
+	if(pnppath(path, sizeof path, d->name, "claim") == nil)
+		return -1;
+	if((fd = open(path, OWRITE)) < 0)
+		return -1;
+	name = argv0 != nil && argv0[0] != 0 ? argv0 : "drvkit";
+	if(strrchr(name, '/') != nil)
+		name = strrchr(name, '/') + 1;
+	/* SoC-wide blocks other drivers touch too are claimed shared */
+	if(strcmp(d->klass, "cru") == 0 || strcmp(d->klass, "grf") == 0 ||
+	   strcmp(d->klass, "gpio") == 0)
+		name = smprint("%s shared", name);
+	if(write(fd, name, strlen(name)) != strlen(name)){
+		close(fd);
+		return -1;
+	}
+	d->claimfd = fd;
+	d->claimed = 1;
+	return 0;
+}
+
+int
 drvmap(Drv *d)
 {
 	u64 len;
@@ -199,6 +227,8 @@ drvmap(Drv *d)
 	if(d->regs != nil)
 		return 0;
 	if(d->size == 0 || d->name[0] == 0)
+		return -1;
+	if(drvclaim(d) < 0)
 		return -1;
 	len = (d->size + 0x1fffff) & ~0x1fffffULL;
 	m = segattach(0, d->name, 0, len);
@@ -237,6 +267,8 @@ drvwaitfd(Drv *d)
 
 	if(d->waitfd >= 0)
 		return d->waitfd;
+	if(drvclaim(d) < 0)
+		return -1;
 	if(pnppath(path, sizeof path, d->name, "wait") == nil)
 		return -1;
 	/*

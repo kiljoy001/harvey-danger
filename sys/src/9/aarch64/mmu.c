@@ -213,15 +213,17 @@ arm64mmubuild(Fdtinfo *info)
 	regions = 3;
 	for(k = 0; k < info->nvirtio; k++)
 		device[regions++] = info->virtio[k];
-	/* Kernel display/DMA drivers need identity mappings for the SoC blocks
-	 * discovered from the device tree.  User processes still get access only
-	 * through #P/segattach grants. */
+	/*
+	 * Every block the device tree describes, mapped Device: the kernel's
+	 * display and DMA drivers use some, and #P/<node>/regs reads and
+	 * writes any of them for a process holding the device's claim.  User
+	 * processes reach them only through #P.  A block that does not fit
+	 * the identity map is skipped (its regs file then refuses access),
+	 * not a reason to give up the map.
+	 */
+	fixedstart = regions;
 	for(k = 0; k < info->ndev; k++){
 		Fdtdev *d = &info->dev[k];
-		if(d->clas != Fdtclasscru && d->clas != Fdtclassgrf &&
-		   d->clas != Fdtclassvop && d->clas != Fdtclasshdmi &&
-		   d->clas != Fdtclassiommu && d->clas != Fdtclasswdt)
-			continue;
 		if(d->base != 0 && d->size != 0)
 			device[regions++] = (Fdtvirtio){d->base, d->size};
 		if(d->base2 != 0 && d->size2 != 0)
@@ -231,7 +233,6 @@ arm64mmubuild(Fdtinfo *info)
 	 * The remaining blocks are Rockchip SoC ranges that the device tree
 	 * does not classify.  They are not present on other machines.
 	 */
-	fixedstart = regions;
 	device[regions++] = (Fdtvirtio){0xfdd20000ULL, Pagesz};
 	device[regions++] = (Fdtvirtio){0xfdd90000ULL, Pagesz};
 	/* USB/DWC3 transport and the PHY/GRF/GPIO blocks it programs. */
@@ -261,15 +262,20 @@ arm64mmubuild(Fdtinfo *info)
 		if(pa == 0 && k < 3)
 			continue;
 		if(pa == 0 || device[k].size == 0 ||
-		   pa >= Maxidentity || device[k].size > Maxidentity-pa)
+		   pa >= Maxidentity || device[k].size > Maxidentity-pa){
+			if(k >= fixedstart)
+				continue;
 			return 0;
+		}
 		if(pa < ramend && pa+device[k].size > info->rambase){
 			/*
-			 * A device range cannot overlap RAM.  The fixed SoC
-			 * ranges are only meaningful on Rockchip parts; on a
-			 * machine whose RAM reaches that high (QEMU virt with
-			 * 3 GiB) they simply do not exist, so drop them
-			 * instead of rejecting the whole identity map.
+			 * A device range cannot overlap RAM.  The device-tree
+			 * blocks and the fixed SoC ranges after them are
+			 * dropped when they do: the fixed ranges are only
+			 * meaningful on Rockchip parts, and on a machine whose
+			 * RAM reaches that high (QEMU virt with 3 GiB) they
+			 * simply do not exist.  Neither is a reason to reject
+			 * the whole identity map.
 			 */
 			if(k >= fixedstart)
 				continue;

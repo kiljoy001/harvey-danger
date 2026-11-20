@@ -51,6 +51,8 @@ struct Drv {
 
 	void	*regs;		/* mapped, adjusted to base */
 	int	waitfd;		/* #P/<name>/wait, -1 until first wait */
+	int	claimed;	/* claimfd holds the device's claim */
+	int	claimfd;	/* #P/<name>/claim, open for the driver's life */
 };
 
 /* Discovery: scan #P for a node of this class.  wantconsole prefers the
@@ -59,6 +61,14 @@ struct Drv {
 int	drvfind(Drv*, char *class, int wantconsole);
 int	drvfindreg(Drv*, u64 base);	/* by register base */
 int	drvfindexact(Drv*, char *node);	/* by #P node name */
+
+/* Claim the device: #P lets only the claim's holder map its window, wait
+ * for its interrupts or use its regs file, and the claim lasts while the
+ * file stays open (this process and its children).  drvmap and drvwaitfd
+ * claim first; the name is the program's (argv0).  A clock and reset
+ * unit, GRF or GPIO bank is claimed shared, the rest exclusively.  0 on
+ * success. */
+int	drvclaim(Drv*);
 
 /* Map the MMIO window (2 MiB aligned, like the kernel's grant). */
 int	drvmap(Drv*);

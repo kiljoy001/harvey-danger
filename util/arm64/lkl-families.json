@@ -33,7 +33,7 @@
 		"mem": "128M",
 		"devices": [
 			"qcom,gcc@1400000",
-			"qcom,spmi@1c40000",
+			"qcom,spmi@1c40000+",
 			"pinctrl@400000",
 			"qrng@1b53000",
 			"tsens@c222000",
@@ -53,7 +53,7 @@
 		"program": "lklctl",
 		"mem": "96M",
 		"devices": [
-			"qcom,spmi@1c40000",
+			"qcom,spmi@1c40000+",
 			"ssusb@4e00000",
 			"dwc3@4e00000"
 		],

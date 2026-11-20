@@ -35,6 +35,38 @@ readtext(char *path, char *buf, long n)
 	return m;
 }
 
+/*
+ * Claims a #P node before its window is mapped or its interrupt waited
+ * for: #P allows both only to the holder of the device's claim, which
+ * lasts while the claim file is open, so it is kept.  Each node is
+ * claimed once per process.
+ */
+static int
+claimnode(char *node)
+{
+	static char claimed[16][64];
+	static int nclaimed;
+	char path[128], who[64];
+	int fd, i;
+
+	for(i = 0; i < nclaimed; i++)
+		if(strcmp(claimed[i], node) == 0)
+			return 0;
+	/* it maps only the PHY, GRF and controller blocks other
+	 * drivers touch too */
+	snprint(who, sizeof who, "o9xhci shared");
+	snprint(path, sizeof path, "#P/%s/claim", node);
+	if((fd = open(path, OWRITE)) < 0)
+		return -1;
+	if(write(fd, who, strlen(who)) != strlen(who)){
+		close(fd);
+		return -1;
+	}
+	if(nclaimed < nelem(claimed))
+		snprint(claimed[nclaimed++], sizeof claimed[0], "%s", node);
+	return 0;
+}
+
 static void*
 mapreg(u64 base, usize size, char *outname, int outlen)
 {
@@ -59,6 +91,10 @@ mapreg(u64 base, usize size, char *outname, int outlen)
 		if(reg!=base)
 			continue;
 		len=(size+Bigpage-1)&~(Bigpage-1);
+		if(claimnode(d[i].name)<0){
+			free(d);
+			return nil;
+		}
 		m=segattach(0,d[i].name,0,len);
 		if(m==(void*)-1){
 			free(d);

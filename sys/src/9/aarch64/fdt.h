@@ -42,6 +42,7 @@ enum {
 	Fdtclassvpu,
 	Fdtclassiommu,
 	Fdtclasspower,
+	Fdtclassrtc,
 };
 
 enum {

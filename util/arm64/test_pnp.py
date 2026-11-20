@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
-"""Check #P's DMA arena under an ARM64 Harvey kernel in QEMU.
+"""Check #P's claims and DMA arena under an ARM64 Harvey kernel in QEMU.
 
-A chunk is allocated and mapped through its ctl and read and written
-through its data file; another process cannot reach it without its ctl;
-it is zeroed when allocated and goes back to the arena only once its
-files are closed and its mapping gone; the arena as a whole cannot be
+Claims: a device's window, interrupts and regs file are refused without
+its claim, which is held through an open file and released by closing it;
+exclusive and shared claims exclude each other; regs reads the PL031's ID
+registers.  DMA: a chunk is allocated and mapped through its ctl and read
+and written through its data file; another process cannot reach it without
+its ctl; it is zeroed when allocated and goes back to the arena only once
+its files are closed and its mapping gone; the arena as a whole cannot be
 attached.  Supply the kernel image with --kernel.
 """
 import argparse
@@ -15,7 +18,7 @@ import build_userland
 from test_virt import boot_until
 
 
-PDMATEST = r'''#include <u.h>
+PNPTEST = r'''#include <u.h>
 #include <libc.h>
 
 static int nfail;
@@ -29,7 +32,7 @@ fail(char *fmt, ...)
 	va_start(arg, fmt);
 	vsnprint(buf, sizeof buf, fmt, arg);
 	va_end(arg);
-	print("PDMA-TEST FAIL %s\n", buf);
+	print("PNP-TEST FAIL %s\n", buf);
 	nfail++;
 }
 
@@ -120,13 +123,250 @@ childopens(int n, int flag)
 		if(w->pid == pid){
 			ok = w->msg[0] == 0 ? 1 : strstr(w->msg, "denied") != nil ? 0 : -1;
 			if(ok < 0)
-				print("PDMA-TEST child %d: '%s'\n", flag, w->msg);
+				print("PNP-TEST child %d: '%s'\n", flag, w->msg);
 			free(w);
 			return ok;
 		}
 		free(w);
 	}
 	return -1;
+}
+
+static char*
+readstr(char *path, char *buf, int n)
+{
+	int fd, m;
+
+	buf[0] = 0;
+	if((fd = open(path, OREAD)) < 0)
+		return nil;
+	m = read(fd, buf, n - 1);
+	close(fd);
+	if(m < 0)
+		return nil;
+	buf[m] = 0;
+	if(m > 0 && buf[m-1] == '\n')
+		buf[m-1] = 0;
+	return buf;
+}
+
+static void
+listpnp(void)
+{
+	Dir *d;
+	char path[128], cls[32], own[64], reg[32];
+	int fd, i, n;
+
+	if((fd = open("#P", OREAD)) < 0)
+		return;
+	n = dirreadall(fd, &d);
+	close(fd);
+	for(i = 0; i < n; i++){
+		snprint(path, sizeof path, "#P/%s/class", d[i].name);
+		if(readstr(path, cls, sizeof cls) == nil)
+			continue;
+		snprint(path, sizeof path, "#P/%s/owner", d[i].name);
+		readstr(path, own, sizeof own);
+		snprint(path, sizeof path, "#P/%s/reg", d[i].name);
+		readstr(path, reg, sizeof reg);
+		print("PNP-TEST node %s class %s reg %s owner '%s'\n", d[i].name, cls, reg, own);
+	}
+	free(d);
+}
+
+/* A claim file holding node, or -1. */
+static int
+claim(char *node, char *who)
+{
+	char path[128];
+	int fd;
+
+	snprint(path, sizeof path, "#P/%s/claim", node);
+	if((fd = open(path, OWRITE)) < 0)
+		return -1;
+	if(write(fd, who, strlen(who)) != strlen(who)){
+		close(fd);
+		return -1;
+	}
+	return fd;
+}
+
+static int
+canopen(char *node, char *file, int mode)
+{
+	char path[128];
+	int fd;
+
+	snprint(path, sizeof path, "#P/%s/%s", node, file);
+	if((fd = open(path, mode)) < 0)
+		return 0;
+	close(fd);
+	return 1;
+}
+
+/* Whether a child given a clean file table, or a copy of ours, may open
+ * node's regs. */
+static int
+childregs(char *node, int flag)
+{
+	Waitmsg *w;
+	int pid, ok;
+
+	switch(pid = rfork(RFPROC|flag)){
+	case -1:
+		return -1;
+	case 0:
+		exits(canopen(node, "regs", OREAD) ? nil : "denied");
+	}
+	ok = -1;
+	while((w = wait()) != nil){
+		if(w->pid == pid)
+			ok = w->msg[0] == 0 ? 1 : strstr(w->msg, "denied") != nil ? 0 : -1;
+		free(w);
+		if(ok >= 0)
+			break;
+	}
+	return ok;
+}
+
+static u32
+reg32(int fd, vlong off, int *err)
+{
+	u32 v;
+
+	if(pread(fd, &v, 4, off) != 4){
+		*err = 1;
+		return 0;
+	}
+	return v;
+}
+
+static void
+claimtests(void)
+{
+	Dir *d;
+	char rtc[64], path[128], buf[64], uart[64];
+	int fd, c1, c2, c3, regs, i, n, err;
+	u64 base;
+	uchar *va;
+
+	rtc[0] = uart[0] = 0;
+	if((fd = open("#P", OREAD)) >= 0){
+		n = dirreadall(fd, &d);
+		close(fd);
+		for(i = 0; i < n; i++){
+			snprint(path, sizeof path, "#P/%s/class", d[i].name);
+			if(readstr(path, buf, sizeof buf) == nil)
+				continue;
+			if(strcmp(buf, "rtc") == 0)
+				snprint(rtc, sizeof rtc, "%s", d[i].name);
+			if(strcmp(buf, "uart") == 0)
+				snprint(uart, sizeof uart, "%s", d[i].name);
+		}
+		free(d);
+	}
+	if(rtc[0] == 0){
+		fail("no rtc in #P");
+		return;
+	}
+	snprint(path, sizeof path, "#P/%s/reg", rtc);
+	base = strtoull(readstr(path, buf, sizeof buf), nil, 0);
+
+	/* nothing without the claim, and no release file */
+	if(canopen(rtc, "regs", OREAD))
+		fail("regs opened without the claim");
+	if(canopen(rtc, "wait", OREAD))
+		fail("wait opened without the claim");
+	if(segattach(0, rtc, 0, 0x200000) != (void*)-1)
+		fail("window mapped without the claim");
+	if(canopen(rtc, "release", OWRITE))
+		fail("release file still there");
+
+	/* claimed: the owner shows, regs reads the PL031's IDs */
+	if((c1 = claim(rtc, "pnptest")) < 0){
+		fail("claim %s: %r", rtc);
+		return;
+	}
+	snprint(path, sizeof path, "#P/%s/owner", rtc);
+	if(strcmp(readstr(path, buf, sizeof buf), "pnptest") != 0)
+		fail("owner '%s', want pnptest", buf);
+	snprint(path, sizeof path, "#P/%s/regs", rtc);
+	if((regs = open(path, ORDWR)) < 0)
+		fail("regs while claimed: %r");
+	else{
+		err = 0;
+		if(reg32(regs, 0xff0, &err) != 0x0d || reg32(regs, 0xfe0, &err) != 0x31 || err)
+			fail("PL031 ids: %#ux %#ux", reg32(regs, 0xff0, &err), reg32(regs, 0xfe0, &err));
+		if(pread(regs, buf, 4, 2) >= 0)
+			fail("misaligned register read succeeded");
+		if(pread(regs, buf, 2, 0) >= 0)
+			fail("2-byte register read succeeded");
+		if(pread(regs, buf, 4, 0x1000) >= 0)
+			fail("register read past the window succeeded");
+		close(regs);
+	}
+	va = segattach(0, rtc, 0, 0x200000);
+	if(va == (void*)-1)
+		fail("window not mapped while claimed: %r");
+	else{
+		if(*(u32*)(va + (base & 0x1fffff) + 0xff0) != 0x0d)
+			fail("mapped PL031 id wrong");
+		segdetach(va);
+	}
+	if(canopen(rtc, "wait", OREAD) == 0)
+		fail("wait refused while claimed: %r");
+
+	/* exclusive: no second claim, shared or not */
+	if((c2 = claim(rtc, "other")) >= 0){
+		fail("second exclusive claim succeeded");
+		close(c2);
+	}
+	if((c2 = claim(rtc, "other shared")) >= 0){
+		fail("shared claim joined an exclusive one");
+		close(c2);
+	}
+	if(childregs(rtc, RFCFDG) != 0)
+		fail("a process without the claim opened regs");
+	if(childregs(rtc, RFFDG) != 1)
+		fail("a process holding a copy of the claim could not open regs");
+
+	/* closing releases */
+	close(c1);
+	snprint(path, sizeof path, "#P/%s/owner", rtc);
+	if(readstr(path, buf, sizeof buf)[0] != 0)
+		fail("owner '%s' after release", buf);
+	if(canopen(rtc, "regs", OREAD))
+		fail("regs opened after release");
+
+	/* shared claims coexist and keep an exclusive one out */
+	c1 = claim(rtc, "a shared");
+	c2 = claim(rtc, "b shared");
+	if(c1 < 0 || c2 < 0)
+		fail("shared claims: %r");
+	if((c3 = claim(rtc, "c")) >= 0){
+		fail("exclusive claim joined shared ones");
+		close(c3);
+	}
+	close(c1);
+	if(readstr(path, buf, sizeof buf)[0] == 0)
+		fail("released with a shared holder left");
+	close(c2);
+	if(readstr(path, buf, sizeof buf)[0] != 0)
+		fail("still claimed after the last shared holder");
+
+	/* the console uart is uartfs's */
+	if(uart[0] != 0){
+		snprint(path, sizeof path, "#P/%s/owner", uart);
+		if(readstr(path, buf, sizeof buf)[0] == 0)
+			fail("uart not claimed by its driver");
+		if((c1 = claim(uart, "pnptest")) >= 0){
+			fail("claimed the driver's uart");
+			close(c1);
+		}
+		if(canopen(uart, "regs", OREAD))
+			fail("opened the driver's uart regs");
+	}
+	print("PNP-TEST claims done\n");
 }
 
 void
@@ -136,8 +376,10 @@ main(void)
 	uchar *va, *va2, buf[64];
 	int ctl, ctl2, data, n, n2, i;
 
+	listpnp();
+	claimtests();
 	a0 = avail();
-	print("PDMA-TEST avail %llud\n", a0);
+	print("PNP-TEST avail %llud\n", a0);
 	if(a0 == 0)
 		fail("no arena");
 
@@ -158,7 +400,7 @@ main(void)
 		fail("second alloc succeeded");
 	if(cmd(ctl, "map\n") < 0 || chunkstat(ctl, &n, &pa, &len, &va) < 0)
 		fail("map: %r");
-	print("PDMA-TEST chunk %d pa %#llux len %#llux va %p\n", n, pa, len, va);
+	print("PNP-TEST chunk %d pa %#llux len %#llux va %p\n", n, pa, len, va);
 	if(len != 65536)
 		fail("len %llud", len);
 	a1 = avail();
@@ -209,7 +451,7 @@ main(void)
 	ctl2 = chunk(65536, 4096, "cached", &n2, &pa2, &len2, &va2);
 	if(ctl2 >= 0){
 		if(pa2 != pa)
-			print("PDMA-TEST note: reallocated at %#llux, not %#llux\n", pa2, pa);
+			print("PNP-TEST note: reallocated at %#llux, not %#llux\n", pa2, pa);
 		for(i = 0; i < 65536; i++)
 			if(va2[i] != 0){
 				fail("reallocated chunk not zeroed at %d", i);
@@ -251,9 +493,9 @@ main(void)
 		fail("avail %llud at the end, want %llud", avail(), a0);
 
 	if(nfail == 0)
-		print("PDMA-TEST PASS\n");
+		print("PNP-TEST PASS\n");
 	else
-		print("PDMA-TEST FAILED %d\n", nfail);
+		print("PNP-TEST FAILED %d\n", nfail);
 	exits(nil);
 }
 '''
@@ -261,9 +503,9 @@ main(void)
 
 def make_archive(out: Path, libc: Path) -> Path:
     out.mkdir(parents=True, exist_ok=True)
-    prog, _ = build_userland.build_program(out, "pdmatest", PDMATEST,
+    prog, _ = build_userland.build_program(out, "pnptest", PNPTEST,
                                           0x200000, libc)
-    files = [("pdmatest", prog)]
+    files = [("pnptest", prog)]
     offset = 24 + 48 * len(files)
     total = offset + sum(len(data) for _, data in files)
     table, body = bytearray(), bytearray()
@@ -272,7 +514,7 @@ def make_archive(out: Path, libc: Path) -> Path:
                              len(data), 0o555, 0)
         body += data
         offset += len(data)
-    archive = out / "pdma-test.img"
+    archive = out / "pnp-test.img"
     archive.write_bytes(struct.pack("<8sIIII", b"O9BOOT01", 1, len(files),
                                     total, 0) + table + body)
     return archive
@@ -284,7 +526,7 @@ def main() -> None:
     ap.add_argument("--libc", type=Path,
                     default=build_userland.ROOT / "build/arm64-libc/libc.a")
     ap.add_argument("--out", type=Path,
-                    default=build_userland.ROOT / "build/arm64-pdma-test")
+                    default=build_userland.ROOT / "build/arm64-pnp-test")
     args = ap.parse_args()
     archive = make_archive(args.out, args.libc)
     command = ["qemu-system-aarch64", "-machine", "virt", "-cpu", "cortex-a55",
@@ -293,16 +535,16 @@ def main() -> None:
                f"loader,file={archive},addr=0x49000000"]
     # a boot file started from the shell once it is up (after init's
     # services, an LKL guest among them, have started)
-    send = [(50.0, "/boot/pdmatest\n")]
-    transcript = boot_until(command, "PDMA-TEST PASS", idle=90, total=180,
+    send = [(50.0, "/boot/pnptest\n")]
+    transcript = boot_until(command, "PNP-TEST PASS", idle=90, total=180,
                             limit=4 * 1024 * 1024, send=send)
     log = args.out / "boot.log"
     log.write_text(transcript)
-    if "PDMA-TEST PASS" not in transcript:
-        fails = [l for l in transcript.splitlines() if "PDMA-TEST" in l]
-        raise SystemExit("PDMA test failed:\n" + "\n".join(fails) +
+    if "PNP-TEST PASS" not in transcript:
+        fails = [l for l in transcript.splitlines() if "PNP-TEST" in l]
+        raise SystemExit("#P test failed:\n" + "\n".join(fails) +
                          f"\nsee {log}")
-    print(f"#P DMA arena PASS: {log}")
+    print(f"#P claims and DMA arena PASS: {log}")
 
 
 if __name__ == "__main__":

@@ -272,6 +272,8 @@ segattach(Proc *p, int attr, char *name, usize va, usize len)
 			break;
 	if(ps->name == nil)
 		error("segment not found");
+	if(ps->attach != nil && ps->attach(ps) < 0)
+		error(Eperm);
 	va = segattachps1(p, attr, ps, va, len, sno);
 
 clean_out:

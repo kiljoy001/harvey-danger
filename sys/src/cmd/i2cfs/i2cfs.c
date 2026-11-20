@@ -114,6 +114,49 @@ probe(char *name, char *class, char *compat, u64 *base)
 	return 0;
 }
 
+/*
+ * Claims a #P node before its window is mapped or its interrupt waited
+ * for: #P allows both only to the holder of the device's claim, which
+ * lasts while the claim file is open, so it is kept.  Each node is
+ * claimed once per process.  SoC-wide blocks (the clock and reset unit,
+ * the GRFs, GPIO banks used for pins) are claimed shared, since other
+ * drivers touch them too; the controller a driver drives, exclusively.
+ */
+static int
+claimnode(char *node)
+{
+	static char claimed[16][64];
+	static int nclaimed;
+	char path[128], who[64];
+	int fd, i, n;
+
+	for(i = 0; i < nclaimed; i++)
+		if(strcmp(claimed[i], node) == 0)
+			return 0;
+	snprint(path, sizeof path, "#P/%s/class", node);
+	who[0] = 0;
+	if((fd = open(path, OREAD)) >= 0){
+		n = read(fd, who, sizeof who - 1);
+		close(fd);
+		who[n > 0 ? n : 0] = 0;
+	}
+	if(strncmp(who, "cru", 3) == 0 || strncmp(who, "grf", 3) == 0 ||
+	   strncmp(who, "gpio", 4) == 0)
+		snprint(who, sizeof who, "i2cfs shared");
+	else
+		snprint(who, sizeof who, "i2cfs");
+	snprint(path, sizeof path, "#P/%s/claim", node);
+	if((fd = open(path, OWRITE)) < 0)
+		return -1;
+	if(write(fd, who, strlen(who)) != strlen(who)){
+		close(fd);
+		return -1;
+	}
+	if(nclaimed < nelem(claimed))
+		snprint(claimed[nclaimed++], sizeof claimed[0], "%s", node);
+	return 0;
+}
+
 static volatile u32 *
 mapdev(char *name, u64 base, u64 size)
 {
@@ -123,6 +166,8 @@ mapdev(char *name, u64 base, u64 size)
 	len = (size + 0x1fffff) & ~0x1fffffULL;
 	if(len == 0)
 		len = 0x200000;
+	if(claimnode(name) < 0)
+		return nil;
 	map = segattach(0, name, 0, len);
 	if(map == (void *)-1)
 		return nil;

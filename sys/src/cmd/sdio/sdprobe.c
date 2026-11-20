@@ -133,6 +133,49 @@ wm(volatile u32 *b, int off, u32 mask, u32 v)
 	b[off/4] = (v & mask) | ((mask & 0xffff) << 16);
 }
 
+/*
+ * Claims a #P node before its window is mapped or its interrupt waited
+ * for: #P allows both only to the holder of the device's claim, which
+ * lasts while the claim file is open, so it is kept.  Each node is
+ * claimed once per process.  SoC-wide blocks (the clock and reset unit,
+ * the GRFs, GPIO banks used for pins) are claimed shared, since other
+ * drivers touch them too; the controller a driver drives, exclusively.
+ */
+static int
+claimnode(char *node)
+{
+	static char claimed[16][64];
+	static int nclaimed;
+	char path[128], who[64];
+	int fd, i, n;
+
+	for(i = 0; i < nclaimed; i++)
+		if(strcmp(claimed[i], node) == 0)
+			return 0;
+	snprint(path, sizeof path, "#P/%s/class", node);
+	who[0] = 0;
+	if((fd = open(path, OREAD)) >= 0){
+		n = read(fd, who, sizeof who - 1);
+		close(fd);
+		who[n > 0 ? n : 0] = 0;
+	}
+	if(strncmp(who, "cru", 3) == 0 || strncmp(who, "grf", 3) == 0 ||
+	   strncmp(who, "gpio", 4) == 0)
+		snprint(who, sizeof who, "sdprobe shared");
+	else
+		snprint(who, sizeof who, "sdprobe");
+	snprint(path, sizeof path, "#P/%s/claim", node);
+	if((fd = open(path, OWRITE)) < 0)
+		return -1;
+	if(write(fd, who, strlen(who)) != strlen(who)){
+		close(fd);
+		return -1;
+	}
+	if(nclaimed < nelem(claimed))
+		snprint(claimed[nclaimed++], sizeof claimed[0], "%s", node);
+	return 0;
+}
+
 static u8 *
 mapnode(char *node, u64 want)
 {
@@ -160,6 +203,8 @@ mapnode(char *node, u64 want)
 	if(base != want || size == 0)
 		sysfatal("sdprobe: unexpected %s %#llux+%#llux", node, base, size);
 	len = (size + 0x1fffff) & ~0x1fffffULL;
+	if(claimnode(node) < 0)
+		sysfatal("sdprobe: claim %s: %r", node);
 	m = segattach(0, node, 0, len);
 	if(m == (void *)-1)
 		sysfatal("sdprobe: segattach %s: %r", node);

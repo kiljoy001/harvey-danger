@@ -178,7 +178,15 @@ arm64usertrap1(Arm64ureg *r)
 #ifdef ARM64_FULL_KERNEL
 	Proc *p;
 	int ftype, insyscall;
+	extern volatile int pnpprobing[];
 
+	/* An abort on a #P/<node>/regs access (devpnp.c): note it and step
+	 * over the access, which then reports a bus error. */
+	if(ec == 0x25 && pnpprobing[machp()->machno] == 1){
+		pnpprobing[machp()->machno] = 2;
+		r->elr += 4;
+		return;
+	}
 	p = externup();
 	if(p != nil && p->kp == 0 && ec == 0x15 && (r->esr&0xffff) == 0){
 		arm64syscall(r);

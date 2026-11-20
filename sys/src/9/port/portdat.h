@@ -459,6 +459,9 @@ struct Physseg {
 	 * reference gone), so the owner of the memory can account for
 	 * its mappings */
 	void (*release)(Physseg *);
+	/* if set, called before a segattach by name: -1 refuses it (a
+	 * device window, for a process not holding the device's claim) */
+	int (*attach)(Physseg *);
 };
 
 struct Sema {

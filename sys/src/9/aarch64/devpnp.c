@@ -1,4 +1,4 @@
-/* Read-only device-tree device discovery for ARM64 user-space drivers. */
+/* #P, the platform bus for ARM64 user-space drivers: discovery, claims, registers, interrupts, the DMA arena (doc/drivers/platform-bus.md). */
 #include <u.h>
 #include "../port/lib.h"
 #include "mem.h"
@@ -6,6 +6,7 @@
 #include "fns.h"
 #include "../port/error.h"
 #include "fdt.h"
+#include "mmu.h"
 
 enum {
 	Qtopdir,
@@ -21,9 +22,9 @@ enum {
 	Qfamily,
 	Qclaim,
 	Qowner,
-	Qrelease,
 	Qirq2,
 	Qwait2,
+	Qregs,
 	Qdma,
 	Qdmaclone,
 	Qdmaavail,
@@ -49,13 +50,150 @@ static Fdtdev pnpdev[Maxfdtdev];
 static u32 npnpdev;
 
 /*
- * One owner per device.  A driver claims its node before touching the
- * registers, so two families (or a stale process) cannot both program the
- * same controller.  The owner string is chosen by the driver, typically its
- * service name.
+ * One owner per device, held through a file.  A driver opens
+ * #P/<node>/claim, writes its name, and holds the device for as long as it
+ * keeps that file open: closing it (or exiting) releases the device.  Only
+ * a holder may map the device's window, wait for its interrupts or use its
+ * regs file, so two families (or a stale process) cannot both program the
+ * same controller, and a name alone proves nothing.  A claim written as
+ * "<name> shared" coexists with other shared claims, under any name: blocks
+ * several drivers touch on purpose (a SoC's GRF, a PMIC arbiter two guests
+ * drive) say so.  The owner shown is the first claimer.
  */
+typedef struct Pnpclaim Pnpclaim;
+struct Pnpclaim {
+	char	owner[32];	/* empty when free */
+	int	shared;
+	int	holders;	/* claim files holding it */
+};
 static Lock pnplock;
-static char pnpowner[Maxfdtdev][32];
+static Pnpclaim pnpclaim[Maxfdtdev];
+
+/* Whether the calling process holds dev's claim: an open claim file of
+ * its own, or one it inherited. */
+static int
+pnpholds(int dev)
+{
+	Proc *up = externup();
+	Fgrp *f;
+	Chan *c;
+	int i, held;
+
+	f = up->fgrp;
+	if(f == nil)
+		return 0;
+	held = 0;
+	lock(&f->r.l);
+	for(i = 0; i <= f->maxfd; i++){
+		c = f->fd[i];
+		if(c != nil && c->dev != nil && c->dev->dc == 'P' &&
+		   (c->flag & COPEN) && TYPE(c) == Qclaim && DEV(c) == dev &&
+		   c->aux != nil){
+			held = 1;
+			break;
+		}
+	}
+	unlock(&f->r.l);
+	return held;
+}
+
+/*
+ * A register access for #P/<node>/regs.  It runs on the kernel's own page
+ * table, briefly, with interrupts off: in a process's table the identity
+ * address of a device below the user boundary can be the process's own
+ * memory.  An abort on the access (a powered-down or unclocked block)
+ * is caught by user.c through pnpprobing, which skips the instruction,
+ * and reported as an error rather than retried.  An asynchronous error
+ * (a posted write the interconnect refuses later) is not caught.
+ */
+volatile int pnpprobing[MACHMAX];
+
+static char*
+pnpregaccess(u64 pa, int n, u64 *v, int write)
+{
+	Proc *up = externup();
+	char *err;
+	u64 tpa;
+	Mpl s;
+	int m;
+
+	err = nil;
+	s = splhi();
+	m = machp()->machno;
+	arm64mmuswitch(arm64mmukernelroot());
+	if(arm64mmutranslate(pa, &tpa) < 0 || tpa != pa)
+		err = "regs: block not in the kernel's map";
+	else{
+		pnpprobing[m] = 1;
+		if(write){
+			if(n == 4)
+				*(volatile u32*)(usize)pa = *v;
+			else
+				*(volatile u64*)(usize)pa = *v;
+		}else{
+			if(n == 4)
+				*v = *(volatile u32*)(usize)pa;
+			else
+				*v = *(volatile u64*)(usize)pa;
+		}
+		__asm__ volatile("dsb sy" ::: "memory");
+		if(pnpprobing[m] == 2)
+			err = "regs: bus error";
+		pnpprobing[m] = 0;
+	}
+	if(up != nil && up->MMU.rootpa != 0)
+		arm64mmuswitch(up->MMU.rootpa);
+	splx(s);
+	return err;
+}
+
+/* #P/<node>/regs: one 4- or 8-byte aligned register per read or write,
+ * at its offset in the device's first window. */
+static i32
+pnpregs(Chan *c, void *a, i32 n, i64 off, int write)
+{
+	Fdtdev *d;
+	char *err;
+	u64 v;
+	u32 v32;
+
+	d = &pnpdev[DEV(c)];
+	if((n != 4 && n != 8) || off < 0 || (off & (n - 1)) != 0 ||
+	   (u64)off >= d->size || (u64)n > d->size - off)
+		error("regs: one aligned 4- or 8-byte register");
+	v = 0;
+	if(write){
+		if(n == 4){
+			memmove(&v32, a, 4);
+			v = v32;
+		}else
+			memmove(&v, a, 8);
+	}
+	err = pnpregaccess(d->base + off, n, &v, write);
+	if(err != nil)
+		error(err);
+	if(!write){
+		if(n == 4){
+			v32 = v;
+			memmove(a, &v32, 4);
+		}else
+			memmove(a, &v, 8);
+	}
+	return n;
+}
+
+/* Physseg.attach for a device's window (boot.c): only for a process
+ * holding the device's claim. */
+int
+pnpsegattach(Physseg *ps)
+{
+	u32 i;
+
+	for(i = 0; i < npnpdev; i++)
+		if(strcmp(pnpdev[i].name, ps->name) == 0)
+			return pnpholds(i) ? 0 : -1;
+	return -1;
+}
 static u64 consolebase;
 extern u64 arm64dmabase, arm64dmasize;
 extern u64 arm64teeshmbase, arm64teeshmsize;
@@ -442,7 +580,8 @@ pnpfamily(int clas)
 	case Fdtclassi2s:
 	case Fdtclasscru:
 	case Fdtclassgrf:
-	case Fdtclasspower:	return "soc";
+	case Fdtclasspower:
+	case Fdtclassrtc:	return "soc";
 	case Fdtclassgmac:	return "net";
 	case Fdtclassmmc:	return "mmc";
 	case Fdtclassusb:	return "usb";
@@ -506,7 +645,7 @@ pnpgen(Chan *c, char *name, Dirtab *tab, int ntab, int s, Dir *dp)
 			return 1;
 		}
 		dev = DEV(c);
-		if(dev < 0 || dev >= (int)npnpdev || s < 0 || s > Qwait2-Qreg)
+		if(dev < 0 || dev >= (int)npnpdev || s < 0 || s > Qregs-Qreg)
 			return -1;
 		q.type = QTFILE;
 		switch(s + Qreg){
@@ -554,10 +693,6 @@ pnpgen(Chan *c, char *name, Dirtab *tab, int ntab, int s, Dir *dp)
 			q.path = QPATH(dev, Qowner);
 			devdir(c, q, "owner", 0, eve, 0444, dp);
 			break;
-		case Qrelease:
-			q.path = QPATH(dev, Qrelease);
-			devdir(c, q, "release", 0, eve, 0666, dp);
-			break;
 		case Qirq2:
 			q.path = QPATH(dev, Qirq2);
 			devdir(c, q, "irq2", 0, eve, 0444, dp);
@@ -565,6 +700,10 @@ pnpgen(Chan *c, char *name, Dirtab *tab, int ntab, int s, Dir *dp)
 		case Qwait2:
 			q.path = QPATH(dev, Qwait2);
 			devdir(c, q, "wait2", 0, eve, 0444, dp);
+			break;
+		case Qregs:
+			q.path = QPATH(dev, Qregs);
+			devdir(c, q, "regs", pnpdev[dev].size, eve, 0666, dp);
 			break;
 		default:
 			return -1;
@@ -707,7 +846,7 @@ pnpopen(Chan *c, int omode)
 			error(Eperm);
 	}else if(t == Qdmaclone || t == Qchunkctl || t == Qchunkdata ||
 	         t == Qteesmc || t == Qteeclean || t == Qteeinval ||
-	         t == Qteecivac || t == Qclaim || t == Qrelease){
+	         t == Qteecivac || t == Qclaim || t == Qregs){
 		/* DMA chunks, the SMC gate and claims accept writes. */
 	}else if(m != OREAD)
 		error(Eperm);
@@ -743,6 +882,10 @@ pnpopen(Chan *c, int omode)
 		dmachunk[n].nchan++;
 		unlock(&dmalock);
 	}
+	if(t == Qregs){
+		if(DEV(c) < 0 || DEV(c) >= (int)npnpdev || !pnpholds(DEV(c)))
+			error("device not claimed");
+	}
 	if(t == Qwait || t == Qwait2){
 		int dev;
 		u32 irq;
@@ -750,6 +893,8 @@ pnpopen(Chan *c, int omode)
 		dev = DEV(c);
 		if(dev < 0 || dev >= (int)npnpdev)
 			error(Ebadarg);
+		if(!pnpholds(dev))
+			error("device not claimed");
 		irq = (t == Qwait2) ? pnpdev[dev].irq2 : pnpdev[dev].irq;
 		{
 			int *idp;
@@ -804,6 +949,14 @@ pnpclose(Chan *c)
 	   c->aux != nil)
 		arm64irqdisable(TYPE(c) == Qwait2 ? pnpdev[dev].irq2 : pnpdev[dev].irq,
 			*(int*)c->aux);
+	/* The last claim file holding a device releases it. */
+	if(TYPE(c) == Qclaim && c->aux != nil &&
+	   (dev = DEV(c)) >= 0 && dev < (int)npnpdev){
+		lock(&pnplock);
+		if(pnpclaim[dev].holders > 0 && --pnpclaim[dev].holders == 0)
+			memset(&pnpclaim[dev], 0, sizeof pnpclaim[dev]);
+		unlock(&pnplock);
+	}
 	free(c->aux);
 	c->aux = nil;
 }
@@ -968,40 +1121,49 @@ pnpwrite(Chan *c, void *a, i32 n, i64 off)
 	USED(off);
 	if(n <= 0)
 		error(Ebadarg);
-	if(TYPE(c) == Qclaim || TYPE(c) == Qrelease){
-		char name[32];
-		int m, dev;
+	if(TYPE(c) == Qclaim){
+		char name[48], *f[3];
+		int nf, dev, shared;
+		Pnpclaim *cl;
 
 		dev = DEV(c);
 		if(dev < 0 || dev >= (int)npnpdev)
 			error(Ebadarg);
-		m = n < (int)sizeof(name)-1 ? n : (int)sizeof(name)-1;
-		memmove(name, a, m);
-		name[m] = 0;
-		while(m > 0 && (name[m-1] == '\n' || name[m-1] == ' ' ||
-		                name[m-1] == '\t'))
-			name[--m] = 0;
-		if(m == 0)
+		if(c->aux != nil)
+			error("claim already held through this file");
+		if(n >= (int)sizeof name)
 			error(Ebadarg);
+		memmove(name, a, n);
+		name[n] = 0;
+		nf = tokenize(name, f, nelem(f));
+		shared = nf == 2 && strcmp(f[1], "shared") == 0;
+		if(nf < 1 || nf > 2 || (nf == 2 && !shared) ||
+		   strlen(f[0]) >= sizeof cl->owner)
+			error(Ebadarg);
+		cl = &pnpclaim[dev];
 		lock(&pnplock);
-		if(TYPE(c) == Qclaim){
-			if(pnpowner[dev][0] != 0 &&
-			   strcmp(pnpowner[dev], name) != 0){
-				unlock(&pnplock);
-				error("device already claimed");
-			}
-			strncpy(pnpowner[dev], name, sizeof pnpowner[dev]-1);
-			pnpowner[dev][sizeof pnpowner[dev]-1] = 0;
-		}else{
-			if(strcmp(pnpowner[dev], name) != 0){
-				unlock(&pnplock);
-				error(Eperm);
-			}
-			pnpowner[dev][0] = 0;
+		if(cl->holders > 0 && (!shared || !cl->shared)){
+			unlock(&pnplock);
+			error("device already claimed");
 		}
+		if(cl->holders == 0){
+			strcpy(cl->owner, f[0]);
+			cl->shared = shared;
+		}
+		cl->holders++;
 		unlock(&pnplock);
+		c->aux = mallocz(sizeof(int), 1);	/* marks the file a holder */
+		if(c->aux == nil){
+			lock(&pnplock);
+			if(--cl->holders == 0)
+				memset(cl, 0, sizeof *cl);
+			unlock(&pnplock);
+			error(Enomem);
+		}
 		return n;
 	}
+	if(TYPE(c) == Qregs)
+		return pnpregs(c, a, n, off, 1);
 	if(TYPE(c) == Qteesmc){
 		if(n != sizeof teereq)
 			error(Ebadarg);
@@ -1177,9 +1339,12 @@ pnpread(Chan *c, void *a, i32 n, i64 off)
 		break;
 	case Qowner:
 		lock(&pnplock);
-		snprint(buf, sizeof buf, "%s\n", pnpowner[dev]);
+		snprint(buf, sizeof buf, "%s%s\n", pnpclaim[dev].owner,
+			pnpclaim[dev].shared ? " shared" : "");
 		unlock(&pnplock);
 		break;
+	case Qregs:
+		return pnpregs(c, a, n, off, 0);
 	default:
 		error(Ebadarg);
 	}

@@ -161,6 +161,8 @@ static const Fdtclass classtab[] = {
 	{ "snps,dwc3", Fdtclassusb },
 	{ "qcom,dwc3", Fdtclassusb },
 	{ "qcom,dwc-usb3-msm", Fdtclassusb },
+	/* QEMU virt's RTC; no driver claims it, so #P's tests use it */
+	{ "arm,pl031", Fdtclassrtc },
 	{ "rockchip,rk3568-dwc3", Fdtclassusb },
 	{ "generic-ehci", Fdtclassusb },
 	{ "generic-ohci", Fdtclassusb },
@@ -266,7 +268,7 @@ fdtclassname(u32 clas)
 		"none", "uart", "i2c", "spi", "gpio", "pwm", "gmac", "mmc",
 		"usb", "pcie", "saradc", "tsadc", "wdt", "rng", "i2s", "cru", "grf",
 		"npu", "gpu", "vop", "hdmi", "dsi", "edp", "sfc", "vpu",
-		"iommu", "power",
+		"iommu", "power", "rtc",
 	};
 
 	if(clas >= sizeof(name)/sizeof(name[0]))
