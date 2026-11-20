@@ -59,6 +59,9 @@ def cflags() -> list[str]:
         "-mstrict-align", "-fsigned-char", "-fcommon", "-O1", "-g",
         "-DEMU", "-DROOT=\"/dis\"", "-DUSE_FPdbleword",
         "-I", str(ROOT / "util/arm64/emu"),
+        # limbo's headers, generated from purgatorio (gen/mkgen.sh), ahead
+        # of any a local purgatorio build left in its libinterp
+        "-I", str(ROOT / "util/arm64/emu/gen"),
         "-I", str(ROOT / "aarch64/include"),
         "-I", str(ROOT / "sys/include"),
         "-I", str(PURG / "emu/port"),

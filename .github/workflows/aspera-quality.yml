@@ -51,6 +51,14 @@ jobs:
           # against.
           git clone https://github.com/kiljoy001/9vm.git ../9vm
           git -C ../9vm checkout --detach 7f835f81b1a0b367cbea597fa87065815c12d6b0
+      - name: Check out purgatorio
+        run: |
+          # The Dis runner (util/arm64/build_emu.py) compiles purgatorio's
+          # libinterp and emu/port from a checkout beside this one; the
+          # headers limbo generates from it are in util/arm64/emu/gen,
+          # made from this commit (util/arm64/emu/gen/PURGATORIO).
+          git clone --branch front https://github.com/kiljoy001/purgatorio.git ../purgatorio
+          git -C ../purgatorio checkout --detach 2d63c302389e7a9bad2e719596233f286d6b3952
       - name: Build the Objective-9C compiler
         run: |
           export PLAN9="$HOME/.cache/plan9port"
@@ -67,5 +75,9 @@ jobs:
           9c -o o9_type.o o9_type.c
           9l -o "$GITHUB_WORKSPACE/../objective-9c/o9c/o9c" \
              y.tab.o o9_type.o -lbio
+      - name: Build libc and the Dis runner
+        run: |
+          python3 util/arm64/build_libc.py
+          python3 util/arm64/build_emu.py
       - name: Build kernel and test 9ring plus VirtIO-MMIO 9P
         run: python3 util/arm64/test_virtio9p.py
