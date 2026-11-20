@@ -17,28 +17,36 @@ true when written: check the code and `git log` before relying on them.
 
 ## Work in progress
 
-### `#P` DMA arena as chunks: branch `pdma`
+### `#P`: DMA chunks, claims as files, regs: branch `pdma`
 
-- Worktree `~/Repo/harvey-pdma`, commit `2ee6d2a24` "#P: the DMA arena as
-  chunks each driver holds through a file".  Not yet merged into the branch
-  the phone work is on.
-- What it does: `#P/dma/clone` gives a chunk `#P/dma/N`, held by its open
-  ctl (`alloc <size> [<align>] [cached|uncached]`, `map`,
-  `clean|inval|cleaninval <off> <len>`), with `data` to read and write it.
-  The ctl is the capability; chunks are zeroed, mapped only into who asks,
-  and freed when the last file closes and the last mapping goes.  The old
-  `segattach(0, "dma", ...)` of the whole arena and the
-  `#P/dma/{base,size,alloc,allocowned,free,clean,inval,cleaninval}` files
-  are gone.  Full contract: `doc/drivers/platform-bus.md`, "DMA".
-- Verified in QEMU only: `util/arm64/test_full_kernel.py`,
-  `util/arm64/test_pdma.py` (the contract), `util/arm64/test_lkl_boot.py`
-  (passes at 768 MiB with this branch; panics "page-table memory exhausted"
-  without it, from mapping the whole arena with 4 KiB pages).  Not run on
-  the phone or the Orange Pi yet; emmc, gmac, sdprobe, o9xhci, keyroot and
-  ethergmac only compile.
-- Next on this line: claims as open files and a claim-gated
-  `#P/<node>/regs` file (registers through pread/pwrite); EL0 cache
-  maintenance; per-device IOMMU contexts.
+- Worktree `~/Repo/harvey-pdma`, two commits on top of `vmm-hypervisor`:
+  "#P: the DMA arena as chunks each driver holds through a file" and
+  "#P: a claim is an open file, and registers are files too".  Not yet
+  merged into `vmm-hypervisor`.
+- DMA: `#P/dma/clone` gives a chunk `#P/dma/N`, held by its open ctl
+  (`alloc <size> [<align>] [cached|uncached]`, `map`,
+  `clean|inval|cleaninval <off> <len>`), with `data` to read and write it;
+  chunks are zeroed, mapped only into who asks, and freed when the last
+  file closes and the last mapping goes.  There is no `dma` segment and no
+  `#P/dma/{base,size,alloc,allocowned,free,clean,inval,cleaninval}`.
+- Claims: the open `#P/<node>/claim` file is the claim (closing releases;
+  children inherit it); only a holder may `segattach` the window, open
+  `wait`, or use `regs`.  Exclusive unless written `"<name> shared"`;
+  drivers claim clock/reset units, GRFs and GPIO banks shared.  The
+  `release` file is gone.  LKL families mark a device two families share
+  with a trailing `+` in `util/arm64/lkl-families.json`.
+- `#P/<node>/regs`: one aligned 4- or 8-byte register per pread/pwrite,
+  done on the kernel's page table; a synchronous abort is reported as
+  `regs: bus error`.
+- Contract: `doc/drivers/platform-bus.md`.  Verified in QEMU only:
+  `util/arm64/test_pnp.py` (claims, regs against the PL031, DMA),
+  `test_full_kernel.py`, `test_lkl_boot.py` (768 MiB passes only with
+  this branch).  Not run on the phone or the Orange Pi; the RK drivers
+  (emmc, gmac, sdcard, sdprobe, i2cfs, gpiofs, o9xhci, usbpower, keyroot)
+  only compile.
+- Next on this line: grant a device's window alone instead of its whole
+  2 MiB block (other devices' registers share the block); per-claim IOMMU
+  contexts (rkiommu on the RK3566; an ARM SMMU driver for Qualcomm).
 
 ### Bengal phone bring-up
 
@@ -46,12 +54,16 @@ true when written: check the code and `git log` before relying on them.
   LKL config, adrenofs).  Status and runbooks are in the support matrix.
 - The `adrenofs -t` wedge happens at `segattach` of the whole DMA arena in
   a second process; the `pdma` branch removes that mapping (see above).
-  Not yet tried on the phone.
+  Not yet tried on the phone.  `emmclog` (committed with the bring-up)
+  maps the eMMC controller: it and the `bengal_usb` guest cannot both
+  claim it.
 
 ## Rules for drivers
 
 - Get DMA memory from `#P/dma/clone` (or `drvdma` in `drvkit`), never by
   mapping the arena: on `pdma` and after, there is no `dma` segment.
+- Claim a device before mapping it or waiting on it, and keep the claim
+  file open (`drvclaim`/`drvmap` in `drvkit` do this).
 - Program devices only with physical addresses from your own chunks: the
   kernel isolates chunks from the CPU's side, not yet from devices.
 
@@ -61,9 +73,12 @@ true when written: check the code and `git log` before relying on them.
   and boots them in QEMU virt.  It needs the earlier stages' outputs in
   `build/` (`util/arm64/build_emu.py` and others); in a fresh worktree,
   copy `build/` from a tree that has them (`cp -a`, not hard links).
-- The committed `util/arm64/build_userland.py` compiles
-  `sys/src/cmd/emmclog/emmclog.c`, which is not committed yet: a clean
-  checkout needs that directory before it builds.
+- The build needs `../9vm` (for `mksys.py`) and `../purgatorio` (for the
+  Dis runner, `util/arm64/build_emu.py`) beside the tree, and
+  `util/arm64/build_libc.py` and `build_emu.py` run before the kernel; the
+  CI job (`.github/workflows/aspera-quality.yml`) shows the commits it
+  pins.  The limbo-generated headers are committed in
+  `util/arm64/emu/gen` (regenerate with `gen/mkgen.sh`).
 - LKL: `python3 util/arm64/build_lkl.py --lkl
   /tmp/opencode/lkl-install/lib/lkl.o --include
   /tmp/opencode/lkl-install/include`, then
