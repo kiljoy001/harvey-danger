@@ -41,7 +41,8 @@ true when written: check the code and `git log` before relying on them.
 - Contract: `doc/drivers/platform-bus.md`.  Verified in QEMU only:
   `util/arm64/test_pnp.py` (claims, regs against the PL031, DMA),
   `test_full_kernel.py`, `test_lkl_boot.py` (768 MiB passes only with
-  this branch).  Not run on the phone or the Orange Pi; the RK drivers
+  this branch).  Claims checked on the phone on 2026-11-19 (support
+  matrix).  Not run on the Orange Pi; the RK drivers
   (emmc, gmac, sdcard, sdprobe, i2cfs, gpiofs, o9xhci, usbpower, keyroot)
   only compile.
 - Next on this line: grant a device's window alone instead of its whole

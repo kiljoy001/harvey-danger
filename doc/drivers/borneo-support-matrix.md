@@ -73,6 +73,34 @@ the mainline one plus a 1 ms delayed-work ISR poller
 (`geni_i2c_poll_work`) for host IRQ-forwarding latency;
 Motorola's is the CAF variant with GPI/DMA and ipc logging.
 
+## Observed on hardware, 2026-11-19, branch `pdma` (RAM-boot, no flash)
+
+`pdma` (DMA chunks, claims as open files, `regs`) packed with
+`pack_boot.py --families bengal_ctl,bengal_usb`.
+
+- Both guests come up under the claim rules: the console gadget
+  enumerates 30 s after `fastboot boot`; eMMC p1-p77 and the
+  `/fw/{modem,bt,dsp}` mounts as before; touch and WCN3990 firmware
+  staged.  `#P/*/owner`: `qcom,gcc@1400000`, `pinctrl@400000` and
+  `qcom,spmi@1c40000` are `lkld shared` (the last held by both
+  guests); dwc3, ssusb, sdhci x2, GENI, i2c x2, spi, qrng, tsens and
+  icnss are `lkld`.
+- From rc, against held devices: an exclusive or shared claim of
+  `sdhci@4744000` and an exclusive claim of the clock unit fail with
+  `device already claimed`; a shared claim of the clock unit succeeds
+  and ends with its writer; `wait` and `regs` without a claim fail
+  with `device not claimed`.  On a free device (`ufshc@4804000`): a
+  claim held open on fd 3 makes `owner` read its name, lets a child
+  open `regs`, keeps a second claim out, and ends when the block
+  closes fd 3, after which the device can be claimed again.
+- Probe with `/boot/cat /env/x > '#P/<node>/claim'`: the boot
+  `echo` ignores write errors and writes each word separately.
+- Unchanged from before: the `bengal_usb` list's `wifi@c800000` is
+  the guest's name and is not in `#P` (`claim ... file does not
+  exist`; `qcom,icnss@C800000` maps the same window), and the boot
+  log still ends in a repeated user fault, now `memmove` in
+  `lklboot` (`far 0x146433de pc 0x109cf028`) after the `/fw` mounts.
+
 ## Observed on hardware, 2026-11-18 (RAM-boot, no flash)
 
 `fastboot boot firmware/harvey-boot.img` (fastboot 34.0.4),
