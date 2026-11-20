@@ -43,6 +43,14 @@ jobs:
           git clone --depth=1 --branch objective-9c-v0.2.0 \
             --recurse-submodules --shallow-submodules \
             https://github.com/kiljoy001/objective-9c.git ../objective-9c
+      - name: Check out 9vm
+        run: |
+          # The arm64 build runs 9vm's mksys.py (and build_libcxx.py) from
+          # a checkout beside this one (util/arm64/build_kernel.py,
+          # build_libc.py).  Pin the commit those were last checked
+          # against.
+          git clone https://github.com/kiljoy001/9vm.git ../9vm
+          git -C ../9vm checkout --detach 7f835f81b1a0b367cbea597fa87065815c12d6b0
       - name: Build the Objective-9C compiler
         run: |
           export PLAN9="$HOME/.cache/plan9port"
