@@ -45,6 +45,7 @@ CAT_BASE = 0x3200000
 B64_BASE = 0x3200000
 LS_BASE = 0x3600000
 RNGFS_BASE = 0x3A00000
+TOUCHFS_BASE = 0x3A00000
 WDTFS_BASE = 0x4E00000
 SARADCFS_BASE = 0x5A00000
 TSADCFS_BASE = 0x6200000
@@ -416,6 +417,11 @@ def build_pmicfs(out: Path, libc: Path) -> tuple[bytes, int]:
 def build_rngfs(out: Path, libc: Path) -> tuple[bytes, int]:
     return build_fs(out, libc, "rngfs",
                     ROOT / "sys/src/cmd/rngfs/rngfs.c", RNGFS_BASE)
+
+
+def build_touchfs(out: Path, libc: Path) -> tuple[bytes, int]:
+    return build_fs(out, libc, "touchfs",
+                    ROOT / "sys/src/cmd/touchfs/touchfs.c", TOUCHFS_BASE)
 
 
 def build_wdtfs(out: Path, libc: Path) -> tuple[bytes, int]:
@@ -1856,6 +1862,15 @@ main(int argc, char **argv)
 				say("HARVEY-ARM64 LKL LAUNCH FAIL\n");
 		}
 		say("HARVEY-ARM64 LKL SERVICES START\n");
+		/* touchfs finds its own touchscreen (a multi-touch input
+		 * device in an LKL guest) and exits where there is none. */
+		pid = rfork(RFPROC|RFNOWAIT|RFFDG|RFNAMEG|RFENVG|RFREND|RFNOTEG);
+		if(pid == 0){
+			char *touchav[] = { "/boot/touchfs", nil };
+
+			exec(touchav[0], touchav);
+			_exits("exec");
+		}
 	}
 	{
 		char *rcargv[] = { "/boot/rc", "-i", "-m", "/boot/rcmain", nil };
@@ -1894,6 +1909,7 @@ main(int argc, char **argv)
     i2cfs, _ = build_i2cfs(out, libc)
     pmicfs, _ = build_pmicfs(out, libc)
     rngfs, _ = build_rngfs(out, libc)
+    touchfs, _ = build_touchfs(out, libc)
     wdtfs, _ = build_wdtfs(out, libc)
     saradcfs, _ = build_saradcfs(out, libc)
     tsadcfs, _ = build_tsadcfs(out, libc)
@@ -2334,6 +2350,61 @@ main(int argc, char **argv)
 	exits(nil);
 }
 ''', RTC_BASE, libc)
+    touchtest, _ = build_program(out, "touchtest", r'''#include <u.h>
+#include <libc.h>
+
+/* touchtest [frames [seconds]]: read frames from touchfs's events file
+ * (mounting /srv/touch if need be) and print them.  An alarm interrupts a
+ * read still waiting after the given seconds, which sends touchfs a
+ * flush; status is read afterwards to show the server still answers.
+ */
+
+static int
+onnote(void *v, char *s)
+{
+	USED(v);
+	return strcmp(s, "alarm") == 0;
+}
+
+void
+main(int argc, char **argv)
+{
+	char buf[1024];
+	int fd, n, want, secs, got;
+
+	want = argc > 1 ? atoi(argv[1]) : 20;
+	secs = argc > 2 ? atoi(argv[2]) : 15;
+	if(access("/mnt/touch/events", AEXIST) < 0){
+		fd = open("/srv/touch", ORDWR);
+		if(fd < 0)
+			sysfatal("/srv/touch: %r");
+		if(mount(fd, -1, "/mnt/touch", MREPL, "") < 0)
+			sysfatal("mount /srv/touch: %r");
+	}
+	fd = open("/mnt/touch/events", OREAD);
+	if(fd < 0)
+		sysfatal("events: %r");
+	atnotify(onnote, 1);
+	alarm(secs*1000);
+	for(got = 0; got < want; got++){
+		n = read(fd, buf, sizeof buf - 1);
+		if(n <= 0){
+			print("read: %r after %d frames\n", got);
+			break;
+		}
+		buf[n] = 0;
+		print("%s", buf);
+	}
+	alarm(0);
+	close(fd);
+	fd = open("/mnt/touch/status", OREAD);
+	if(fd >= 0 && (n = read(fd, buf, sizeof buf - 1)) > 0){
+		buf[n] = 0;
+		print("%s", buf);
+	}
+	exits(nil);
+}
+''', RTC_BASE, libc)
     rtc, _ = build_program(out, "rtc", r'''#include <u.h>
 #include <libc.h>
 
@@ -2717,6 +2788,7 @@ main(int argc, char **argv)
     emit_array(lines, "arm64i2cfself", i2cfs)
     emit_array(lines, "arm64pmicfself", pmicfs)
     emit_array(lines, "arm64rngfself", rngfs)
+    emit_array(lines, "arm64touchfself", touchfs)
     emit_array(lines, "arm64wdtfself", wdtfs)
     emit_array(lines, "arm64saradcfself", saradcfs)
     emit_array(lines, "arm64tsadcfself", tsadcfs)
@@ -2746,6 +2818,7 @@ main(int argc, char **argv)
     emit_array(lines, "arm64pingelf", ping)
     emit_array(lines, "arm64rtcelf", rtc)
     emit_array(lines, "arm64peekelf", peek)
+    emit_array(lines, "arm64touchtestelf", touchtest)
     emit_array(lines, "arm64emmcelf", emmc)
     emit_array(lines, "arm64gmacelf", gmac)
     emit_array(lines, "arm64sdprobeelf", sdprobe)
@@ -2792,6 +2865,7 @@ main(int argc, char **argv)
         "i2cfs": i2cfs,
         "pmicfs": pmicfs,
         "rngfs": rngfs,
+        "touchfs": touchfs,
         "wdtfs": wdtfs,
         "saradcfs": saradcfs,
         "tsadcfs": tsadcfs,
@@ -2818,6 +2892,7 @@ main(int argc, char **argv)
         "ping": ping,
         "rtc": rtc,
         "peek": peek,
+        "touchtest": touchtest,
         "emmc": emmc,
         "provision": provision,
         "bigtest": bigtest,

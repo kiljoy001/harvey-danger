@@ -672,6 +672,7 @@ arm64kernelstart(Fdtinfo *info)
 	addbootfile("i2cfs", (u8 *)arm64i2cfself, sizeof(arm64i2cfself));
 	addbootfile("pmicfs", (u8 *)arm64pmicfself, sizeof(arm64pmicfself));
 	addbootfile("rngfs", (u8 *)arm64rngfself, sizeof(arm64rngfself));
+	addbootfile("touchfs", (u8 *)arm64touchfself, sizeof(arm64touchfself));
 	addbootfile("wdtfs", (u8 *)arm64wdtfself, sizeof(arm64wdtfself));
 	addbootfile("saradcfs", (u8 *)arm64saradcfself, sizeof(arm64saradcfself));
 	addbootfile("tsadcfs", (u8 *)arm64tsadcfself, sizeof(arm64tsadcfself));
@@ -693,6 +694,7 @@ arm64kernelstart(Fdtinfo *info)
 	addbootfile("ls", (u8 *)arm64lself, sizeof(arm64lself));
 	addbootfile("rtc", (u8 *)arm64rtcelf, sizeof(arm64rtcelf));
 	addbootfile("peek", (u8 *)arm64peekelf, sizeof(arm64peekelf));
+	addbootfile("touchtest", (u8 *)arm64touchtestelf, sizeof(arm64touchtestelf));
 	addbootfile("emmc", (u8 *)arm64emmcelf, sizeof(arm64emmcelf));
 	addbootfile("displaytest", (u8 *)arm64displaytestelf,
 		    sizeof(arm64displaytestelf));
