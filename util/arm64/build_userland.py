@@ -2278,6 +2278,62 @@ main(int argc, char **argv)
 	exits(nil);
 }
 ''', PING_BASE, libc)
+    peek, _ = build_program(out, "peek", r'''#include <u.h>
+#include <libc.h>
+
+/* Registers of a #P device, through its regs file under a shared claim.
+ *   peek node off [count]  print count 32-bit registers from off
+ *   peek -w node off val   write one 32-bit register
+ * Offsets and values are hex.  A block that aborts gives regs: bus error.
+ */
+
+static void
+usage(void)
+{
+	fprint(2, "usage: peek node off [count] | peek -w node off val\n");
+	exits("usage");
+}
+
+void
+main(int argc, char **argv)
+{
+	char path[128];
+	int cfd, rfd, wr, i, n;
+	u64 off;
+	u32 v;
+
+	wr = 0;
+	if(argc > 1 && strcmp(argv[1], "-w") == 0){
+		wr = 1;
+		argc--;
+		argv++;
+	}
+	if(argc < 3 || argc > 4 || (wr && argc != 4))
+		usage();
+	snprint(path, sizeof path, "#P/%s/claim", argv[1]);
+	cfd = open(path, ORDWR);
+	if(cfd < 0 || write(cfd, "peek shared", 11) != 11)
+		sysfatal("%s: %r", path);
+	snprint(path, sizeof path, "#P/%s/regs", argv[1]);
+	rfd = open(path, wr ? ORDWR : OREAD);
+	if(rfd < 0)
+		sysfatal("%s: %r", path);
+	off = strtoull(argv[2], nil, 16);
+	if(wr){
+		v = strtoul(argv[3], nil, 16);
+		if(pwrite(rfd, &v, 4, off) != 4)
+			sysfatal("write %llux: %r", off);
+		exits(nil);
+	}
+	n = argc == 4 ? strtol(argv[3], nil, 16) : 1;
+	for(i = 0; i < n; i++, off += 4){
+		if(pread(rfd, &v, 4, off) != 4)
+			sysfatal("read %llux: %r", off);
+		print("%08llux %08ux\n", off, v);
+	}
+	exits(nil);
+}
+''', RTC_BASE, libc)
     rtc, _ = build_program(out, "rtc", r'''#include <u.h>
 #include <libc.h>
 
@@ -2689,6 +2745,7 @@ main(int argc, char **argv)
     emit_array(lines, "arm64lself", ls)
     emit_array(lines, "arm64pingelf", ping)
     emit_array(lines, "arm64rtcelf", rtc)
+    emit_array(lines, "arm64peekelf", peek)
     emit_array(lines, "arm64emmcelf", emmc)
     emit_array(lines, "arm64gmacelf", gmac)
     emit_array(lines, "arm64sdprobeelf", sdprobe)
@@ -2760,6 +2817,7 @@ main(int argc, char **argv)
         "ls": ls,
         "ping": ping,
         "rtc": rtc,
+        "peek": peek,
         "emmc": emmc,
         "provision": provision,
         "bigtest": bigtest,

@@ -216,6 +216,7 @@ static const Fdtclass classtab[] = {
 	{ "qcom,adreno", Fdtclassgpu },
 	{ "qcom,kgsl-smmu-v2", Fdtclassiommu },
 	{ "qcom,adreno-smmu", Fdtclassiommu },
+	{ "qcom,qsmmu-v500", Fdtclassiommu },
 	{ "qcom,adreno-gmu-wrapper", Fdtclasspower },
 	{ "qcom,wcn3990-wifi", Fdtclassgmac },
 	{ "qcom,icnss", Fdtclassgmac },

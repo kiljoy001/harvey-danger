@@ -111,6 +111,7 @@ int fdtparse(void *, usize, Fdtinfo *);
 int fdtselectram(Fdtinfo *, u64, u64);
 const char *fdtclassname(u32);
 int arm64timerinit(Fdtinfo *);
+int qcsmmuinit(Fdtinfo *);
 void arm64timerstop(void);
 int arm64timerwait(void);
 void fb_stripe(int, u32);

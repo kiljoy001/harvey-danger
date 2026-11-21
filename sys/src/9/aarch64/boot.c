@@ -692,6 +692,7 @@ arm64kernelstart(Fdtinfo *info)
 	addbootfile("b64", (u8 *)arm64b64elf, sizeof(arm64b64elf));
 	addbootfile("ls", (u8 *)arm64lself, sizeof(arm64lself));
 	addbootfile("rtc", (u8 *)arm64rtcelf, sizeof(arm64rtcelf));
+	addbootfile("peek", (u8 *)arm64peekelf, sizeof(arm64peekelf));
 	addbootfile("emmc", (u8 *)arm64emmcelf, sizeof(arm64emmcelf));
 	addbootfile("displaytest", (u8 *)arm64displaytestelf,
 		    sizeof(arm64displaytestelf));
@@ -733,6 +734,7 @@ arm64kernelstart(Fdtinfo *info)
 	else
 		arm64uartputs("HARVEY-ARM64 DISPLAY PASS\n");
 #endif
+	qcsmmuinit(info);
 	arm64clockready();
 	arm64smpinit(info);
 	startworker(1);
