@@ -961,6 +961,12 @@ coherentclean(void)
 }
 
 void
+lkl_host_dma_coherent_sync(void)
+{
+	coherentclean();
+}
+
+void
 lkl_host_dma_sync(unsigned long pa, unsigned long size, int op)
 {
 	static char *name[] = { "clean", "inval", "cleaninval" };

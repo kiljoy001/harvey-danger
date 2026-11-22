@@ -44,6 +44,7 @@
 			"i2c@4a84000",
 			"spi@4a88000",
 			"syscon@00340000",
+			"memory@045f0000",
 			"mailbox@0f111000",
 			"qcom,icnss@C800000"
 		],

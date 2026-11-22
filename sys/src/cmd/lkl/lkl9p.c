@@ -468,6 +468,10 @@ loaddirs(LklFid *lf, long dfd)
 }
 
 extern int	wifiscan_buf(char*, int);
+extern int	wificonnect(const char*, const char*);
+extern int	wifidisconnect(void);
+extern int	wifitcpcheck(const char*, int);
+extern void	wifistatus_buf(char*, int);
 extern char	lkl_dmesg[];
 extern int	lkl_dmesg_len;
 static QLock	wifiscanlk;
@@ -501,6 +505,18 @@ doopen(Req *r, LklFid *lf)
 			if(len > 0)
 				sys0(LklNrWrite, dfd, (long)lkl_dmesg, len, 0, 0, 0);
 			lklclose(dfd);
+		}
+	}
+	if(strcmp(lf->path, "/wifistatus") == 0 && (m == OREAD || m == ORDWR)){
+		char sbuf[512];
+		long sfd;
+
+		wifistatus_buf(sbuf, sizeof sbuf);
+		sfd = lklopenat(LklAtFdcwd, "/wifistatus",
+			LklOwronly | LklOcreat | LklOtrunc, 0444);
+		if(sfd >= 0){
+			sys0(LklNrWrite, sfd, (long)sbuf, strlen(sbuf), 0, 0, 0);
+			lklclose(sfd);
 		}
 	}
 	if(strcmp(lf->path, "/wifiscan") == 0 && (m == OREAD || m == ORDWR)){
@@ -703,6 +719,49 @@ dowrite(Req *r, LklFid *lf, WorkItem *wi)
 {
 	long n, tot;
 
+	if(strcmp(lf->path, "/wifictl") == 0){
+		char cmd[256], *p, *q;
+		int len = r->ifcall.count;
+
+		if(len >= (int)sizeof cmd)
+			len = sizeof(cmd) - 1;
+		memmove(cmd, r->ifcall.data, len);
+		cmd[len] = 0;
+		while(len > 0 && (cmd[len-1] == '\n' || cmd[len-1] == '\r' || cmd[len-1] == ' '))
+			cmd[--len] = 0;
+		if(strncmp(cmd, "connect ", 8) == 0){
+			p = cmd + 8;
+			while(*p == ' ')
+				p++;
+			q = strchr(p, ' ');
+			if(q != nil){
+				*q++ = 0;
+				while(*q == ' ')
+					q++;
+			}
+			qlock(&wifiscanlk);
+			wificonnect(p, q);
+			qunlock(&wifiscanlk);
+		}else if(strcmp(cmd, "disconnect") == 0){
+			qlock(&wifiscanlk);
+			wifidisconnect();
+			qunlock(&wifiscanlk);
+		}else if(strncmp(cmd, "tcpcheck ", 9) == 0){
+			int port = 80;
+			p = cmd + 9;
+			while(*p == ' ')
+				p++;
+			q = strchr(p, ' ');
+			if(q != nil){
+				*q++ = 0;
+				port = (int)strtol(q, nil, 10);
+			}
+			wifitcpcheck(p, port);
+		}
+		r->ofcall.count = r->ifcall.count;
+		respond(r, nil);
+		return;
+	}
 	if(lf->isreg){
 		n = sys0(LklNrPwrite64, lf->fd, (long)r->ifcall.data,
 			r->ifcall.count, (long)r->ifcall.offset, 0, 0);
@@ -1260,6 +1319,12 @@ lkl9p_start(char *srvname)
 	if(dfd >= 0)
 		lklclose(dfd);
 	dfd = lklopenat(LklAtFdcwd, "/wifiscan", LklOwronly | LklOcreat | LklOtrunc, 0444);
+	if(dfd >= 0)
+		lklclose(dfd);
+	dfd = lklopenat(LklAtFdcwd, "/wifictl", LklOwronly | LklOcreat | LklOtrunc, 0644);
+	if(dfd >= 0)
+		lklclose(dfd);
+	dfd = lklopenat(LklAtFdcwd, "/wifistatus", LklOwronly | LklOcreat | LklOtrunc, 0444);
 	if(dfd >= 0)
 		lklclose(dfd);
 

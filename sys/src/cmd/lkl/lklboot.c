@@ -388,6 +388,7 @@ watchfamily(Family *f)
 	/* Bengal Hexagon DSP + WCN3990 extra GIC SPIs via #P/irq/<intid>. */
 	if(strcmp(f->name, "bengal_usb") == 0){
 		static int dsp_edge_irqs[] = {
+			226,		/* RPM:  GLINK (194) */
 			293, 295, 297,	/* CDSP: GLINK (261), SMP2P (263), WDOG (265) */
 			309, 311, 314,	/* ADSP: GLINK (277), SMP2P (279), WDOG (282) */
 			100, 102, 339,	/* MPSS: GLINK (68),  SMP2P (70),  WDOG (307) */
@@ -399,6 +400,16 @@ watchfamily(Family *f)
 				lkl_printf("lklboot: irq %de watched\n", dsp_edge_irqs[i]);
 			else
 				lkl_printf("lklboot: irq %de watch failed\n", dsp_edge_irqs[i]);
+		}
+		/*
+		 * qcom_glink_rpm probes during lkl_start_kernel() before
+		 * watchfamily() opens #P/irq/226e, so RPM's initial
+		 * VERSION_ACK edge is missed while the reply sits in
+		 * rpm_msg_ram's RX FIFO.  Kick IRQ 226 once to drain it.
+		 */
+		{
+			extern int lkl_trigger_irq(int);
+			lkl_trigger_irq(226);
 		}
 		/* WCN3990 Wi-Fi Copy Engine IRQs (SPI 358..369 -> INTID 390..401, level). */
 		for(i = 390; i <= 401; i++){

@@ -106,6 +106,7 @@ struct Bss {
 	int	signal;
 	int	beacon;
 	int	privacy;
+	u32	group_cipher;
 	int	ssidlen;
 	char	ssid[33];
 };
@@ -270,8 +271,12 @@ parseies(uchar *ie, int len, Bss *b)
 			memmove(b->ssid, p+2, ilen);
 			b->ssid[ilen] = 0;
 			b->ssidlen = ilen;
-		}else if(id == 48)		/* RSN */
+		}else if(id == 48){		/* RSN */
 			b->privacy = 1;
+			if(ilen >= 6)
+				b->group_cipher = ((u32)p[4] << 24) | ((u32)p[5] << 16) |
+					((u32)p[6] << 8) | (u32)p[7];
+		}
 		p += 2 + ilen;
 	}
 }
@@ -286,6 +291,7 @@ parsebss(Nlmsg *n, Bss *b)
 	memset(b, 0, sizeof *b);
 	b->freq = 0;
 	b->signal = -128;
+	b->group_cipher = 0x000fac04;	/* default CCMP-128 */
 	b->ssidlen = -1;
 	if(n->len < sizeof(Nlmsg) + sizeof(Genlhdr))
 		return -1;
@@ -333,6 +339,9 @@ parsebss(Nlmsg *n, Bss *b)
 	}
 	return -1;
 }
+
+static Bss lastbss[Maxbss];
+static int nlastbss;
 
 /*
  * Scan wlan0 via nl80211 and format one line per BSS into out[outsz].
@@ -487,9 +496,39 @@ done:
 		}
 	}
 	lkl_printf("wifiscan: %d networks\n", found);
+	if(found > 0){
+		memmove(lastbss, list, found * sizeof(Bss));
+		nlastbss = found;
+	}
 	free(buf);
 	free(list);
 	return found;
+}
+
+int
+wifiscan_find(const char *ssid, uchar bssid[6], int *freq, int *privacy, u32 *group_cipher)
+{
+	int i, best, try;
+
+	for(try = 0; try < 2; try++){
+		best = -1;
+		for(i = 0; i < nlastbss; i++){
+			if(strcmp(lastbss[i].ssid, ssid) != 0)
+				continue;
+			if(best < 0 || lastbss[i].signal > lastbss[best].signal)
+				best = i;
+		}
+		if(best >= 0){
+			memmove(bssid, lastbss[best].bssid, 6);
+			*freq = lastbss[best].freq;
+			*privacy = lastbss[best].privacy;
+			*group_cipher = lastbss[best].group_cipher;
+			return 0;
+		}
+		if(try == 0)
+			wifiscan_buf(nil, 0);
+	}
+	return -1;
 }
 
 /*
