@@ -39,6 +39,12 @@ enum {
 	Qteeclean,
 	Qteeinval,
 	Qteecivac,
+	Qresmem,
+	Qresmemdir,
+	Qresmemctl,
+	Qirqdir,
+	Qirqline,
+	Qirqedge,
 };
 
 /* 6 type bits: the DMA control files are past the old 4-bit field. */
@@ -48,6 +54,22 @@ enum {
 
 static Fdtdev pnpdev[Maxfdtdev];
 static u32 npnpdev;
+
+/*
+ * Named FDT /reserved-memory regions (e.g. wlan_msa_region, modem_region,
+ * pil_adsp_region, smem_region).  Exposed under #P/resmem/<name>/ctl so a
+ * guest driver can map a specific no-map region as normal non-cacheable RAM
+ * (SG_NCRAM) with exact page granularity without consuming physseg[] slots.
+ */
+typedef struct Pnpresmem Pnpresmem;
+struct Pnpresmem {
+	char	name[Maxfdtname];
+	u64	pa;
+	u64	len;
+	Physseg	ps;
+};
+static Pnpresmem pnpresmem[Maxfdtreserve];
+static u32 npnpresmem;
 
 /*
  * One owner per device, held through a file.  A driver opens
@@ -257,13 +279,12 @@ struct Dmactl {
  */
 enum {
 	Teesmcreq	= 8,	/* a0..a7 */
-	Teesmcres	= 4,	/* a0..a3 */
+	Teesmcres	= 8,	/* a0..a7 (OP-TEE reads first 4; QCOM SCM also needs a6) */
 };
 typedef struct Teesmc Teesmc;
 struct Teesmc {
 	u64 a[Teesmcreq];
 };
-static Teesmc teereq, teeres;
 static Lock teelock;
 
 static void
@@ -288,18 +309,30 @@ teesmccall(u64 *in, u64 *out)
 	out[1] = x1;
 	out[2] = x2;
 	out[3] = x3;
+	out[4] = x4;
+	out[5] = x5;
+	out[6] = x6;
+	out[7] = x7;
 }
 
 static int inrange(u64, u64, u64, u64);
 
 /*
- * OP-TEE function IDs we are willing to forward.  PSCI and every other
- * secure-monitor service stay in the kernel.
+ * Secure-monitor function IDs we are willing to forward:
+ *   - OP-TEE standard / fast calls (0x32000001/3/4, 0xbf00ff00..0xbf00ff1f)
+ *   - Qualcomm SiP Service calls (ARM_SMCCC_OWNER_SIP == 2, i.e. bits 29..24 == 0x02)
+ *     plus QCOM_SCM_INTERRUPTED (1) resume calls.
+ * PSCI (owner 4) and every other secure-monitor service stay in the kernel.
  */
 static int
 teesmcok(u64 fn, u64 hi, u64 lo)
 {
 	u64 pa;
+
+	/* Qualcomm SiP SCM calls (0x02xxxxxx, 0x42xxxxxx, 0x82xxxxxx, 0xc2xxxxxx)
+	 * and QCOM_SCM_INTERRUPTED (1) continuation. */
+	if(((fn >> 24) & 0x3f) == 0x02 || fn == 1)
+		return 1;
 
 	switch(fn){
 	case 0x32000001:	/* GET_SHM_CONFIG */
@@ -562,6 +595,25 @@ arm64pnpinit(Fdtinfo *info)
 		 */
 		pnpdev[npnpdev++] = info->dev[i];
 	}
+	npnpresmem = 0;
+	for(i = 0; i < info->nreserve && npnpresmem < Maxfdtreserve; i++){
+		Pnpresmem *rm;
+
+		if(info->reserve[i].name[0] == 0 || info->reserve[i].size == 0)
+			continue;
+		if((info->reserve[i].base | info->reserve[i].size) & (PGSZ - 1))
+			continue;
+		rm = &pnpresmem[npnpresmem++];
+		memset(rm, 0, sizeof *rm);
+		strecpy(rm->name, rm->name + sizeof rm->name, info->reserve[i].name);
+		rm->pa = info->reserve[i].base;
+		rm->len = info->reserve[i].size;
+		rm->ps.attr = SG_PHYSICAL | SG_READ | SG_WRITE | SG_NCRAM;
+		rm->ps.name = rm->name;
+		rm->ps.pa = rm->pa;
+		rm->ps.size = (rm->len + BIGPGSZ - 1) / BIGPGSZ;
+		rm->ps.pgszi = -1;
+	}
 }
 
 static char*
@@ -630,7 +682,19 @@ pnpgen(Chan *c, char *name, Dirtab *tab, int ntab, int s, Dir *dp)
 			devdir(c, q, "tee", 0, eve, DMDIR|0555, dp);
 			return 1;
 		}
-		if(s < 0 || s >= (int)npnpdev + 1 + (arm64dmasize != 0))
+		if(npnpresmem != 0 && s == (int)npnpdev + 1 + (arm64dmasize != 0)){
+			q.path = QPATH(npnpdev, Qresmem);
+			q.type = QTDIR;
+			devdir(c, q, "resmem", 0, eve, DMDIR|0555, dp);
+			return 1;
+		}
+		if(s == (int)npnpdev + 1 + (arm64dmasize != 0) + (npnpresmem != 0)){
+			q.path = QPATH(npnpdev, Qirqdir);
+			q.type = QTDIR;
+			devdir(c, q, "irq", 0, eve, DMDIR|0555, dp);
+			return 1;
+		}
+		if(s < 0 || s >= (int)npnpdev + 2 + (arm64dmasize != 0) + (npnpresmem != 0))
 			return -1;
 		d = &pnpdev[s];
 		q.path = QPATH(s, Qdevdir);
@@ -812,6 +876,55 @@ pnpgen(Chan *c, char *name, Dirtab *tab, int ntab, int s, Dir *dp)
 			return 1;
 		}
 		return -1;
+	case Qresmem:
+		if(s == DEVDOTDOT){
+			q.path = QPATH(0, Qtopdir);
+			q.type = QTDIR;
+			devdir(c, q, "#P", 0, eve, DMDIR|0555, dp);
+			return 1;
+		}
+		if(s < 0 || s >= (int)npnpresmem)
+			return -1;
+		q.path = QPATH(s, Qresmemdir);
+		q.type = QTDIR;
+		devdir(c, q, pnpresmem[s].name, 0, eve, DMDIR|0555, dp);
+		return 1;
+	case Qresmemdir:
+		dev = DEV(c);
+		if(s == DEVDOTDOT){
+			q.path = QPATH(npnpdev, Qresmem);
+			q.type = QTDIR;
+			devdir(c, q, "resmem", 0, eve, DMDIR|0555, dp);
+			return 1;
+		}
+		if(dev < 0 || dev >= (int)npnpresmem || s != 0)
+			return -1;
+		q.path = QPATH(dev, Qresmemctl);
+		q.type = QTFILE;
+		devdir(c, q, "ctl", 0, eve, 0600, dp);
+		return 1;
+	case Qirqdir:
+		if(s == DEVDOTDOT){
+			q.path = QPATH(0, Qtopdir);
+			q.type = QTDIR;
+			devdir(c, q, "#P", 0, eve, DMDIR|0555, dp);
+			return 1;
+		}
+		if(name != nil && s == 0){
+			char *e;
+			ulong id;
+			int edge;
+
+			id = strtoul(name, &e, 10);
+			edge = (e != name && e[0] == 'e' && e[1] == 0);
+			if(e != name && (*e == 0 || edge) && id >= 32 && id < 1020){
+				q.path = QPATH(id, edge ? Qirqedge : Qirqline);
+				q.type = QTFILE;
+				devdir(c, q, name, 0, eve, 0400, dp);
+				return 1;
+			}
+		}
+		return -1;
 	}
 	return -1;
 }
@@ -846,7 +959,8 @@ pnpopen(Chan *c, int omode)
 			error(Eperm);
 	}else if(t == Qdmaclone || t == Qchunkctl || t == Qchunkdata ||
 	         t == Qteesmc || t == Qteeclean || t == Qteeinval ||
-	         t == Qteecivac || t == Qclaim || t == Qregs){
+	         t == Qteecivac || t == Qclaim || t == Qregs ||
+	         t == Qresmemctl){
 		/* DMA chunks, the SMC gate and claims accept writes. */
 	}else if(m != OREAD)
 		error(Eperm);
@@ -882,20 +996,38 @@ pnpopen(Chan *c, int omode)
 		dmachunk[n].nchan++;
 		unlock(&dmalock);
 	}
+	if(t == Qteesmc){
+		c->aux = mallocz(sizeof(Teesmc), 1);
+		if(c->aux == nil)
+			error(Enomem);
+	}
+	if(t == Qresmemctl){
+		c->aux = mallocz(sizeof(usize), 1);
+		if(c->aux == nil)
+			error(Enomem);
+	}
 	if(t == Qregs){
 		if(DEV(c) < 0 || DEV(c) >= (int)npnpdev || !pnpholds(DEV(c)))
 			error("device not claimed");
 	}
-	if(t == Qwait || t == Qwait2){
+	if(t == Qwait || t == Qwait2 || t == Qirqline || t == Qirqedge){
 		int dev;
 		u32 irq;
 
-		dev = DEV(c);
-		if(dev < 0 || dev >= (int)npnpdev)
-			error(Ebadarg);
-		if(!pnpholds(dev))
-			error("device not claimed");
-		irq = (t == Qwait2) ? pnpdev[dev].irq2 : pnpdev[dev].irq;
+		if(t == Qirqline || t == Qirqedge){
+			irq = DEV(c);
+			if(irq < 32 || irq >= 1020)
+				error(Ebadarg);
+			if(t == Qirqedge)
+				arm64irqedge(irq);
+		}else{
+			dev = DEV(c);
+			if(dev < 0 || dev >= (int)npnpdev)
+				error(Ebadarg);
+			if(!pnpholds(dev))
+				error("device not claimed");
+			irq = (t == Qwait2) ? pnpdev[dev].irq2 : pnpdev[dev].irq;
+		}
 		{
 			int *idp;
 
@@ -944,6 +1076,8 @@ pnpclose(Chan *c)
 	 * Closing the wait file must release the GIC line, or a reader that
 	 * exits leaves the line claimed and the next consumer gets -1.
 	 */
+	if((TYPE(c) == Qirqline || TYPE(c) == Qirqedge) && c->aux != nil)
+		arm64irqdisable(DEV(c), *(int*)c->aux);
 	if((TYPE(c) == Qwait || TYPE(c) == Qwait2) &&
 	   (dev = DEV(c)) >= 0 && dev < (int)npnpdev &&
 	   c->aux != nil)
@@ -1164,16 +1298,47 @@ pnpwrite(Chan *c, void *a, i32 n, i64 off)
 	}
 	if(TYPE(c) == Qregs)
 		return pnpregs(c, a, n, off, 1);
-	if(TYPE(c) == Qteesmc){
-		if(n != sizeof teereq)
+	if(TYPE(c) == Qresmemctl){
+		Proc *up = externup();
+		Pnpresmem *rm;
+		char cmd[32], *f[2];
+		int dev, nf;
+		usize va;
+
+		dev = DEV(c);
+		if(dev < 0 || dev >= (int)npnpresmem || c->aux == nil)
 			error(Ebadarg);
-		lock(&teelock);
-		memmove(&teereq, a, n);
-		if(!teesmcok(teereq.a[0], teereq.a[1], teereq.a[2])){
-			unlock(&teelock);
-			error(Eperm);
+		if(n >= (int)sizeof cmd)
+			error(Ebadarg);
+		memmove(cmd, a, n);
+		cmd[n] = 0;
+		nf = tokenize(cmd, f, nelem(f));
+		if(nf != 1 || strcmp(f[0], "map") != 0)
+			error(Ebadarg);
+		rm = &pnpresmem[dev];
+		if(rm->ps.pgszi < 0){
+			if((rm->pa | rm->len) & (BIGPGSZ - 1))
+				rm->ps.pgszi = getpgszi(PGSZ);
+			else
+				rm->ps.pgszi = getpgszi(BIGPGSZ);
 		}
-		teesmccall(teereq.a, teeres.a);
+		va = segattachps(up, SG_READ | SG_WRITE, &rm->ps, 0, rm->len);
+		*(usize*)c->aux = va;
+		return n;
+	}
+	if(TYPE(c) == Qteesmc){
+		Teesmc req, *res;
+
+		if(n != sizeof req)
+			error(Ebadarg);
+		res = c->aux;
+		if(res == nil)
+			error(Ebadarg);
+		memmove(&req, a, n);
+		if(!teesmcok(req.a[0], req.a[1], req.a[2]))
+			error(Eperm);
+		lock(&teelock);
+		teesmccall(req.a, res->a);
 		unlock(&teelock);
 		return n;
 	}
@@ -1279,20 +1444,45 @@ pnpread(Chan *c, void *a, i32 n, i64 off)
 		snprint(buf, sizeof buf, "0x%llx\n", arm64teeshmsize);
 		return readstr(off, a, n, buf);
 	}
+	if(TYPE(c) == Qresmemctl){
+		char rbuf[128];
+		Pnpresmem *rm;
+		usize va;
+
+		dev = DEV(c);
+		if(dev < 0 || dev >= (int)npnpresmem)
+			error(Ebadarg);
+		rm = &pnpresmem[dev];
+		va = c->aux != nil ? *(usize*)c->aux : 0;
+		snprint(rbuf, sizeof rbuf, "%s pa %#llux len %#llux va %#p\n",
+			rm->name, rm->pa, rm->len, (void*)va);
+		return readstr(off, a, n, rbuf);
+	}
 	if(TYPE(c) == Qteesmc){
+		Teesmc *res;
 		int len;
 
-		lock(&teelock);
+		res = c->aux;
+		if(res == nil)
+			error(Ebadarg);
 		len = Teesmcres * sizeof(u64);
-		if(off >= len){
-			unlock(&teelock);
+		if(off >= len)
 			return 0;
-		}
 		if(n > len - off)
 			n = len - off;
-		memmove(a, (u8*)&teeres + off, n);
-		unlock(&teelock);
+		memmove(a, (u8*)res + off, n);
 		return n;
+	}
+	if(TYPE(c) == Qirqline || TYPE(c) == Qirqedge){
+		int cnt;
+
+		if(c->aux == nil)
+			error("no interrupt");
+		cnt = arm64irqwait(DEV(c), *(int*)c->aux);
+		if(cnt < 0)
+			error("no interrupt");
+		snprint(buf, sizeof buf, "%d\n", cnt);
+		return readstr(off, a, n, buf);
 	}
 	dev = DEV(c);	if(dev < 0 || dev >= (int)npnpdev)
 		error(Ebadarg);

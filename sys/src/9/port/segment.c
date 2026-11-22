@@ -510,8 +510,7 @@ isoverlap(Proc *p, usize va, usize len)
 		ns = p->seg[i];
 		if(ns == 0)
 			continue;
-		if((newtop > ns->base && newtop <= ns->top) ||
-		   (va >= ns->base && va < ns->top))
+		if(va < ns->top && newtop > ns->base)
 			return ns;
 	}
 	return nil;

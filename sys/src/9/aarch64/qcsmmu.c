@@ -40,9 +40,11 @@ enum {
 /* Streams Harvey's drivers use DMA on, beyond the bootloader's. */
 static struct {
 	u16	id;
+	u16	mask;
 	char	*who;
 } streams[] = {
-	{ 0xe3, "qupv3_0 SE DMA (touch SPI)" },
+	{ 0xe3,  0x0, "qupv3_0 SE DMA (touch SPI)" },
+	{ 0x1a0, 0x1, "icnss / WCN3990 Wi-Fi" },
 };
 
 static volatile u32 *smmu;
@@ -121,9 +123,9 @@ qcsmmuinit(Fdtinfo *info)
 		}
 		/* S2CR before the SMR goes valid, so the stream never sees a stale one. */
 		gr0w(S2cr + 4*freeslot, cb);
-		gr0w(Smr + 4*freeslot, Smrvalid | streams[s].id);
-		print("qcsmmu: stream %#ux (%s) slot %ud cb %ud\n",
-			streams[s].id, streams[s].who, freeslot, cb);
+		gr0w(Smr + 4*freeslot, Smrvalid | ((u32)streams[s].mask << 16) | streams[s].id);
+		print("qcsmmu: stream %#ux/%#ux (%s) slot %ud cb %ud\n",
+			streams[s].id, streams[s].mask, streams[s].who, freeslot, cb);
 	}
 	return 0;
 }

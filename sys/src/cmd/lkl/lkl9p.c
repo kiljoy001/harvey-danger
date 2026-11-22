@@ -467,6 +467,11 @@ loaddirs(LklFid *lf, long dfd)
 	return 0;
 }
 
+extern int	wifiscan_buf(char*, int);
+extern char	lkl_dmesg[];
+extern int	lkl_dmesg_len;
+static QLock	wifiscanlk;
+
 static void
 doopen(Req *r, LklFid *lf)
 {
@@ -488,6 +493,36 @@ doopen(Req *r, LklFid *lf)
 	}
 
 	m = r->ifcall.mode & 3;
+	if(strcmp(lf->path, "/dmesg") == 0 && (m == OREAD || m == ORDWR)){
+		long dfd = lklopenat(LklAtFdcwd, "/dmesg",
+			LklOwronly | LklOcreat | LklOtrunc, 0444);
+		if(dfd >= 0){
+			int len = lkl_dmesg_len;
+			if(len > 0)
+				sys0(LklNrWrite, dfd, (long)lkl_dmesg, len, 0, 0, 0);
+			lklclose(dfd);
+		}
+	}
+	if(strcmp(lf->path, "/wifiscan") == 0 && (m == OREAD || m == ORDWR)){
+		char *scanbuf;
+		long wfd, n;
+
+		qlock(&wifiscanlk);
+		scanbuf = malloc(16384);
+		if(scanbuf != nil){
+			wifiscan_buf(scanbuf, 16384);
+			wfd = lklopenat(LklAtFdcwd, "/wifiscan",
+				LklOwronly | LklOcreat | LklOtrunc, 0444);
+			if(wfd >= 0){
+				n = strlen(scanbuf);
+				if(n > 0)
+					sys0(LklNrWrite, wfd, (long)scanbuf, n, 0, 0, 0);
+				lklclose(wfd);
+			}
+			free(scanbuf);
+		}
+		qunlock(&wifiscanlk);
+	}
 	switch(m){
 	case OREAD:  flags = LklOrdonly; break;
 	case OWRITE: flags = LklOwronly; break;
@@ -1041,6 +1076,20 @@ mkblocknodes(void *arg)
 				r = sys0(LklNrMount, (long)"/dev/mmcblk0p31",
 					 (long)"/fw/modem", (long)"ext4", 1, 0, 0);
 			lkl_printf("lkl9p: mount /fw/modem -> %ld\n", r);
+			if(r == 0){
+				long ffd = lklopenat(LklAtFdcwd,
+					"/sys/module/firmware_class/parameters/path",
+					LklOwronly, 0);
+				if(ffd >= 0){
+					sys0(LklNrWrite, ffd, (long)"/fw/modem/image", 15, 0, 0, 0);
+					lklclose(ffd);
+					lkl_printf("lkl9p: firmware_class.path=/fw/modem/image\n");
+				}
+				{
+					extern void qcom_qrtr_start(void);
+					qcom_qrtr_start();
+				}
+			}
 			r = sys0(LklNrMount, (long)"/dev/mmcblk0p33", (long)"/fw/bt",
 				 (long)"vfat", 1, 0, 0);
 			if(r < 0)
@@ -1050,6 +1099,39 @@ mkblocknodes(void *arg)
 			r = sys0(LklNrMount, (long)"/dev/mmcblk0p35", (long)"/fw/dsp",
 				 (long)"ext4", 1, 0, 0);
 			lkl_printf("lkl9p: mount /fw/dsp -> %ld\n", r);
+			/*
+			 * Auto-start Modem (4080000.remoteproc) once firmware
+			 * partitions are mounted and QRTR services (rmtfs +
+			 * tqftpserv) are published, so WCN3990 wlan0 comes up
+			 * automatically without manual intervention.
+			 */
+			sleep(500);
+			for(i = 0; i < 4; i++){
+				char rname[64], rpath[96];
+				long rfd, rn;
+
+				snprint(rpath, sizeof rpath,
+					"/sys/class/remoteproc/remoteproc%d/name", i);
+				rfd = lklopenat(LklAtFdcwd, rpath, LklOrdonly, 0);
+				if(rfd < 0)
+					continue;
+				rn = sys0(LklNrRead, rfd, (long)rname, sizeof(rname) - 1, 0, 0, 0);
+				lklclose(rfd);
+				if(rn <= 0)
+					continue;
+				rname[rn] = 0;
+				if(strstr(rname, "6080000") != nil){
+					snprint(rpath, sizeof rpath,
+						"/sys/class/remoteproc/remoteproc%d/state", i);
+					rfd = lklopenat(LklAtFdcwd, rpath, LklOwronly, 0);
+					if(rfd >= 0){
+						rn = sys0(LklNrWrite, rfd, (long)"start", 5, 0, 0, 0);
+						lklclose(rfd);
+						lkl_printf("lkl9p: auto-start %s -> %ld\n", rpath, rn);
+					}
+					break;
+				}
+			}
 		}
 	}
 }
@@ -1175,6 +1257,9 @@ lkl9p_start(char *srvname)
 		lklclose(dfd);
 	}
 	dfd = lklopenat(LklAtFdcwd, "/rebootbl", LklOwronly | LklOcreat | LklOtrunc, 0644);
+	if(dfd >= 0)
+		lklclose(dfd);
+	dfd = lklopenat(LklAtFdcwd, "/wifiscan", LklOwronly | LklOcreat | LklOtrunc, 0444);
 	if(dfd >= 0)
 		lklclose(dfd);
 

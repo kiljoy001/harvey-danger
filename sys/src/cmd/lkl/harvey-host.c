@@ -652,6 +652,15 @@ lklhost_irqthread_wait(char *node, int irq, char *waitfile)
 }
 
 int
+lklhost_irqline(int irq, int edge)
+{
+	char num[16];
+
+	snprint(num, sizeof num, "%d%s", irq, edge ? "e" : "");
+	return lklhost_irqthread_wait("irq", irq, num);
+}
+
+int
 lklhost_irqthread(char *node, int irq)
 {
 	return lklhost_irqthread_wait(node, irq, "wait");
@@ -1215,13 +1224,22 @@ htimer_free(void *timer)
  * both hooks out of the mapping.  The window is device memory, mapped by
  * the kernel; the guest touches it through these two entry points only.
  */
-enum { Nmmio = 32 };
+enum { Nmmio = 64, Nresmem = 32 };
 static struct {
 	u64	pa;
 	u64	len;
 	uchar	*va;
 } mmio[Nmmio];
 static int nmmio;
+static Lock mmiolk;
+
+static struct {
+	char	name[48];
+	u64	pa;
+	u64	len;
+} resmem[Nresmem];
+static int nresmem;
+static int resmemscanned;
 
 u32
 lklhost_mmio_r32(u64 pa)
@@ -1290,7 +1308,7 @@ lklhost_mapdev(char *node, u64 *base, u64 *size)
 	 * segattach grants the 2 MiB block that contains the device, not the
 	 * device window; the window starts at pa & (2 MiB - 1) inside it.
 	 */
-	grant = (len + 0x1fffffULL) & ~0x1fffffULL;
+	grant = ((pa & 0x1fffffULL) + len + 0x1fffffULL) & ~0x1fffffULL;
 	va = segattach(0, node, 0, grant);
 	if(va == (void*)-1)
 		return -1;
@@ -1317,15 +1335,122 @@ lklhost_iomem(u64 pa, void *val, int size, int write)
 	return hiomem_access(va, val, size, write);
 }
 
+static int
+resmemparse(char *buf, u64 *pa, u64 *len, u64 *va)
+{
+	char *f[8];
+	int nf;
+
+	nf = tokenize(buf, f, nelem(f));
+	if(nf < 7 || strcmp(f[1], "pa") != 0 || strcmp(f[3], "len") != 0 ||
+	   strcmp(f[5], "va") != 0)
+		return -1;
+	*pa = strtoull(f[2], nil, 0);
+	*len = strtoull(f[4], nil, 0);
+	*va = strtoull(f[6], nil, 0);
+	return 0;
+}
+
+static void
+resmemscan(void)
+{
+	Dir *d;
+	int fd, n, i, cfd, m;
+	char path[96], buf[128];
+	u64 pa, len, va;
+
+	resmemscanned = 1;
+	if((fd = open("#P/resmem", OREAD)) < 0)
+		return;
+	n = dirreadall(fd, &d);
+	close(fd);
+	if(n <= 0)
+		return;
+	for(i = 0; i < n && nresmem < Nresmem; i++){
+		snprint(path, sizeof path, "#P/resmem/%s/ctl", d[i].name);
+		if((cfd = open(path, OREAD)) < 0)
+			continue;
+		m = read(cfd, buf, sizeof buf - 1);
+		close(cfd);
+		if(m <= 0)
+			continue;
+		buf[m] = 0;
+		if(resmemparse(buf, &pa, &len, &va) < 0 || len == 0)
+			continue;
+		strecpy(resmem[nresmem].name,
+			resmem[nresmem].name + sizeof resmem[nresmem].name,
+			d[i].name);
+		resmem[nresmem].pa = pa;
+		resmem[nresmem].len = len;
+		nresmem++;
+	}
+	free(d);
+}
+
+static void*
+hmapresmem(u64 addr, u64 size)
+{
+	int i, fd, m;
+	char path[96], buf[128];
+	u64 pa, len, va;
+
+	lock(&mmiolk);
+	for(i = 0; i < nmmio; i++)
+		if(addr >= mmio[i].pa && addr + size <= mmio[i].pa + mmio[i].len){
+			uchar *p = mmio[i].va + (addr - mmio[i].pa);
+			unlock(&mmiolk);
+			return p;
+		}
+	if(!resmemscanned)
+		resmemscan();
+	for(i = 0; i < nresmem; i++){
+		if(addr < resmem[i].pa ||
+		   addr + size > resmem[i].pa + resmem[i].len)
+			continue;
+		if(nmmio >= Nmmio)
+			break;
+		snprint(path, sizeof path, "#P/resmem/%s/ctl", resmem[i].name);
+		if((fd = open(path, ORDWR)) < 0){
+			lkl_printf("host: resmem %s open: %r\n", resmem[i].name);
+			break;
+		}
+		if(write(fd, "map\n", 4) != 4){
+			lkl_printf("host: resmem %s map: %r\n", resmem[i].name);
+			close(fd);
+			break;
+		}
+		m = pread(fd, buf, sizeof buf - 1, 0);
+		close(fd);
+		if(m <= 0){
+			lkl_printf("host: resmem %s read: %r\n", resmem[i].name);
+			break;
+		}
+		buf[m] = 0;
+		if(resmemparse(buf, &pa, &len, &va) < 0 || va == 0)
+			break;
+		mmio[nmmio].pa = pa;
+		mmio[nmmio].len = len;
+		mmio[nmmio].va = (uchar*)(usize)va;
+		nmmio++;
+		lkl_printf("host: resmem %s pa=%#llx len=%#llx va=%#llx\n",
+			resmem[i].name, pa, len, va);
+		unlock(&mmiolk);
+		return (uchar*)(usize)va + (addr - pa);
+	}
+	unlock(&mmiolk);
+	return nil;
+}
+
 static void*
 hioremap(long addr, int size)
 {
 	int i;
 
-	USED(size);
 	for(i = 0; i < nmmio; i++)
 		if((u64)addr >= mmio[i].pa && (u64)addr < mmio[i].pa + mmio[i].len)
 			return mmio[i].va + ((u64)addr - mmio[i].pa);
+	if(size > 0)
+		return hmapresmem((u64)addr, (u64)size);
 	return nil;
 }
 
@@ -1761,6 +1886,38 @@ lklhost_selftest(void)
 	hmut_free(m);
 }
 
+/*
+ * Secure-monitor call forwarding through Harvey's #P/tee/smc gate.
+ * Each open fd on #P/tee/smc holds its own 64-byte response buffer in the
+ * kernel; smclk serializes the write+read pair across LKL threads sharing
+ * this host process's single fd.
+ */
+static Lock	smclk;
+static int	smcfd = -1;
+
+static int
+hsmc(const unsigned long long in[8], unsigned long long out[8])
+{
+	int n;
+
+	lock(&smclk);
+	if(smcfd < 0){
+		smcfd = open("#P/tee/smc", ORDWR);
+		if(smcfd < 0){
+			unlock(&smclk);
+			return -1;
+		}
+	}
+	n = pwrite(smcfd, (void*)in, 8 * sizeof(unsigned long long), 0);
+	if(n != (int)(8 * sizeof(unsigned long long))){
+		unlock(&smclk);
+		return -1;
+	}
+	n = pread(smcfd, out, 8 * sizeof(unsigned long long), 0);
+	unlock(&smclk);
+	return n == (int)(8 * sizeof(unsigned long long)) ? 0 : -1;
+}
+
 struct lkl_host_operations lkl_harvey_ops = {
 	.virtio_devices		= nil,
 	.print			= hprint,
@@ -1817,6 +1974,8 @@ struct lkl_host_operations lkl_harvey_ops = {
 	.shmem_mmap		= nil,
 
 	.resource		= hresource,
+
+	.smc			= hsmc,
 
 	.pci_ops		= nil,
 };

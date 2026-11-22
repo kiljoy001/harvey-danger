@@ -31,6 +31,7 @@ extern int	lklhost_mapdev(char*, u64*, u64*);
 extern int	lklhost_iomem(u64, void*, int, int);
 extern int	lklhost_irqthread(char*, int);
 extern int	lklhost_irqthread_wait(char*, int, char*);
+extern int	lklhost_irqline(int, int);
 extern void	lklhost_raminit(unsigned long);
 extern int	lkl_printf(const char*, ...);
 extern void	usbservice(void);
@@ -382,6 +383,29 @@ watchfamily(Family *f)
 				lkl_printf("lklboot: %s irq2 %d watched\n", p, irq);
 			else
 				lkl_printf("lklboot: %s irq2 %d watch failed\n", p, irq);
+		}
+	}
+	/* Bengal Hexagon DSP + WCN3990 extra GIC SPIs via #P/irq/<intid>. */
+	if(strcmp(f->name, "bengal_usb") == 0){
+		static int dsp_edge_irqs[] = {
+			293, 295, 297,	/* CDSP: GLINK (261), SMP2P (263), WDOG (265) */
+			309, 311, 314,	/* ADSP: GLINK (277), SMP2P (279), WDOG (282) */
+			100, 102, 339,	/* MPSS: GLINK (68),  SMP2P (70),  WDOG (307) */
+		};
+		int i;
+
+		for(i = 0; i < (int)nelem(dsp_edge_irqs); i++){
+			if(lklhost_irqline(dsp_edge_irqs[i], 1) == 0)
+				lkl_printf("lklboot: irq %de watched\n", dsp_edge_irqs[i]);
+			else
+				lkl_printf("lklboot: irq %de watch failed\n", dsp_edge_irqs[i]);
+		}
+		/* WCN3990 Wi-Fi Copy Engine IRQs (SPI 358..369 -> INTID 390..401, level). */
+		for(i = 390; i <= 401; i++){
+			if(lklhost_irqline(i, 0) == 0)
+				lkl_printf("lklboot: irq %d watched\n", i);
+			else
+				lkl_printf("lklboot: irq %d watch failed\n", i);
 		}
 	}
 }

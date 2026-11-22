@@ -352,7 +352,7 @@ segattachps1(Proc *p, int attr, Physseg *ps, usize va, usize len, int sno)
 	 * or the address space is exhausted.
 	 */
 	if(va == 0){
-		va = USTKTOP - len;
+		va = (USTKTOP - len) & ~(usize)(pgsz - 1);
 		for(;;){
 			os = isoverlap(p, va, len);
 			if(os == nil)
@@ -360,7 +360,7 @@ segattachps1(Proc *p, int attr, Physseg *ps, usize va, usize len, int sno)
 			va = os->base;
 			if(len > va)
 				error("cannot fit segment at virtual address");
-			va -= len;
+			va = (va - len) & ~(usize)(pgsz - 1);
 		}
 	}
 

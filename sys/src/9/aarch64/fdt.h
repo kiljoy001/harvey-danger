@@ -8,7 +8,14 @@ typedef struct Fdtreserve Fdtreserve;
 typedef struct Fdtvirtio Fdtvirtio;
 typedef struct Fdtmemory Fdtmemory;
 typedef struct Fdtdev Fdtdev;
+enum {
+	Maxfdtdev = 96,
+	Maxfdtname = 32,
+	Maxfdtcompat = 48,
+};
+
 struct Fdtreserve {
+	char name[Maxfdtname];
 	u64 base;
 	u64 size;
 };
@@ -43,12 +50,6 @@ enum {
 	Fdtclassiommu,
 	Fdtclasspower,
 	Fdtclassrtc,
-};
-
-enum {
-	Maxfdtdev = 96,
-	Maxfdtname = 32,
-	Maxfdtcompat = 48,
 };
 
 struct Fdtdev {
@@ -118,6 +119,7 @@ void fb_stripe(int, u32);
 void fb_draw_hex(int, int, u64, u32);
 int arm64irqmaskprobe(void);
 int arm64irqenable(u32);
+void arm64irqedge(u32);
 void arm64irqdisable(u32, int);
 int arm64irqwait(u32, int);
 u64 arm64timerdiag(void);
