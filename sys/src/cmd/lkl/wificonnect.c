@@ -35,8 +35,10 @@ enum {
 
 	Nl80211CmdSetKey	= 10,
 	Nl80211CmdNewKey	= 11,
+	Nl80211CmdSetStation	= 18,
 	Nl80211CmdConnect	= 46,
 	Nl80211CmdDisconnect	= 48,
+	Nl80211CmdControlPortFrame = 129,
 
 	Nl80211AttrIfindex		= 3,
 	Nl80211AttrMac			= 6,
@@ -47,9 +49,11 @@ enum {
 	Nl80211AttrKeyDefault		= 11,
 	Nl80211AttrWiphyFreq		= 38,
 	Nl80211AttrIe			= 42,
+	Nl80211AttrFrame		= 51,
 	Nl80211AttrSsid			= 52,
 	Nl80211AttrAuthType		= 53,
 	Nl80211AttrKeyType		= 55,
+	Nl80211AttrStaFlags2		= 67,
 	Nl80211AttrControlPort		= 68,
 	Nl80211AttrPrivacy		= 70,
 	Nl80211AttrCipherSuitesPairwise	= 73,
@@ -57,6 +61,7 @@ enum {
 	Nl80211AttrWpaVersions		= 75,
 	Nl80211AttrAkmSuites		= 76,
 	Nl80211AttrControlPortEthertype	= 102,
+	Nl80211AttrControlPortNoEncrypt	= 103,
 
 	Nl80211KeytypeGroup	= 0,
 	Nl80211KeytypePairwise	= 1,
@@ -493,28 +498,64 @@ nl_set_default_key(int nlfd, int fam, int ifidx, u8 keyidx)
 }
 
 static int
-eapol_send(int pfd, int ifidx, const uchar dst[6], const uchar src[6],
+nl_set_station_authorized(int nlfd, int fam, int ifidx, const uchar bssid[6])
+{
+	uchar buf[256], rbuf[256];
+	struct { u32 mask; u32 set; } flags;
+	Nlmsg *n;
+	Genlhdr *g;
+	int err;
+
+	flags.mask = 1U << 1;	/* NL80211_STA_FLAG_AUTHORIZED */
+	flags.set  = 1U << 1;
+	n = nlstart(buf, sizeof buf, fam, NlmRequest|NlmAck, 30);
+	g = (Genlhdr*)(n + 1);
+	g->cmd = Nl80211CmdSetStation;
+	g->version = 0;
+	n->len += sizeof(Genlhdr);
+	nlattr_u32(n, Nl80211AttrIfindex, ifidx);
+	nlattr(n, Nl80211AttrMac, bssid, 6);
+	nlattr(n, Nl80211AttrStaFlags2, &flags, sizeof flags);
+	err = nltxrx(nlfd, n, rbuf, sizeof rbuf);
+	lkl_printf("wificonnect: SET_STATION authorized -> %d\n", err);
+	return err;
+}
+
+static int
+eapol_send(int nlfd, int fam, int ifidx, const uchar dst[6],
 	   const uchar *eapol, int eapol_len)
 {
-	uchar frame[512];
-	SockaddrLl sll;
+	uchar buf[512], rbuf[512];
+	Nlmsg *n;
+	Genlhdr *g;
+	int err, try;
 
-	if(14 + eapol_len > (int)sizeof frame)
-		return -1;
-	memmove(frame, dst, 6);
-	memmove(frame + 6, src, 6);
-	frame[12] = 0x88;
-	frame[13] = 0x8e;
-	memmove(frame + 14, eapol, eapol_len);
-
-	memset(&sll, 0, sizeof sll);
-	sll.sll_family = AfPacket;
-	sll.sll_protocol = htons16(0x888e);
-	sll.sll_ifindex = ifidx;
-	sll.sll_halen = 6;
-	memmove(sll.sll_addr, dst, 6);
-	return (int)lkl_syscall(__lkl__NR_sendto, (long[]){
-		pfd, (long)frame, 14 + eapol_len, 0, (long)&sll, sizeof sll });
+	/*
+	 * EAPOL Msg 1/4 often arrives on AF_PACKET a few ms before cfg80211's
+	 * event workqueue finishes setting wdev->connected = true, causing
+	 * NL80211_CMD_CONTROL_PORT_FRAME to return -ENOTCONN (-107).  Retry
+	 * briefly until wdev->connected flips true.
+	 */
+	err = -107;
+	for(try = 0; try < 25; try++){
+		n = nlstart(buf, sizeof buf, fam, NlmRequest|NlmAck, 40 + try);
+		g = (Genlhdr*)(n + 1);
+		g->cmd = Nl80211CmdControlPortFrame;
+		g->version = 0;
+		n->len += sizeof(Genlhdr);
+		nlattr_u32(n, Nl80211AttrIfindex, ifidx);
+		nlattr(n, Nl80211AttrMac, dst, 6);
+		nlattr_u16(n, Nl80211AttrControlPortEthertype, 0x888e);
+		nlattr(n, Nl80211AttrControlPortNoEncrypt, "", 0);
+		nlattr(n, Nl80211AttrFrame, eapol, eapol_len);
+		err = nltxrx(nlfd, n, rbuf, sizeof rbuf);
+		if(err != -107)
+			break;
+		sleep(50);
+	}
+	lkl_printf("wificonnect: CONTROL_PORT_FRAME len=%d -> %d (tries=%d)\n",
+		eapol_len, err, try + 1);
+	return err;
 }
 
 static void
@@ -594,7 +635,7 @@ wpa2_handshake(int pfd, int nlfd, int fam, int ifidx,
 			memmove(tx + 99, rsnie, rsnielen);
 			hmac_sha1(tx, 99 + rsnielen, ptk, 16, mic, nil);
 			memmove(tx + 81, mic, 16);
-			sr = eapol_send(pfd, ifidx, bssid, mac, tx, 99 + rsnielen);
+			sr = eapol_send(nlfd, fam, ifidx, bssid, tx, 99 + rsnielen);
 			lkl_printf("wificonnect: EAPOL Msg 2/4 sent -> %d\n", sr);
 			snprint(wst.err, sizeof wst.err, "msg1(ki=0x%04x) msg2=%d", keyinfo, sr);
 			continue;
@@ -657,7 +698,7 @@ wpa2_handshake(int pfd, int nlfd, int fam, int ifidx,
 			memmove(tx + 9, ep + 9, 8);		/* Replay Counter */
 			hmac_sha1(tx, 99, ptk, 16, mic, nil);
 			memmove(tx + 81, mic, 16);
-			eapol_send(pfd, ifidx, bssid, mac, tx, 99);
+			eapol_send(nlfd, fam, ifidx, bssid, tx, 99);
 			lkl_printf("wificonnect: EAPOL Msg 4/4 sent\n");
 			got3 = 1;
 		}
@@ -683,6 +724,7 @@ wpa2_handshake(int pfd, int nlfd, int fam, int ifidx,
 		nl_install_key(nlfd, fam, ifidx, (u8)gtkidx, gc, gtk, gtklen, nil, rsc, 0);
 	}
 	nl_set_default_key(nlfd, fam, ifidx, 0);
+	nl_set_station_authorized(nlfd, fam, ifidx, bssid);
 	return 0;
 }
 
@@ -1049,6 +1091,7 @@ wificonnect(const char *ssid, const char *psk)
 		nlattr(n, Nl80211AttrIe, rsnie, sizeof rsnie);
 		nlattr(n, Nl80211AttrControlPort, "", 0);
 		nlattr_u16(n, Nl80211AttrControlPortEthertype, 0x888e);
+		nlattr(n, Nl80211AttrControlPortNoEncrypt, "", 0);
 	}
 	err = nltxrx(nlfd, n, rbuf, sizeof rbuf);
 	lkl_printf("wificonnect: NL80211_CMD_CONNECT -> %d\n", err);

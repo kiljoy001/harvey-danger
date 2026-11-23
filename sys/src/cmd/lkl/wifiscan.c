@@ -34,10 +34,17 @@ enum {
 	CtrlCmdGetfamily = 3,
 	CtrlAttrFamilyId = 1,
 	CtrlAttrFamilyName = 2,
+	CtrlAttrMcastGroups = 7,
+
+	SolSocket	= 1,
+	SoRcvtimeo	= 20,
+	SolNetlink	= 270,
+	NetlinkAddMembership = 1,
 
 	Nl80211CmdGetScan	= 32,
 	Nl80211CmdTriggerScan	= 33,
 	Nl80211CmdNewScanResults = 34,
+	Nl80211CmdScanAborted	= 35,
 
 	Nl80211AttrIfindex	= 3,
 	Nl80211AttrWiphyFreq	= 38,
@@ -178,16 +185,16 @@ nlsend(int fd, Nlmsg *n)
 }
 
 static int
-nlfamily(int fd)
+nlfamily(int fd, uchar *buf, int bufsz, u32 *scan_mcgrp)
 {
-	uchar buf[512];
 	Nlmsg *n;
 	Genlhdr *g;
-	Nlattr *a;
-	int m, left, fam;
-	long r;
+	Nlattr *a, *grp, *ga;
+	int m, left, gleft, ileft, fam;
 
-	n = nlstart(buf, sizeof buf, GenlIdCtrl, NlmRequest, 1);
+	if(scan_mcgrp != nil)
+		*scan_mcgrp = 0;
+	n = nlstart(buf, bufsz, GenlIdCtrl, NlmRequest, 1);
 	g = (Genlhdr*)(n+1);
 	g->cmd = CtrlCmdGetfamily;
 	g->version = 1;
@@ -195,20 +202,44 @@ nlfamily(int fd)
 	nlattr(n, CtrlAttrFamilyName, "nl80211", 8);
 	if(nlsend(fd, n) < 0)
 		return -1;
-	m = lkl_syscall(__lkl__NR_recvfrom, (long[]){ fd, (long)buf, sizeof buf, 0, 0, 0 });
+	m = lkl_syscall(__lkl__NR_recvfrom, (long[]){ fd, (long)buf, bufsz, 0, 0, 0 });
 	if(m < (int)sizeof(Nlmsg) + (int)sizeof(Genlhdr))
 		return -1;
 	left = m - sizeof(Nlmsg) - sizeof(Genlhdr);
 	a = (Nlattr*)((uchar*)(n+1) + sizeof(Genlhdr));
 	fam = -1;
 	for(; left >= (int)sizeof(Nlattr); a = nlnext(a, &left)){
+		int atype;
 		if(a == nil)
 			break;
-		if(a->type == CtrlAttrFamilyId && nlpaylen(a) >= 2)
+		atype = a->type & 0x3fff;
+		if(atype == CtrlAttrFamilyId && nlpaylen(a) >= 2)
 			fam = *(u16*)nlpayload(a);
+		else if(atype == CtrlAttrMcastGroups && scan_mcgrp != nil){
+			gleft = nlpaylen(a);
+			grp = (Nlattr*)nlpayload(a);
+			for(; gleft >= (int)sizeof(Nlattr); grp = nlnext(grp, &gleft)){
+				char *gname = nil;
+				u32 gid = 0;
+				if(grp == nil)
+					break;
+				ileft = nlpaylen(grp);
+				ga = (Nlattr*)nlpayload(grp);
+				for(; ileft >= (int)sizeof(Nlattr); ga = nlnext(ga, &ileft)){
+					int gt;
+					if(ga == nil)
+						break;
+					gt = ga->type & 0x3fff;
+					if(gt == 1)
+						gname = (char*)nlpayload(ga);
+					else if(gt == 2 && nlpaylen(ga) >= 4)
+						gid = *(u32*)nlpayload(ga);
+				}
+				if(gname != nil && strcmp(gname, "scan") == 0)
+					*scan_mcgrp = gid;
+			}
+		}
 	}
-	r = 0;
-	USED(r);
 	return fam;
 }
 
@@ -402,43 +433,98 @@ wifiscan_buf(char *out, int outsz)
 		sa.family = AfNetlink;
 		lkl_syscall(__lkl__NR_bind, (long[]){ fd, (long)&sa, sizeof sa });
 	}
-	fam = nlfamily(fd);
-	if(fam < 0){
-		lkl_syscall(__lkl__NR_close, (long[]){ fd });
-		free(buf);
-		free(list);
-		if(out != nil && outsz > 0)
-			snprint(out, outsz, "error: no nl80211 family\n");
-		lkl_printf("wifiscan: no nl80211 family\n");
-		return -1;
-	}
+	{
+		u32 scan_mcgrp = 0;
+		int evfd = -1;
+		int trig_err = 0;
 
-	/* Trigger an active broadcast scan (nested attr 0 = empty SSID). */
-	n = nlstart(buf, Nlbuf, fam, NlmRequest|NlmAck, 2);
-	g = (Genlhdr*)(n+1);
-	g->cmd = Nl80211CmdTriggerScan;
-	g->version = 0;
-	n->len += sizeof(Genlhdr);
-	nlattr(n, Nl80211AttrIfindex, &idx, 4);
-	wildcard.len = sizeof(Nlattr);
-	wildcard.type = 0;
-	nlattr(n, Nl80211AttrScanSsids | 0x8000, &wildcard, sizeof wildcard);
-	if(nlsend(fd, n) >= 0){
-		/* Drain the NLMSG_ERROR ACK (or error code) so GetScan sees a clean socket. */
-		m = lkl_syscall(__lkl__NR_recvfrom, (long[]){ fd, (long)buf, Nlbuf, 0, 0, 0 });
-		if(m >= (int)(sizeof(Nlmsg) + 4)){
-			n = (Nlmsg*)buf;
-			if(n->type == NlmsgError){
-				int err = *(int*)(n+1);
-				if(err != 0){
-					lkl_printf("wifiscan: trigger scan err %d\n", err);
-					if(err != -16 && out != nil && outsz > 0)
-						snprint(out, outsz, "error: trigger scan err %d\n", err);
+		fam = nlfamily(fd, buf, Nlbuf, &scan_mcgrp);
+		if(fam < 0){
+			lkl_syscall(__lkl__NR_close, (long[]){ fd });
+			free(buf);
+			free(list);
+			if(out != nil && outsz > 0)
+				snprint(out, outsz, "error: no nl80211 family\n");
+			lkl_printf("wifiscan: no nl80211 family\n");
+			return -1;
+		}
+		if(scan_mcgrp != 0){
+			evfd = lkl_syscall(__lkl__NR_socket, (long[]){ AfNetlink, SockRaw, NetlinkGeneric });
+			if(evfd >= 0){
+				SockaddrNl sa;
+				struct { long tv_sec; long tv_usec; } tv;
+				memset(&sa, 0, sizeof sa);
+				sa.family = AfNetlink;
+				lkl_syscall(__lkl__NR_bind, (long[]){ evfd, (long)&sa, sizeof sa });
+				lkl_syscall(__lkl__NR_setsockopt, (long[]){
+					evfd, SolNetlink, NetlinkAddMembership, (long)&scan_mcgrp, 4 });
+				tv.tv_sec = 15;
+				tv.tv_usec = 0;
+				lkl_syscall(__lkl__NR_setsockopt, (long[]){
+					evfd, SolSocket, SoRcvtimeo, (long)&tv, sizeof tv });
+			}
+		}
+
+		/*
+		 * Trigger an active broadcast scan on 2.4 GHz channels 1-11 and wait
+		 * for NL80211_CMD_NEW_SCAN_RESULTS / SCAN_ABORTED so the firmware
+		 * Resource Manager is guaranteed idle before returning.
+		 */
+		n = nlstart(buf, Nlbuf, fam, NlmRequest|NlmAck, 2);
+		g = (Genlhdr*)(n+1);
+		g->cmd = Nl80211CmdTriggerScan;
+		g->version = 0;
+		n->len += sizeof(Genlhdr);
+		nlattr(n, Nl80211AttrIfindex, &idx, 4);
+		{
+			struct { Nlattr hdr; u32 freq; } freqs[11];
+			for(i = 0; i < 11; i++){
+				freqs[i].hdr.len = sizeof(Nlattr) + 4;
+				freqs[i].hdr.type = (u16)(i + 1);
+				freqs[i].freq = (u32)(2412 + i * 5);
+			}
+			nlattr(n, Nl80211AttrScanFreqs | 0x8000, freqs, sizeof freqs);
+		}
+		wildcard.len = sizeof(Nlattr);
+		wildcard.type = 0;
+		nlattr(n, Nl80211AttrScanSsids | 0x8000, &wildcard, sizeof wildcard);
+		if(nlsend(fd, n) >= 0){
+			/* Drain the NLMSG_ERROR ACK (or error code) so GetScan sees a clean socket. */
+			m = lkl_syscall(__lkl__NR_recvfrom, (long[]){ fd, (long)buf, Nlbuf, 0, 0, 0 });
+			if(m >= (int)(sizeof(Nlmsg) + 4)){
+				n = (Nlmsg*)buf;
+				if(n->type == NlmsgError){
+					trig_err = *(int*)(n+1);
+					if(trig_err != 0){
+						lkl_printf("wifiscan: trigger scan err %d\n", trig_err);
+						if(trig_err != -16 && out != nil && outsz > 0)
+							snprint(out, outsz, "error: trigger scan err %d\n", trig_err);
+					}
 				}
 			}
 		}
+		if(evfd >= 0 && (trig_err == 0 || trig_err == -16)){
+			for(;;){
+				m = lkl_syscall(__lkl__NR_recvfrom, (long[]){ evfd, (long)buf, Nlbuf, 0, 0, 0 });
+				if(m <= 0)
+					break;
+				if(m >= (int)(sizeof(Nlmsg) + sizeof(Genlhdr))){
+					n = (Nlmsg*)buf;
+					g = (Genlhdr*)(n + 1);
+					if(n->type == fam &&
+					   (g->cmd == Nl80211CmdNewScanResults || g->cmd == Nl80211CmdScanAborted)){
+						lkl_printf("wifiscan: scan event cmd=%d\n", g->cmd);
+						break;
+					}
+				}
+			}
+			lkl_syscall(__lkl__NR_close, (long[]){ evfd });
+		}else{
+			if(evfd >= 0)
+				lkl_syscall(__lkl__NR_close, (long[]){ evfd });
+			sleep(6000);
+		}
 	}
-	sleep(4000);
 
 	/* Dump the result set. */
 	n = nlstart(buf, Nlbuf, fam, NlmRequest|NlmDump, 3);

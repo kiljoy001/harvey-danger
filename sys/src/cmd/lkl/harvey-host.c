@@ -856,16 +856,28 @@ static uchar *lklram;
 static u64 lklrampa, lklramsize, lklramoff;
 static int lklramctl = -1;	/* the chunk's #P/dma/N/ctl */
 
+/*
+ * Hardware non-cacheable (SG_NCRAM) pool for dma_alloc_coherent() rings
+ * (WCN3990 Copy Engine / HTT descriptors, SDHCI ADMA, etc.).  Keeping
+ * coherent rings uncached prevents CPU writes to one 16-byte descriptor
+ * from dirtying a 64-byte cache line and clobbering adjacent hardware-
+ * written descriptors during dc civac.
+ */
+static uchar *lklnc;
+static u64 lklncpa, lklncsize, lklncoff;
+static int lklncctl = -1;
+static Lock lklnclk;
+
 unsigned long lkl_host_dma_pa(void*, unsigned long);
 
-/* Reads the chunk's "<n> pa <pa> len <len> <type> va <va>". */
+/* Reads a chunk's "<n> pa <pa> len <len> <type> va <va>". */
 static int
-ramstat(u64 *pa, u64 *len, uintptr *va)
+ramstatfd(int ctlfd, u64 *pa, u64 *len, uintptr *va)
 {
 	char buf[128], *f[8];
 	int n;
 
-	n = pread(lklramctl, buf, sizeof buf - 1, 0);
+	n = pread(ctlfd, buf, sizeof buf - 1, 0);
 	if(n <= 0)
 		return -1;
 	buf[n] = 0;
@@ -878,9 +890,15 @@ ramstat(u64 *pa, u64 *len, uintptr *va)
 }
 
 static int
+ramcmdfd(int ctlfd, char *cmd)
+{
+	return write(ctlfd, cmd, strlen(cmd)) == strlen(cmd) ? 0 : -1;
+}
+
+static int
 ramcmd(char *cmd)
 {
-	return write(lklramctl, cmd, strlen(cmd)) == strlen(cmd) ? 0 : -1;
+	return ramcmdfd(lklramctl, cmd);
 }
 
 /*
@@ -903,7 +921,7 @@ raminit(unsigned long want)
 	}
 	snprint(cmd, sizeof cmd, "alloc %lud 0x200000 cached\n", want);
 	if(ramcmd(cmd) < 0 || ramcmd("map\n") < 0 ||
-	   ramstat(&pa, &len, &va) < 0 || len < want || va == 0){
+	   ramstatfd(lklramctl, &pa, &len, &va) < 0 || len < want || va == 0){
 		lkl_printf("host: dma arena: cannot take %#lux: %r\n", want);
 		fprint(2, "lklboot: dma arena exhausted\n");
 		exits("arena");
@@ -914,6 +932,66 @@ raminit(unsigned long want)
 	lkl_printf("host: arena va %p pa %#llux size %#llux\n",
 		   lklram, pa, (u64)want);
 	fprint(2, "lklboot: arena pa %#llux size %#llux\n", pa, (u64)want);
+
+	/*
+	 * Reserve a 1 MiB uncached (SG_NCRAM, 4 KiB pages) chunk for
+	 * dma_alloc_coherent() rings before any RFMEM child threads spawn.
+	 */
+	if((lklncctl = open("#P/dma/clone", ORDWR)) >= 0){
+		u64 ncwant = 1024 * 1024;
+		snprint(cmd, sizeof cmd, "alloc %llud 4096 uncached\n", ncwant);
+		if(ramcmdfd(lklncctl, cmd) == 0 && ramcmdfd(lklncctl, "map\n") == 0 &&
+		   ramstatfd(lklncctl, &pa, &len, &va) == 0 && len >= ncwant && va != 0){
+			lklnc = (uchar*)va;
+			lklncpa = pa;
+			lklncsize = len;
+			lklncoff = 0;
+			/* Pre-fault all 2 MiB SG_NCRAM PTEs single-threaded before RFMEM spawns. */
+			memset(lklnc, 0, lklncsize);
+			__asm__ volatile("dsb sy" ::: "memory");
+			lkl_printf("host: nc-dma va %p pa %#llux size %#llux\n",
+				   lklnc, lklncpa, lklncsize);
+		}else{
+			close(lklncctl);
+			lklncctl = -1;
+		}
+	}
+}
+
+void*
+lkl_host_dma_alloc_nc(unsigned long size, unsigned long *pa)
+{
+	u64 off, need;
+	uchar *p;
+
+	if(lklnc == nil || size == 0)
+		return nil;
+	need = (size + Page - 1) & ~(u64)(Page - 1);
+	lock(&lklnclk);
+	off = (lklncoff + Page - 1) & ~(u64)(Page - 1);
+	if(off + need > lklncsize){
+		unlock(&lklnclk);
+		return nil;
+	}
+	p = lklnc + off;
+	lklncoff = off + need;
+	unlock(&lklnclk);
+	memset(p, 0, need);
+	__asm__ volatile("dsb sy" ::: "memory");
+	if(pa != nil)
+		*pa = (unsigned long)(lklncpa + off);
+	return p;
+}
+
+int
+lkl_host_dma_free_nc(void *va, unsigned long size)
+{
+	uintptr p = (uintptr)va;
+
+	USED(size);
+	if(lklnc != nil && p >= (uintptr)lklnc && p < (uintptr)lklnc + lklncsize)
+		return 1;
+	return 0;
 }
 
 /*
@@ -1046,6 +1124,9 @@ lkl_host_dma_pa(void *va, unsigned long size)
 	if(lklram != nil && p >= (uintptr)lklram &&
 	   p + size <= (uintptr)lklram + lklramsize)
 		return lklrampa + (p - (uintptr)lklram);
+	if(lklnc != nil && p >= (uintptr)lklnc &&
+	   p + size <= (uintptr)lklnc + lklncsize)
+		return lklncpa + (p - (uintptr)lklnc);
 	return p;
 }
 
