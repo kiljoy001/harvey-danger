@@ -73,6 +73,47 @@ the mainline one plus a 1 ms delayed-work ISR poller
 (`geni_i2c_poll_work`) for host IRQ-forwarding latency;
 Motorola's is the CAF variant with GPI/DMA and ipc logging.
 
+## Observed on hardware, 2026-11-19, branch `pdma` (RAM-boot, no flash)
+
+`pdma` (DMA chunks, claims as open files, `regs`) packed with
+`pack_boot.py --families bengal_ctl,bengal_usb`.
+
+- Both guests come up under the claim rules: the console gadget
+  enumerates 30 s after `fastboot boot`; eMMC p1-p77 and the
+  `/fw/{modem,bt,dsp}` mounts as before; touch and WCN3990 firmware
+  staged.  `#P/*/owner`: `qcom,gcc@1400000`, `pinctrl@400000` and
+  `qcom,spmi@1c40000` are `lkld shared` (the last held by both
+  guests); dwc3, ssusb, sdhci x2, GENI, i2c x2, spi, qrng, tsens and
+  icnss are `lkld`.
+- From rc, against held devices: an exclusive or shared claim of
+  `sdhci@4744000` and an exclusive claim of the clock unit fail with
+  `device already claimed`; a shared claim of the clock unit succeeds
+  and ends with its writer; `wait` and `regs` without a claim fail
+  with `device not claimed`.  On a free device (`ufshc@4804000`): a
+  claim held open on fd 3 makes `owner` read its name, lets a child
+  open `regs`, keeps a second claim out, and ends when the block
+  closes fd 3, after which the device can be claimed again.
+- The "ARM64 repeat fault" lines at the end of earlier boot logs were
+  a false alarm: the detector compared consecutive faults on any
+  process, and each of `lklboot`'s threads (separate processes with
+  their own page tables) takes its own first fault on a shared heap
+  page, at the same address and pc.  It now keys on CPU and process;
+  no report since.
+- Cleaned up the same day, verified on the phone: the boot `echo`
+  writes its line in one write and reports a refused write (it wrote
+  each word separately, so `echo x shared` reached a claim file as
+  three messages); `wifi@c800000`, the guest's name for the WCN3990,
+  left the `bengal_usb` list (`qcom,icnss@C800000` maps the same
+  window); `drvman` starts a child only when its parent service is up,
+  so it no longer waits out `npufs` and init's deadline, and writes
+  each status line whole; init skips `fanctl` without TSADC and PWM,
+  `emmcfs` when the build has none, and the IP interface without
+  Ethernet, each with the reason.  The console now comes up 15 s after
+  `fastboot boot`, against 30-40 s.
+- The guest's WCN3990 node uses IRQs 358-369; `lklboot` forwards only
+  the two `#P` lists for `qcom,icnss@C800000` (390, 391).  WiFi needs
+  the rest.
+
 ## Observed on hardware, 2026-11-18 (RAM-boot, no flash)
 
 `fastboot boot firmware/harvey-boot.img` (fastboot 34.0.4),
@@ -100,7 +141,8 @@ phone (`HARVEY BOOT 1`). Observed, not inferred:
   `qcom,icnss@C800000`, BT slim codec) — see the boot7 section.
   The Unisoc driver is an artifact of the shared LKL kernel
   config (its BSP creates a device without a DT node).
-- Native Rockchip services run wrongly on Bengal and fail:
+- (Fixed 2026-11-19 on `pdma`, see that section.)  Native Rockchip
+  services ran wrongly on Bengal and failed:
   `gpufs` (no PMU at `0xfdd90000`), `tsadcfs` (no GRF),
   `spifs` (no CRU), `gpiofs` (no GPIO banks in `#P`), native
   `emmcfs`, `fanctl`. They need board gating in init/drvman.

@@ -6,7 +6,7 @@ DMA from the kernel's arena, and publishes files; the kit does the boilerplate
 so the driver is its register logic and its file semantics.
 
 It is **linked into each driver**, not reached through a service. `segattach`,
-a read from `#P/<node>/wait` and a write to `#P/dma/alloc` are cheap, and a
+a read from `#P/<node>/wait` and a chunk from `#P/dma/clone` are cheap, and a
 driver that cannot reach the kernel's grants is not a driver. The current
 consumers are `sys/src/cmd/uartfs/uartfs.c` (the worked example) and, in
 progress, the storage and network drivers.
@@ -93,10 +93,11 @@ the file the request is on, so one read handler can serve several files.
   RTCs, ECs, PHYs and UARTs. For a NIC or NVMe it is the wrong shape: those
   need a shared-memory ring and one wakeup per batch, or the 9P round trip
   dominates. Reuse the register tables; write the ring.
-- **The DMA arena is shared, not isolated.** Any driver can program any
-  address in it. An IOMMU domain per device is the safety story that makes
-  userspace drivers worth their cost; `rkiommu` exists, wiring grants through
-  it is not done.
+- **DMA is isolated from the CPU's side only.** Each `drvdma` is a chunk
+  mapped into its own driver alone, but a device can still be programmed
+  with any physical address. An IOMMU domain per device is the safety story
+  that makes userspace drivers worth their cost; `rkiommu` exists, wiring
+  chunks through it is not done.
 - **PCI is missing on amd64.** `#P` enumerates from the device tree, which is
   why this kit is ready for the RK3566 and for virtio on ARM, and needs a
   `#pci` grant (or a devpnp extension) before PC drivers can find their BARs.

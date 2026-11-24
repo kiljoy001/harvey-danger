@@ -27,10 +27,128 @@
 		#size-cells = <2>;
 		ranges;
 
+		smem_mem: memory@46000000 {
+			reg = <0x0 0x46000000 0x0 0x200000>;
+			no-map;
+		};
+
+		pil_modem_mem: memory@4ab00000 {
+			no-map;
+			reg = <0x0 0x4ab00000 0x0 0x6900000>;
+		};
+
 		wlan_msa_mem: wlan-msa-region@51900000 {
 			compatible = "removed-dma-pool";
 			no-map;
 			reg = <0x0 0x51900000 0x0 0x100000>;
+		};
+
+		pil_cdsp_mem: memory@51a00000 {
+			no-map;
+			reg = <0x0 0x51a00000 0x0 0x800000>;
+		};
+
+		pil_adsp_mem: memory@52200000 {
+			no-map;
+			reg = <0x0 0x52200000 0x0 0x1c00000>;
+		};
+
+		pil_ipa_fw_mem: memory@53e00000 {
+			no-map;
+			reg = <0x0 0x53e00000 0x0 0x10000>;
+		};
+	};
+
+	firmware {
+		scm: scm {
+			compatible = "qcom,scm";
+			#reset-cells = <1>;
+		};
+	};
+
+	smem {
+		compatible = "qcom,smem";
+		memory-region = <&smem_mem>;
+		hwlocks = <&tcsr_mutex 3>;
+	};
+
+	rmtfs_mem {
+		compatible = "qcom,rmtfs-mem";
+		qcom,client-id = <1>;
+		qcom,vmid = <15 43>;
+	};
+
+	smp2p-cdsp {
+		compatible = "qcom,smp2p";
+		qcom,smem = <94>, <432>;
+		interrupt-parent = <&gic>;
+		interrupts = <0 263 1>;
+		mboxes = <&apcs_glb 30>;
+		qcom,local-pid = <0>;
+		qcom,remote-pid = <5>;
+
+		cdsp_smp2p_out: master-kernel {
+			qcom,entry-name = "master-kernel";
+			#qcom,smem-state-cells = <1>;
+		};
+
+		cdsp_smp2p_in: slave-kernel {
+			qcom,entry-name = "slave-kernel";
+			interrupt-controller;
+			#interrupt-cells = <2>;
+		};
+	};
+
+	smp2p-adsp {
+		compatible = "qcom,smp2p";
+		qcom,smem = <443>, <429>;
+		interrupt-parent = <&gic>;
+		interrupts = <0 279 1>;
+		mboxes = <&apcs_glb 10>;
+		qcom,local-pid = <0>;
+		qcom,remote-pid = <2>;
+
+		adsp_smp2p_out: master-kernel {
+			qcom,entry-name = "master-kernel";
+			#qcom,smem-state-cells = <1>;
+		};
+
+		adsp_smp2p_in: slave-kernel {
+			qcom,entry-name = "slave-kernel";
+			interrupt-controller;
+			#interrupt-cells = <2>;
+		};
+	};
+
+	smp2p-mpss {
+		compatible = "qcom,smp2p";
+		qcom,smem = <435>, <428>;
+		interrupt-parent = <&gic>;
+		interrupts = <0 70 1>;
+		mboxes = <&apcs_glb 14>;
+		qcom,local-pid = <0>;
+		qcom,remote-pid = <1>;
+
+		modem_smp2p_out: master-kernel {
+			qcom,entry-name = "master-kernel";
+			#qcom,smem-state-cells = <1>;
+		};
+
+		modem_smp2p_in: slave-kernel {
+			qcom,entry-name = "slave-kernel";
+			interrupt-controller;
+			#interrupt-cells = <2>;
+		};
+
+		ipa_smp2p_out: ipa-ap-to-modem {
+			qcom,entry-name = "ipa";
+			#qcom,smem-state-cells = <1>;
+		};
+
+		ipa_smp2p_in: ipa-modem-to-ap {
+			qcom,entry-name = "ipa";
+			interrupt-controller;
+			#interrupt-cells = <2>;
 		};
 	};
 
@@ -64,11 +182,173 @@
 		regulator-always-on;
 	};
 
+	rpm: remoteproc {
+		compatible = "qcom,sm6115-rpm-proc", "qcom,rpm-proc";
+
+		glink-edge {
+			compatible = "qcom,glink-rpm";
+			interrupt-parent = <&gic>;
+			interrupts = <0 194 1>;
+			qcom,rpm-msg-ram = <&rpm_msg_ram>;
+			mboxes = <&apcs_glb 0>;
+
+			rpm_requests: rpm-requests {
+				compatible = "qcom,rpm-sm6115", "qcom,glink-smd-rpm";
+				qcom,glink-channels = "rpm_requests";
+
+				rpmcc: clock-controller {
+					compatible = "qcom,rpmcc-sm6115", "qcom,rpmcc";
+					#clock-cells = <1>;
+				};
+
+				regulators-0 {
+					compatible = "qcom,rpm-pm6125-regulators";
+
+					pm6125_l8: l8 {
+						regulator-min-microvolt = <400000>;
+						regulator-max-microvolt = <728000>;
+					};
+
+					pm6125_l16: l16 {
+						regulator-min-microvolt = <1704000>;
+						regulator-max-microvolt = <1904000>;
+					};
+
+					pm6125_l17: l17 {
+						regulator-min-microvolt = <1152000>;
+						regulator-max-microvolt = <1384000>;
+					};
+
+					pm6125_l23: l23 {
+						regulator-min-microvolt = <3200000>;
+						regulator-max-microvolt = <3400000>;
+					};
+				};
+			};
+		};
+	};
+
 	soc@0 {
 		compatible = "simple-bus";
 		#address-cells = <2>;
 		#size-cells = <2>;
 		ranges;
+
+		tcsr_mutex: hwlock@340000 {
+			compatible = "qcom,tcsr-mutex";
+			reg = <0x0 0x00340000 0x0 0x20000>;
+			#hwlock-cells = <1>;
+		};
+
+		rpm_msg_ram: sram@45f0000 {
+			compatible = "qcom,rpm-msg-ram";
+			reg = <0x0 0x045f0000 0x0 0x7000>;
+		};
+
+		apcs_glb: mailbox@f111000 {
+			compatible = "qcom,sm6115-apcs-hmss-global",
+				     "qcom,msm8994-apcs-kpss-global";
+			reg = <0x0 0x0f111000 0x0 0x1000>;
+			#mbox-cells = <1>;
+		};
+
+		remoteproc_cdsp: remoteproc@b300000 {
+			compatible = "qcom,sm6115-cdsp-pas";
+			interrupts-extended = <&gic 0 265 1>,
+					      <&cdsp_smp2p_in 0 1>,
+					      <&cdsp_smp2p_in 1 1>,
+					      <&cdsp_smp2p_in 2 1>,
+					      <&cdsp_smp2p_in 3 1>;
+			interrupt-names = "wdog", "fatal", "ready",
+					  "handover", "stop-ack";
+			clocks = <&xo_board>;
+			clock-names = "xo";
+			memory-region = <&pil_cdsp_mem>;
+			qcom,smem-states = <&cdsp_smp2p_out 0>;
+			qcom,smem-state-names = "stop";
+			status = "okay";
+
+			glink-edge {
+				interrupt-parent = <&gic>;
+				interrupts = <0 261 1>;
+				label = "cdsp";
+				qcom,remote-pid = <5>;
+				mboxes = <&apcs_glb 28>;
+			};
+		};
+
+		remoteproc_adsp: remoteproc@ab00000 {
+			compatible = "qcom,sm6115-adsp-pas";
+			interrupts-extended = <&gic 0 282 1>,
+					      <&adsp_smp2p_in 0 1>,
+					      <&adsp_smp2p_in 1 1>,
+					      <&adsp_smp2p_in 2 1>,
+					      <&adsp_smp2p_in 3 1>;
+			interrupt-names = "wdog", "fatal", "ready",
+					  "handover", "stop-ack";
+			clocks = <&xo_board>;
+			clock-names = "xo";
+			memory-region = <&pil_adsp_mem>;
+			qcom,smem-states = <&adsp_smp2p_out 0>;
+			qcom,smem-state-names = "stop";
+			status = "okay";
+
+			glink-edge {
+				interrupt-parent = <&gic>;
+				interrupts = <0 277 1>;
+				label = "lpass";
+				qcom,remote-pid = <2>;
+				mboxes = <&apcs_glb 8>;
+			};
+		};
+
+		remoteproc_mpss: remoteproc@6080000 {
+			compatible = "qcom,sm6115-mpss-pas";
+			interrupts-extended = <&gic 0 307 1>,
+					      <&modem_smp2p_in 0 1>,
+					      <&modem_smp2p_in 1 1>,
+					      <&modem_smp2p_in 2 1>,
+					      <&modem_smp2p_in 3 1>,
+					      <&modem_smp2p_in 7 1>;
+			interrupt-names = "wdog", "fatal", "ready",
+					  "handover", "stop-ack", "shutdown-ack";
+			clocks = <&xo_board>;
+			clock-names = "xo";
+			memory-region = <&pil_modem_mem>;
+			qcom,smem-states = <&modem_smp2p_out 0>;
+			qcom,smem-state-names = "stop";
+			status = "okay";
+
+			glink-edge {
+				interrupt-parent = <&gic>;
+				interrupts = <0 68 1>;
+				label = "mpss";
+				qcom,remote-pid = <1>;
+				mboxes = <&apcs_glb 12>;
+			};
+		};
+
+		ipa: ipa@5840000 {
+			compatible = "qcom,sm6115-ipa";
+			reg = <0x0 0x05840000 0x0 0x7000>,
+			      <0x0 0x05847000 0x0 0x2000>,
+			      <0x0 0x05804000 0x0 0x28000>;
+			reg-names = "ipa-reg", "ipa-shared", "gsi";
+			interrupts-extended = <&gic 0 257 4>,
+					      <&gic 0 259 4>,
+					      <&ipa_smp2p_in 0 1>,
+					      <&ipa_smp2p_in 1 1>;
+			interrupt-names = "ipa", "gsi",
+					  "ipa-clock-query", "ipa-setup-ready";
+			clocks = <&rpmcc 68>;
+			clock-names = "core";
+			memory-region = <&pil_ipa_fw_mem>;
+			qcom,smem-states = <&ipa_smp2p_out 0>,
+					   <&ipa_smp2p_out 1>;
+			qcom,smem-state-names = "ipa-clock-enabled-valid",
+						"ipa-clock-enabled";
+			status = "okay";
+		};
 
 		gcc: clock-controller@1400000 {
 			compatible = "qcom,gcc-sm6115";
@@ -421,10 +701,10 @@
 				     <0 364 4>, <0 365 4>, <0 366 4>,
 				     <0 367 4>, <0 368 4>, <0 369 4>;
 			qcom,msa-fixed-perm;
-			/* No apps_smmu node in this guest yet: ath10k
-			 * probes and reaches for the WLFW QMI service
-			 * first; add iommus = <&apps_smmu 0x1a0 1> with
-			 * the apps SMMU when modem work starts. */
+			vdd-0.8-cx-mx-supply = <&pm6125_l8>;
+			vdd-1.8-xo-supply = <&pm6125_l16>;
+			vdd-1.3-rfa-supply = <&pm6125_l17>;
+			vdd-3.3-ch0-supply = <&pm6125_l23>;
 			status = "okay";
 		};
 

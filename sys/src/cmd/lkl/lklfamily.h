@@ -11,7 +11,9 @@ struct Family {
 	char	*program;	/* lklemc, lklusb, ... */
 	char	*mem;		/* mem= string for the guest */
 	unsigned long memsz;	/* same, in bytes */
-	char	*devices;	/* comma-separated #P node names */
+	char	*devices;	/* space-separated #P node names; "<node>+"
+				 * for one another family drives too,
+				 * claimed shared */
 	char	*dtbname;	/* embedded device tree */
 	int	setup;		/* FamEmmc, FamUsb, ... */
 };

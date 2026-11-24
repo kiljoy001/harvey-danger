@@ -652,6 +652,15 @@ lklhost_irqthread_wait(char *node, int irq, char *waitfile)
 }
 
 int
+lklhost_irqline(int irq, int edge)
+{
+	char num[16];
+
+	snprint(num, sizeof num, "%d%s", irq, edge ? "e" : "");
+	return lklhost_irqthread_wait("irq", irq, num);
+}
+
+int
 lklhost_irqthread(char *node, int irq)
 {
 	return lklhost_irqthread_wait(node, irq, "wait");
@@ -835,100 +844,154 @@ hmem_free(void *p)
 }
 
 /*
- * Guest RAM arena.  LKL takes its whole mem= region from page_alloc once,
- * and every DMA buffer is inside that region.  Use the physically
- * contiguous #P/dma segment so a guest pointer can be translated to a real
- * device address.  The kernel maps the "dma" physseg uncached, so the DMA
- * path needs no cache maintenance.
+ * Guest RAM.  LKL takes its whole mem= region from page_alloc once, and
+ * every DMA buffer is inside that region.  It is one chunk of #P's DMA
+ * arena, physically contiguous so a guest pointer translates to a real
+ * device address: this process holds the chunk's ctl open for its whole
+ * life, and the chunk is mapped cacheable, so the DMA path does its own
+ * cache maintenance (lkl_host_dma_sync).  The guest sees only its own
+ * chunk; when the process exits #P takes the memory back.
  */
 static uchar *lklram;
 static u64 lklrampa, lklramsize, lklramoff;
-
-static u64 pnpnum(char*, char*);
-unsigned long lkl_host_dma_pa(void*, unsigned long);
+static int lklramctl = -1;	/* the chunk's #P/dma/N/ctl */
 
 /*
- * Allocate a chunk of the arena from the kernel's bump allocator and
- * return its physical base.  Each LKL family instance takes a disjoint
- * chunk so two guests can run at once.
+ * Hardware non-cacheable (SG_NCRAM) pool for dma_alloc_coherent() rings
+ * (WCN3990 Copy Engine / HTT descriptors, SDHCI ADMA, etc.).  Keeping
+ * coherent rings uncached prevents CPU writes to one 16-byte descriptor
+ * from dirtying a 64-byte cache line and clobbering adjacent hardware-
+ * written descriptors during dc civac.
  */
+static uchar *lklnc;
+static u64 lklncpa, lklncsize, lklncoff;
+static int lklncctl = -1;
+static Lock lklnclk;
+
+unsigned long lkl_host_dma_pa(void*, unsigned long);
+
+/* Reads a chunk's "<n> pa <pa> len <len> <type> va <va>". */
 static int
-dmaalloc(u64 size, u64 align, u64 *pa)
+ramstatfd(int ctlfd, u64 *pa, u64 *len, uintptr *va)
 {
-	static int ownfd = -1;
-	char buf[64];
+	char buf[128], *f[8];
 	int n;
 
-	/*
-	 * Instance RAM comes from allocowned, held open for the life of
-	 * this process: when the process exits or is killed, closing the
-	 * file returns the chunk to the arena.  (Plain alloc chunks are
-	 * only returned by an explicit free, which a killed guest never
-	 * gets to do; retries then exhausted the arena permanently.)
-	 */
-	if(ownfd < 0 && (ownfd = open("#P/dma/allocowned", ORDWR)) < 0)
-		return -1;
-	snprint(buf, sizeof buf, "%llud %llud\n", size, align);
-	if(write(ownfd, buf, strlen(buf)) != strlen(buf))
-		return -1;
-	n = pread(ownfd, buf, sizeof buf - 1, 0);
+	n = pread(ctlfd, buf, sizeof buf - 1, 0);
 	if(n <= 0)
 		return -1;
 	buf[n] = 0;
-	*pa = strtoull(buf, nil, 0);
+	if(tokenize(buf, f, nelem(f)) != 8)
+		return -1;
+	*pa = strtoull(f[2], nil, 0);
+	*len = strtoull(f[4], nil, 0);
+	*va = strtoull(f[7], nil, 0);
 	return 0;
 }
 
+static int
+ramcmdfd(int ctlfd, char *cmd)
+{
+	return write(ctlfd, cmd, strlen(cmd)) == strlen(cmd) ? 0 : -1;
+}
+
+static int
+ramcmd(char *cmd)
+{
+	return ramcmdfd(lklramctl, cmd);
+}
+
+/*
+ * Takes want bytes of the arena for the guest, 2 MiB aligned (so #P maps
+ * it with 2 MiB pages).  want 0 only reports whether that has happened:
+ * the guest never falls back to more of the arena than it asked for.
+ */
 static void
 raminit(unsigned long want)
 {
-	u64 base, size, pa;
-	void *va;
+	char cmd[64];
+	u64 pa, len;
+	uintptr va;
 
-	if(lklram != nil)
+	if(lklram != nil || want == 0)
 		return;
-	base = pnpnum("dma", "base");
-	size = pnpnum("dma", "size");
-	if(base == ~0ULL || size == ~0ULL || size < 64*1024*1024){
-		lkl_printf("host: no dma arena (base %#llux size %#llux)\n",
-		       base, size);
+	if((lklramctl = open("#P/dma/clone", ORDWR)) < 0){
+		lkl_printf("host: no #P/dma: %r\n");
 		return;
 	}
-	/*
-	 * Map the whole segment so any allocated chunk has a virtual
-	 * address; use only [pa, pa+want) of it.
-	 */
-	va = segattach(0, "dma", 0, size);
-	if(va == (void*)-1){
-		lkl_printf("host: segattach dma %#llux: %r\n", size);
-		return;
+	snprint(cmd, sizeof cmd, "alloc %lud 0x200000 cached\n", want);
+	if(ramcmd(cmd) < 0 || ramcmd("map\n") < 0 ||
+	   ramstatfd(lklramctl, &pa, &len, &va) < 0 || len < want || va == 0){
+		lkl_printf("host: dma arena: cannot take %#lux: %r\n", want);
+		fprint(2, "lklboot: dma arena exhausted\n");
+		exits("arena");
 	}
-	pa = base;
-	if(want != 0){
-		/*
-		 * Never fall back to the whole arena: with more than one
-		 * LKL instance that hands this guest the same pages as
-		 * another live guest, and both kernels corrupt each
-		 * other.  Fail loudly instead.
-		 */
-		if(want >= size ||
-		   dmaalloc(want, 0x200000, &pa) < 0 ||
-		   pa < base || pa + want > base + size){
-			lkl_printf("host: dma arena: want %#llux of %#llux: "
-				   "cannot reserve a disjoint chunk\n",
-				   want, size);
-			fprint(2, "lklboot: dma arena exhausted\n");
-			exits("arena");
-		}
-	}
-	if(want == 0)
-		want = size;
-	lklram = va + (pa - base);
+	lklram = (uchar*)va;
 	lklrampa = pa;
 	lklramsize = want;
-	lkl_printf("host: arena va %p pa %#llux size %#llux%s\n",
-		   lklram, pa, want, pa == base ? "" : " (chunk)");
-	fprint(2, "lklboot: arena pa %#llux size %#llux\n", pa, want);
+	lkl_printf("host: arena va %p pa %#llux size %#llux\n",
+		   lklram, pa, (u64)want);
+	fprint(2, "lklboot: arena pa %#llux size %#llux\n", pa, (u64)want);
+
+	/*
+	 * Reserve a 1 MiB uncached (SG_NCRAM, 4 KiB pages) chunk for
+	 * dma_alloc_coherent() rings before any RFMEM child threads spawn.
+	 */
+	if((lklncctl = open("#P/dma/clone", ORDWR)) >= 0){
+		u64 ncwant = 1024 * 1024;
+		snprint(cmd, sizeof cmd, "alloc %llud 4096 uncached\n", ncwant);
+		if(ramcmdfd(lklncctl, cmd) == 0 && ramcmdfd(lklncctl, "map\n") == 0 &&
+		   ramstatfd(lklncctl, &pa, &len, &va) == 0 && len >= ncwant && va != 0){
+			lklnc = (uchar*)va;
+			lklncpa = pa;
+			lklncsize = len;
+			lklncoff = 0;
+			/* Pre-fault all 2 MiB SG_NCRAM PTEs single-threaded before RFMEM spawns. */
+			memset(lklnc, 0, lklncsize);
+			__asm__ volatile("dsb sy" ::: "memory");
+			lkl_printf("host: nc-dma va %p pa %#llux size %#llux\n",
+				   lklnc, lklncpa, lklncsize);
+		}else{
+			close(lklncctl);
+			lklncctl = -1;
+		}
+	}
+}
+
+void*
+lkl_host_dma_alloc_nc(unsigned long size, unsigned long *pa)
+{
+	u64 off, need;
+	uchar *p;
+
+	if(lklnc == nil || size == 0)
+		return nil;
+	need = (size + Page - 1) & ~(u64)(Page - 1);
+	lock(&lklnclk);
+	off = (lklncoff + Page - 1) & ~(u64)(Page - 1);
+	if(off + need > lklncsize){
+		unlock(&lklnclk);
+		return nil;
+	}
+	p = lklnc + off;
+	lklncoff = off + need;
+	unlock(&lklnclk);
+	memset(p, 0, need);
+	__asm__ volatile("dsb sy" ::: "memory");
+	if(pa != nil)
+		*pa = (unsigned long)(lklncpa + off);
+	return p;
+}
+
+int
+lkl_host_dma_free_nc(void *va, unsigned long size)
+{
+	uintptr p = (uintptr)va;
+
+	USED(size);
+	if(lklnc != nil && p >= (uintptr)lklnc && p < (uintptr)lklnc + lklncsize)
+		return 1;
+	return 0;
 }
 
 /*
@@ -976,21 +1039,25 @@ coherentclean(void)
 }
 
 void
+lkl_host_dma_coherent_sync(void)
+{
+	coherentclean();
+}
+
+void
 lkl_host_dma_sync(unsigned long pa, unsigned long size, int op)
 {
 	static char *name[] = { "clean", "inval", "cleaninval" };
-	static int fd[3] = { -1, -1, -1 };
-	char buf[64], path[32];
+	char buf[64];
 
-	if(size == 0 || op < 0 || op > 2)
+	/* the chunk's ctl takes offsets into the guest's RAM */
+	if(size == 0 || op < 0 || op > 2 || lklramctl < 0 ||
+	   pa < lklrampa || pa - lklrampa > lklramsize ||
+	   size > lklramsize - (pa - lklrampa))
 		return;
-	if(fd[op] < 0){
-		snprint(path, sizeof path, "#P/dma/%s", name[op]);
-		if((fd[op] = open(path, OWRITE)) < 0)
-			return;
-	}
-	snprint(buf, sizeof buf, "0x%lux 0x%lux\n", pa, size);
-	pwrite(fd[op], buf, strlen(buf), 0);
+	snprint(buf, sizeof buf, "%s %#lux %#lux\n", name[op],
+		(unsigned long)(pa - lklrampa), size);
+	ramcmd(buf);
 }
 
 /*
@@ -1057,6 +1124,9 @@ lkl_host_dma_pa(void *va, unsigned long size)
 	if(lklram != nil && p >= (uintptr)lklram &&
 	   p + size <= (uintptr)lklram + lklramsize)
 		return lklrampa + (p - (uintptr)lklram);
+	if(lklnc != nil && p >= (uintptr)lklnc &&
+	   p + size <= (uintptr)lklnc + lklncsize)
+		return lklncpa + (p - (uintptr)lklnc);
 	return p;
 }
 
@@ -1241,13 +1311,22 @@ htimer_free(void *timer)
  * both hooks out of the mapping.  The window is device memory, mapped by
  * the kernel; the guest touches it through these two entry points only.
  */
-enum { Nmmio = 32 };
+enum { Nmmio = 64, Nresmem = 32 };
 static struct {
 	u64	pa;
 	u64	len;
 	uchar	*va;
 } mmio[Nmmio];
 static int nmmio;
+static Lock mmiolk;
+
+static struct {
+	char	name[48];
+	u64	pa;
+	u64	len;
+} resmem[Nresmem];
+static int nresmem;
+static int resmemscanned;
 
 u32
 lklhost_mmio_r32(u64 pa)
@@ -1316,7 +1395,7 @@ lklhost_mapdev(char *node, u64 *base, u64 *size)
 	 * segattach grants the 2 MiB block that contains the device, not the
 	 * device window; the window starts at pa & (2 MiB - 1) inside it.
 	 */
-	grant = (len + 0x1fffffULL) & ~0x1fffffULL;
+	grant = ((pa & 0x1fffffULL) + len + 0x1fffffULL) & ~0x1fffffULL;
 	va = segattach(0, node, 0, grant);
 	if(va == (void*)-1)
 		return -1;
@@ -1343,15 +1422,122 @@ lklhost_iomem(u64 pa, void *val, int size, int write)
 	return hiomem_access(va, val, size, write);
 }
 
+static int
+resmemparse(char *buf, u64 *pa, u64 *len, u64 *va)
+{
+	char *f[8];
+	int nf;
+
+	nf = tokenize(buf, f, nelem(f));
+	if(nf < 7 || strcmp(f[1], "pa") != 0 || strcmp(f[3], "len") != 0 ||
+	   strcmp(f[5], "va") != 0)
+		return -1;
+	*pa = strtoull(f[2], nil, 0);
+	*len = strtoull(f[4], nil, 0);
+	*va = strtoull(f[6], nil, 0);
+	return 0;
+}
+
+static void
+resmemscan(void)
+{
+	Dir *d;
+	int fd, n, i, cfd, m;
+	char path[96], buf[128];
+	u64 pa, len, va;
+
+	resmemscanned = 1;
+	if((fd = open("#P/resmem", OREAD)) < 0)
+		return;
+	n = dirreadall(fd, &d);
+	close(fd);
+	if(n <= 0)
+		return;
+	for(i = 0; i < n && nresmem < Nresmem; i++){
+		snprint(path, sizeof path, "#P/resmem/%s/ctl", d[i].name);
+		if((cfd = open(path, OREAD)) < 0)
+			continue;
+		m = read(cfd, buf, sizeof buf - 1);
+		close(cfd);
+		if(m <= 0)
+			continue;
+		buf[m] = 0;
+		if(resmemparse(buf, &pa, &len, &va) < 0 || len == 0)
+			continue;
+		strecpy(resmem[nresmem].name,
+			resmem[nresmem].name + sizeof resmem[nresmem].name,
+			d[i].name);
+		resmem[nresmem].pa = pa;
+		resmem[nresmem].len = len;
+		nresmem++;
+	}
+	free(d);
+}
+
+static void*
+hmapresmem(u64 addr, u64 size)
+{
+	int i, fd, m;
+	char path[96], buf[128];
+	u64 pa, len, va;
+
+	lock(&mmiolk);
+	for(i = 0; i < nmmio; i++)
+		if(addr >= mmio[i].pa && addr + size <= mmio[i].pa + mmio[i].len){
+			uchar *p = mmio[i].va + (addr - mmio[i].pa);
+			unlock(&mmiolk);
+			return p;
+		}
+	if(!resmemscanned)
+		resmemscan();
+	for(i = 0; i < nresmem; i++){
+		if(addr < resmem[i].pa ||
+		   addr + size > resmem[i].pa + resmem[i].len)
+			continue;
+		if(nmmio >= Nmmio)
+			break;
+		snprint(path, sizeof path, "#P/resmem/%s/ctl", resmem[i].name);
+		if((fd = open(path, ORDWR)) < 0){
+			lkl_printf("host: resmem %s open: %r\n", resmem[i].name);
+			break;
+		}
+		if(write(fd, "map\n", 4) != 4){
+			lkl_printf("host: resmem %s map: %r\n", resmem[i].name);
+			close(fd);
+			break;
+		}
+		m = pread(fd, buf, sizeof buf - 1, 0);
+		close(fd);
+		if(m <= 0){
+			lkl_printf("host: resmem %s read: %r\n", resmem[i].name);
+			break;
+		}
+		buf[m] = 0;
+		if(resmemparse(buf, &pa, &len, &va) < 0 || va == 0)
+			break;
+		mmio[nmmio].pa = pa;
+		mmio[nmmio].len = len;
+		mmio[nmmio].va = (uchar*)(usize)va;
+		nmmio++;
+		lkl_printf("host: resmem %s pa=%#llx len=%#llx va=%#llx\n",
+			resmem[i].name, pa, len, va);
+		unlock(&mmiolk);
+		return (uchar*)(usize)va + (addr - pa);
+	}
+	unlock(&mmiolk);
+	return nil;
+}
+
 static void*
 hioremap(long addr, int size)
 {
 	int i;
 
-	USED(size);
 	for(i = 0; i < nmmio; i++)
 		if((u64)addr >= mmio[i].pa && (u64)addr < mmio[i].pa + mmio[i].len)
 			return mmio[i].va + ((u64)addr - mmio[i].pa);
+	if(size > 0)
+		return hmapresmem((u64)addr, (u64)size);
 	return nil;
 }
 
@@ -1787,6 +1973,38 @@ lklhost_selftest(void)
 	hmut_free(m);
 }
 
+/*
+ * Secure-monitor call forwarding through Harvey's #P/tee/smc gate.
+ * Each open fd on #P/tee/smc holds its own 64-byte response buffer in the
+ * kernel; smclk serializes the write+read pair across LKL threads sharing
+ * this host process's single fd.
+ */
+static Lock	smclk;
+static int	smcfd = -1;
+
+static int
+hsmc(const unsigned long long in[8], unsigned long long out[8])
+{
+	int n;
+
+	lock(&smclk);
+	if(smcfd < 0){
+		smcfd = open("#P/tee/smc", ORDWR);
+		if(smcfd < 0){
+			unlock(&smclk);
+			return -1;
+		}
+	}
+	n = pwrite(smcfd, (void*)in, 8 * sizeof(unsigned long long), 0);
+	if(n != (int)(8 * sizeof(unsigned long long))){
+		unlock(&smclk);
+		return -1;
+	}
+	n = pread(smcfd, out, 8 * sizeof(unsigned long long), 0);
+	unlock(&smclk);
+	return n == (int)(8 * sizeof(unsigned long long)) ? 0 : -1;
+}
+
 struct lkl_host_operations lkl_harvey_ops = {
 	.virtio_devices		= nil,
 	.print			= hprint,
@@ -1843,6 +2061,8 @@ struct lkl_host_operations lkl_harvey_ops = {
 	.shmem_mmap		= nil,
 
 	.resource		= hresource,
+
+	.smc			= hsmc,
 
 	.pci_ops		= nil,
 };

@@ -461,12 +461,13 @@ Completion is `NIS` bit 1 (Transfer Complete); the transfers are short
 enough that the loop should busy-poll, because one `sleep(1)` costs 10 ms
 and dominates a 64 KiB transfer.
 
-The `#P/dma` physseg is mapped **cached**.  Driver buffers are touched by
-the CPU, so the mapping has to be normal write-back, and an uncached
-64 KiB `memmove` alone costs 3.5 ms.  The driver maintains it explicitly:
+The driver's `#P/dma` chunk is mapped **cached**.  Driver buffers are
+touched by the CPU, so the mapping has to be normal write-back, and an
+uncached 64 KiB `memmove` alone costs 3.5 ms.  The driver maintains it
+explicitly, through the chunk's ctl:
 
-- write: `memmove` into the buffer, `#P/dma/clean`, then DMA;
-- read: `#P/dma/cleaninval`, DMA, `#P/dma/inval`, then `memmove`;
+- write: `memmove` into the buffer, `clean`, then DMA;
+- read: `cleaninval`, DMA, `inval`, then `memmove`;
 - the descriptor table is also cleaned before the transfer (a cached
   descriptor is invisible to the DMA engine).
 

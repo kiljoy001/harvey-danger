@@ -468,8 +468,9 @@ must live on a read-only or hostowner-owned path.
 No kernel TEE driver is added. The ARM64 `#P` device (`devpnp`) already
 provides the two primitives a userspace OP-TEE client needs:
 
-- `#P/dma/base`, `#P/dma/size`, `#P/dma/alloc`, `segattach("dma")` for
-  physically contiguous, cache-managed shared memory.
+- `#P/dma` chunks (`#P/dma/clone`, then `alloc` and `map` on the chunk's
+  ctl) for physically contiguous, cache-managed shared memory, and
+  `#P/tee/clean|inval|cleaninval` for the OP-TEE static shared memory.
 - A new `#P/tee/smc` file: write eight `u64` registers, read four. The
   kernel executes `smc #0` at EL1 and returns. It whitelists the OP-TEE
   fast-call range (`0xbf000000`–`0xbf00ffff`), refuses PSCI and other
@@ -483,8 +484,8 @@ memory registration, session handling, and supplicant RPC live in
 
 The message argument and the shared buffer are built in the DMA arena:
 
-1. `#P/dma/alloc` a 4 KiB (or larger) buffer; compute its physical
-   address from the DMA base and the `segattach` mapping.
+1. Take a 4 KiB (or larger) `#P/dma` chunk; its ctl reports the
+   physical address and where `map` put it.
 2. Register it with `OPTEE_MSG_CMD_REGISTER_SHM`
    (`CALL_WITH_ARG`, `TMEM_OUTPUT`, contiguous buffer).
 3. Open a session to the TA UUID, then invoke commands with `RMEM_*`

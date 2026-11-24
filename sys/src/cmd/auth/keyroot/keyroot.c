@@ -1,7 +1,7 @@
 /*
  * opteeprobe - userspace OP-TEE client probe.
  *
- * Drives #P/tee/smc and #P/dma, registers a shared-memory page, opens a
+ * Drives #P/tee/smc and its cache files, registers a shared-memory page, opens a
  * session to the keyroot probe TA, services the REE-FS TA-load RPC, and
  * invokes PING/INFO/DERIVE.
  *
@@ -182,7 +182,7 @@ dmacache(int clean, u64 pa, u64 len)
 	char buf[64], *path;
 	int fd;
 
-	path = clean ? "#P/dma/cleaninval" : "#P/dma/inval";
+	path = clean ? "#P/tee/cleaninval" : "#P/tee/inval";
 	if((fd = open(path, OWRITE)) < 0)
 		fail("open %s: %r", path);
 	snprint(buf, sizeof buf, "0x%llx 0x%llx\n", pa, len);

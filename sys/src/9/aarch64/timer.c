@@ -84,6 +84,22 @@ irqslot(u32 irq)
  * The GIC line itself is programmed once, when the first waiter
  * arrives, and masked when the last one leaves.
  */
+void
+arm64irqedge(u32 irq)
+{
+	u32 reg, shift;
+
+	if(gicdist == nil || irq < 32 || irq >= 32 + Nirqwait)
+		return;
+	/* Program GICD_ICFGR[irq] = 0b10 (edge-triggered) while disabled. */
+	gicdist[0x180/4 + irq/32] = 1U << (irq % 32);
+	__asm__ volatile("dsb sy" ::: "memory");
+	reg = 0xc00/4 + irq/16;
+	shift = (irq % 16) * 2;
+	gicdist[reg] = (gicdist[reg] & ~(3U << shift)) | (2U << shift);
+	__asm__ volatile("dsb sy" ::: "memory");
+}
+
 int
 arm64irqenable(u32 irq)
 {

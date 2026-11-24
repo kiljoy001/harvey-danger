@@ -133,6 +133,49 @@ wm(volatile u32 *b, int off, u32 mask, u32 v)
 	b[off/4] = (v & mask) | ((mask & 0xffff) << 16);
 }
 
+/*
+ * Claims a #P node before its window is mapped or its interrupt waited
+ * for: #P allows both only to the holder of the device's claim, which
+ * lasts while the claim file is open, so it is kept.  Each node is
+ * claimed once per process.  SoC-wide blocks (the clock and reset unit,
+ * the GRFs, GPIO banks used for pins) are claimed shared, since other
+ * drivers touch them too; the controller a driver drives, exclusively.
+ */
+static int
+claimnode(char *node)
+{
+	static char claimed[16][64];
+	static int nclaimed;
+	char path[128], who[64];
+	int fd, i, n;
+
+	for(i = 0; i < nclaimed; i++)
+		if(strcmp(claimed[i], node) == 0)
+			return 0;
+	snprint(path, sizeof path, "#P/%s/class", node);
+	who[0] = 0;
+	if((fd = open(path, OREAD)) >= 0){
+		n = read(fd, who, sizeof who - 1);
+		close(fd);
+		who[n > 0 ? n : 0] = 0;
+	}
+	if(strncmp(who, "cru", 3) == 0 || strncmp(who, "grf", 3) == 0 ||
+	   strncmp(who, "gpio", 4) == 0)
+		snprint(who, sizeof who, "sdprobe shared");
+	else
+		snprint(who, sizeof who, "sdprobe");
+	snprint(path, sizeof path, "#P/%s/claim", node);
+	if((fd = open(path, OWRITE)) < 0)
+		return -1;
+	if(write(fd, who, strlen(who)) != strlen(who)){
+		close(fd);
+		return -1;
+	}
+	if(nclaimed < nelem(claimed))
+		snprint(claimed[nclaimed++], sizeof claimed[0], "%s", node);
+	return 0;
+}
+
 static u8 *
 mapnode(char *node, u64 want)
 {
@@ -160,6 +203,8 @@ mapnode(char *node, u64 want)
 	if(base != want || size == 0)
 		sysfatal("sdprobe: unexpected %s %#llux+%#llux", node, base, size);
 	len = (size + 0x1fffff) & ~0x1fffffULL;
+	if(claimnode(node) < 0)
+		sysfatal("sdprobe: claim %s: %r", node);
 	m = segattach(0, node, 0, len);
 	if(m == (void *)-1)
 		sysfatal("sdprobe: segattach %s: %r", node);
@@ -549,69 +594,42 @@ struct IdmacDesc {
 	u32 des0, des1, des2, des3;
 };
 
-static u8 *dmava;
-static u64 dmabase, dmasize, datapa, descpa;
+/* One #P/dma chunk: the data page, then the descriptor page.  Its
+ * ctl stays open, which keeps the chunk. */
+static int dmactl = -1;
+static u64 datapa, descpa;
 static u8 *datava, *descva;
-
-static u64
-readnum(char *path)
-{
-	char buf[64];
-	int fd, n;
-
-	if((fd = open(path, OREAD)) < 0)
-		return 0;
-	n = read(fd, buf, sizeof buf - 1);
-	close(fd);
-	if(n <= 0)
-		return 0;
-	buf[n] = 0;
-	return strtoull(buf, nil, 0);
-}
-
-static u64
-dmaalloc(u64 size, u64 align)
-{
-	char buf[64];
-	int fd, n;
-
-	if((fd = open("#P/dma/alloc", ORDWR)) < 0)
-		return 0;
-	snprint(buf, sizeof buf, "%llud %llud\n", size, align);
-	if(write(fd, buf, strlen(buf)) != strlen(buf)){
-		close(fd);
-		return 0;
-	}
-	n = pread(fd, buf, sizeof buf - 1, 0);
-	close(fd);
-	if(n <= 0)
-		return 0;
-	buf[n] = 0;
-	return strtoull(buf, nil, 0);
-}
 
 static int
 dmainit(void)
 {
+	char buf[128], *f[8];
+	u8 *va;
+	int n;
+
 	if(datava != nil)
 		return 0;
-	dmabase = readnum("#P/dma/base");
-	dmasize = readnum("#P/dma/size");
-	if(dmabase == 0 || dmasize == 0)
+	if((dmactl = open("#P/dma/clone", ORDWR)) < 0)
 		return -1;
-	dmava = segattach(0, "dma", 0, dmasize);
-	if(dmava == (void*)-1){
-		dmava = nil;
+	if(write(dmactl, "alloc 8192 4096 cached\n", 23) != 23 ||
+	   write(dmactl, "map\n", 4) != 4 ||
+	   (n = pread(dmactl, buf, sizeof buf - 1, 0)) <= 0){
+		close(dmactl);
+		dmactl = -1;
 		return -1;
 	}
-	datapa = dmaalloc(4096, 4096);
-	descpa = dmaalloc(4096, 4096);
-	if(datapa == 0 || descpa == 0)
+	buf[n] = 0;
+	/* "<n> pa <pa> len <len> cached va <va>"; #P zeroes the chunk */
+	if(tokenize(buf, f, nelem(f)) != 8){
+		close(dmactl);
+		dmactl = -1;
 		return -1;
-	datava = dmava + (datapa - dmabase);
-	descva = dmava + (descpa - dmabase);
-	memset(datava, 0, 4096);
-	memset(descva, 0, 4096);
+	}
+	datapa = strtoull(f[2], nil, 0);
+	descpa = datapa + 4096;
+	va = (u8*)(uintptr)strtoull(f[7], nil, 0);
+	datava = va;
+	descva = va + 4096;
 	print("sdprobe: idmac data %#llux desc %#llux\n", datapa, descpa);
 	return 0;
 }
@@ -620,13 +638,9 @@ static void
 dmaclean(u64 pa, u64 len)
 {
 	char buf[64];
-	int fd;
 
-	if((fd = open("#P/dma/cleaninval", OWRITE)) < 0)
-		return;
-	snprint(buf, sizeof buf, "%#llux %#llux\n", pa, len);
-	write(fd, buf, strlen(buf));
-	close(fd);
+	snprint(buf, sizeof buf, "cleaninval %#llux %#llux\n", pa - datapa, len);
+	write(dmactl, buf, strlen(buf));
 }
 
 static int

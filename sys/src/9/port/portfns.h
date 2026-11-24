@@ -243,6 +243,7 @@ u32 nhgetl(void *);
 u16 nhgets(void *);
 u64 nhgetv(void *);
 void nixprepage(int);
+usize segattachps(Proc *, int, Physseg *, usize, usize);
 int nrand(int);
 u64 ns2fastticks(u64);
 int okaddr(usize, i32, int);

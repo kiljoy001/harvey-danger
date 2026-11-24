@@ -45,6 +45,7 @@ CAT_BASE = 0x3200000
 B64_BASE = 0x3200000
 LS_BASE = 0x3600000
 RNGFS_BASE = 0x3A00000
+TOUCHFS_BASE = 0x3A00000
 WDTFS_BASE = 0x4E00000
 SARADCFS_BASE = 0x5A00000
 TSADCFS_BASE = 0x6200000
@@ -416,6 +417,11 @@ def build_pmicfs(out: Path, libc: Path) -> tuple[bytes, int]:
 def build_rngfs(out: Path, libc: Path) -> tuple[bytes, int]:
     return build_fs(out, libc, "rngfs",
                     ROOT / "sys/src/cmd/rngfs/rngfs.c", RNGFS_BASE)
+
+
+def build_touchfs(out: Path, libc: Path) -> tuple[bytes, int]:
+    return build_fs(out, libc, "touchfs",
+                    ROOT / "sys/src/cmd/touchfs/touchfs.c", TOUCHFS_BASE)
 
 
 def build_wdtfs(out: Path, libc: Path) -> tuple[bytes, int]:
@@ -1289,7 +1295,15 @@ main(int argc, char **argv)
 		}
 	}
 	say("HARVEY-ARM64 DRIVER-MANAGER PASS\n");
-	{
+	/*
+	 * The native drvkit services below start only where what they
+	 * drive is present: on a board whose devices an LKL guest drives
+	 * (borneo), drvman starts no Rockchip driver, so there is no fan
+	 * sensor or PWM to steer and no native eMMC.
+	 */
+	if(access("/srv/tsadc", AEXIST) < 0 || access("/srv/pwm", AEXIST) < 0)
+		say("HARVEY-ARM64 FANCTL SKIP no tsadc or pwm\n");
+	else{
 		char *fansrv[] = { "/boot/fanctl", "fanctl", nil };
 		pid = rfork(RFPROC|RFNOWAIT|RFFDG|RFNAMEG|RFENVG|RFREND|RFNOTEG);
 		if(pid == 0){
@@ -1316,7 +1330,10 @@ main(int argc, char **argv)
 		else
 			say("HARVEY-ARM64 HUBFS FAIL\n");
 	}
-	{
+	/* emmcfs is embedded only by the gefs bring-up build */
+	if(access("/boot/emmcfs", AEXEC) < 0)
+		say("HARVEY-ARM64 EMMCFS SKIP not in this build\n");
+	else{
 		char *emmcfsargv[] = { "/boot/emmcfs", "emmcfs", nil };
 		pid = rfork(RFPROC|RFNOWAIT|RFFDG|RFNAMEG|RFENVG|RFREND|RFNOTEG);
 		if(pid == 0){
@@ -1370,8 +1387,14 @@ main(int argc, char **argv)
 			snprint(msg, sizeof msg, "HARVEY-ARM64 NET-IP FAIL %r\n");
 			say(msg);
 		}else if(bind("#l", "/net", MAFTER|MCREATE) < 0){
-			snprint(msg, sizeof msg, "HARVEY-ARM64 NET-ETH FAIL %r\n");
-			say(msg);
+			/* no Ethernet driver here: an LKL guest owns the network */
+			rerrstr(msg, sizeof msg);
+			if(strstr(msg, "no free devices") != nil)
+				say("HARVEY-ARM64 NET-ETH SKIP no ethernet device\n");
+			else{
+				snprint(msg, sizeof msg, "HARVEY-ARM64 NET-ETH FAIL %r\n");
+				say(msg);
+			}
 		}else if((fd = open("/net/ether0/addr", OREAD)) < 0)
 			say("HARVEY-ARM64 NET-BIND FAIL\n");
 		else{
@@ -1415,7 +1438,10 @@ main(int argc, char **argv)
 		netconf("root", root, sizeof root);
 
 		ok = 1;
-		if((fd = open("/net/ipifc/clone", ORDWR)) < 0){
+		if(access("/net/ether0", AEXIST) < 0){
+			say("HARVEY-ARM64 NET-IFC SKIP no ethernet device\n");
+			ok = 0;
+		}else if((fd = open("/net/ipifc/clone", ORDWR)) < 0){
 			snprint(buf, sizeof buf, "HARVEY-ARM64 NET-IFC FAIL open %r\n");
 			say(buf);
 			ok = 0;
@@ -1836,6 +1862,15 @@ main(int argc, char **argv)
 				say("HARVEY-ARM64 LKL LAUNCH FAIL\n");
 		}
 		say("HARVEY-ARM64 LKL SERVICES START\n");
+		/* touchfs finds its own touchscreen (a multi-touch input
+		 * device in an LKL guest) and exits where there is none. */
+		pid = rfork(RFPROC|RFNOWAIT|RFFDG|RFNAMEG|RFENVG|RFREND|RFNOTEG);
+		if(pid == 0){
+			char *touchav[] = { "/boot/touchfs", nil };
+
+			exec(touchav[0], touchav);
+			_exits("exec");
+		}
 	}
 	{
 		char *rcargv[] = { "/boot/rc", "-i", "-m", "/boot/rcmain", nil };
@@ -1874,6 +1909,7 @@ main(int argc, char **argv)
     i2cfs, _ = build_i2cfs(out, libc)
     pmicfs, _ = build_pmicfs(out, libc)
     rngfs, _ = build_rngfs(out, libc)
+    touchfs, _ = build_touchfs(out, libc)
     wdtfs, _ = build_wdtfs(out, libc)
     saradcfs, _ = build_saradcfs(out, libc)
     tsadcfs, _ = build_tsadcfs(out, libc)
@@ -1917,17 +1953,38 @@ main(void)
     echo, _ = build_program(out, "echo", r'''#include <u.h>
 #include <libc.h>
 
+/*
+ * As Plan 9's echo: the line goes out in one write, so a ctl file sees
+ * "<name> shared" as one message, and a refused write is reported.
+ */
 void
 main(int argc, char **argv)
 {
-	int i;
+	int nflag, i, len;
+	char *buf, *p;
 
-	for(i = 1; i < argc; i++){
-		if(i > 1)
-			write(1, " ", 1);
-		write(1, argv[i], strlen(argv[i]));
+	nflag = 0;
+	if(argc > 1 && strcmp(argv[1], "-n") == 0)
+		nflag = 1;
+	len = 1;
+	for(i = 1+nflag; i < argc; i++)
+		len += strlen(argv[i])+1;
+	buf = malloc(len);
+	if(buf == nil)
+		exits("no memory");
+	p = buf;
+	for(i = 1+nflag; i < argc; i++){
+		strcpy(p, argv[i]);
+		p += strlen(p);
+		if(i < argc-1)
+			*p++ = ' ';
 	}
-	write(1, "\n", 1);
+	if(!nflag)
+		*p++ = '\n';
+	if(write(1, buf, p-buf) < 0){
+		fprint(2, "echo: write error: %r\n");
+		exits("write error");
+	}
 	exits(nil);
 }
 ''', ECHO_BASE, libc)
@@ -2237,6 +2294,117 @@ main(int argc, char **argv)
 	exits(nil);
 }
 ''', PING_BASE, libc)
+    peek, _ = build_program(out, "peek", r'''#include <u.h>
+#include <libc.h>
+
+/* Registers of a #P device, through its regs file under a shared claim.
+ *   peek node off [count]  print count 32-bit registers from off
+ *   peek -w node off val   write one 32-bit register
+ * Offsets and values are hex.  A block that aborts gives regs: bus error.
+ */
+
+static void
+usage(void)
+{
+	fprint(2, "usage: peek node off [count] | peek -w node off val\n");
+	exits("usage");
+}
+
+void
+main(int argc, char **argv)
+{
+	char path[128];
+	int cfd, rfd, wr, i, n;
+	u64 off;
+	u32 v;
+
+	wr = 0;
+	if(argc > 1 && strcmp(argv[1], "-w") == 0){
+		wr = 1;
+		argc--;
+		argv++;
+	}
+	if(argc < 3 || argc > 4 || (wr && argc != 4))
+		usage();
+	snprint(path, sizeof path, "#P/%s/claim", argv[1]);
+	cfd = open(path, ORDWR);
+	if(cfd < 0 || write(cfd, "peek shared", 11) != 11)
+		sysfatal("%s: %r", path);
+	snprint(path, sizeof path, "#P/%s/regs", argv[1]);
+	rfd = open(path, wr ? ORDWR : OREAD);
+	if(rfd < 0)
+		sysfatal("%s: %r", path);
+	off = strtoull(argv[2], nil, 16);
+	if(wr){
+		v = strtoul(argv[3], nil, 16);
+		if(pwrite(rfd, &v, 4, off) != 4)
+			sysfatal("write %llux: %r", off);
+		exits(nil);
+	}
+	n = argc == 4 ? strtol(argv[3], nil, 16) : 1;
+	for(i = 0; i < n; i++, off += 4){
+		if(pread(rfd, &v, 4, off) != 4)
+			sysfatal("read %llux: %r", off);
+		print("%08llux %08ux\n", off, v);
+	}
+	exits(nil);
+}
+''', RTC_BASE, libc)
+    touchtest, _ = build_program(out, "touchtest", r'''#include <u.h>
+#include <libc.h>
+
+/* touchtest [frames [seconds]]: read frames from touchfs's events file
+ * (mounting /srv/touch if need be) and print them.  An alarm interrupts a
+ * read still waiting after the given seconds, which sends touchfs a
+ * flush; status is read afterwards to show the server still answers.
+ */
+
+static int
+onnote(void *v, char *s)
+{
+	USED(v);
+	return strcmp(s, "alarm") == 0;
+}
+
+void
+main(int argc, char **argv)
+{
+	char buf[1024];
+	int fd, n, want, secs, got;
+
+	want = argc > 1 ? atoi(argv[1]) : 20;
+	secs = argc > 2 ? atoi(argv[2]) : 15;
+	if(access("/mnt/touch/events", AEXIST) < 0){
+		fd = open("/srv/touch", ORDWR);
+		if(fd < 0)
+			sysfatal("/srv/touch: %r");
+		if(mount(fd, -1, "/mnt/touch", MREPL, "") < 0)
+			sysfatal("mount /srv/touch: %r");
+	}
+	fd = open("/mnt/touch/events", OREAD);
+	if(fd < 0)
+		sysfatal("events: %r");
+	atnotify(onnote, 1);
+	alarm(secs*1000);
+	for(got = 0; got < want; got++){
+		n = read(fd, buf, sizeof buf - 1);
+		if(n <= 0){
+			print("read: %r after %d frames\n", got);
+			break;
+		}
+		buf[n] = 0;
+		print("%s", buf);
+	}
+	alarm(0);
+	close(fd);
+	fd = open("/mnt/touch/status", OREAD);
+	if(fd >= 0 && (n = read(fd, buf, sizeof buf - 1)) > 0){
+		buf[n] = 0;
+		print("%s", buf);
+	}
+	exits(nil);
+}
+''', RTC_BASE, libc)
     rtc, _ = build_program(out, "rtc", r'''#include <u.h>
 #include <libc.h>
 
@@ -2620,6 +2788,7 @@ main(int argc, char **argv)
     emit_array(lines, "arm64i2cfself", i2cfs)
     emit_array(lines, "arm64pmicfself", pmicfs)
     emit_array(lines, "arm64rngfself", rngfs)
+    emit_array(lines, "arm64touchfself", touchfs)
     emit_array(lines, "arm64wdtfself", wdtfs)
     emit_array(lines, "arm64saradcfself", saradcfs)
     emit_array(lines, "arm64tsadcfself", tsadcfs)
@@ -2648,6 +2817,8 @@ main(int argc, char **argv)
     emit_array(lines, "arm64lself", ls)
     emit_array(lines, "arm64pingelf", ping)
     emit_array(lines, "arm64rtcelf", rtc)
+    emit_array(lines, "arm64peekelf", peek)
+    emit_array(lines, "arm64touchtestelf", touchtest)
     emit_array(lines, "arm64emmcelf", emmc)
     emit_array(lines, "arm64gmacelf", gmac)
     emit_array(lines, "arm64sdprobeelf", sdprobe)
@@ -2694,6 +2865,7 @@ main(int argc, char **argv)
         "i2cfs": i2cfs,
         "pmicfs": pmicfs,
         "rngfs": rngfs,
+        "touchfs": touchfs,
         "wdtfs": wdtfs,
         "saradcfs": saradcfs,
         "tsadcfs": tsadcfs,
@@ -2719,6 +2891,8 @@ main(int argc, char **argv)
         "ls": ls,
         "ping": ping,
         "rtc": rtc,
+        "peek": peek,
+        "touchtest": touchtest,
         "emmc": emmc,
         "provision": provision,
         "bigtest": bigtest,

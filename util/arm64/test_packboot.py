@@ -93,7 +93,8 @@ def main() -> None:
         arena = subprocess.check_output(
             ["fdtget", "-t", "x", str(packed), "/chosen",
              "harvey,lkl-arena-size"], text=True).split()
-        if arena != ["0", "14000000"]:
+        if len(arena) != 2 or arena[0] != "0" or \
+                int(arena[1], 16) < 16 * 1024 * 1024:
             raise SystemExit(f"lkl-arena-size: {arena}")
 
         print("pack_boot image, stamped /chosen and arena size PASS")

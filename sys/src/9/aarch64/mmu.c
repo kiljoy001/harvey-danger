@@ -17,11 +17,18 @@ static const u64 Maxidentity = 64ULL * 1024 * 1024 * 1024;
 static u64 kernelroot;
 u64 arm64kernelmair, arm64kerneltcr, arm64kernelsctlr;
 extern u64 arm64dmabase, arm64dmasize;
+/* The DMA arena's top 2 MiB block, kept for the kernel's own device
+ * memory (ethergmac's descriptors) and mapped Device; #P never hands
+ * it out.  0 when there is no arena. */
+u64 arm64dmakern;
 
 enum {
 	Ptevalid = 1,
 	Ptetable = 2,
+	/* MAIR indices: 0 normal write-back, 1 Device-nGnRE, 2 normal
+	 * non-cacheable (arm64kernelmair) */
 	Pteattrdevice = 1 << 2,
+	Pteattrnc = 2 << 2,
 	Pteinnershare = 3 << 8,
 	Pteaccessed = 1 << 10,
 };
@@ -197,22 +204,28 @@ arm64mmubuild(Fdtinfo *info)
 		}
 	}
 	/*
-	 * The DMA arena is handed to user space through #P/dma as a Device
-	 * segment.  Map the kernel identity alias with the same attributes:
-	 * two mappings of one physical range with different cacheability are
-	 * architecturally unpredictable.
+	 * The DMA arena stays normal write-back memory in the kernel's
+	 * identity map, like the rest of RAM.  #P maps each chunk into its
+	 * owner either the same way (cached) or normal non-cacheable, and
+	 * cleans and invalidates a non-cacheable chunk through this alias
+	 * when it hands it out, so no dirty line can later land on memory
+	 * a device is using (the arrangement Linux uses for coherent DMA).
+	 * RAM is never mapped Device in user space.
+	 *
+	 * The arena's top block is the kernel's own (arm64dmakern): Device
+	 * here, and outside what #P allocates.
 	 */
 	extern u64 arm64dmabase, arm64dmasize;
-	if(arm64dmabase != 0 && arm64dmasize != 0 && (arm64dmabase % L2blocksz) == 0){
-		for(pa = arm64dmabase; pa < arm64dmabase + arm64dmasize;
-		    pa += L2blocksz){
-			i = pa/L1blocksz;
-			j = (pa%L1blocksz)/L2blocksz;
-			if(root[i] == 0 || (root[i] & Ptevalid) == 0)
-				return 0;
-			l2 = (u64 *)(root[i] & ~(u64)(Pagesz-1));
-			l2[j] = blockpte(pa, 0);
-		}
+	if(arm64dmabase != 0 && arm64dmasize >= 2*L2blocksz &&
+	   (arm64dmabase % L2blocksz) == 0 && (arm64dmasize % L2blocksz) == 0){
+		pa = arm64dmabase + arm64dmasize - L2blocksz;
+		i = pa/L1blocksz;
+		j = (pa%L1blocksz)/L2blocksz;
+		if(root[i] == 0 || (root[i] & Ptevalid) == 0)
+			return 0;
+		l2 = (u64 *)(root[i] & ~(u64)(Pagesz-1));
+		l2[j] = blockpte(pa, 0);
+		arm64dmakern = pa;
 	}
 	device[0].base = info->uartbase;
 	device[0].size = Pagesz;
@@ -225,31 +238,27 @@ arm64mmubuild(Fdtinfo *info)
 	regions = 3;
 	for(k = 0; k < info->nvirtio; k++)
 		device[regions++] = info->virtio[k];
-	/* Kernel display/DMA drivers need identity mappings for the SoC blocks
-	 * discovered from the device tree.  User processes still get access only
-	 * through #P/segattach grants. */
+	/*
+	 * Every block the device tree describes, mapped Device: the kernel's
+	 * display and DMA drivers use some, and #P/<node>/regs reads and
+	 * writes any of them for a process holding the device's claim.  User
+	 * processes reach them only through #P.  A block that does not fit
+	 * the identity map is skipped (its regs file then refuses access),
+	 * not a reason to give up the map.
+	 */
+	fixedstart = regions;
 	for(k = 0; k < info->ndev; k++){
 		Fdtdev *d = &info->dev[k];
-		if(d->clas != Fdtclasscru && d->clas != Fdtclassgrf &&
-		   d->clas != Fdtclassvop && d->clas != Fdtclasshdmi &&
-		   d->clas != Fdtclassiommu && d->clas != Fdtclasswdt &&
-		   d->clas != Fdtclassgmac && d->clas != Fdtclassusb &&
-		   d->clas != Fdtclassgpio)
-			continue;
 		if(d->base != 0 && d->size != 0)
 			device[regions++] = (Fdtvirtio){d->base, d->size};
 		if(d->base2 != 0 && d->size2 != 0)
 			device[regions++] = (Fdtvirtio){d->base2, d->size2};
 	}
 	/*
-	 * Everything the in-tree drivers touch is now a DT node above.  The
-	 * RK3566 NPU probe is the one exception; mark its windows optional
-	 * so a DTB that places RAM over them drops the mapping instead of
-	 * failing the whole identity map.
+	 * The RK3566 NPU probe is the only remaining non-DT window; mark it
+	 * optional so a DTB that places RAM over it drops the mapping.
 	 */
-	fixedstart = regions;
 #ifdef ARM64_RK3566_NPU_PROBE
-	/* Temporary RK3566 register probe; a user-space driver owns these later. */
 	if(info->board == Fdtboardrk3566){
 		device[regions++] = (Fdtvirtio){0x10f000ULL, Pagesz};
 		device[regions++] = (Fdtvirtio){0xfdd90000ULL, Pagesz};
@@ -263,16 +272,12 @@ arm64mmubuild(Fdtinfo *info)
 		if(pa == 0 && k < 3)
 			continue;
 		if(pa == 0 || device[k].size == 0 ||
-		   pa >= Maxidentity || device[k].size > Maxidentity-pa)
+		   pa >= Maxidentity || device[k].size > Maxidentity-pa){
+			if(k >= fixedstart)
+				continue;
 			return 0;
+		}
 		if(overlapsram(info, pa, device[k].size)){
-			/*
-			 * A device range cannot overlap RAM.  The fixed SoC
-			 * ranges are only meaningful on Rockchip parts; on a
-			 * machine whose RAM reaches that high (QEMU virt with
-			 * 3 GiB) they simply do not exist, so drop them
-			 * instead of rejecting the whole identity map.
-			 */
 			if(k >= fixedstart)
 				continue;
 			return 0;
@@ -310,7 +315,7 @@ arm64mmuon(u64 rootpa)
 	tcr = (mmfr<<32) | (1ULL<<23) | (25ULL<<16) |
 	      (3ULL<<12) | (1ULL<<10) | (1ULL<<8) | 25;
 	__asm__ volatile("dsb sy" ::: "memory");
-	arm64kernelmair = 0x04ff;
+	arm64kernelmair = 0x4404ff;	/* see Pteattrnc */
 	arm64kerneltcr = tcr;
 	__asm__ volatile("msr mair_el1, %0" :: "r"(arm64kernelmair) : "memory");
 	__asm__ volatile("msr tcr_el1, %0" :: "r"(arm64kerneltcr) : "memory");
@@ -451,7 +456,9 @@ mmuput(usize va, Page *page, u32 attr)
 			entry |= 3ULL << 6;
 		if(attr & PTENOEXEC)
 			entry |= 1ULL << 54;
-		if(attr & PTEUNCACHED)
+		if(attr & PTENCRAM)
+			entry |= Pteattrnc | Pteinnershare;
+		else if(attr & PTEUNCACHED)
 			entry |= Pteattrdevice;
 		else
 			entry |= Pteinnershare;
@@ -463,6 +470,36 @@ mmuput(usize va, Page *page, u32 attr)
 	__asm__ volatile("dsb ishst" ::: "memory");
 	if(machp()->proc == p)
 		arm64mmuswitch(p->MMU.rootpa);
+}
+
+/* Print p's own translation of va, level by level (repeat-fault reports). */
+void
+arm64mmudumpva(Proc *p, u64 va)
+{
+	u64 *root, *l2, *l3, e1, e2, e3;
+	u32 i1, i2, i3;
+
+	i1 = (va >> 30) & 511;
+	i2 = (va >> 21) & 511;
+	i3 = (va >> 12) & 511;
+	if(p->MMU.rootpa == 0){
+		print("  walk: no root\n");
+		return;
+	}
+	root = (u64 *)p->MMU.rootpa;
+	e1 = root[i1];
+	print("  walk: root %#p l1[%ud] %#llux%s\n", root, i1, e1,
+	      e1 == ((u64 *)arm64mmukernelroot())[i1] ? " (kernel's)" : "");
+	if((e1 & (Ptevalid | Ptetable)) != (Ptevalid | Ptetable))
+		return;
+	l2 = (u64 *)(e1 & ~(u64)(PGSZ - 1));
+	e2 = l2[i2];
+	print("  walk: l2[%ud] %#llux\n", i2, e2);
+	if((e2 & (Ptevalid | Ptetable)) != (Ptevalid | Ptetable))
+		return;
+	l3 = (u64 *)(e2 & ~(u64)(PGSZ - 1));
+	e3 = l3[i3];
+	print("  walk: l3[%ud] %#llux\n", i3, e3);
 }
 
 void

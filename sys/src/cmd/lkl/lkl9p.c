@@ -467,6 +467,29 @@ loaddirs(LklFid *lf, long dfd)
 	return 0;
 }
 
+extern int	wifiscan_buf(char*, int);
+extern int	wificonnect(const char*, const char*);
+extern int	wifidisconnect(void);
+extern int	wifitcpcheck(const char*, int);
+extern void	wifistatus_buf(char*, int);
+extern int	modem_probe(void);
+extern int	modem_set_opmode(int);
+extern int	modem_scan(void);
+extern int	modem_voice_dial(const char*);
+extern int	modem_voice_answer(int);
+extern int	modem_voice_hangup(int);
+extern int	modem_voice_calls(void);
+extern int	modem_wms_list(void);
+extern int	modem_wms_send(const char*, const char*);
+extern int	modem_wds_status(void);
+extern int	modem_wds_start(const char*);
+extern int	modem_wds_stop(void);
+extern void	modemstatus_buf(char*, int);
+extern char	lkl_dmesg[];
+extern int	lkl_dmesg_len;
+static QLock	wifiscanlk;
+static QLock	modemlk;
+
 static void
 doopen(Req *r, LklFid *lf)
 {
@@ -488,6 +511,62 @@ doopen(Req *r, LklFid *lf)
 	}
 
 	m = r->ifcall.mode & 3;
+	if(strcmp(lf->path, "/dmesg") == 0 && (m == OREAD || m == ORDWR)){
+		long dfd = lklopenat(LklAtFdcwd, "/dmesg",
+			LklOwronly | LklOcreat | LklOtrunc, 0444);
+		if(dfd >= 0){
+			int len = lkl_dmesg_len;
+			if(len > 0)
+				sys0(LklNrWrite, dfd, (long)lkl_dmesg, len, 0, 0, 0);
+			lklclose(dfd);
+		}
+	}
+	if(strcmp(lf->path, "/wifistatus") == 0 && (m == OREAD || m == ORDWR)){
+		char sbuf[512];
+		long sfd;
+
+		wifistatus_buf(sbuf, sizeof sbuf);
+		sfd = lklopenat(LklAtFdcwd, "/wifistatus",
+			LklOwronly | LklOcreat | LklOtrunc, 0444);
+		if(sfd >= 0){
+			sys0(LklNrWrite, sfd, (long)sbuf, strlen(sbuf), 0, 0, 0);
+			lklclose(sfd);
+		}
+	}
+	if(strcmp(lf->path, "/modemstatus") == 0 && (m == OREAD || m == ORDWR)){
+		char mbuf[2048];
+		long mfd;
+
+		qlock(&modemlk);
+		modemstatus_buf(mbuf, sizeof mbuf);
+		qunlock(&modemlk);
+		mfd = lklopenat(LklAtFdcwd, "/modemstatus",
+			LklOwronly | LklOcreat | LklOtrunc, 0444);
+		if(mfd >= 0){
+			sys0(LklNrWrite, mfd, (long)mbuf, strlen(mbuf), 0, 0, 0);
+			lklclose(mfd);
+		}
+	}
+	if(strcmp(lf->path, "/wifiscan") == 0 && (m == OREAD || m == ORDWR)){
+		char *scanbuf;
+		long wfd, n;
+
+		qlock(&wifiscanlk);
+		scanbuf = malloc(16384);
+		if(scanbuf != nil){
+			wifiscan_buf(scanbuf, 16384);
+			wfd = lklopenat(LklAtFdcwd, "/wifiscan",
+				LklOwronly | LklOcreat | LklOtrunc, 0444);
+			if(wfd >= 0){
+				n = strlen(scanbuf);
+				if(n > 0)
+					sys0(LklNrWrite, wfd, (long)scanbuf, n, 0, 0, 0);
+				lklclose(wfd);
+			}
+			free(scanbuf);
+		}
+		qunlock(&wifiscanlk);
+	}
 	switch(m){
 	case OREAD:  flags = LklOrdonly; break;
 	case OWRITE: flags = LklOwronly; break;
@@ -664,10 +743,120 @@ doread(Req *r, LklFid *lf, WorkItem *wi)
 }
 
 static void
+ipabind_thread(void *arg)
+{
+	long bfd, br;
+
+	USED(arg);
+	bfd = lklopenat(LklAtFdcwd, "/sys/bus/platform/drivers/ipa/bind", LklOwronly, 0);
+	if(bfd >= 0){
+		br = sys0(LklNrWrite, bfd, (long)"5840000.ipa", 11, 0, 0, 0);
+		lklclose(bfd);
+		lkl_printf("lkl9p: bind 5840000.ipa -> %ld\n", br);
+	}
+}
+
+static void
 dowrite(Req *r, LklFid *lf, WorkItem *wi)
 {
 	long n, tot;
 
+	if(strcmp(lf->path, "/wifictl") == 0){
+		char cmd[256], *p, *q;
+		int len = r->ifcall.count;
+
+		if(len >= (int)sizeof cmd)
+			len = sizeof(cmd) - 1;
+		memmove(cmd, r->ifcall.data, len);
+		cmd[len] = 0;
+		while(len > 0 && (cmd[len-1] == '\n' || cmd[len-1] == '\r' || cmd[len-1] == ' '))
+			cmd[--len] = 0;
+		if(strncmp(cmd, "connect ", 8) == 0){
+			p = cmd + 8;
+			while(*p == ' ')
+				p++;
+			q = strchr(p, ' ');
+			if(q != nil){
+				*q++ = 0;
+				while(*q == ' ')
+					q++;
+			}
+			qlock(&wifiscanlk);
+			wificonnect(p, q);
+			qunlock(&wifiscanlk);
+		}else if(strcmp(cmd, "disconnect") == 0){
+			qlock(&wifiscanlk);
+			wifidisconnect();
+			qunlock(&wifiscanlk);
+		}else if(strncmp(cmd, "tcpcheck ", 9) == 0){
+			int port = 80;
+			p = cmd + 9;
+			while(*p == ' ')
+				p++;
+			q = strchr(p, ' ');
+			if(q != nil){
+				*q++ = 0;
+				port = (int)strtol(q, nil, 10);
+			}
+			wifitcpcheck(p, port);
+		}
+		r->ofcall.count = r->ifcall.count;
+		respond(r, nil);
+		return;
+	}
+	if(strcmp(lf->path, "/modemctl") == 0){
+		char cmd[128];
+		int len = r->ifcall.count;
+
+		if(len >= (int)sizeof cmd)
+			len = sizeof(cmd) - 1;
+		memmove(cmd, r->ifcall.data, len);
+		cmd[len] = 0;
+		while(len > 0 && (cmd[len-1] == '\n' || cmd[len-1] == '\r' || cmd[len-1] == ' '))
+			cmd[--len] = 0;
+		qlock(&modemlk);
+		if(strcmp(cmd, "probe") == 0)
+			modem_probe();
+		else if(strcmp(cmd, "online") == 0)
+			modem_set_opmode(0);
+		else if(strcmp(cmd, "lpm") == 0)
+			modem_set_opmode(1);
+		else if(strcmp(cmd, "offline") == 0)
+			modem_set_opmode(3);
+		else if(strcmp(cmd, "reset") == 0)
+			modem_set_opmode(4);
+		else if(strcmp(cmd, "scan") == 0)
+			modem_scan();
+		else if(strcmp(cmd, "calls") == 0)
+			modem_voice_calls();
+		else if(strncmp(cmd, "dial ", 5) == 0)
+			modem_voice_dial(cmd + 5);
+		else if(strncmp(cmd, "answer", 6) == 0)
+			modem_voice_answer(cmd[6] == ' ' ? atoi(cmd + 7) : 0);
+		else if(strncmp(cmd, "hangup", 6) == 0)
+			modem_voice_hangup(cmd[6] == ' ' ? atoi(cmd + 7) : 0);
+		else if(strcmp(cmd, "smslist") == 0)
+			modem_wms_list();
+		else if(strncmp(cmd, "sms ", 4) == 0){
+			char *sp = strchr(cmd + 4, ' ');
+			if(sp != nil){
+				*sp++ = 0;
+				modem_wms_send(cmd + 4, sp);
+			}
+		}
+		else if(strcmp(cmd, "datastat") == 0)
+			modem_wds_status();
+		else if(strncmp(cmd, "dataup ", 7) == 0)
+			modem_wds_start(cmd + 7);
+		else if(strcmp(cmd, "datadown") == 0)
+			modem_wds_stop();
+		else if(strcmp(cmd, "ipabind") == 0)
+			lklhost_spawn(ipabind_thread, nil);
+		qunlock(&modemlk);
+		r->ofcall.count = r->ifcall.count;
+		respond(r, nil);
+		return;
+	}
 	if(lf->isreg){
 		n = sys0(LklNrPwrite64, lf->fd, (long)r->ifcall.data,
 			r->ifcall.count, (long)r->ifcall.offset, 0, 0);
@@ -1035,12 +1224,48 @@ mkblocknodes(void *arg)
 			lklmkdirat(LklAtFdcwd, "/fw/modem", 0555);
 			lklmkdirat(LklAtFdcwd, "/fw/bt", 0555);
 			lklmkdirat(LklAtFdcwd, "/fw/dsp", 0555);
+			lklmkdirat(LklAtFdcwd, "/fw/persist", 0555);
+			/* Find and mount persist strictly read-only (MS_RDONLY=1) for Motorola HOB/DHOB/SHOB */
+			for(i = 1; i <= 77; i++){
+				char upath[96], ubuf[256], dpath[64];
+				long ufd, un;
+				snprint(upath, sizeof upath, "/sys/block/mmcblk0/mmcblk0p%d/uevent", i);
+				ufd = lklopenat(LklAtFdcwd, upath, LklOrdonly, 0);
+				if(ufd < 0)
+					continue;
+				un = sys0(LklNrRead, ufd, (long)ubuf, sizeof(ubuf) - 1, 0, 0, 0);
+				lklclose(ufd);
+				if(un <= 0)
+					continue;
+				ubuf[un] = 0;
+				if(strstr(ubuf, "PARTNAME=persist\n") != nil){
+					snprint(dpath, sizeof dpath, "/dev/mmcblk0p%d", i);
+					r = sys0(LklNrMount, (long)dpath, (long)"/fw/persist",
+						 (long)"ext4", 1, 0, 0);
+					lkl_printf("lkl9p: mount %s /fw/persist (RO) -> %ld\n", dpath, r);
+					break;
+				}
+			}
 			r = sys0(LklNrMount, (long)"/dev/mmcblk0p31", (long)"/fw/modem",
 				 (long)"vfat", 1, 0, 0);
 			if(r < 0)
 				r = sys0(LklNrMount, (long)"/dev/mmcblk0p31",
 					 (long)"/fw/modem", (long)"ext4", 1, 0, 0);
 			lkl_printf("lkl9p: mount /fw/modem -> %ld\n", r);
+			if(r == 0){
+				long ffd = lklopenat(LklAtFdcwd,
+					"/sys/module/firmware_class/parameters/path",
+					LklOwronly, 0);
+				if(ffd >= 0){
+					sys0(LklNrWrite, ffd, (long)"/fw/modem/image", 15, 0, 0, 0);
+					lklclose(ffd);
+					lkl_printf("lkl9p: firmware_class.path=/fw/modem/image\n");
+				}
+				{
+					extern void qcom_qrtr_start(void);
+					qcom_qrtr_start();
+				}
+			}
 			r = sys0(LklNrMount, (long)"/dev/mmcblk0p33", (long)"/fw/bt",
 				 (long)"vfat", 1, 0, 0);
 			if(r < 0)
@@ -1050,6 +1275,49 @@ mkblocknodes(void *arg)
 			r = sys0(LklNrMount, (long)"/dev/mmcblk0p35", (long)"/fw/dsp",
 				 (long)"ext4", 1, 0, 0);
 			lkl_printf("lkl9p: mount /fw/dsp -> %ld\n", r);
+			/*
+			 * Auto-start Modem (4080000.remoteproc) once firmware
+			 * partitions are mounted and QRTR services (rmtfs +
+			 * tqftpserv) are published, so WCN3990 wlan0 comes up
+			 * automatically without manual intervention.
+			 */
+			{
+				extern void qcom_qrtr_wait_ready(void);
+				qcom_qrtr_wait_ready();
+			}
+			/* Start ADSP (ab00000) first, then MPSS (6080000). */
+			{
+				static char *want[] = { "ab00000", "6080000" };
+				int w;
+				for(w = 0; w < 2; w++){
+					for(i = 0; i < 4; i++){
+						char rname[64], rpath[96];
+						long rfd, rn;
+
+						snprint(rpath, sizeof rpath,
+							"/sys/class/remoteproc/remoteproc%d/name", i);
+						rfd = lklopenat(LklAtFdcwd, rpath, LklOrdonly, 0);
+						if(rfd < 0)
+							continue;
+						rn = sys0(LklNrRead, rfd, (long)rname, sizeof(rname) - 1, 0, 0, 0);
+						lklclose(rfd);
+						if(rn <= 0)
+							continue;
+						rname[rn] = 0;
+						if(strstr(rname, want[w]) != nil){
+							snprint(rpath, sizeof rpath,
+								"/sys/class/remoteproc/remoteproc%d/state", i);
+							rfd = lklopenat(LklAtFdcwd, rpath, LklOwronly, 0);
+							if(rfd >= 0){
+								rn = sys0(LklNrWrite, rfd, (long)"start", 5, 0, 0, 0);
+								lklclose(rfd);
+								lkl_printf("lkl9p: auto-start %s (%s) -> %ld\n", rpath, want[w], rn);
+							}
+							break;
+						}
+					}
+				}
+			}
 		}
 	}
 }
@@ -1175,6 +1443,21 @@ lkl9p_start(char *srvname)
 		lklclose(dfd);
 	}
 	dfd = lklopenat(LklAtFdcwd, "/rebootbl", LklOwronly | LklOcreat | LklOtrunc, 0644);
+	if(dfd >= 0)
+		lklclose(dfd);
+	dfd = lklopenat(LklAtFdcwd, "/wifiscan", LklOwronly | LklOcreat | LklOtrunc, 0444);
+	if(dfd >= 0)
+		lklclose(dfd);
+	dfd = lklopenat(LklAtFdcwd, "/wifictl", LklOwronly | LklOcreat | LklOtrunc, 0644);
+	if(dfd >= 0)
+		lklclose(dfd);
+	dfd = lklopenat(LklAtFdcwd, "/wifistatus", LklOwronly | LklOcreat | LklOtrunc, 0444);
+	if(dfd >= 0)
+		lklclose(dfd);
+	dfd = lklopenat(LklAtFdcwd, "/modemctl", LklOwronly | LklOcreat | LklOtrunc, 0644);
+	if(dfd >= 0)
+		lklclose(dfd);
+	dfd = lklopenat(LklAtFdcwd, "/modemstatus", LklOwronly | LklOcreat | LklOtrunc, 0444);
 	if(dfd >= 0)
 		lklclose(dfd);
 

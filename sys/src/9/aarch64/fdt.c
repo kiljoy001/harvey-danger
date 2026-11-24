@@ -65,14 +65,26 @@ get8(u8 *p)
 }
 
 static int
-addreserve(Fdtinfo *out, u64 base, u64 size)
+addreserve(Fdtinfo *out, u64 base, u64 size, char *name, u32 namelen)
 {
+	Fdtreserve *r;
+	u32 i;
+
 	if(size == 0)
 		return 0;
 	if(base+size < base || out->nreserve == Maxfdtreserve)
 		return -1;
-	out->reserve[out->nreserve].base = base;
-	out->reserve[out->nreserve].size = size;
+	r = &out->reserve[out->nreserve];
+	r->name[0] = 0;
+	if(name != nil){
+		if(namelen >= Maxfdtname)
+			namelen = Maxfdtname-1;
+		for(i = 0; i < namelen; i++)
+			r->name[i] = name[i];
+		r->name[namelen] = 0;
+	}
+	r->base = base;
+	r->size = size;
 	out->nreserve++;
 	return 0;
 }
@@ -164,6 +176,8 @@ static const Fdtclass classtab[] = {
 	{ "snps,dwc3", Fdtclassusb },
 	{ "qcom,dwc3", Fdtclassusb },
 	{ "qcom,dwc-usb3-msm", Fdtclassusb },
+	/* QEMU virt's RTC; no driver claims it, so #P's tests use it */
+	{ "arm,pl031", Fdtclassrtc },
 	{ "rockchip,rk3568-dwc3", Fdtclassusb },
 	{ "generic-ehci", Fdtclassusb },
 	{ "generic-ohci", Fdtclassusb },
@@ -260,9 +274,11 @@ static const Fdtclass classtab[] = {
 	{ "qcom,adreno", Fdtclassgpu },
 	{ "qcom,kgsl-smmu-v2", Fdtclassiommu },
 	{ "qcom,adreno-smmu", Fdtclassiommu },
+	{ "qcom,qsmmu-v500", Fdtclassiommu },
 	{ "qcom,adreno-gmu-wrapper", Fdtclasspower },
 	{ "qcom,wcn3990-wifi", Fdtclassgmac },
 	{ "qcom,icnss", Fdtclassgmac },
+	{ "qcom,ipa", Fdtclassgmac },
 	{ "qcom,bengal-pinctrl", Fdtclassgpio },
 	{ "qcom,sm6115-pinctrl", Fdtclassgpio },
 	{ "qcom,sm6115-tlmm", Fdtclassgpio },
@@ -285,6 +301,11 @@ static const Fdtclass classtab[] = {
 	{ "qcom,sm6115-qusb2-phy", Fdtclassusb },
 	{ "qcom,dwc-usb3-msm", Fdtclassusb },
 	{ "qcom,sm6115-dwc3", Fdtclassusb },
+	{ "qcom,bengal-apcs-hmss-global", Fdtclassgrf },
+	{ "qcom,sm6115-apcs-hmss-global", Fdtclassgrf },
+	{ "qcom,tcsr-mutex", Fdtclassgrf },
+	{ "qcom,rpm-msg-ram", Fdtclassgrf },
+	{ "syscon", Fdtclassgrf },
 };
 
 static u32
@@ -312,7 +333,7 @@ fdtclassname(u32 clas)
 		"none", "uart", "i2c", "spi", "gpio", "pwm", "gmac", "mmc",
 		"usb", "pcie", "saradc", "tsadc", "wdt", "rng", "i2s", "cru", "grf",
 		"npu", "gpu", "vop", "hdmi", "dsi", "edp", "sfc", "vpu",
-		"iommu", "power",
+		"iommu", "power", "rtc",
 	};
 
 	if(clas >= sizeof(name)/sizeof(name[0]))
@@ -636,7 +657,7 @@ fdtparse(void *blob, usize bytes, Fdtinfo *out)
 		size = get8(p+rsv+8);
 		if(base == 0 && size == 0)
 			break;
-		if(addreserve(out, base, size) < 0)
+		if(addreserve(out, base, size, nil, 0) < 0)
 			return -1;
 	}
 	if(rsv > soff || soff-rsv < 16)
@@ -898,15 +919,22 @@ fdtparse(void *blob, usize bytes, Fdtinfo *out)
 					out->psci_std = 1;
 			}
 			if(node->reserve && node->reg != nil){
+				u32 b, n, baselen;
+
 				if(node->parentaddr == 0 || node->parentaddr > 2 ||
 				   node->parentsize == 0 || node->parentsize > 2)
 					return -1;
 				stride = (node->parentaddr+node->parentsize)*4;
 				if(node->reglen % stride != 0)
 					return -1;
+				b = 0;
+				for(n = 0; n < node->pathlen; n++)
+					if(path[n] == '/')
+						b = n+1;
+				baselen = node->pathlen - b;
 				for(i = 0; i < node->reglen/stride; i++){
 					if(regpair(node, i, &base, &size) < 0 ||
-					   addreserve(out, base, size) < 0)
+					   addreserve(out, base, size, path+b, baselen) < 0)
 						return -1;
 				}
 			}
@@ -992,6 +1020,8 @@ fdtparse(void *blob, usize bytes, Fdtinfo *out)
 					dev->compat[n] = 0;
 					dev->base = base;
 					dev->size = size;
+					if(same(dev->compat, "qcom,ipa") && dev->size < 0x80000)
+						dev->size = 0x80000;
 					dev->base2 = 0;
 					dev->size2 = 0;
 					if(node->clas == Fdtclassiommu &&

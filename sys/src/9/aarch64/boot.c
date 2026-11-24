@@ -448,6 +448,7 @@ bootarchive(void)
 static int
 physseginit(Fdtinfo *info)
 {
+	extern int pnpsegattach(Physseg *);
 	Physseg seg;
 	u64 base, end;
 	u32 i;
@@ -457,6 +458,7 @@ physseginit(Fdtinfo *info)
 	memset(&seg, 0, sizeof seg);
 	seg.attr = SG_PHYSICAL | SG_READ | SG_WRITE;
 	seg.pgszi = -1;	/* addphysseg defaults to base pages */
+	seg.attach = pnpsegattach;	/* only the device's claim holder */
 	for(i = 0; i < info->ndev; i++){
 		base = info->dev[i].base & ~(u64)(BIGPGSZ - 1);
 		end = (info->dev[i].base + info->dev[i].size + BIGPGSZ - 1) &
@@ -469,22 +471,10 @@ physseginit(Fdtinfo *info)
 		if(addphysseg(&seg) == 0)
 			n++;
 	}
-	if(arm64dmabase != 0 && arm64dmasize != 0){
-		memset(&seg, 0, sizeof seg);
-		/*
-		 * Cached: drivers touch these buffers with the CPU.  They do
-		 * the maintenance themselves through #P/dma/clean, /inval and
-		 * /cleaninval, so an uncached mapping only costs performance
-		 * (an uncached 64 KiB memmove is milliseconds).
-		 */
-		seg.attr = SG_PHYSICAL | SG_READ | SG_WRITE | SG_CACHED;
-		seg.pgszi = -1;	/* addphysseg defaults to base pages */
-		seg.name = "dma";
-		seg.pa = arm64dmabase;
-		seg.size = arm64dmasize / BIGPGSZ;
-		if(addphysseg(&seg) == 0)
-			n++;
-	}
+	/*
+	 * The DMA arena has no segment of its own: #P/dma hands each
+	 * driver only the chunks it allocated (devpnp.c).
+	 */
 	if(arm64teeshmbase != 0 && arm64teeshmsize != 0){
 		memset(&seg, 0, sizeof seg);
 		seg.attr = SG_PHYSICAL | SG_READ | SG_WRITE | SG_CACHED;
@@ -568,7 +558,7 @@ dmaprobe(void)
 		return;
 	root = pnpdevtab.attach("");
 	names[0] = "dma";
-	names[1] = "base";
+	names[1] = "avail";
 	walk = pnpdevtab.walk(root, nil, names, 2);
 	if(walk == nil || walk->nqid != 2 || walk->clone == nil){
 		if(walk != nil)
@@ -582,25 +572,8 @@ dmaprobe(void)
 	pnpdevtab.open(c, OREAD);
 	n = pnpdevtab.read(c, buf, sizeof(buf), 0);
 	cclose(c);
-	if(n < 4 || memcmp(buf, "0x", 2) != 0 || memcmp(buf, "0x0\n", 4) == 0)
-		panic("ARM64 #P/dma base failed");
-	root = pnpdevtab.attach("");
-	names[1] = "size";
-	walk = pnpdevtab.walk(root, nil, names, 2);
-	if(walk == nil || walk->nqid != 2 || walk->clone == nil){
-		if(walk != nil)
-			free(walk);
-		cclose(root);
-		panic("ARM64 #P/dma size walk failed");
-	}
-	c = walk->clone;
-	free(walk);
-	cclose(root);
-	pnpdevtab.open(c, OREAD);
-	n = pnpdevtab.read(c, buf, sizeof(buf), 0);
-	cclose(c);
-	if(n < 4 || memcmp(buf, "0x", 2) != 0 || memcmp(buf, "0x0\n", 4) == 0)
-		panic("ARM64 #P/dma size failed");
+	if(n < 2 || buf[0] == '0')
+		panic("ARM64 #P/dma avail failed");
 	arm64uartputs("HARVEY-ARM64 DMA-FS PASS\n");
 }
 
@@ -754,6 +727,7 @@ arm64kernelstart(Fdtinfo *info)
 	addbootfile("i2cfs", (u8 *)arm64i2cfself, sizeof(arm64i2cfself));
 	addbootfile("pmicfs", (u8 *)arm64pmicfself, sizeof(arm64pmicfself));
 	addbootfile("rngfs", (u8 *)arm64rngfself, sizeof(arm64rngfself));
+	addbootfile("touchfs", (u8 *)arm64touchfself, sizeof(arm64touchfself));
 	addbootfile("wdtfs", (u8 *)arm64wdtfself, sizeof(arm64wdtfself));
 	addbootfile("saradcfs", (u8 *)arm64saradcfself, sizeof(arm64saradcfself));
 	addbootfile("tsadcfs", (u8 *)arm64tsadcfself, sizeof(arm64tsadcfself));
@@ -774,6 +748,8 @@ arm64kernelstart(Fdtinfo *info)
 	addbootfile("b64", (u8 *)arm64b64elf, sizeof(arm64b64elf));
 	addbootfile("ls", (u8 *)arm64lself, sizeof(arm64lself));
 	addbootfile("rtc", (u8 *)arm64rtcelf, sizeof(arm64rtcelf));
+	addbootfile("peek", (u8 *)arm64peekelf, sizeof(arm64peekelf));
+	addbootfile("touchtest", (u8 *)arm64touchtestelf, sizeof(arm64touchtestelf));
 	addbootfile("emmc", (u8 *)arm64emmcelf, sizeof(arm64emmcelf));
 	addbootfile("displaytest", (u8 *)arm64displaytestelf,
 		    sizeof(arm64displaytestelf));
@@ -815,6 +791,7 @@ arm64kernelstart(Fdtinfo *info)
 	else
 		arm64uartputs("HARVEY-ARM64 DISPLAY PASS\n");
 #endif
+	qcsmmuinit(info);
 	arm64clockready();
 	arm64smpinit(info);
 	startworker(1);

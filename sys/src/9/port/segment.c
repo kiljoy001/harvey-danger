@@ -98,6 +98,7 @@ putseg(Segment *s)
 {
 	Pte **pp, **emap;
 	Image *i;
+	Physseg *ps;
 	extern void freezseg(Segment *);
 
 	if(s == 0)
@@ -136,7 +137,10 @@ putseg(Segment *s)
 		free(s->profile);
 	if(s->type & SG_ZIO)
 		freezseg(s);
+	ps = (s->type & SG_TYPE) == SG_PHYSICAL ? s->pseg : nil;
 	free(s);
+	if(ps != nil && ps->release != nil)
+		ps->release(ps);
 }
 
 void
@@ -506,8 +510,7 @@ isoverlap(Proc *p, usize va, usize len)
 		ns = p->seg[i];
 		if(ns == 0)
 			continue;
-		if((newtop > ns->base && newtop <= ns->top) ||
-		   (va >= ns->base && va < ns->top))
+		if(va < ns->top && newtop > ns->base)
 			return ns;
 	}
 	return nil;

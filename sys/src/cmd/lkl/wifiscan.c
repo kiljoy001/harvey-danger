@@ -34,10 +34,17 @@ enum {
 	CtrlCmdGetfamily = 3,
 	CtrlAttrFamilyId = 1,
 	CtrlAttrFamilyName = 2,
+	CtrlAttrMcastGroups = 7,
+
+	SolSocket	= 1,
+	SoRcvtimeo	= 20,
+	SolNetlink	= 270,
+	NetlinkAddMembership = 1,
 
 	Nl80211CmdGetScan	= 32,
 	Nl80211CmdTriggerScan	= 33,
 	Nl80211CmdNewScanResults = 34,
+	Nl80211CmdScanAborted	= 35,
 
 	Nl80211AttrIfindex	= 3,
 	Nl80211AttrWiphyFreq	= 38,
@@ -106,16 +113,17 @@ struct Bss {
 	int	signal;
 	int	beacon;
 	int	privacy;
+	u32	group_cipher;
 	int	ssidlen;
 	char	ssid[33];
 };
 
 static Nlmsg*
-nlstart(uchar *buf, u16 type, u16 flags, u32 seq)
+nlstart(uchar *buf, int bufsz, u16 type, u16 flags, u32 seq)
 {
 	Nlmsg *n;
 
-	memset(buf, 0, Nlbuf);
+	memset(buf, 0, bufsz);
 	n = (Nlmsg*)buf;
 	n->type = type;
 	n->flags = flags;
@@ -177,16 +185,16 @@ nlsend(int fd, Nlmsg *n)
 }
 
 static int
-nlfamily(int fd)
+nlfamily(int fd, uchar *buf, int bufsz, u32 *scan_mcgrp)
 {
-	uchar buf[512];
 	Nlmsg *n;
 	Genlhdr *g;
-	Nlattr *a;
-	int m, left, fam;
-	long r;
+	Nlattr *a, *grp, *ga;
+	int m, left, gleft, ileft, fam;
 
-	n = nlstart(buf, GenlIdCtrl, NlmRequest, 1);
+	if(scan_mcgrp != nil)
+		*scan_mcgrp = 0;
+	n = nlstart(buf, bufsz, GenlIdCtrl, NlmRequest, 1);
 	g = (Genlhdr*)(n+1);
 	g->cmd = CtrlCmdGetfamily;
 	g->version = 1;
@@ -194,20 +202,44 @@ nlfamily(int fd)
 	nlattr(n, CtrlAttrFamilyName, "nl80211", 8);
 	if(nlsend(fd, n) < 0)
 		return -1;
-	m = lkl_syscall(__lkl__NR_recvfrom, (long[]){ fd, (long)buf, sizeof buf, 0, 0, 0 });
+	m = lkl_syscall(__lkl__NR_recvfrom, (long[]){ fd, (long)buf, bufsz, 0, 0, 0 });
 	if(m < (int)sizeof(Nlmsg) + (int)sizeof(Genlhdr))
 		return -1;
 	left = m - sizeof(Nlmsg) - sizeof(Genlhdr);
 	a = (Nlattr*)((uchar*)(n+1) + sizeof(Genlhdr));
 	fam = -1;
 	for(; left >= (int)sizeof(Nlattr); a = nlnext(a, &left)){
+		int atype;
 		if(a == nil)
 			break;
-		if(a->type == CtrlAttrFamilyId && nlpaylen(a) >= 2)
+		atype = a->type & 0x3fff;
+		if(atype == CtrlAttrFamilyId && nlpaylen(a) >= 2)
 			fam = *(u16*)nlpayload(a);
+		else if(atype == CtrlAttrMcastGroups && scan_mcgrp != nil){
+			gleft = nlpaylen(a);
+			grp = (Nlattr*)nlpayload(a);
+			for(; gleft >= (int)sizeof(Nlattr); grp = nlnext(grp, &gleft)){
+				char *gname = nil;
+				u32 gid = 0;
+				if(grp == nil)
+					break;
+				ileft = nlpaylen(grp);
+				ga = (Nlattr*)nlpayload(grp);
+				for(; ileft >= (int)sizeof(Nlattr); ga = nlnext(ga, &ileft)){
+					int gt;
+					if(ga == nil)
+						break;
+					gt = ga->type & 0x3fff;
+					if(gt == 1)
+						gname = (char*)nlpayload(ga);
+					else if(gt == 2 && nlpaylen(ga) >= 4)
+						gid = *(u32*)nlpayload(ga);
+				}
+				if(gname != nil && strcmp(gname, "scan") == 0)
+					*scan_mcgrp = gid;
+			}
+		}
 	}
-	r = 0;
-	USED(r);
 	return fam;
 }
 
@@ -270,8 +302,12 @@ parseies(uchar *ie, int len, Bss *b)
 			memmove(b->ssid, p+2, ilen);
 			b->ssid[ilen] = 0;
 			b->ssidlen = ilen;
-		}else if(id == 48)		/* RSN */
+		}else if(id == 48){		/* RSN */
 			b->privacy = 1;
+			if(ilen >= 6)
+				b->group_cipher = ((u32)p[4] << 24) | ((u32)p[5] << 16) |
+					((u32)p[6] << 8) | (u32)p[7];
+		}
 		p += 2 + ilen;
 	}
 }
@@ -286,20 +322,23 @@ parsebss(Nlmsg *n, Bss *b)
 	memset(b, 0, sizeof *b);
 	b->freq = 0;
 	b->signal = -128;
+	b->group_cipher = 0x000fac04;	/* default CCMP-128 */
 	b->ssidlen = -1;
-	left = n->len - sizeof(Nlmsg);
-	a = (Nlattr*)((uchar*)(n+1));
+	if(n->len < sizeof(Nlmsg) + sizeof(Genlhdr))
+		return -1;
+	left = n->len - sizeof(Nlmsg) - sizeof(Genlhdr);
+	a = (Nlattr*)((uchar*)(n+1) + sizeof(Genlhdr));
 	for(; left >= (int)sizeof(Nlattr); a = nlnext(a, &left)){
 		if(a == nil)
 			break;
-		if(a->type != Nl80211AttrBss)
+		if((a->type & 0x3fff) != Nl80211AttrBss)
 			continue;
 		inleft = nlpaylen(a);
 		inner = (Nlattr*)nlpayload(a);
 		for(; inleft >= (int)sizeof(Nlattr); inner = nlnext(inner, &inleft)){
 			if(inner == nil)
 				break;
-			switch(inner->type){
+			switch(inner->type & 0x3fff){
 			case Nl80211BssBssid:
 				if(nlpaylen(inner) >= 6)
 					memmove(b->bssid, nlpayload(inner), 6);
@@ -332,38 +371,59 @@ parsebss(Nlmsg *n, Bss *b)
 	return -1;
 }
 
+static Bss lastbss[Maxbss];
+static int nlastbss;
+
 /*
- * Scan wlan0 and print one line per BSS to the LKL log.  Returns the number
- * of networks found, or -1.
+ * Scan wlan0 via nl80211 and format one line per BSS into out[outsz].
+ * Returns the number of networks found (>= 0), or -1 on error (with a
+ * short diagnostic written to out when out != nil).
  */
 int
-wifiscan(void)
+wifiscan_buf(char *out, int outsz)
 {
-	uchar buf[Nlbuf];
+	uchar *buf;
 	Nlmsg *n;
 	Genlhdr *g;
-	Bss list[Maxbss], b;
-	int fd, fam, idx, i, m, found, left;
-	u32 seq;
-	Nlattr *a;
+	Bss *list, b;
+	int fd, fam, idx, i, m, found, left, pos;
+	Nlattr wildcard;
 
-	lkl_printf("wifiscan: start\n");
-	for(i = 0; i < 40; i++){
-		if((idx = ifindex("wlan0")) >= 0)
-			break;
-		sleep(500);
-	}
-	lkl_printf("wifiscan: ifindex %d after %d tries\n", idx, i);
-	if(i == 40){
-		lkl_printf("wifiscan: wlan0 did not appear\n");
+	if(out != nil && outsz > 0)
+		out[0] = 0;
+
+	idx = ifindex("wlan0");
+	if(idx < 0){
+		if(out != nil && outsz > 0)
+			snprint(out, outsz, "error: wlan0 not present\n");
+		lkl_printf("wifiscan: wlan0 not present\n");
 		return -1;
 	}
-	ifup("wlan0");
+	if(ifup("wlan0") < 0){
+		if(out != nil && outsz > 0)
+			snprint(out, outsz, "error: ifup wlan0 failed\n");
+		lkl_printf("wifiscan: ifup wlan0 failed\n");
+		return -1;
+	}
 	sleep(500);
+
+	buf = malloc(Nlbuf);
+	list = malloc(Maxbss * sizeof(Bss));
+	if(buf == nil || list == nil){
+		free(buf);
+		free(list);
+		if(out != nil && outsz > 0)
+			snprint(out, outsz, "error: out of memory\n");
+		return -1;
+	}
 
 	fd = lkl_syscall(__lkl__NR_socket, (long[]){ AfNetlink, SockRaw, NetlinkGeneric });
 	if(fd < 0){
-		lkl_printf("wifiscan: netlink socket: %ld\n", fd);
+		free(buf);
+		free(list);
+		if(out != nil && outsz > 0)
+			snprint(out, outsz, "error: netlink socket %d\n", fd);
+		lkl_printf("wifiscan: netlink socket: %d\n", fd);
 		return -1;
 	}
 	{
@@ -373,28 +433,101 @@ wifiscan(void)
 		sa.family = AfNetlink;
 		lkl_syscall(__lkl__NR_bind, (long[]){ fd, (long)&sa, sizeof sa });
 	}
-	lkl_printf("wifiscan: netlink fd %d\n", fd);
-	fam = nlfamily(fd);
-	lkl_printf("wifiscan: family %d\n", fam);
-	if(fam < 0){
-		lkl_printf("wifiscan: no nl80211 family\n");
-		lkl_syscall(__lkl__NR_close, (long[]){ fd });
-		return -1;
+	{
+		u32 scan_mcgrp = 0;
+		int evfd = -1;
+		int trig_err = 0;
+
+		fam = nlfamily(fd, buf, Nlbuf, &scan_mcgrp);
+		if(fam < 0){
+			lkl_syscall(__lkl__NR_close, (long[]){ fd });
+			free(buf);
+			free(list);
+			if(out != nil && outsz > 0)
+				snprint(out, outsz, "error: no nl80211 family\n");
+			lkl_printf("wifiscan: no nl80211 family\n");
+			return -1;
+		}
+		if(scan_mcgrp != 0){
+			evfd = lkl_syscall(__lkl__NR_socket, (long[]){ AfNetlink, SockRaw, NetlinkGeneric });
+			if(evfd >= 0){
+				SockaddrNl sa;
+				struct { long tv_sec; long tv_usec; } tv;
+				memset(&sa, 0, sizeof sa);
+				sa.family = AfNetlink;
+				lkl_syscall(__lkl__NR_bind, (long[]){ evfd, (long)&sa, sizeof sa });
+				lkl_syscall(__lkl__NR_setsockopt, (long[]){
+					evfd, SolNetlink, NetlinkAddMembership, (long)&scan_mcgrp, 4 });
+				tv.tv_sec = 15;
+				tv.tv_usec = 0;
+				lkl_syscall(__lkl__NR_setsockopt, (long[]){
+					evfd, SolSocket, SoRcvtimeo, (long)&tv, sizeof tv });
+			}
+		}
+
+		/*
+		 * Trigger an active broadcast scan on 2.4 GHz channels 1-11 and wait
+		 * for NL80211_CMD_NEW_SCAN_RESULTS / SCAN_ABORTED so the firmware
+		 * Resource Manager is guaranteed idle before returning.
+		 */
+		n = nlstart(buf, Nlbuf, fam, NlmRequest|NlmAck, 2);
+		g = (Genlhdr*)(n+1);
+		g->cmd = Nl80211CmdTriggerScan;
+		g->version = 0;
+		n->len += sizeof(Genlhdr);
+		nlattr(n, Nl80211AttrIfindex, &idx, 4);
+		{
+			struct { Nlattr hdr; u32 freq; } freqs[11];
+			for(i = 0; i < 11; i++){
+				freqs[i].hdr.len = sizeof(Nlattr) + 4;
+				freqs[i].hdr.type = (u16)(i + 1);
+				freqs[i].freq = (u32)(2412 + i * 5);
+			}
+			nlattr(n, Nl80211AttrScanFreqs | 0x8000, freqs, sizeof freqs);
+		}
+		wildcard.len = sizeof(Nlattr);
+		wildcard.type = 0;
+		nlattr(n, Nl80211AttrScanSsids | 0x8000, &wildcard, sizeof wildcard);
+		if(nlsend(fd, n) >= 0){
+			/* Drain the NLMSG_ERROR ACK (or error code) so GetScan sees a clean socket. */
+			m = lkl_syscall(__lkl__NR_recvfrom, (long[]){ fd, (long)buf, Nlbuf, 0, 0, 0 });
+			if(m >= (int)(sizeof(Nlmsg) + 4)){
+				n = (Nlmsg*)buf;
+				if(n->type == NlmsgError){
+					trig_err = *(int*)(n+1);
+					if(trig_err != 0){
+						lkl_printf("wifiscan: trigger scan err %d\n", trig_err);
+						if(trig_err != -16 && out != nil && outsz > 0)
+							snprint(out, outsz, "error: trigger scan err %d\n", trig_err);
+					}
+				}
+			}
+		}
+		if(evfd >= 0 && (trig_err == 0 || trig_err == -16)){
+			for(;;){
+				m = lkl_syscall(__lkl__NR_recvfrom, (long[]){ evfd, (long)buf, Nlbuf, 0, 0, 0 });
+				if(m <= 0)
+					break;
+				if(m >= (int)(sizeof(Nlmsg) + sizeof(Genlhdr))){
+					n = (Nlmsg*)buf;
+					g = (Genlhdr*)(n + 1);
+					if(n->type == fam &&
+					   (g->cmd == Nl80211CmdNewScanResults || g->cmd == Nl80211CmdScanAborted)){
+						lkl_printf("wifiscan: scan event cmd=%d\n", g->cmd);
+						break;
+					}
+				}
+			}
+			lkl_syscall(__lkl__NR_close, (long[]){ evfd });
+		}else{
+			if(evfd >= 0)
+				lkl_syscall(__lkl__NR_close, (long[]){ evfd });
+			sleep(6000);
+		}
 	}
 
-	/* Trigger a scan.  An empty SSID list means a broadcast scan. */
-	n = nlstart(buf, fam, NlmRequest, 2);
-	g = (Genlhdr*)(n+1);
-	g->cmd = Nl80211CmdTriggerScan;
-	g->version = 0;
-	n->len += sizeof(Genlhdr);
-	nlattr(n, Nl80211AttrIfindex, &idx, 4);
-	nlattr(n, Nl80211AttrScanSsids, "", 0);
-	nlsend(fd, n);
-	sleep(3000);
-
 	/* Dump the result set. */
-	n = nlstart(buf, fam, NlmRequest|NlmDump, 3);
+	n = nlstart(buf, Nlbuf, fam, NlmRequest|NlmDump, 3);
 	g = (Genlhdr*)(n+1);
 	g->cmd = Nl80211CmdGetScan;
 	g->version = 0;
@@ -402,12 +535,16 @@ wifiscan(void)
 	nlattr(n, Nl80211AttrIfindex, &idx, 4);
 	if(nlsend(fd, n) < 0){
 		lkl_syscall(__lkl__NR_close, (long[]){ fd });
+		free(buf);
+		free(list);
+		if(out != nil && outsz > 0)
+			snprint(out, outsz, "error: get scan send failed\n");
 		return -1;
 	}
 
 	found = 0;
 	for(;;){
-		m = lkl_syscall(__lkl__NR_recvfrom, (long[]){ fd, (long)buf, sizeof buf, 0, 0, 0 });
+		m = lkl_syscall(__lkl__NR_recvfrom, (long[]){ fd, (long)buf, Nlbuf, 0, 0, 0 });
 		if(m <= 0)
 			break;
 		left = m;
@@ -427,6 +564,7 @@ wifiscan(void)
 	}
 done:
 	lkl_syscall(__lkl__NR_close, (long[]){ fd });
+	pos = 0;
 	for(i = 0; i < found; i++){
 		lkl_printf("wifi bss %02x:%02x:%02x:%02x:%02x:%02x freq %d "
 			   "signal %d beacon %d %s ssid %s\n",
@@ -434,7 +572,69 @@ done:
 			   list[i].bssid[3], list[i].bssid[4], list[i].bssid[5],
 			   list[i].freq, list[i].signal, list[i].beacon,
 			   list[i].privacy ? "secure" : "open", list[i].ssid);
+		if(out != nil && pos < outsz - 1){
+			pos += snprint(out + pos, outsz - pos,
+				"%02x:%02x:%02x:%02x:%02x:%02x freq %d signal %d %s ssid %s\n",
+				list[i].bssid[0], list[i].bssid[1], list[i].bssid[2],
+				list[i].bssid[3], list[i].bssid[4], list[i].bssid[5],
+				list[i].freq, list[i].signal,
+				list[i].privacy ? "secure" : "open", list[i].ssid);
+		}
 	}
 	lkl_printf("wifiscan: %d networks\n", found);
+	if(found > 0){
+		memmove(lastbss, list, found * sizeof(Bss));
+		nlastbss = found;
+	}
+	free(buf);
+	free(list);
 	return found;
+}
+
+int
+wifiscan_find(const char *ssid, uchar bssid[6], int *freq, int *privacy, u32 *group_cipher)
+{
+	int i, best, try;
+
+	for(try = 0; try < 2; try++){
+		best = -1;
+		for(i = 0; i < nlastbss; i++){
+			if(strcmp(lastbss[i].ssid, ssid) != 0)
+				continue;
+			if(best < 0 || lastbss[i].signal > lastbss[best].signal)
+				best = i;
+		}
+		if(best >= 0){
+			memmove(bssid, lastbss[best].bssid, 6);
+			*freq = lastbss[best].freq;
+			*privacy = lastbss[best].privacy;
+			*group_cipher = lastbss[best].group_cipher;
+			return 0;
+		}
+		if(try == 0)
+			wifiscan_buf(nil, 0);
+	}
+	return -1;
+}
+
+/*
+ * Scan wlan0 and print one line per BSS to the LKL log.  Returns the number
+ * of networks found, or -1.
+ */
+int
+wifiscan(void)
+{
+	int i;
+
+	lkl_printf("wifiscan: start\n");
+	for(i = 0; i < 40; i++){
+		if(ifindex("wlan0") >= 0)
+			break;
+		sleep(500);
+	}
+	if(i == 40){
+		lkl_printf("wifiscan: wlan0 did not appear\n");
+		return -1;
+	}
+	return wifiscan_buf(nil, 0);
 }

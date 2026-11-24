@@ -18,6 +18,7 @@ struct Driver {
 	char *srv;	/* /srv/<name> the program posts */
 	char *arg;	/* optional single argument */
 	char *compat;	/* required substring of a node's compatible, or nil */
+	char *needs;	/* a child's /srv/<name> parent service, or nil */
 };
 
 /* Universal class -> program registry.  One program serves every instance of
@@ -46,10 +47,10 @@ static Driver drivers[] = {
 /* Drivers for devices that are not #P classes: they sit on top of another
  * service, so they start after the class registry has been launched. */
 static Driver children[] = {
-	{ "pmic",	"/boot/pmicfs",	"pmic", "-c" },
+	{ "pmic",	"/boot/pmicfs",	"pmic", "-c", nil, "i2c" },
 	/* The NPU rail (vdd_npu) is an RK809 buck, so npufs runs after
 	 * pmicfs and asks it for the rail before touching PD_NPU. */
-	{ "npu",	"/boot/npufs",	"npu", nil },
+	{ "npu",	"/boot/npufs",	"npu", nil, nil, "pmic" },
 	{ nil,	nil,	nil },
 };
 
@@ -57,6 +58,16 @@ static void
 say(char *s)
 {
 	write(1, s, strlen(s));
+}
+
+/* One line, one write: init's console output must not land inside it. */
+static void
+saydrv(char *class, char *what)
+{
+	char buf[128];
+
+	snprint(buf, sizeof buf, "HARVEY-ARM64 DRVMAN %s %s\n", class, what);
+	say(buf);
 }
 
 static void
@@ -221,35 +232,31 @@ main(int argc, char **argv)
 		drv = &drivers[i];
 		if(drv->compat != nil &&
 		   strstr(presentcompat[j], drv->compat) == nil){
-			say("HARVEY-ARM64 DRVMAN ");
-			say(drv->class);
-			say(" SKIP incompatible\n");
+			saydrv(drv->class, "SKIP incompatible");
 			continue;
 		}
 		snprint(srvpath, sizeof srvpath, "/srv/%s", drv->srv);
 		if(launch(drv) < 0){
-			say("HARVEY-ARM64 DRVMAN ");
-			say(drv->class);
-			say(" EXEC FAIL\n");
+			saydrv(drv->class, "EXEC FAIL");
 			failed = 1;
 			continue;
 		}
 		j = strcmp(drv->class, "usb") == 0 ? waitusbpower(50) :
 		    waitfor(srvpath, 50);
 		if(j == 0){
-			say("HARVEY-ARM64 DRVMAN ");
-			say(drv->class);
-			say(" PASS\n");
+			saydrv(drv->class, "PASS");
 		}else{
-			say("HARVEY-ARM64 DRVMAN ");
-			say(drv->class);
-			say(" FAIL\n");
+			saydrv(drv->class, "FAIL");
 			failed = 1;
 		}
 	}
+	/* A child whose parent did not come up (no Rockchip I2C on this
+	 * board, say) is not started: it could only fail, after a wait. */
 	for(i = 0; children[i].class != nil; i++){
-		if(strcmp(children[i].class, "pmic") == 0){
-			fd = open("/srv/i2c", OREAD);
+		if(children[i].needs != nil){
+			snprint(srvpath, sizeof srvpath, "/srv/%s",
+				children[i].needs);
+			fd = open(srvpath, OREAD);
 			if(fd < 0)
 				continue;
 			close(fd);
@@ -258,9 +265,7 @@ main(int argc, char **argv)
 		if(launch(&children[i]) < 0)
 			continue;
 		if(waitfor(srvpath, 50) == 0){
-			say("HARVEY-ARM64 DRVMAN ");
-			say(children[i].class);
-			say(" PASS\n");
+			saydrv(children[i].class, "PASS");
 		}
 	}
 	markdone(failed);

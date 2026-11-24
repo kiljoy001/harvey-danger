@@ -16,10 +16,10 @@ kernel drivers for these devices, and no private mappings.
 #P/<node>/class          uart, i2c, mmc, usb, ...     (0444)
 #P/<node>/family         serial, soc, mmc, usb, ...   (0444)
 #P/<node>/console        firmware console flag        (0444)
-#P/<node>/wait           blocks until one interrupt   (0444)
-#P/<node>/claim          take ownership               (0666)
-#P/<node>/owner          current owner, empty if free (0444)
-#P/<node>/release        drop ownership               (0666)
+#P/<node>/wait           blocks until one interrupt   (0444, holder only)
+#P/<node>/claim          hold the device while open   (0666)
+#P/<node>/owner          the holder, empty if free    (0444)
+#P/<node>/regs           one register per read/write  (0666, holder only)
 ```
 
 `<node>` is the device-tree node name, e.g. `mmc@fe310000`.  The path is
@@ -31,22 +31,45 @@ GIC line.
 
 ## One owner per device
 
-A driver claims its node before touching registers:
+A driver claims its node before touching it, and holds it for as long as
+it keeps the claim file open:
 
 ```c
 fd = open("#P/mmc@fe310000/claim", OWRITE);
-write(fd, "lkld", 4);
+write(fd, "emmc", 4);		/* keep fd open: closing releases */
 ```
 
-* the first claim wins;
-* a second claim with a different name fails with `device already claimed`;
-* the same name may claim repeatedly (idempotent, useful after a restart
-  inside one service);
-* `release` requires the matching name.
+* **The open file is the claim.**  Closing it, or exiting, releases the
+  device; a child holds it through the file table it inherits.  A name
+  proves nothing: writing someone else's name gets nothing.
+* **Only a holder** may map the device's window (`segattach` by node name),
+  open its `wait`, or use its `regs`.  Everyone may read the discovery
+  files.
+* **Exclusive by default.**  A second claim fails with `device already
+  claimed` while one is held.  `"<name> shared"` claims coexist with other
+  shared claims, under any name, and keep exclusive ones out: it is for
+  blocks several drivers touch on purpose (the clock and reset unit, the
+  GRFs, GPIO banks used for pins, a PMIC arbiter two LKL guests drive).
+  `drvkit`, `lklboot` and the native drivers claim those classes shared
+  and the controller they drive exclusively; an LKL family marks a device
+  it shares with another family with a trailing `+` in
+  `util/arm64/lkl-families.json`.
+* **A restarted service** reclaims once the old process is gone, or takes
+  the claim file over through `/srv` if the old one posted it.
 
-The owner string is chosen by the service, not the kernel.  Ownership is
-kernel state, so it survives process restarts and is visible to every
-process through `owner`.
+`owner` shows the first holder's name, with ` shared` for a shared claim.
+
+## Registers through files
+
+`#P/<node>/regs` reads or writes one aligned 4- or 8-byte register at its
+offset in the device's first window: `pread(fd, &v, 4, 0xff0)`.  It needs
+no mapping, so a driver (or rc, with `dd`) can program a controller
+entirely through 9P, and a bus abort on the access (a powered-down or
+unclocked block) comes back as `regs: bus error` instead of a fault loop.
+The kernel makes the access on its own page table, with interrupts off:
+an asynchronous error, as from a posted write the interconnect refuses
+later, is not caught.  Mapping the window remains the fast path for a
+driver that needs it.
 
 ## Platform identity
 
@@ -81,18 +104,61 @@ If the firmware passes no `/memory` node, the kernel falls back to
 
 ## DMA
 
+`#P` owns the DMA arena, a physically contiguous reservation below the
+kernel's page allocator.  A driver gets memory from it as **chunks**, each
+held through a file:
+
 ```
-#P/dma/base              arena physical base
-#P/dma/size              arena size
-#P/dma/alloc             write "<user-va> <len>", read back "<pa> <len>"
-#P/dma/free              write "<user-va> <len>"
-#P/dma/clean|inval|cleaninval   cache maintenance, "<user-va> <len>"
+#P/dma/clone             open: a new chunk; the fd is now #P/dma/N/ctl
+#P/dma/avail             "<free bytes> <largest free piece>"
+#P/dma/N/ctl             write "alloc <size> [<align>] [cached|uncached]"
+                         write "map"         maps the chunk into the caller
+                         write "clean|inval|cleaninval <off> <len>"
+                         read  "<N> pa <pa> len <len> <type> va <va>"
+#P/dma/N/data            read and write the chunk through the kernel
 ```
 
-A driver maps the arena once with `segattach(0, "dma", 0, size)` and then
-asks the kernel for aligned chunks, so two drivers cannot be handed the
-same page.  DMA addresses are physical and must stay below 4 GiB while a
-32-bit ADMA engine is in use.
+```c
+ctl = open("#P/dma/clone", ORDWR);
+write(ctl, "alloc 65536 4096 cached\n", 24);
+write(ctl, "map\n", 4);
+pread(ctl, buf, sizeof buf - 1, 0);	/* pa for the device, va for us */
+```
+
+The rules:
+
+* **The ctl is the capability.**  A chunk's files open by name only for a
+  process that already holds its ctl open: the clone fd, or a copy a child
+  inherited.  No process can map another's chunk, and the arena as a whole
+  has no segment to attach.
+* **A chunk is mapped only into who asks, and only the chunk.**  `map`
+  attaches exactly the chunk's pages; a chunk whose address and size are
+  2 MiB aligned is mapped with 2 MiB pages.
+* **The memory type is chosen per chunk.**  `cached` (normal write-back,
+  the default) for data the CPU works on, maintained with `clean`/`inval`
+  around ownership changes; `uncached` (normal non-cacheable) for
+  descriptor rings and buffers a device and the CPU share.  RAM is never
+  mapped Device.  The kernel's own alias of the arena stays write-back, and
+  an uncached chunk is cleaned and invalidated through it when handed out.
+* **New chunks are zeroed**, so a chunk never shows its previous owner's
+  data.
+* **Lifetime is the files and the mappings.**  A chunk returns to the arena
+  once its last file is closed and its last mapping gone: a driver that
+  exits or is killed gives its memory back, never while it is still mapped.
+  Nothing is freed by address.
+
+`clean`, `inval` and `cleaninval` take offsets into the chunk.  DMA
+addresses are physical and must stay below 4 GiB while a 32-bit ADMA engine
+is in use.  The arena's top 2 MiB is the kernel's own (ethergmac's
+descriptors) and is never handed out.
+
+The OP-TEE static shared memory is not in the arena: its cache maintenance
+is `#P/tee/clean`, `/inval` and `/cleaninval`, taking `"<pa> <len>"` inside
+it.
+
+This isolates chunks from the CPU's side only: a device can still be
+programmed with any physical address.  Per-device IOMMU contexts are what
+close that.
 
 ## Worked example
 
@@ -136,4 +202,10 @@ string works.  Paths are therefore built into stack buffers (`snprint`).
 * Family routing (`#P/<family>/<device>/...`) is not implemented; `family`
   is a file for now.  The flat node path is kept so existing consumers
   (`drvkit`, `o9xhci`, `uartfs`) keep working.
-* `claim` is a contract, not yet enforced on `wait` or on `segattach`.
+* A device's window is granted as the whole 2 MiB block that contains it,
+  so a holder can reach the registers of other devices in the same block.
+  Granting the window alone (page granular) changes the mapping rule
+  above for every driver.
+* Device-side isolation: a device can be programmed with any physical
+  address.  Per-claim IOMMU contexts (rkiommu on the RK3566, an ARM SMMU
+  driver for Qualcomm parts) are what close that.

@@ -279,7 +279,9 @@ fixfault(Segment *s, usize addr, int ftype, int dommuput, int color)
 		mmuattr = PTEVALID;
 		if((s->pseg->attr & SG_WRITE) != 0)
 			mmuattr |= PTEWRITE;
-		if((s->pseg->attr & SG_CACHED) == 0)
+		if((s->pseg->attr & SG_NCRAM) != 0)
+			mmuattr |= PTENCRAM;
+		else if((s->pseg->attr & SG_CACHED) == 0)
 			mmuattr |= PTEUNCACHED;
 		if((s->type & SG_EXEC) == 0)
 			mmuattr |= PTENOEXEC;

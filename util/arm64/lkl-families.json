@@ -30,10 +30,10 @@
 	},
 	"bengal_usb": {
 		"program": "lklbusb",
-		"mem": "128M",
+		"mem": "192M",
 		"devices": [
 			"qcom,gcc@1400000",
-			"qcom,spmi@1c40000",
+			"qcom,spmi@1c40000+",
 			"pinctrl@400000",
 			"qrng@1b53000",
 			"tsens@c222000",
@@ -43,8 +43,11 @@
 			"i2c@4a80000",
 			"i2c@4a84000",
 			"spi@4a88000",
-			"wifi@c800000",
-			"qcom,icnss@C800000"
+			"syscon@00340000",
+			"memory@045f0000",
+			"mailbox@0f111000",
+			"qcom,icnss@C800000",
+			"qcom,ipa@0x5800000"
 		],
 		"dtb": "lkl-bengal-usb.dtb",
 		"setup": "usb"
@@ -53,7 +56,7 @@
 		"program": "lklctl",
 		"mem": "96M",
 		"devices": [
-			"qcom,spmi@1c40000",
+			"qcom,spmi@1c40000+",
 			"ssusb@4e00000",
 			"dwc3@4e00000"
 		],
