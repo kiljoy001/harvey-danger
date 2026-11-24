@@ -127,6 +127,9 @@ true when written: check the code and `git log` before relying on them.
   DTB may lack `/memory`; add one with `fdtput` before inspecting.  The
   Orange Pi 3B v1.1 DTB (with a synthetic 2 GiB `/memory`) reports
   `board rk3566` and 46 classified devices.
+- `python3 util/arm64/test_sdimg.py` builds a small SD image with
+  `mk-sdimg.py`, extracts the FAT contents, and checks the stamped
+  `/chosen` ranges and the input DTB is untouched.
 - A Plan 9 wait message is `"<prog> <pid>: <status>"`: match the status
   with `strstr`, not `strcmp`.
 

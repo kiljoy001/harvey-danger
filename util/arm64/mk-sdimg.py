@@ -117,15 +117,16 @@ def main() -> None:
             stamp_range(dtbwork, "harvey,ram", base, size)
 
     need = image.stat().st_size + dtbwork.stat().st_size + sdk.stat().st_size
+    part_start = UBOOT_PART_START if args.uboot else PART_START
     size = (args.size_mb * 1024 * 1024) if args.size_mb else \
         need + need // 10
+    size = max(size, part_start * SECTOR + need + 1024 * 1024)
     size = (size + 1024 * 1024 - 1) // (1024 * 1024) * 1024 * 1024
     out = Path(args.out)
     out.unlink(missing_ok=True)
     with open(out, "wb") as f:
         f.truncate(size)
 
-    part_start = UBOOT_PART_START if args.uboot else PART_START
     sectors = size // SECTOR
     part_sectors = sectors - part_start
     subprocess.run(["sfdisk", "-q", "--no-reread", str(out)], check=True,
