@@ -20,8 +20,10 @@ def main() -> None:
     undefined = subprocess.check_output(["llvm-nm", "-u", str(ELF)], text=True)
     if undefined.strip():
         raise RuntimeError(f"kernel has undefined symbols:\n{undefined}")
-    for memory in (256, 512):
-        command = ["qemu-system-aarch64", "-machine", "virt", "-cpu", "cortex-a57",
+    for memory, gic in ((256, 2), (512, 2), (512, 3)):
+        command = ["qemu-system-aarch64",
+                   "-machine", f"virt,gic-version={gic}",
+                   "-cpu", "cortex-a57",
                    "-m", f"{memory}M", "-smp", "1", "-nographic",
                    "-monitor", "none", "-kernel", str(IMAGE)]
         transcript = boot_until(command, MARKER)
@@ -41,8 +43,11 @@ def main() -> None:
                 MARKER)) or \
                 "failed" in transcript or \
                 "ARM64 exception" in transcript:
-            raise RuntimeError(f"full kernel boot failed at {memory} MiB:\n{transcript}")
-        print(f"ARM64 linked kernel, QEMU virt {memory} MiB: filesystem ELF exec and init PASS")
+            raise RuntimeError(
+                f"full kernel boot failed at {memory} MiB GICv{gic}:\n"
+                f"{transcript}")
+        print(f"ARM64 linked kernel, QEMU virt {memory} MiB GICv{gic}: "
+              "filesystem ELF exec and init PASS")
 
 
 if __name__ == "__main__":

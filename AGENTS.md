@@ -119,9 +119,10 @@ true when written: check the code and `git log` before relying on them.
 ## Building and testing (arm64)
 
 - `python3 util/arm64/test_full_kernel.py` builds the kernel and userland
-  and boots them in QEMU virt.  It needs the earlier stages' outputs in
-  `build/` (`util/arm64/build_emu.py` and others); in a fresh worktree,
-  copy `build/` from a tree that has them (`cp -a`, not hard links).
+  and boots them in QEMU virt at 256/512 MiB with GICv2 and at 512 MiB
+  with GICv3.  It needs the earlier stages' outputs in `build/`
+  (`util/arm64/build_emu.py` and others); in a fresh worktree, copy
+  `build/` from a tree that has them (`cp -a`, not hard links).
 - The committed `util/arm64/build_userland.py` compiles
   `sys/src/cmd/emmclog/emmclog.c`, which is not committed yet: a clean
   checkout needs that directory before it builds.
