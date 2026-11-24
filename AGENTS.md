@@ -64,7 +64,8 @@ true when written: check the code and `git log` before relying on them.
   `model`, `compatible`, `ram` (image bank), `bootarchive`, `teeshm`,
   `scm`, `framebuffer` and one `memory` line per usable bank, as
   `key value...` lines (see `doc/drivers/platform-bus.md`).  Boot walks
-  and reads it and prints `HARVEY-ARM64 PLATFORM PASS`.
+  and reads it, requires the model/compatible/ram/memory lines, and
+  prints `HARVEY-ARM64 PLATFORM PASS`.
 - `util/arm64/pack_boot.py` can stamp those ranges with
   `--bootarchive BASE:SIZE`, `--teeshm BASE:SIZE`, `--scm BASE:SIZE` and
   `--ram BASE:SIZE`, so an image does not rely on the fallbacks.
@@ -99,7 +100,8 @@ true when written: check the code and `git log` before relying on them.
   size comes from the DT, so the scan stays inside the mapped window.
 - The non-Bengal DMA arena is half the largest bank, capped at 512 MiB
   and floored at 32 MiB, so `#P/dma` exists on 256/512 MiB boards.  Boot
-  walks `#P/dma/base` and prints `HARVEY-ARM64 DMA-FS PASS`.
+  walks `#P/dma/base` and `#P/dma/size`, checks both are non-zero, and
+  prints `HARVEY-ARM64 DMA-FS PASS`.
 - `devxhci.c` and `ethergmac.c` resolve their bases with
   `fdtdevcompat()`, `fdtdevcompatn()` and `fdtdevname()`; the old
   addresses remain as fallbacks for a DTB that lacks the nodes.  Both

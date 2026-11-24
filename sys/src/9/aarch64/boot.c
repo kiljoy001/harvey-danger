@@ -502,7 +502,7 @@ static void
 pnpprobe(Fdtinfo *info)
 {
 	char *names[2];
-	char buf[64];
+	char buf[1024];
 	Chan *root, *reg;
 	Walkqid *walk;
 	int n;
@@ -541,10 +541,17 @@ pnpprobe(Fdtinfo *info)
 	free(walk);
 	cclose(root);
 	pnpdevtab.open(reg, OREAD);
-	n = pnpdevtab.read(reg, buf, sizeof(buf), 0);
+	n = pnpdevtab.read(reg, buf, sizeof(buf)-1, 0);
 	cclose(reg);
-	if(n < 6 || memcmp(buf, "board ", 6) != 0)
+	if(n <= 0)
 		panic("ARM64 #P/platform read failed");
+	buf[n] = 0;
+	if(n < 6 || memcmp(buf, "board ", 6) != 0 ||
+	   strstr(buf, "\nmodel ") == nil ||
+	   strstr(buf, "\ncompatible ") == nil ||
+	   strstr(buf, "\nram ") == nil ||
+	   strstr(buf, "\nmemory ") == nil)
+		panic("ARM64 #P/platform content failed");
 	arm64uartputs("HARVEY-ARM64 PLATFORM PASS\n");
 }
 
@@ -577,6 +584,23 @@ dmaprobe(void)
 	cclose(c);
 	if(n < 4 || memcmp(buf, "0x", 2) != 0 || memcmp(buf, "0x0\n", 4) == 0)
 		panic("ARM64 #P/dma base failed");
+	root = pnpdevtab.attach("");
+	names[1] = "size";
+	walk = pnpdevtab.walk(root, nil, names, 2);
+	if(walk == nil || walk->nqid != 2 || walk->clone == nil){
+		if(walk != nil)
+			free(walk);
+		cclose(root);
+		panic("ARM64 #P/dma size walk failed");
+	}
+	c = walk->clone;
+	free(walk);
+	cclose(root);
+	pnpdevtab.open(c, OREAD);
+	n = pnpdevtab.read(c, buf, sizeof(buf), 0);
+	cclose(c);
+	if(n < 4 || memcmp(buf, "0x", 2) != 0 || memcmp(buf, "0x0\n", 4) == 0)
+		panic("ARM64 #P/dma size failed");
 	arm64uartputs("HARVEY-ARM64 DMA-FS PASS\n");
 }
 
