@@ -140,6 +140,9 @@ true when written: check the code and `git log` before relying on them.
 - `python3 util/arm64/test_sdimg.py` builds a two-board SD image,
   extracts the FAT contents, and checks `dtbs/`, `board.dtb`, `boot.cmd`,
   the stamped `/chosen` ranges and that the input DTBs are untouched.
+- `python3 util/arm64/test_packboot.py` builds an Android boot image,
+  checks the header sizes, the stamped `/chosen` ranges and the
+  `harvey,lkl-arena-size` value.
 - Multi-bank RAM: build with `ARM64_TEST_MULTIBANK=1` and boot QEMU virt
   with `-m 4G`; the banner must show `banks 2`, `total 0x80000000`, and
   `ARM64 multibank:` free pages well above 262144 (the first bank alone).
