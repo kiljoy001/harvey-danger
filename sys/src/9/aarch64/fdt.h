@@ -117,6 +117,7 @@ struct Fdtinfo {
 	u32 gicversion;
 	u64 gicdist;
 	u64 giccpu;
+	u64 giccpusize;
 	u32 timerirq;
 	u32 ncpu;
 	u32 psci_method;	/* 1 = HVC, 2 = SMC */

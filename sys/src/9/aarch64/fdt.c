@@ -622,6 +622,7 @@ fdtparse(void *blob, usize bytes, Fdtinfo *out)
 	out->fbwidth = out->fbheight = out->fbstride = out->fbbpp = 0;
 	out->uarttype = out->gicversion = 0;
 	out->gicdist = out->giccpu = 0;
+	out->giccpusize = 0;
 	gicphandle = 0;
 	out->timerirq = 0;
 	out->ncpu = 0;
@@ -958,6 +959,7 @@ fdtparse(void *blob, usize bytes, Fdtinfo *out)
 				   regpair(node, 1, &out->giccpu, &size) == 0){
 					out->gicdist = base;
 					out->gicversion = node->gicversion;
+					out->giccpusize = size;
 					gicphandle = node->phandle;
 				}
 				if(node->virtio){

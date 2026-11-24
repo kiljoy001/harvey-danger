@@ -92,6 +92,10 @@ true when written: check the code and `git log` before relying on them.
   `ARM64_TEST_MULTIBANK=1` splits QEMU's first bank into a low half and a
   4 GiB half; with `-m 4G` the banner reports `banks 2` and the free-page
   count proves the high bank is in the allocator.
+- GICv3 per-CPU setup finds the redistributor by scanning `GICR_TYPER`
+  affinity values, not by a 4-CPU-per-affinity index.  QEMU virt with 8
+  CPUs now reports every CPU scheduler/timer and `IPI PASS`; the GICR
+  size comes from the DT, so the scan stays inside the mapped window.
 - `devxhci.c` and `ethergmac.c` resolve their bases with
   `fdtdevcompat()`, `fdtdevcompatn()` and `fdtdevname()`; the old
   addresses remain as fallbacks for a DTB that lacks the nodes.  Both
@@ -120,9 +124,9 @@ true when written: check the code and `git log` before relying on them.
 
 - `python3 util/arm64/test_full_kernel.py` builds the kernel and userland
   and boots them in QEMU virt at 256/512 MiB with GICv2 and at 512 MiB
-  with GICv3.  It needs the earlier stages' outputs in `build/`
-  (`util/arm64/build_emu.py` and others); in a fresh worktree, copy
-  `build/` from a tree that has them (`cp -a`, not hard links).
+  with GICv3 with 1 and 8 CPUs.  It needs the earlier stages' outputs in
+  `build/` (`util/arm64/build_emu.py` and others); in a fresh worktree,
+  copy `build/` from a tree that has them (`cp -a`, not hard links).
 - The committed `util/arm64/build_userland.py` compiles
   `sys/src/cmd/emmclog/emmclog.c`, which is not committed yet: a clean
   checkout needs that directory before it builds.

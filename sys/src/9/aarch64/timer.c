@@ -16,6 +16,7 @@ extern char arm64vectors[];
 
 static volatile u32 *giccpu;
 static volatile u32 *gicdist;
+static int gicrn;
 static u32 timerirq;
 static u32 period;
 volatile u32 arm64ticks;
@@ -200,6 +201,10 @@ arm64timerinit(Fdtinfo *info)
 	giccpu = (volatile u32 *)info->giccpu;
 	timerirq = info->timerirq;
 	isgicv3 = info->gicversion == 3;
+	gicrn = info->giccpusize >= 0x20000 ?
+	        info->giccpusize / 0x20000 : 0x100000 / 0x20000;
+	if(gicrn > Fdtmaxcpu)
+		gicrn = Fdtmaxcpu;
 	mask = 1U << timerirq;
 	__asm__ volatile("mrs %0, cntfrq_el0" : "=r"(freq));
 	if(freq < 100 || freq/100 > 0x7fffffff)
@@ -241,19 +246,39 @@ arm64cpuirqinit(int cpu)
 	mask = 1U << timerirq;
 	if(isgicv3){
 		u64 mpidr;
+		u32 maff;
+		int i;
 
 		fb_stripe(10, 0x00808000);	/* Slot 10: cpuirqinit start */
 		__asm__ volatile("mrs %0, mpidr_el1" : "=r"(mpidr));
-		{
-			u32 core_idx = ((mpidr >> 8) & 1) * 4 + (mpidr & 3);
-			rd = giccpu + core_idx * (0x20000 / 4);
-			if((mpidr & 0xfff) == 0)
-				fb_stripe(11, 0x00ffffff);	/* White: MPIDR 0x000 */
-			else if((mpidr & 0xfff) == 0x100)
-				fb_stripe(11, 0x000000ff);	/* Blue: MPIDR 0x100 */
-			else
-				fb_stripe(11, 0x0000ff00);	/* Green: Other MPIDR */
+		maff = (((u32)(mpidr >> 32)) & 0xff) << 24 |
+		       ((u32)mpidr & 0x00ffffff);
+		/*
+		 * GICv3 does not promise that redistributor frames are in
+		 * MPIDR order.  Scan GICR_TYPER's affinity value and use the
+		 * old 4-per-affinity formula only if the scan finds nothing.
+		 */
+		rd = nil;
+		for(i = 0; i < gicrn; i++){
+			volatile u32 *r = giccpu + i * (0x20000 / 4);
+			u32 typer = r[0x008/4];
+
+			if(r[0x00c/4] == maff){
+				rd = r;
+				break;
+			}
+			if(typer & (1U<<4))	/* Last redistributor */
+				break;
 		}
+		if(rd == nil)
+			rd = giccpu + (((mpidr >> 8) & 1) * 4 + (mpidr & 3)) *
+			              (0x20000 / 4);
+		if((mpidr & 0xfff) == 0)
+			fb_stripe(11, 0x00ffffff);	/* White: MPIDR 0x000 */
+		else if((mpidr & 0xfff) == 0x100)
+			fb_stripe(11, 0x000000ff);	/* Blue: MPIDR 0x100 */
+		else
+			fb_stripe(11, 0x0000ff00);	/* Green: Other MPIDR */
 		sgi = rd + 0x10000/4;
 		rd[0x014/4] &= ~(1U<<1);
 		for(int to = 0; to < 1000000; to++){

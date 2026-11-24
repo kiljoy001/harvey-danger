@@ -219,7 +219,9 @@ arm64mmubuild(Fdtinfo *info)
 	device[1].base = info->gicdist;
 	device[1].size = 0x10000;
 	device[2].base = info->giccpu;
-	device[2].size = info->gicversion == 3 ? 0x100000 : 0x20000;
+	device[2].size = info->gicversion == 3 ?
+	                 (info->giccpusize != 0 ? info->giccpusize : 0x100000) :
+	                 0x20000;
 	regions = 3;
 	for(k = 0; k < info->nvirtio; k++)
 		device[regions++] = info->virtio[k];

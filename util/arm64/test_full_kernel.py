@@ -20,11 +20,12 @@ def main() -> None:
     undefined = subprocess.check_output(["llvm-nm", "-u", str(ELF)], text=True)
     if undefined.strip():
         raise RuntimeError(f"kernel has undefined symbols:\n{undefined}")
-    for memory, gic in ((256, 2), (512, 2), (512, 3)):
+    for memory, gic, smp in ((256, 2, 1), (512, 2, 1), (512, 3, 1),
+                              (512, 3, 8)):
         command = ["qemu-system-aarch64",
                    "-machine", f"virt,gic-version={gic}",
                    "-cpu", "cortex-a57",
-                   "-m", f"{memory}M", "-smp", "1", "-nographic",
+                   "-m", f"{memory}M", "-smp", str(smp), "-nographic",
                    "-monitor", "none", "-kernel", str(IMAGE)]
         transcript = boot_until(command, MARKER)
         if any(marker not in transcript for marker in (
@@ -36,6 +37,7 @@ def main() -> None:
                 "HARVEY-ARM64 ROOT-WALK PASS",
                 "HARVEY-ARM64 9RING PASS",
                 "HARVEY-ARM64 BOOT-PROBES PASS",
+                "HARVEY-ARM64 IPI PASS",
                 "HARVEY-ARM64 LIBC-USER PASS",
                 "HARVEY-ARM64 USER-PROCESS PASS",
                 "HARVEY-ARM64 FILE-EXEC START",
@@ -44,10 +46,10 @@ def main() -> None:
                 "failed" in transcript or \
                 "ARM64 exception" in transcript:
             raise RuntimeError(
-                f"full kernel boot failed at {memory} MiB GICv{gic}:\n"
-                f"{transcript}")
-        print(f"ARM64 linked kernel, QEMU virt {memory} MiB GICv{gic}: "
-              "filesystem ELF exec and init PASS")
+                f"full kernel boot failed at {memory} MiB GICv{gic} "
+                f"smp {smp}:\n{transcript}")
+        print(f"ARM64 linked kernel, QEMU virt {memory} MiB GICv{gic} "
+              f"smp {smp}: filesystem ELF exec and init PASS")
 
 
 if __name__ == "__main__":
