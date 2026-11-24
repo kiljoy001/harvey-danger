@@ -455,14 +455,6 @@ arm64main(usize dtb)
 	}
 	/* The device tree is now the source of platform identity. */
 	is_bengal = info.board == Fdtboardbengal;
-	if(info.fbbase != 0 && info.fbbpp == 32 &&
-	   fdtinram(&info, info.fbbase, info.fbsize)){
-		fb_base = (u32 *)info.fbbase;
-		fb_width = info.fbwidth != 0 ? info.fbwidth : 720;
-		fb_height = info.fbheight != 0 ? info.fbheight : 1600;
-		fb_pxstride = info.fbstride != 0 ? info.fbstride/4 : fb_width;
-		fb_bpp = 32;
-	}
 #ifdef ARM64_TEST_MULTIBANK
 	/*
 	 * QEMU rewrites /memory from -m, so a two-bank DTB cannot be tested
@@ -483,6 +475,14 @@ arm64main(usize dtb)
 		fb_stripe(15, 0x00000088);	/* DARK BLUE: fdtselectram error */
 		uartputs("HARVEY-ARM64 RAM-ERROR\n");
 		return;
+	}
+	if(info.fbbase != 0 && info.fbbpp == 32 &&
+	   fdtinram(&info, info.fbbase, info.fbsize)){
+		fb_base = (u32 *)info.fbbase;
+		fb_width = info.fbwidth != 0 ? info.fbwidth : 720;
+		fb_height = info.fbheight != 0 ? info.fbheight : 1600;
+		fb_pxstride = info.fbstride != 0 ? info.fbstride/4 : fb_width;
+		fb_bpp = 32;
 	}
 	fb_stripe(2, 0x000000ff);	/* Slot 2: RAM selected (Blue) */
 	uartputs("HARVEY-ARM64 ENTRY\n");
