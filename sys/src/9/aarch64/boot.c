@@ -630,8 +630,12 @@ arm64kernelstart(Fdtinfo *info)
 	machp()->online = 1;
 	consuartputs = uartwrite;
 	mallocinit();
-	conf.npage = info->ramsize / PGSZ;
+	conf.npage = info->ramtotal / PGSZ;
 	conf.upages = arm64physfreepages();
+#ifdef ARM64_TEST_MULTIBANK
+	print("ARM64 multibank: %llud of %llud pages free\n",
+	      (uvlong)conf.upages, (uvlong)conf.npage);
+#endif
 	conf.nproc = 256;
 	conf.nimage = 64;
 	eve = "root";

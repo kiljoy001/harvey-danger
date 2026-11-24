@@ -123,6 +123,9 @@ struct Fdtinfo {
 	u64 cpumpidr[Fdtmaxcpu];
 	u32 nmemory;
 	Fdtmemory memory[Maxfdtmemory];
+	u32 nusable;		/* memory banks, image bank first, 2 MiB aligned */
+	Fdtmemory usable[Maxfdtmemory];
+	u64 ramtotal;		/* sum of usable bank sizes */
 	u32 nreserve;
 	Fdtreserve reserve[Maxfdtreserve];
 	u32 nvirtio;

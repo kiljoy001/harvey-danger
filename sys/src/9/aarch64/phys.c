@@ -13,6 +13,9 @@ extern char _start[], __image_end[];
 extern u64 arm64dmabase, arm64dmasize;
 
 static u64 nextpage, ramend;
+static Fdtmemory banks[Maxfdtmemory];
+static u32 nbanks, curb;
+static u64 totalram, maxbank;
 #ifdef ARM64_FULL_KERNEL
 static u64 managedstart;
 #endif
@@ -62,39 +65,44 @@ addextent(u64 base, u64 size)
 static void
 startfree(void)
 {
-	u64 p, stop, skipto, low, high, end;
-	u32 i;
+	u64 p, bend, stop, skipto, low, high, end;
+	u32 i, b;
 
 	if(physready)
 		return;
 	managedstart = nextpage;
-	p = managedstart;
-	while(p < ramend){
-		stop = ramend;
-		skipto = 0;
-		for(i = 0; i < nexcluded; i++){
-			if(excluded[i].size == 0)
+	for(b = curb; b < nbanks; b++){
+		p = b == curb ? managedstart : banks[b].base;
+		bend = banks[b].base + banks[b].size;
+		while(p < bend){
+			stop = bend;
+			skipto = 0;
+			for(i = 0; i < nexcluded; i++){
+				if(excluded[i].size == 0)
+					continue;
+				end = excluded[i].base + excluded[i].size;
+				if(end < excluded[i].base)
+					panic("ARM64 physical reservation overflow");
+				low = excluded[i].base & ~(u64)(Pagesz-1);
+				high = pageup(end);
+				if(high <= p)
+					continue;
+				if(low <= p){
+					if(high > skipto)
+						skipto = high;
+				}else if(low < stop)
+					stop = low;
+			}
+			if(skipto > p){
+				p = skipto;
 				continue;
-			end = excluded[i].base + excluded[i].size;
-			if(end < excluded[i].base)
-				panic("ARM64 physical reservation overflow");
-			low = excluded[i].base & ~(u64)(Pagesz-1);
-			high = pageup(end);
-			if(high <= p)
-				continue;
-			if(low <= p){
-				if(high > skipto)
-					skipto = high;
-			}else if(low < stop)
-				stop = low;
+			}
+			if(stop > bend)
+				stop = bend;
+			if(stop > p)
+				addextent(p, stop-p);
+			p = stop;
 		}
-		if(skipto > p){
-			p = skipto;
-			continue;
-		}
-		if(stop > p)
-			addextent(p, stop-p);
-		p = stop;
 	}
 	/* The DMA arena is published to user space; it must never be free. */
 	if(arm64dmabase != 0 && arm64dmasize != 0){
@@ -120,20 +128,50 @@ pageup(u64 n)
 	return (n + Pagesz-1) & ~(u64)(Pagesz-1);
 }
 
+static int
+inbanks(u64 base, u64 size)
+{
+	u32 i;
+	u64 end;
+
+	for(i = 0; i < nbanks; i++){
+		end = banks[i].base + banks[i].size;
+		if(end < banks[i].base)
+			continue;
+		if(base >= banks[i].base && base + size <= end)
+			return 1;
+	}
+	return 0;
+}
+
 int
 arm64physinit(Fdtinfo *info, usize dtb, usize dtbsize)
 {
 	u32 i;
-	u64 start;
+	u64 start, end;
 
-	if(info->ramsize == 0 || info->rambase+info->ramsize < info->rambase ||
+	if(info == nil || info->nusable == 0 ||
+	   info->nusable > Maxfdtmemory || info->usable[0].size == 0 ||
 	   dtb+dtbsize < dtb || info->nreserve > Maxfdtreserve)
 		return -1;
-	ramend = info->rambase + info->ramsize;
+	nbanks = info->nusable;
+	totalram = 0;
+	maxbank = 0;
+	for(i = 0; i < nbanks; i++){
+		banks[i] = info->usable[i];
+		end = banks[i].base + banks[i].size;
+		if(end < banks[i].base)
+			return -1;
+		totalram += banks[i].size;
+		if(banks[i].size > maxbank)
+			maxbank = banks[i].size;
+	}
+	ramend = banks[0].base + banks[0].size;
 	start = (u64)__image_end;
-	if((u64)_start < info->rambase || start > ramend ||
+	if((u64)_start < banks[0].base || start > ramend ||
 	   (nextpage = pageup(start)) == 0 || nextpage > ramend)
 		return -1;
+	curb = 0;
 	nexcluded = info->nreserve+1;
 	for(i = 0; i < info->nreserve; i++)
 		excluded[i] = info->reserve[i];
@@ -163,8 +201,17 @@ arm64physpage(void)
 #endif
 	p = nextpage;
 	for(;;){
-		if(p == 0 || p > ramend || ramend-p < Pagesz)
+		if(curb >= nbanks)
 			return 0;
+		end = banks[curb].base + banks[curb].size;
+		if(p < banks[curb].base)
+			p = banks[curb].base;
+		if(p > end || end - p < Pagesz){
+			curb++;
+			if(curb < nbanks)
+				p = nextpage = banks[curb].base;
+			continue;
+		}
 		for(i = 0; i < nexcluded; i++){
 			end = excluded[i].base + excluded[i].size;
 			if(p < end && p+Pagesz > excluded[i].base){
@@ -172,8 +219,15 @@ arm64physpage(void)
 				break;
 			}
 		}
-		if(i == nexcluded)
-			break;
+		if(i != nexcluded){
+			if(p >= banks[curb].base + banks[curb].size){
+				curb++;
+				if(curb < nbanks)
+					p = nextpage = banks[curb].base;
+			}
+			continue;
+		}
+		break;
 	}
 	nextpage = p+Pagesz;
 	word = (u64 *)p;
@@ -198,7 +252,7 @@ physalloc(u64 size, int *color, void *tag)
 	int i, j;
 
 	USED(tag);
-	if(size == 0 || size > ramend || (size & (Pagesz-1)))
+	if(size == 0 || size > maxbank || (size & (Pagesz-1)))
 		return 0;
 	ilock(&physlock);
 	startfree();
@@ -238,7 +292,8 @@ physfree(u64 base, u64 size)
 	int i;
 
 	if((base | size) & (Pagesz-1) || size == 0 ||
-	   base < managedstart || base+size < base || base+size > ramend)
+	   base < managedstart || base+size < base ||
+	   !inbanks(base, size))
 		panic("ARM64 physfree: invalid range");
 	for(i = 0; i < nexcluded; i++)
 		if(excluded[i].size != 0 &&
@@ -271,7 +326,7 @@ seprintphysstats(char *s, char *e)
 	 * physical range.  Print both numbers for userspace.
 	 */
 	return seprint(s, e, "%lluK physical memory free %lluK physical memory total\n",
-	    bytes/KiB, (ramend - managedstart)/KiB);
+	    bytes/KiB, totalram/KiB);
 }
 
 u64

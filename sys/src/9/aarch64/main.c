@@ -420,6 +420,8 @@ arm64main(usize dtb)
 	Fdtinfo info;
 	u64 page0, page1, codepage, stackpage, codepage2, stackpage2;
 	u64 root, userroot, userroot2, translated;
+	u32 b;
+	int bad;
 #ifdef ARM64_TEST_RESERVE
 	u64 blocked;
 #endif
@@ -463,6 +465,21 @@ arm64main(usize dtb)
 		fb_pxstride = info.fbstride != 0 ? info.fbstride/4 : fb_width;
 		fb_bpp = 32;
 	}
+#ifdef ARM64_TEST_MULTIBANK
+	/*
+	 * QEMU rewrites /memory from -m, so a two-bank DTB cannot be tested
+	 * with -dtb.  Split the first real bank into a low half and a half at
+	 * 4 GiB; QEMU virt with -m 4G has RAM at both addresses.
+	 */
+	if(info.nmemory > 0 && info.rambase == 0x40000000 &&
+	   info.ramsize >= 0x80000000ULL){
+		info.nmemory = 2;
+		info.memory[0].base = 0x40000000;
+		info.memory[0].size = 0x40000000;
+		info.memory[1].base = 0x100000000ULL;
+		info.memory[1].size = 0x40000000;
+	}
+#endif
 	fb_stripe(1, 0x0000ff00);	/* Slot 1: FDT parsed (Green) */
 	if(fdtselectram(&info, (u64)_start, (u64)__image_end) < 0){
 		fb_stripe(15, 0x00000088);	/* DARK BLUE: fdtselectram error */
@@ -479,6 +496,10 @@ arm64main(usize dtb)
 	uarthex(info.rambase);
 	uartputs(" bytes ");
 	uarthex(info.ramsize);
+	uartputs(" total ");
+	uarthex(info.ramtotal);
+	uartputs(" banks ");
+	uarthex(info.nusable);
 	uartputs("\nuart: ");
 	uarthex(info.uartbase);
 	uartputs("\ngic: ");
@@ -687,12 +708,20 @@ arm64main(usize dtb)
 		uartputs("MMU: translated RAM check failed\n");
 		return;
 	}
-	if(arm64mmutranslate(page0, &translated) < 0 || translated != page0 ||
-	   (info.uartbase != 0 && (arm64mmutranslate(info.uartbase, &translated) < 0 ||
-	    translated != info.uartbase)) ||
-	   arm64mmutranslate(info.rambase+info.ramsize-4096, &translated) < 0 ||
-	   translated != info.rambase+info.ramsize-4096 ||
-	   arm64mmutranslate(info.rambase+info.ramsize, &translated) == 0){
+	bad = arm64mmutranslate(page0, &translated) < 0 || translated != page0 ||
+	      (info.uartbase != 0 &&
+	       (arm64mmutranslate(info.uartbase, &translated) < 0 ||
+	        translated != info.uartbase));
+	for(b = 0; b < info.nusable; b++){
+		u64 lo = info.usable[b].base;
+		u64 hi = lo + info.usable[b].size;
+
+		if(arm64mmutranslate(lo, &translated) < 0 || translated != lo ||
+		   arm64mmutranslate(hi-4096, &translated) < 0 ||
+		   translated != hi-4096)
+			bad = 1;
+	}
+	if(bad){
 		fb_stripe(15, 0x0000ff00);	/* GREEN: translate boundaries failed */
 		uartputs("MMU: translation boundaries failed\n");
 		return;

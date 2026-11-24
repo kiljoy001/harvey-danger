@@ -121,5 +121,6 @@ stamp `harvey,ram` first or add a synthetic node before inspecting.
   firmware can load `Image` and start it with a DTB in `x0`.
 - `devxhci` and `ethergmac` resolve their addresses from the DTB now but
   have not run on the Orange Pi yet.
-- The kernel manages the RAM bank that contains the image.  Multi-bank
-  RAM (high memory above a hole) is not merged yet.
+- RAM is managed per bank: every 2 MiB-aligned bank is mapped and added
+  to the page allocator, with the image bank first.  Banks above the
+  16 GiB identity-map cap are not mapped yet.

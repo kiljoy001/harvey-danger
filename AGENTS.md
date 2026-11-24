@@ -86,6 +86,11 @@ true when written: check the code and `git log` before relying on them.
 - `mmu.c` no longer has a fixed Rockchip MMIO list.  It maps the
   DT-discovered cru/grf/vop/hdmi/iommu/wdt/gmac/usb/gpio windows; the
   board-gated RK3566 NPU probe windows are the only non-DT mappings.
+- RAM is multi-bank: `fdtselectram` keeps every usable bank (image bank
+  first, 2 MiB aligned) and `phys.c`/`mmu.c` manage and map all of them.
+  `ARM64_TEST_MULTIBANK=1` splits QEMU's first bank into a low half and a
+  4 GiB half; with `-m 4G` the banner reports `banks 2` and the free-page
+  count proves the high bank is in the allocator.
 - `devxhci.c` and `ethergmac.c` resolve their bases with
   `fdtdevcompat()`, `fdtdevcompatn()` and `fdtdevname()`; the old
   addresses remain as fallbacks for a DTB that lacks the nodes.  Both
@@ -134,6 +139,9 @@ true when written: check the code and `git log` before relying on them.
 - `python3 util/arm64/test_sdimg.py` builds a two-board SD image,
   extracts the FAT contents, and checks `dtbs/`, `board.dtb`, `boot.cmd`,
   the stamped `/chosen` ranges and that the input DTBs are untouched.
+- Multi-bank RAM: build with `ARM64_TEST_MULTIBANK=1` and boot QEMU virt
+  with `-m 4G`; the banner must show `banks 2`, `total 0x80000000`, and
+  `ARM64 multibank:` free pages well above 262144 (the first bank alone).
 - A Plan 9 wait message is `"<prog> <pid>: <status>"`: match the status
   with `strstr`, not `strcmp`.
 

@@ -142,36 +142,59 @@ blockpte(u64 pa, int ram)
 	return pte;
 }
 
+static int
+overlapsram(Fdtinfo *info, u64 base, u64 size)
+{
+	u32 b;
+	u64 end;
+
+	for(b = 0; b < info->nusable; b++){
+		end = info->usable[b].base + info->usable[b].size;
+		if(end < info->usable[b].base)
+			continue;
+		if(base < end && base + size > info->usable[b].base)
+			return 1;
+	}
+	return 0;
+}
+
 u64
 arm64mmubuild(Fdtinfo *info)
 {
-	u64 rootpa, l2pa, ramend, pa, start, end;
+	u64 rootpa, l2pa, pa, start, end, base, bend;
 	u64 *root, *l2;
-	u32 i, j, k, regions, fixedstart;
+	u32 i, j, k, b, regions, fixedstart;
 	Fdtvirtio device[Maxfdtvirtio+20+2*Maxfdtdev];
 
-	if(info->rambase == 0 || info->ramsize == 0 ||
-	   (info->rambase | info->ramsize) & (L2blocksz-1))
+	if(info->nusable == 0 || info->nvirtio > Maxfdtvirtio)
 		return 0;
-	ramend = info->rambase + info->ramsize;
-	if(ramend < info->rambase || ramend > Maxidentity ||
-	   info->nvirtio > Maxfdtvirtio)
-		return 0;
+	for(b = 0; b < info->nusable; b++){
+		base = info->usable[b].base;
+		bend = base + info->usable[b].size;
+		if(info->usable[b].size == 0 ||
+		   (base | bend) & (L2blocksz-1) ||
+		   bend < base || bend > Maxidentity)
+			return 0;
+	}
 	rootpa = arm64physpage();
 	if(rootpa == 0)
 		return 0;
 	root = (u64 *)rootpa;
-	for(pa = info->rambase; pa < ramend; pa += L2blocksz){
-		i = pa/L1blocksz;
-		j = (pa%L1blocksz)/L2blocksz;
-		if(root[i] == 0){
-			l2pa = arm64physpage();
-			if(l2pa == 0)
-				return 0;
-			root[i] = l2pa | Ptevalid | Ptetable;
+	for(b = 0; b < info->nusable; b++){
+		base = info->usable[b].base;
+		bend = base + info->usable[b].size;
+		for(pa = base; pa < bend; pa += L2blocksz){
+			i = pa/L1blocksz;
+			j = (pa%L1blocksz)/L2blocksz;
+			if(root[i] == 0){
+				l2pa = arm64physpage();
+				if(l2pa == 0)
+					return 0;
+				root[i] = l2pa | Ptevalid | Ptetable;
+			}
+			l2 = (u64 *)(root[i] & ~(u64)(Pagesz-1));
+			l2[j] = blockpte(pa, 1);
 		}
-		l2 = (u64 *)(root[i] & ~(u64)(Pagesz-1));
-		l2[j] = blockpte(pa, 1);
 	}
 	/*
 	 * The DMA arena is handed to user space through #P/dma as a Device
@@ -240,7 +263,7 @@ arm64mmubuild(Fdtinfo *info)
 		if(pa == 0 || device[k].size == 0 ||
 		   pa >= Maxidentity || device[k].size > Maxidentity-pa)
 			return 0;
-		if(pa < ramend && pa+device[k].size > info->rambase){
+		if(overlapsram(info, pa, device[k].size)){
 			/*
 			 * A device range cannot overlap RAM.  The fixed SoC
 			 * ranges are only meaningful on Rockchip parts; on a

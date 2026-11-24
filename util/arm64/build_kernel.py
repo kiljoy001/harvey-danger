@@ -168,6 +168,8 @@ def main() -> None:
         flags.append("-DARM64_AFFINITY")
     if os.environ.get("ARM64_NO_GMAC") == "1":
         flags.append("-DARM64_NO_GMAC")
+    if os.environ.get("ARM64_TEST_MULTIBANK") == "1":
+        flags.append("-DARM64_TEST_MULTIBANK")
     for path in (OUT, ARCH, ROOT / "sys/src/9/port", ROOT / "sys/src/9/ip",
                  ROOT / "aarch64/include", ROOT / "sys/include",
                  ROOT / "sys/src/libc/9syscall"):

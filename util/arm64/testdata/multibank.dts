@@ -1,0 +1,38 @@
+/dts-v1/;
+
+/*
+ * Two discontiguous RAM banks: the image is in the low one, the high one
+ * starts at 4 GiB.  The kernel must map and manage both.
+ */
+/ {
+	#address-cells = <2>;
+	#size-cells = <2>;
+	compatible = "example,arm64-multibank";
+
+	chosen {
+		stdout-path = "/serial@fe660000";
+	};
+
+	memory@40000000 {
+		device_type = "memory";
+		reg = <0 0x40000000 0 0x40000000>,
+		      <0x1 0x00000000 0 0x40000000>;
+	};
+
+	serial@fe660000 {
+		compatible = "snps,dw-apb-uart";
+		reg = <0 0xfe660000 0 0x100>;
+		status = "okay";
+	};
+
+	interrupt-controller@fd400000 {
+		compatible = "arm,gic-v3";
+		reg = <0 0xfd400000 0 0x10000>,
+		      <0 0xfd460000 0 0x80000>;
+	};
+
+	timer {
+		compatible = "arm,armv8-timer";
+		interrupts = <1 13 4>, <1 14 4>, <1 11 1>, <1 10 4>;
+	};
+};

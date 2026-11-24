@@ -115,6 +115,7 @@ main(int argc, char **argv)
 		   info.gicversion != 2 || info.timerirq != 27 ||
 		   fdtselectram(&info, 0x40080000, 0x40400000) < 0 ||
 		   info.rambase != 0x40000000 || info.ramsize != 0x80000000 ||
+		   info.nusable != 1 || info.ramtotal != 0x80000000 ||
 		   finddev(&info, Fdtclassmmc) < 0 ||
 		   finddev(&info, Fdtclassgpio) < 0 ||
 		   finddev(&info, Fdtclassi2c) < 0 ||
@@ -141,7 +142,8 @@ main(int argc, char **argv)
 		   info.memory[0].size != 0x80000000 ||
 		   info.rambase != 0x40000000 || info.ramsize != 0x80000000 ||
 		   info.uartbase != 0xfe660000 || info.uarttype != Fdtdwuart ||
-		   fdtselectram(&info, 0x40080000, 0x40400000) < 0){
+		   fdtselectram(&info, 0x40080000, 0x40400000) < 0 ||
+		   info.nusable != 1 || info.ramtotal != 0x80000000){
 			fprintf(stderr, "nomem: memory %u %#llx/%#llx uart %#llx/%u\n",
 			        info.nmemory,
 			        (unsigned long long)info.rambase,
@@ -152,6 +154,29 @@ main(int argc, char **argv)
 		free(work);
 		free(original);
 		puts("FDT harvey,ram fallback PASS");
+		return 0;
+	}
+	if(argc == 3 && strcmp(argv[2], "multibank") == 0){
+		if(info.nmemory != 2 ||
+		   fdtselectram(&info, 0x40080000, 0x40400000) < 0 ||
+		   info.nusable != 2 ||
+		   info.rambase != 0x40000000 || info.ramsize != 0x40000000 ||
+		   info.usable[0].base != 0x40000000 ||
+		   info.usable[0].size != 0x40000000 ||
+		   info.usable[1].base != 0x100000000ULL ||
+		   info.usable[1].size != 0x40000000 ||
+		   info.ramtotal != 0x80000000ULL){
+			fprintf(stderr, "multibank: memory %u usable %u "
+			        "base %#llx/%#llx total %#llx\n",
+			        info.nmemory, info.nusable,
+			        (unsigned long long)info.rambase,
+			        (unsigned long long)info.ramsize,
+			        (unsigned long long)info.ramtotal);
+			return 1;
+		}
+		free(work);
+		free(original);
+		puts("FDT multi-bank RAM PASS");
 		return 0;
 	}
 	if(argc == 3 && strcmp(argv[2], "rk3588") == 0){
@@ -227,6 +252,7 @@ main(int argc, char **argv)
 		   info.gicversion != 3 || info.timerirq != 27 ||
 		   fdtselectram(&info, 0x40080000, 0x40400000) < 0 ||
 		   info.rambase != 0x40000000 || info.ramsize != 0x80000000 ||
+		   info.nusable != 2 || info.ramtotal != 0x90000000 ||
 		   fdtselectram(&info, 0x30000000, 0x40000000) == 0){
 			fprintf(stderr, "board: memory %u selected %#llx/%#llx uart %#llx/%u gic %#llx/%#llx/%u timer %u\n",
 			        info.nmemory,
@@ -283,7 +309,8 @@ main(int argc, char **argv)
 	         info.gicversion != 2 || info.timerirq != 27 ||
 	         info.nvirtio != 32 || info.virtio[0].size != 0x200 ||
 	         fdtselectram(&info, 0x40080000, 0x40400000) < 0 ||
-	         info.rambase != 0x40000000 || info.ramsize != 0x20000000)
+	         info.rambase != 0x40000000 || info.ramsize != 0x20000000 ||
+	         info.nusable != 1 || info.ramtotal != 0x20000000)
 		return 1;
 	structure = get4(original+8);
 	strings = get4(original+12);

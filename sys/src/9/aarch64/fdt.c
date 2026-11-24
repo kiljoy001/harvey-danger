@@ -371,33 +371,74 @@ regpair(Fdtnode *node, u32 index, u64 *base, u64 *size)
 	return 0;
 }
 
+static int
+addusable(Fdtinfo *info, u64 base, u64 size)
+{
+	u64 end, lo, hi;
+
+	if(size == 0)
+		return 0;
+	end = base + size;
+	if(end < base || base > ~(u64)0 - ((1<<21)-1))
+		return -1;
+	lo = (base + (1<<21)-1) & ~((u64)(1<<21)-1);
+	hi = end & ~((u64)(1<<21)-1);
+	if(hi <= lo)
+		return 0;
+	if(info->nusable > 0){
+		Fdtmemory *prev = &info->usable[info->nusable-1];
+		if(prev->base + prev->size == lo){
+			prev->size += hi - lo;
+			info->ramtotal += hi - lo;
+			return 0;
+		}
+	}
+	if(info->nusable == Maxfdtmemory)
+		return -1;
+	info->usable[info->nusable].base = lo;
+	info->usable[info->nusable].size = hi - lo;
+	info->nusable++;
+	info->ramtotal += hi - lo;
+	return 0;
+}
+
 int
 fdtselectram(Fdtinfo *info, u64 imagebase, u64 imageend)
 {
-	u64 base, end, stop;
-	u32 i;
+	u64 end;
+	u32 i, img;
 
 	if(info == nil || imageend <= imagebase)
 		return -1;
+	img = Maxfdtmemory;
 	for(i = 0; i < info->nmemory; i++){
 		end = info->memory[i].base + info->memory[i].size;
-		if(end < info->memory[i].base ||
-		   imagebase < info->memory[i].base || imageend > end)
+		if(end < info->memory[i].base)
 			continue;
-		if(info->memory[i].base > ~(u64)0 - ((1<<21)-1))
-			continue;
-		base = (info->memory[i].base + (1<<21)-1) & ~((u64)(1<<21)-1);
-		if(base > imagebase)
-			continue;
-		stop = end;
-		stop &= ~((u64)(1<<21)-1);
-		if(stop < imageend || stop-base < (1<<21))
-			continue;
-		info->rambase = base;
-		info->ramsize = stop-base;
-		return 0;
+		if(imagebase >= info->memory[i].base && imageend <= end){
+			img = i;
+			break;
+		}
 	}
-	return -1;
+	if(img == Maxfdtmemory)
+		return -1;
+	info->nusable = 0;
+	info->ramtotal = 0;
+	if(addusable(info, info->memory[img].base, info->memory[img].size) < 0 ||
+	   info->nusable == 0)
+		return -1;
+	if(imagebase < info->usable[0].base ||
+	   imageend > info->usable[0].base + info->usable[0].size)
+		return -1;
+	info->rambase = info->usable[0].base;
+	info->ramsize = info->usable[0].size;
+	for(i = 0; i < info->nmemory; i++){
+		if(i == img)
+			continue;
+		if(addusable(info, info->memory[i].base, info->memory[i].size) < 0)
+			return -1;
+	}
+	return 0;
 }
 
 int
@@ -562,6 +603,8 @@ fdtparse(void *blob, usize bytes, Fdtinfo *out)
 	out->ncpu = 0;
 	out->psci_method = out->psci_cpuon = 0;
 	out->nmemory = out->nreserve = out->nvirtio = 0;
+	out->nusable = 0;
+	out->ramtotal = 0;
 	out->ndev = 0;
 	for(; rsv <= soff && soff-rsv >= 16; rsv += 16){
 		base = get8(p+rsv);
