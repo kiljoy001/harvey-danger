@@ -45,6 +45,7 @@ static struct {
 } streams[] = {
 	{ 0xe3,  0x0, "qupv3_0 SE DMA (touch SPI)" },
 	{ 0x1a0, 0x1, "icnss / WCN3990 Wi-Fi" },
+	{ 0x140, 0x0, "IPA v4.2 AP" },
 };
 
 static volatile u32 *smmu;

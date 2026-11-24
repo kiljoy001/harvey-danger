@@ -52,6 +52,11 @@
 			no-map;
 			reg = <0x0 0x52200000 0x0 0x1c00000>;
 		};
+
+		pil_ipa_fw_mem: memory@53e00000 {
+			no-map;
+			reg = <0x0 0x53e00000 0x0 0x10000>;
+		};
 	};
 
 	firmware {
@@ -134,6 +139,17 @@
 			interrupt-controller;
 			#interrupt-cells = <2>;
 		};
+
+		ipa_smp2p_out: ipa-ap-to-modem {
+			qcom,entry-name = "ipa";
+			#qcom,smem-state-cells = <1>;
+		};
+
+		ipa_smp2p_in: ipa-modem-to-ap {
+			qcom,entry-name = "ipa";
+			interrupt-controller;
+			#interrupt-cells = <2>;
+		};
 	};
 
 	xo_board: xo-board {
@@ -179,6 +195,11 @@
 			rpm_requests: rpm-requests {
 				compatible = "qcom,rpm-sm6115", "qcom,glink-smd-rpm";
 				qcom,glink-channels = "rpm_requests";
+
+				rpmcc: clock-controller {
+					compatible = "qcom,rpmcc-sm6115", "qcom,rpmcc";
+					#clock-cells = <1>;
+				};
 
 				regulators-0 {
 					compatible = "qcom,rpm-pm6125-regulators";
@@ -305,6 +326,28 @@
 				qcom,remote-pid = <1>;
 				mboxes = <&apcs_glb 12>;
 			};
+		};
+
+		ipa: ipa@5840000 {
+			compatible = "qcom,sm6115-ipa";
+			reg = <0x0 0x05840000 0x0 0x7000>,
+			      <0x0 0x05847000 0x0 0x2000>,
+			      <0x0 0x05804000 0x0 0x28000>;
+			reg-names = "ipa-reg", "ipa-shared", "gsi";
+			interrupts-extended = <&gic 0 257 4>,
+					      <&gic 0 259 4>,
+					      <&ipa_smp2p_in 0 1>,
+					      <&ipa_smp2p_in 1 1>;
+			interrupt-names = "ipa", "gsi",
+					  "ipa-clock-query", "ipa-setup-ready";
+			clocks = <&rpmcc 68>;
+			clock-names = "core";
+			memory-region = <&pil_ipa_fw_mem>;
+			qcom,smem-states = <&ipa_smp2p_out 0>,
+					   <&ipa_smp2p_out 1>;
+			qcom,smem-state-names = "ipa-clock-enabled-valid",
+						"ipa-clock-enabled";
+			status = "okay";
 		};
 
 		gcc: clock-controller@1400000 {

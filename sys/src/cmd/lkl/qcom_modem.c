@@ -59,8 +59,19 @@ enum {
 	NasGetServSys	= 0x0024,
 	NasGetSigInfo	= 0x004f,
 
+	/* WMS (SMS) message IDs */
+	WmsRawSend	= 0x0020,
+	WmsListMsgs	= 0x0031,
+
+	/* VOICE message IDs */
+	VoiceDialCall	= 0x0020,
+	VoiceEndCall	= 0x0021,
+	VoiceAnswerCall	= 0x0022,
+	VoiceGetAllCalls = 0x002f,
+
 	MaxQrtrSvcs	= 64,
 	MaxScanNets	= 24,
+	MaxVoiceCalls	= 8,
 };
 
 typedef struct SockaddrQrtr SockaddrQrtr;
@@ -120,11 +131,21 @@ static struct {
 
 	int	nscan;
 	ScanNet	scan[MaxScanNets];
+	int	last_call_id;
+	int	ncalls;
+	struct {
+		u8	id;
+		u8	state;
+		u8	type;
+		u8	dir;
+	} calls[MaxVoiceCalls];
+	int	sms_stored;
 	char	info[128];
 } mst = {
 	.opmode = -1,
 	.simstate = { -1, -1 },
 	.regstate = -1,
+	.sms_stored = -1,
 };
 
 static u16 qmi_txnid = 1;
@@ -590,6 +611,253 @@ modem_scan(void)
 	return mst.nscan;
 }
 
+/* ---- Stage 2: QMI VOICE (0x09) & WMS SMS (0x05) ---- */
+
+int
+modem_voice_dial(const char *number)
+{
+	uchar req[96], resp[128];
+	const uchar *v;
+	int n, vl, err, nlen, pos = 0;
+
+	if(!mst.probed)
+		modem_probe();
+	if(number == nil || number[0] == 0){
+		snprint(mst.info, sizeof mst.info, "dial: missing number");
+		return -1;
+	}
+	nlen = strlen(number);
+	if(nlen > 64)
+		nlen = 64;
+	/* TLV 0x01: calling_number (ASCII string) */
+	req[pos++] = 0x01;
+	putle16(req + pos, nlen); pos += 2;
+	memmove(req + pos, number, nlen); pos += nlen;
+	/* TLV 0x10: call_type (0x00 = voice) */
+	req[pos++] = 0x10;
+	putle16(req + pos, 1); pos += 2;
+	req[pos++] = 0x00;
+
+	n = qmi_txn(QmiSvcVoice, VoiceDialCall, req, pos, resp, sizeof resp, 10);
+	if(n < 0){
+		snprint(mst.info, sizeof mst.info, "dial(%s) txn err %d", number, n);
+		return -1;
+	}
+	err = qmi_result_err(resp, n);
+	if(err != 0){
+		snprint(mst.info, sizeof mst.info, "dial(%s) qmi err %d", number, err);
+		return -1;
+	}
+	v = qmi_find_tlv(resp, n, 0x10, &vl);
+	if(v != nil && vl >= 1)
+		mst.last_call_id = v[0];
+	snprint(mst.info, sizeof mst.info, "dial(%s) ok call_id=%d", number, mst.last_call_id);
+	return mst.last_call_id;
+}
+
+int
+modem_voice_answer(int call_id)
+{
+	uchar req[8], resp[128];
+	int n, err;
+
+	if(!mst.probed)
+		modem_probe();
+	if(call_id <= 0)
+		call_id = mst.last_call_id > 0 ? mst.last_call_id : 1;
+	req[0] = 0x01;
+	putle16(req + 1, 1);
+	req[3] = (uchar)call_id;
+	n = qmi_txn(QmiSvcVoice, VoiceAnswerCall, req, 4, resp, sizeof resp, 5);
+	if(n < 0){
+		snprint(mst.info, sizeof mst.info, "answer(%d) txn err %d", call_id, n);
+		return -1;
+	}
+	err = qmi_result_err(resp, n);
+	if(err != 0){
+		snprint(mst.info, sizeof mst.info, "answer(%d) qmi err %d", call_id, err);
+		return -1;
+	}
+	snprint(mst.info, sizeof mst.info, "answer(%d) ok", call_id);
+	return 0;
+}
+
+int
+modem_voice_hangup(int call_id)
+{
+	uchar req[8], resp[128];
+	int n, err;
+
+	if(!mst.probed)
+		modem_probe();
+	if(call_id <= 0)
+		call_id = mst.last_call_id > 0 ? mst.last_call_id : 1;
+	req[0] = 0x01;
+	putle16(req + 1, 1);
+	req[3] = (uchar)call_id;
+	n = qmi_txn(QmiSvcVoice, VoiceEndCall, req, 4, resp, sizeof resp, 5);
+	if(n < 0){
+		snprint(mst.info, sizeof mst.info, "hangup(%d) txn err %d", call_id, n);
+		return -1;
+	}
+	err = qmi_result_err(resp, n);
+	if(err != 0){
+		snprint(mst.info, sizeof mst.info, "hangup(%d) qmi err %d", call_id, err);
+		return -1;
+	}
+	snprint(mst.info, sizeof mst.info, "hangup(%d) ok", call_id);
+	return 0;
+}
+
+int
+modem_voice_calls(void)
+{
+	uchar resp[512];
+	const uchar *v;
+	int n, vl, err, cnt, i;
+
+	if(!mst.probed)
+		modem_probe();
+	n = qmi_txn(QmiSvcVoice, VoiceGetAllCalls, nil, 0, resp, sizeof resp, 5);
+	if(n < 0){
+		snprint(mst.info, sizeof mst.info, "calls txn err %d", n);
+		return -1;
+	}
+	err = qmi_result_err(resp, n);
+	if(err != 0){
+		snprint(mst.info, sizeof mst.info, "calls qmi err %d", err);
+		return -1;
+	}
+	mst.ncalls = 0;
+	/* TLV 0x10: Call Information (u8 count, entries of 9 bytes each) */
+	v = qmi_find_tlv(resp, n, 0x10, &vl);
+	if(v != nil && vl >= 1){
+		cnt = v[0];
+		for(i = 0; i < cnt && i < MaxVoiceCalls && 1 + (i + 1) * 9 <= vl; i++){
+			const uchar *e = v + 1 + i * 9;
+			mst.calls[mst.ncalls].id = e[0];
+			mst.calls[mst.ncalls].state = e[1];
+			mst.calls[mst.ncalls].type = e[2];
+			mst.calls[mst.ncalls].dir = e[3];
+			mst.ncalls++;
+		}
+	}
+	snprint(mst.info, sizeof mst.info, "calls ok (%d active)", mst.ncalls);
+	return mst.ncalls;
+}
+
+int
+modem_wms_list(void)
+{
+	uchar req[12], resp[512];
+	const uchar *v;
+	int n, vl, err, pos = 0;
+
+	if(!mst.probed)
+		modem_probe();
+	/* TLV 0x01: storage_type (1 = NV), TLV 0x11: message_mode (1 = GW/3GPP) */
+	req[pos++] = 0x01; putle16(req + pos, 1); pos += 2; req[pos++] = 0x01;
+	req[pos++] = 0x11; putle16(req + pos, 1); pos += 2; req[pos++] = 0x01;
+	n = qmi_txn(QmiSvcWms, WmsListMsgs, req, pos, resp, sizeof resp, 5);
+	if(n < 0){
+		snprint(mst.info, sizeof mst.info, "smslist txn err %d", n);
+		return -1;
+	}
+	err = qmi_result_err(resp, n);
+	if(err != 0){
+		snprint(mst.info, sizeof mst.info, "smslist qmi err %d", err);
+		return -1;
+	}
+	v = qmi_find_tlv(resp, n, 0x01, &vl);
+	mst.sms_stored = (v != nil && vl >= 4) ?
+		(int)((u32)v[0] | ((u32)v[1] << 8) | ((u32)v[2] << 16) | ((u32)v[3] << 24)) : 0;
+	snprint(mst.info, sizeof mst.info, "smslist ok (%d stored)", mst.sms_stored);
+	return mst.sms_stored;
+}
+
+/* Encode 3GPP SMS-SUBMIT PDU (GSM 7-bit default alphabet) and send via QMI WMS */
+int
+modem_wms_send(const char *dest, const char *text)
+{
+	uchar pdu[256], req[280], resp[128];
+	char digits[32];
+	int nd = 0, toa = 0x81, p = 0, tlen, i, n, err;
+
+	if(!mst.probed)
+		modem_probe();
+	if(dest == nil || text == nil || dest[0] == 0 || text[0] == 0){
+		snprint(mst.info, sizeof mst.info, "sms: usage sms <number> <text>");
+		return -1;
+	}
+	if(dest[0] == '+'){
+		toa = 0x91;
+		dest++;
+	}
+	for(i = 0; dest[i] != 0 && nd < (int)sizeof(digits) - 1; i++)
+		if(dest[i] >= '0' && dest[i] <= '9')
+			digits[nd++] = dest[i] - '0';
+	if(nd == 0){
+		snprint(mst.info, sizeof mst.info, "sms: invalid number");
+		return -1;
+	}
+
+	pdu[p++] = 0x00;		/* SMSC length = 0 (use modem default) */
+	pdu[p++] = 0x11;		/* SMS-SUBMIT, VPF=relative */
+	pdu[p++] = 0x00;		/* TP-MR */
+	pdu[p++] = (uchar)nd;		/* TP-DA digit count */
+	pdu[p++] = (uchar)toa;		/* TP-DA type-of-address */
+	for(i = 0; i < nd; i += 2){
+		uchar lo = digits[i];
+		uchar hi = (i + 1 < nd) ? digits[i + 1] : 0x0f;
+		pdu[p++] = lo | (hi << 4);
+	}
+	pdu[p++] = 0x00;		/* TP-PID */
+	pdu[p++] = 0x00;		/* TP-DCS (GSM 7-bit) */
+	pdu[p++] = 0xa7;		/* TP-VP (24 hours) */
+
+	tlen = strlen(text);
+	if(tlen > 160)
+		tlen = 160;
+	pdu[p++] = (uchar)tlen;		/* TP-UDL (septets) */
+	/* Pack 7-bit septets into octets */
+	{
+		int bitpos = 0;
+		uchar cur = 0;
+		for(i = 0; i < tlen && p < (int)sizeof(pdu) - 1; i++){
+			uchar c = (uchar)text[i] & 0x7f;
+			cur |= (uchar)(c << bitpos);
+			bitpos += 7;
+			if(bitpos >= 8){
+				pdu[p++] = cur;
+				bitpos -= 8;
+				cur = (uchar)(c >> (7 - bitpos));
+			}
+		}
+		if(bitpos > 0 && p < (int)sizeof(pdu))
+			pdu[p++] = cur;
+	}
+
+	/* TLV 0x01: raw_message_data { u8 format(0x06=GW_PP); u16 len; u8 pdu[]; } */
+	req[0] = 0x01;
+	putle16(req + 1, 3 + p);
+	req[3] = 0x06;
+	putle16(req + 4, p);
+	memmove(req + 6, pdu, p);
+
+	n = qmi_txn(QmiSvcWms, WmsRawSend, req, 6 + p, resp, sizeof resp, 15);
+	if(n < 0){
+		snprint(mst.info, sizeof mst.info, "sms txn err %d", n);
+		return -1;
+	}
+	err = qmi_result_err(resp, n);
+	if(err != 0){
+		snprint(mst.info, sizeof mst.info, "sms qmi err %d", err);
+		return -1;
+	}
+	snprint(mst.info, sizeof mst.info, "sms ok (%dB PDU)", p);
+	return 0;
+}
+
 static const char*
 opmode_str(int m)
 {
@@ -673,6 +941,11 @@ modemstatus_buf(char *out, int outsz)
 		pos += snprint(out + pos, outsz - pos, "lte rssi=%d rsrp=%d rsrq=%d snr=%d\n",
 			mst.lte_rssi, mst.lte_rsrp, mst.lte_rsrq, mst.lte_snr);
 	pos += snprint(out + pos, outsz - pos, "info %s\n", mst.info);
+	if(mst.sms_stored >= 0)
+		pos += snprint(out + pos, outsz - pos, "sms stored=%d\n", mst.sms_stored);
+	for(i = 0; i < mst.ncalls && pos < outsz - 64; i++)
+		pos += snprint(out + pos, outsz - pos, "call id=%u state=%u type=%u dir=%u\n",
+			mst.calls[i].id, mst.calls[i].state, mst.calls[i].type, mst.calls[i].dir);
 	{
 		extern int rmtfs_loaded_mask, rmtfs_opens, rmtfs_allocs, rmtfs_alloc_sz;
 		extern int rmtfs_reads, rmtfs_writes, rmtfs_rw_skips;

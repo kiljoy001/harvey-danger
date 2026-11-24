@@ -232,6 +232,7 @@ static const Fdtclass classtab[] = {
 	{ "qcom,adreno-gmu-wrapper", Fdtclasspower },
 	{ "qcom,wcn3990-wifi", Fdtclassgmac },
 	{ "qcom,icnss", Fdtclassgmac },
+	{ "qcom,ipa", Fdtclassgmac },
 	{ "qcom,bengal-pinctrl", Fdtclassgpio },
 	{ "qcom,sm6115-pinctrl", Fdtclassgpio },
 	{ "qcom,sm6115-tlmm", Fdtclassgpio },
@@ -688,6 +689,8 @@ fdtparse(void *blob, usize bytes, Fdtinfo *out)
 					dev->compat[n] = 0;
 					dev->base = base;
 					dev->size = size;
+					if(same(dev->compat, "qcom,ipa") && dev->size < 0x80000)
+						dev->size = 0x80000;
 					dev->base2 = 0;
 					dev->size2 = 0;
 					if(node->clas == Fdtclassiommu &&

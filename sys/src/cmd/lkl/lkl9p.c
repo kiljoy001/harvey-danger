@@ -475,6 +475,12 @@ extern void	wifistatus_buf(char*, int);
 extern int	modem_probe(void);
 extern int	modem_set_opmode(int);
 extern int	modem_scan(void);
+extern int	modem_voice_dial(const char*);
+extern int	modem_voice_answer(int);
+extern int	modem_voice_hangup(int);
+extern int	modem_voice_calls(void);
+extern int	modem_wms_list(void);
+extern int	modem_wms_send(const char*, const char*);
 extern void	modemstatus_buf(char*, int);
 extern char	lkl_dmesg[];
 extern int	lkl_dmesg_len;
@@ -734,6 +740,20 @@ doread(Req *r, LklFid *lf, WorkItem *wi)
 }
 
 static void
+ipabind_thread(void *arg)
+{
+	long bfd, br;
+
+	USED(arg);
+	bfd = lklopenat(LklAtFdcwd, "/sys/bus/platform/drivers/ipa/bind", LklOwronly, 0);
+	if(bfd >= 0){
+		br = sys0(LklNrWrite, bfd, (long)"5840000.ipa", 11, 0, 0, 0);
+		lklclose(bfd);
+		lkl_printf("lkl9p: bind 5840000.ipa -> %ld\n", br);
+	}
+}
+
+static void
 dowrite(Req *r, LklFid *lf, WorkItem *wi)
 {
 	long n, tot;
@@ -804,6 +824,25 @@ dowrite(Req *r, LklFid *lf, WorkItem *wi)
 			modem_set_opmode(4);
 		else if(strcmp(cmd, "scan") == 0)
 			modem_scan();
+		else if(strcmp(cmd, "calls") == 0)
+			modem_voice_calls();
+		else if(strncmp(cmd, "dial ", 5) == 0)
+			modem_voice_dial(cmd + 5);
+		else if(strncmp(cmd, "answer", 6) == 0)
+			modem_voice_answer(cmd[6] == ' ' ? atoi(cmd + 7) : 0);
+		else if(strncmp(cmd, "hangup", 6) == 0)
+			modem_voice_hangup(cmd[6] == ' ' ? atoi(cmd + 7) : 0);
+		else if(strcmp(cmd, "smslist") == 0)
+			modem_wms_list();
+		else if(strncmp(cmd, "sms ", 4) == 0){
+			char *sp = strchr(cmd + 4, ' ');
+			if(sp != nil){
+				*sp++ = 0;
+				modem_wms_send(cmd + 4, sp);
+			}
+		}
+		else if(strcmp(cmd, "ipabind") == 0)
+			lklhost_spawn(ipabind_thread, nil);
 		qunlock(&modemlk);
 		r->ofcall.count = r->ifcall.count;
 		respond(r, nil);
@@ -1269,6 +1308,8 @@ mkblocknodes(void *arg)
 						}
 					}
 				}
+				/* Bind Qualcomm IPA v4.2 (5840000.ipa) in background for rmnet_ipa0. */
+				lklhost_spawn(ipabind_thread, nil);
 			}
 		}
 	}

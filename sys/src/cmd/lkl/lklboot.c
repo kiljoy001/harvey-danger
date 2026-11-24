@@ -418,6 +418,11 @@ watchfamily(Family *f)
 			else
 				lkl_printf("lklboot: irq %d watch failed\n", i);
 		}
+		/* Qualcomm IPA v4.2 IRQs (SPI 257 -> 289, SPI 259 -> 291, level). */
+		if(lklhost_irqline(289, 0) == 0)
+			lkl_printf("lklboot: irq 289 (ipa) watched\n");
+		if(lklhost_irqline(291, 0) == 0)
+			lkl_printf("lklboot: irq 291 (gsi) watched\n");
 	}
 }
 

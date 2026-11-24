@@ -46,7 +46,8 @@
 			"syscon@00340000",
 			"memory@045f0000",
 			"mailbox@0f111000",
-			"qcom,icnss@C800000"
+			"qcom,icnss@C800000",
+			"qcom,ipa@0x5800000"
 		],
 		"dtb": "lkl-bengal-usb.dtb",
 		"setup": "usb"
