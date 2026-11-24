@@ -302,16 +302,17 @@ initprocess(void *arg)
 		ipdevtab.reset();
 	}
 	/*
-	 * RK3566 board quirk: U-Boot may leave the watchdog running, and
+	 * RK356x board quirk: U-Boot may leave the watchdog running, and
 	 * the PCIe PHY needs its power domain on.  Select the board from
 	 * the device tree, not from the UART address, and take the WDT
 	 * base from #P/devpnp's discovery.
 	 */
 	if(bootinfo != nil &&
 	   (bootinfo->board == Fdtboardrk3566 ||
+	    bootinfo->board == Fdtboardrk3568 ||
 	    (bootinfo->board == Fdtboardunknown &&
 	     useruartbase == 0xfe660000ULL)))
-		rk3566lateinit(bootinfo);
+		rk356xlateinit(bootinfo);
 	kproc("alarm", alarmkproc, nil);
 	arm64uartputs("HARVEY-ARM64 FILE-EXEC START\n");
 	arm64runprocessargs(ARM64EXECSTUBENTRY, USTKTOP-512,

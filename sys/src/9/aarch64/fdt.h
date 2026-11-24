@@ -13,6 +13,7 @@ enum {
 	Fdtboardunknown,
 	Fdtboardqemuvirt,
 	Fdtboardrk3566,
+	Fdtboardrk3568,
 	Fdtboardrk3588,
 	Fdtboardbengal,
 };
@@ -131,6 +132,7 @@ struct Fdtinfo {
 int fdtparse(void *, usize, Fdtinfo *);
 int fdtselectram(Fdtinfo *, u64, u64);
 int fdtiscompat(Fdtinfo *, char *);
+int fdtisrockchip(Fdtinfo *);
 Fdtdev *fdtdev(Fdtinfo *, u32);
 const char *fdtboardname(u32);
 const char *fdtclassname(u32);

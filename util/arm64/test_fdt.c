@@ -81,7 +81,8 @@ main(int argc, char **argv)
 		   finddev(&info, Fdtclassgpio) < 0 ||
 		   finddev(&info, Fdtclassi2c) < 0 ||
 		   finddev(&info, Fdtclassgmac) < 0 ||
-		   finddev(&info, Fdtclassuart) < 0 || info.ndev != 5){
+		   finddev(&info, Fdtclassuart) < 0 || info.ndev != 5 ||
+		   fdtisrockchip(&info) != 0){
 			fprintf(stderr, "h6: memory %u selected %#llx/%#llx uart %#llx/%u gic %#llx/%#llx/%u timer %u ndev %u\n",
 			        info.nmemory,
 			        (unsigned long long)info.rambase,
@@ -115,6 +116,7 @@ main(int argc, char **argv)
 		   strcmp(mmc->compat, "rockchip,rk3588-dwcmshc") != 0 ||
 		   strcmp(i2c->compat, "rockchip,rk3588-i2c") != 0 ||
 		   info.uartbase != 0xfe660000 || info.uarttype != Fdtdwuart ||
+		   fdtisrockchip(&info) != 1 ||
 		   fdtdev(&info, Fdtclassnone) != nil){
 			fprintf(stderr, "rk3588: board %u compat %s uart %#llx/%u\n",
 			        info.board, info.rootcompat,
@@ -124,6 +126,23 @@ main(int argc, char **argv)
 		free(work);
 		free(original);
 		puts("FDT rk3588 prefix board detection PASS");
+		return 0;
+	}
+	if(argc == 3 && strcmp(argv[2], "rk3568") == 0){
+		if(info.board != Fdtboardrk3568 ||
+		   fdtisrockchip(&info) != 1 ||
+		   fdtiscompat(&info, "rockchip,rk3568-evb1-v10") != 1 ||
+		   fdtdev(&info, Fdtclassgmac) == nil ||
+		   fdtdev(&info, Fdtclassmmc) == nil ||
+		   info.uartbase != 0xfe660000 || info.uarttype != Fdtdwuart){
+			fprintf(stderr, "rk3568: board %u compat %s uart %#llx/%u\n",
+			        info.board, info.rootcompat,
+			        (unsigned long long)info.uartbase, info.uarttype);
+			return 1;
+		}
+		free(work);
+		free(original);
+		puts("FDT rk3568 board detection PASS");
 		return 0;
 	}
 	if(argc == 3){
@@ -136,6 +155,7 @@ main(int argc, char **argv)
 		   info.fbbase != 0x50000000 || info.fbsize != 0x800000 ||
 		   info.fbwidth != 720 || info.fbheight != 1600 ||
 		   info.fbstride != 2880 || info.fbbpp != 32 ||
+		   fdtisrockchip(&info) != 0 ||
 		   info.nmemory != 2 || info.memory[0].base != 0x20000000 ||
 		   info.memory[0].size != 0x10000000 ||
 		   info.memory[1].base != 0x40000000 ||

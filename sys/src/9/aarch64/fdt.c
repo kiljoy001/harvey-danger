@@ -328,6 +328,8 @@ fdtboardname(u32 board)
 		return "qemu-virt";
 	case Fdtboardrk3566:
 		return "rk3566";
+	case Fdtboardrk3568:
+		return "rk3568";
 	case Fdtboardrk3588:
 		return "rk3588";
 	case Fdtboardbengal:
@@ -426,6 +428,16 @@ fdtdev(Fdtinfo *info, u32 clas)
 	return nil;
 }
 
+int
+fdtisrockchip(Fdtinfo *info)
+{
+	if(info == nil)
+		return 0;
+	return info->board == Fdtboardrk3566 ||
+	       info->board == Fdtboardrk3568 ||
+	       info->board == Fdtboardrk3588;
+}
+
 static int
 compatstarts(Fdtinfo *info, char *want)
 {
@@ -455,6 +467,8 @@ boardid(Fdtinfo *out)
 		return Fdtboardqemuvirt;
 	if(compatstarts(out, "rockchip,rk3566"))
 		return Fdtboardrk3566;
+	if(compatstarts(out, "rockchip,rk3568"))
+		return Fdtboardrk3568;
 	if(compatstarts(out, "rockchip,rk3588"))
 		return Fdtboardrk3588;
 	if(compatstarts(out, "qcom,bengal") ||

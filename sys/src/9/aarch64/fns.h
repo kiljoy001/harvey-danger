@@ -16,7 +16,7 @@ u64 PADDR(void *);
 struct Fdtvirtio;
 int arm64virtioapatures(struct Fdtvirtio *, int);
 struct Fdtinfo;
-void rk3566lateinit(struct Fdtinfo *);
+void rk356xlateinit(struct Fdtinfo *);
 #ifdef ARM64_RK3566_NPU_PROBE
 void rk3566npuprobe(struct Fdtinfo *, u64);
 #endif

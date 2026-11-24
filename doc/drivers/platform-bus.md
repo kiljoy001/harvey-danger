@@ -67,7 +67,8 @@ framebuffer 0x5c000000 0x1000000 720 1600 2880 32
 ```
 
 `board` is the SoC family selected from the root `compatible`: `qemu-virt`,
-`rk3566`, `rk3588`, `bengal`, or `unknown`.  Ranges are base and size; a zero
+`rk3566`, `rk3568`, `rk3588`, `bengal`, or `unknown`.  Ranges are base and
+size; a zero
 base means the image did not provide one.  Drivers and init should select
 board-specific sequences from this file, not from the UART address or other
 accidentals.

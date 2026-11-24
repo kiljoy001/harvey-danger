@@ -216,32 +216,37 @@ arm64mmubuild(Fdtinfo *info)
 	}
 	/*
 	 * The remaining blocks are Rockchip SoC ranges that the device tree
-	 * does not classify.  They are not present on other machines.
+	 * does not classify.  They only exist on Rockchip parts, and the
+	 * fixed list is the one place that still names them; other boards
+	 * must not inherit these mappings from the single image.
 	 */
 	fixedstart = regions;
-	device[regions++] = (Fdtvirtio){0xfdd20000ULL, Pagesz};
-	device[regions++] = (Fdtvirtio){0xfdd90000ULL, Pagesz};
-	/* USB/DWC3 transport and the PHY/GRF/GPIO blocks it programs. */
-	device[regions++] = (Fdtvirtio){0xfd000000ULL, 0x100000};
-	device[regions++] = (Fdtvirtio){0xfcc00000ULL, 0x100000};
-	device[regions++] = (Fdtvirtio){0xfd800000ULL, 0x100000};
-	device[regions++] = (Fdtvirtio){0xfdca0000ULL, 0x8000};
-	device[regions++] = (Fdtvirtio){0xfdca8000ULL, 0x8000};
-	device[regions++] = (Fdtvirtio){0xfe8a0000ULL, 0x10000};
-	device[regions++] = (Fdtvirtio){0xfe8b0000ULL, 0x10000};
-	device[regions++] = (Fdtvirtio){0xfe830000ULL, 0x100};
-	device[regions++] = (Fdtvirtio){0xfdd60000ULL, 0x100};
-	device[regions++] = (Fdtvirtio){0xfdc20000ULL, 0x10000};
-	device[regions++] = (Fdtvirtio){0xfdc50000ULL, 0x1000};
-	device[regions++] = (Fdtvirtio){0xfdc80000ULL, 0x1000};
+	if(fdtisrockchip(info)){
+		device[regions++] = (Fdtvirtio){0xfdd20000ULL, Pagesz};
+		device[regions++] = (Fdtvirtio){0xfdd90000ULL, Pagesz};
+		/* USB/DWC3 transport and the PHY/GRF/GPIO blocks it programs. */
+		device[regions++] = (Fdtvirtio){0xfd000000ULL, 0x100000};
+		device[regions++] = (Fdtvirtio){0xfcc00000ULL, 0x100000};
+		device[regions++] = (Fdtvirtio){0xfd800000ULL, 0x100000};
+		device[regions++] = (Fdtvirtio){0xfdca0000ULL, 0x8000};
+		device[regions++] = (Fdtvirtio){0xfdca8000ULL, 0x8000};
+		device[regions++] = (Fdtvirtio){0xfe8a0000ULL, 0x10000};
+		device[regions++] = (Fdtvirtio){0xfe8b0000ULL, 0x10000};
+		device[regions++] = (Fdtvirtio){0xfe830000ULL, 0x100};
+		device[regions++] = (Fdtvirtio){0xfdd60000ULL, 0x100};
+		device[regions++] = (Fdtvirtio){0xfdc20000ULL, 0x10000};
+		device[regions++] = (Fdtvirtio){0xfdc50000ULL, 0x1000};
+		device[regions++] = (Fdtvirtio){0xfdc80000ULL, 0x1000};
+	}
 #ifdef ARM64_RK3566_NPU_PROBE
-	/* Temporary register probe; a user-space driver will own these later. */
-	/* SCMI shared memory, reserved no-map below the kernel's RAM window. */
-	device[regions++] = (Fdtvirtio){0x10f000ULL, Pagesz};
-	device[regions++] = (Fdtvirtio){0xfdd90000ULL, Pagesz};
-	device[regions++] = (Fdtvirtio){0xfdd20000ULL, Pagesz};
-	device[regions++] = (Fdtvirtio){0xfde40000ULL, Pagesz};
-	device[regions++] = (Fdtvirtio){0xfde4b000ULL, Pagesz};
+	/* Temporary RK3566 register probe; a user-space driver owns these later. */
+	if(info->board == Fdtboardrk3566){
+		device[regions++] = (Fdtvirtio){0x10f000ULL, Pagesz};
+		device[regions++] = (Fdtvirtio){0xfdd90000ULL, Pagesz};
+		device[regions++] = (Fdtvirtio){0xfdd20000ULL, Pagesz};
+		device[regions++] = (Fdtvirtio){0xfde40000ULL, Pagesz};
+		device[regions++] = (Fdtvirtio){0xfde4b000ULL, Pagesz};
+	}
 #endif
 	for(k = 0; k < regions; k++){
 		pa = device[k].base;

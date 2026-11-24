@@ -10,6 +10,7 @@ OUT = ROOT / "build/arm64"
 DTB = OUT / "qemu-virt.dtb"
 BOARD = OUT / "test-board.dtb"
 H6 = OUT / "h6-orangepi3.dtb"
+RK3568 = OUT / "rk3568-test.dtb"
 RK3588 = OUT / "rk3588-test.dtb"
 TEST = OUT / "test-fdt"
 
@@ -25,6 +26,9 @@ def main() -> None:
     RK3588.write_bytes(BOARD.read_bytes())
     subprocess.run(["fdtput", "-t", "s", str(RK3588), "/", "compatible",
                     "rockchip,rk3588-evb-v10"], check=True)
+    RK3568.write_bytes(BOARD.read_bytes())
+    subprocess.run(["fdtput", "-t", "s", str(RK3568), "/", "compatible",
+                    "rockchip,rk3568-evb1-v10"], check=True)
     for node, compat in (
         ("/mmc@fe310000", "rockchip,rk3588-dwcmshc"),
         ("/serial@fe660000", "rockchip,rk3588-uart"),
@@ -42,6 +46,7 @@ def main() -> None:
     subprocess.run([str(TEST), str(DTB)], check=True)
     subprocess.run([str(TEST), str(BOARD), "board"], check=True)
     subprocess.run([str(TEST), str(H6), "h6"], check=True)
+    subprocess.run([str(TEST), str(RK3568), "rk3568"], check=True)
     subprocess.run([str(TEST), str(RK3588), "rk3588"], check=True)
 
 

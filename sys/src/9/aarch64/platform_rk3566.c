@@ -23,13 +23,13 @@ extern void ethermediumlink(void);
 extern int rk3566pipepoweron(void);
 
 /*
- * Late RK3566 bring-up, after the generic boot probes.  Everything here
+ * Late RK356x bring-up, after the generic boot probes.  Everything here
  * is board policy: the watchdog U-Boot may have left running, the PCIe
  * PHY power domain, and the GMAC.  The generic path selects it by
- * Fdtboardrk3566 and never calls it on another SoC.
+ * Fdtboardrk3566/Fdtboardrk3568 and never calls it on another SoC.
  */
 void
-rk3566lateinit(Fdtinfo *info)
+rk356xlateinit(Fdtinfo *info)
 {
 	Fdtdev *wdt;
 	u64 wdtbase;
