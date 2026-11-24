@@ -12,9 +12,14 @@ drivers, rounded up.  The total is stamped into the DTB as
 /chosen/harvey,lkl-arena-size so the kernel reservation grows with the
 family table instead of being a board constant.
 
+The optional --bootarchive, --teeshm and --scm BASE:SIZE arguments stamp
+the matching /chosen properties, so the kernel takes those ranges from
+the image instead of the legacy board fallbacks.
+
 Usage:
     pack_boot.py --template harvey-boot.img --kernel harvey.img \
-        --output harvey-boot.img [--families bengal_ctl,bengal_usb]
+        --output harvey-boot.img [--families bengal_ctl,bengal_usb] \
+        [--bootarchive 0x50000000:0x100000] [--scm 0x10f000:0x1000]
 """
 
 import argparse
@@ -51,6 +56,28 @@ def arena_size(families_json: Path, names: list[str]) -> int:
     return (total + ROUND - 1) // ROUND * ROUND
 
 
+def parse_range(text: str) -> tuple[int, int]:
+    """Accept BASE:SIZE with C-style integer prefixes."""
+    try:
+        base_text, size_text = text.split(":", 1)
+        base = int(base_text, 0)
+        size = int(size_text, 0)
+    except ValueError:
+        sys.exit(f"pack_boot: expected BASE:SIZE, got {text!r}")
+    if base < 0 or size <= 0 or base + size > 1 << 64:
+        sys.exit(f"pack_boot: bad range {text!r}")
+    return base, size
+
+
+def stamp_range(dtbpath: str, prop: str, base: int, size: int) -> None:
+    """Stamp a two-u64 property: base then size, big-endian cells."""
+    subprocess.run([
+        "fdtput", "-t", "u", dtbpath, "/chosen", prop,
+        str((base >> 32) & 0xFFFFFFFF), str(base & 0xFFFFFFFF),
+        str((size >> 32) & 0xFFFFFFFF), str(size & 0xFFFFFFFF),
+    ], check=True)
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--template", type=Path, required=True,
@@ -61,6 +88,12 @@ def main() -> None:
                     help="comma-separated LKL families the image runs")
     ap.add_argument("--families-json", type=Path,
                     default=ROOT / "util/arm64/lkl-families.json")
+    ap.add_argument("--bootarchive",
+                    help="BASE:SIZE stamped as /chosen/harvey,bootarchive")
+    ap.add_argument("--teeshm",
+                    help="BASE:SIZE stamped as /chosen/harvey,teeshm")
+    ap.add_argument("--scm",
+                    help="BASE:SIZE stamped as /chosen/harvey,scm")
     args = ap.parse_args()
 
     arena = arena_size(args.families_json,
@@ -79,6 +112,14 @@ def main() -> None:
     hi, lo = (arena >> 32) & 0xFFFFFFFF, arena & 0xFFFFFFFF
     subprocess.run(["fdtput", "-t", "u", dtbpath, "/chosen",
                     "harvey,lkl-arena-size", str(hi), str(lo)], check=True)
+    for prop, spec in (
+        ("harvey,bootarchive", args.bootarchive),
+        ("harvey,teeshm", args.teeshm),
+        ("harvey,scm", args.scm),
+    ):
+        if spec:
+            base, size = parse_range(spec)
+            stamp_range(dtbpath, prop, base, size)
     dtb = Path(dtbpath).read_bytes()
     Path(dtbpath).unlink()
     ds = len(dtb)

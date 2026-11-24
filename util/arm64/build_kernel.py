@@ -176,7 +176,7 @@ def main() -> None:
     sources = [ARCH / name for name in
                ("l.S", "user.S", "context.S", "return.S", "smp.S", "fpu.S", "main.c", "fdt.c", "timer.c",
                 "phys.c", "mmu.c", "user.c", "context.c", "arch.c",
-                "config.c", "qmalloc.c", "platform.c", "procarch.c", "syscall.c", "smp.c",
+                "config.c", "qmalloc.c", "platform.c", "platform_rk3566.c", "procarch.c", "syscall.c", "smp.c",
                 "boot.c", "devpnp.c", "vop2.c", "dw_hdmi.c", "devvop.c",
                 "devxhci.c", "rkiommu.c", "etheraarch64.c", "ethergmac.c",
                 "ethervmmio.c")]

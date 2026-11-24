@@ -55,12 +55,16 @@ true when written: check the code and `git log` before relying on them.
   only as documented fallbacks for DTBs that lack the properties.
   `boot.c` selects the RK3566 WDT/PCIe quirk by `board`, taking the WDT
   base from `#P` discovery.
-- Still board-specific: the `ARM64_RK3566_NPU_PROBE` SCMI/PMU/CRU block.
-  It is selected by board now; move it to `platform_rk3566.c` next.
-- Verified on QEMU virt: the kernel builds with clang-23 and boots; a
-  patched DTB carrying `simple-framebuffer` and the three `/chosen`
-  properties parses them and prints `fb:`, `bootarchive:`, `teeshm:`
-  in the early banner.
+- The RK3566 NPU/SCMI quirk now lives in `platform_rk3566.c`, selected
+  by `board`; `main.c` calls `rk3566npuprobe(&info, ...)` and nothing else
+  in the generic path knows the SCMI/PMU/CRU addresses.
+- `util/arm64/pack_boot.py` can stamp those ranges with
+  `--bootarchive BASE:SIZE`, `--teeshm BASE:SIZE` and `--scm BASE:SIZE`,
+  so an image does not rely on the fallbacks.
+- Verified on QEMU virt: the kernel builds with clang-23 (with and
+  without `ARM64_RK3566_NPU_PROBE`) and boots; a patched DTB carrying
+  `simple-framebuffer` and the three `/chosen` properties parses them and
+  prints `fb:`, `bootarchive:`, `teeshm:` in the early banner.
 - Next: the NPU quirk into a board file, then a second SoC (rk3588), and
   drivers consuming `Fdtdev` base/size/irq instead of constants.
 
