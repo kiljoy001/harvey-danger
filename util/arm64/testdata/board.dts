@@ -11,6 +11,18 @@
 
 	chosen {
 		stdout-path = "serial2:1500000n8";
+		harvey,bootarchive = <0 0x49000000 0 0x1000>;
+		harvey,teeshm = <0 0x52000000 0 0x200000>;
+		harvey,scm = <0 0x53000000 0 0x1000>;
+
+		framebuffer@50000000 {
+			compatible = "simple-framebuffer";
+			reg = <0 0x50000000 0 0x800000>;
+			width = <720>;
+			height = <1600>;
+			stride = <2880>;
+			format = "a8b8g8r8";
+		};
 	};
 
 	memory@40000000 {

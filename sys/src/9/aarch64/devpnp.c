@@ -39,6 +39,7 @@ enum {
 	Qteeversion,
 	Qteeshbase,
 	Qteeshsize,
+	Qplatform,
 };
 
 /* 6 type bits: the DMA control files are past the old 4-bit field. */
@@ -48,6 +49,7 @@ enum {
 
 static Fdtdev pnpdev[Maxfdtdev];
 static u32 npnpdev;
+static Fdtinfo *pnpinfo;
 
 /*
  * One owner per device.  A driver claims its node before touching the
@@ -395,6 +397,7 @@ arm64pnpinit(Fdtinfo *info)
 	u32 i;
 
 	consolebase = info->uartbase;
+	pnpinfo = info;
 	npnpdev = 0;
 	for(i = 0; i < info->ndev && npnpdev < Maxfdtdev; i++){
 		/*
@@ -471,7 +474,13 @@ pnpgen(Chan *c, char *name, Dirtab *tab, int ntab, int s, Dir *dp)
 			devdir(c, q, "tee", 0, eve, DMDIR|0555, dp);
 			return 1;
 		}
-		if(s < 0 || s >= (int)npnpdev + 1 + (arm64dmasize != 0))
+		if(s == (int)npnpdev + (arm64dmasize != 0) + 1){
+			q.path = QPATH(npnpdev, Qplatform);
+			q.type = QTFILE;
+			devdir(c, q, "platform", 0, eve, 0444, dp);
+			return 1;
+		}
+		if(s < 0 || s >= (int)npnpdev + 2 + (arm64dmasize != 0))
 			return -1;
 		d = &pnpdev[s];
 		q.path = QPATH(s, Qdevdir);
@@ -937,6 +946,31 @@ pnpread(Chan *c, void *a, i32 n, i64 off)
 		memmove(a, (u8*)&teeres + off, n);
 		unlock(&teelock);
 		return n;
+	}
+	if(TYPE(c) == Qplatform){
+		char pbuf[512];
+		Fdtinfo *pi;
+
+		pi = pnpinfo;
+		if(pi == nil)
+			return 0;
+		snprint(pbuf, sizeof pbuf,
+		        "board %s\n"
+		        "compatible %s\n"
+		        "ram 0x%llx 0x%llx\n"
+		        "bootarchive 0x%llx 0x%llx\n"
+		        "teeshm 0x%llx 0x%llx\n"
+		        "scm 0x%llx 0x%llx\n"
+		        "framebuffer 0x%llx 0x%llx %u %u %u %u\n",
+		        fdtboardname(pi->board),
+		        pi->rootcompat,
+		        pi->rambase, pi->ramsize,
+		        pi->bootarchbase, pi->bootarchsize,
+		        pi->teeshmbase, pi->teeshmsize,
+		        pi->scmbase, pi->scmsize,
+		        pi->fbbase, pi->fbsize,
+		        pi->fbwidth, pi->fbheight, pi->fbstride, pi->fbbpp);
+		return readstr(off, a, n, pbuf);
 	}
 	dev = DEV(c);	if(dev < 0 || dev >= (int)npnpdev)
 		error(Ebadarg);

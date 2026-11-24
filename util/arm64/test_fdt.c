@@ -97,8 +97,37 @@ main(int argc, char **argv)
 		puts("FDT Orange Pi 3 H6 discovery PASS");
 		return 0;
 	}
+	if(argc == 3 && strcmp(argv[2], "rk3588") == 0){
+		/*
+		 * Root compatible is a real board string, not the bare SoC
+		 * token.  Board detection must match the prefix; fdtiscompat
+		 * stays exact.
+		 */
+		if(info.board != Fdtboardrk3588 ||
+		   fdtiscompat(&info, "rockchip,rk3588-evb-v10") != 1 ||
+		   fdtiscompat(&info, "rockchip,rk3588") != 0 ||
+		   fdtdev(&info, Fdtclassmmc) == nil ||
+		   fdtdev(&info, Fdtclassi2c) == nil ||
+		   fdtdev(&info, Fdtclassnone) != nil){
+			fprintf(stderr, "rk3588: board %u compat %s\n",
+			        info.board, info.rootcompat);
+			return 1;
+		}
+		free(work);
+		free(original);
+		puts("FDT rk3588 prefix board detection PASS");
+		return 0;
+	}
 	if(argc == 3){
 		if(strcmp(argv[2], "board") != 0 ||
+		   info.board != Fdtboardunknown ||
+		   strcmp(info.rootcompat, "example,arm64-board") != 0 ||
+		   info.bootarchbase != 0x49000000 || info.bootarchsize != 0x1000 ||
+		   info.teeshmbase != 0x52000000 || info.teeshmsize != 0x200000 ||
+		   info.scmbase != 0x53000000 || info.scmsize != 0x1000 ||
+		   info.fbbase != 0x50000000 || info.fbsize != 0x800000 ||
+		   info.fbwidth != 720 || info.fbheight != 1600 ||
+		   info.fbstride != 2880 || info.fbbpp != 32 ||
 		   info.nmemory != 2 || info.memory[0].base != 0x20000000 ||
 		   info.memory[0].size != 0x10000000 ||
 		   info.memory[1].base != 0x40000000 ||
@@ -157,6 +186,8 @@ main(int argc, char **argv)
 		puts("FDT alternate board discovery PASS");
 		return 0;
 	}else if(info.rambase != 0x40000000 || info.ramsize != 0x20000000 ||
+	         info.board != Fdtboardqemuvirt ||
+	         fdtiscompat(&info, "linux,dummy-virt") != 1 ||
 	         info.uartbase != 0x09000000 || info.uarttype != Fdtpl011 ||
 	         info.gicdist != 0x08000000 || info.giccpu != 0x08010000 ||
 	         info.gicversion != 2 || info.timerirq != 27 ||

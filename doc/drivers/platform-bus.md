@@ -48,6 +48,30 @@ The owner string is chosen by the service, not the kernel.  Ownership is
 kernel state, so it survives process restarts and is visible to every
 process through `owner`.
 
+## Platform identity
+
+```
+#P/platform             board and early ranges       (0444)
+```
+
+A single text file with one `<key> <value...>` line:
+
+```
+board rk3566
+compatible rockchip,rk3566-roc-pc
+ram 0x40000000 0x80000000
+bootarchive 0x50000000 0x100000
+teeshm 0x9200000 0x200000
+scm 0x10f000 0x1000
+framebuffer 0x5c000000 0x1000000 720 1600 2880 32
+```
+
+`board` is the SoC family selected from the root `compatible`: `qemu-virt`,
+`rk3566`, `rk3588`, `bengal`, or `unknown`.  Ranges are base and size; a zero
+base means the image did not provide one.  Drivers and init should select
+board-specific sequences from this file, not from the UART address or other
+accidentals.
+
 ## DMA
 
 ```

@@ -58,6 +58,9 @@ true when written: check the code and `git log` before relying on them.
 - The RK3566 NPU/SCMI quirk now lives in `platform_rk3566.c`, selected
   by `board`; `main.c` calls `rk3566npuprobe(&info, ...)` and nothing else
   in the generic path knows the SCMI/PMU/CRU addresses.
+- `#P/platform` exposes the same identity to user space: `board`,
+  `compatible`, `ram`, `bootarchive`, `teeshm`, `scm` and `framebuffer`
+  as `key value...` lines (see `doc/drivers/platform-bus.md`).
 - `util/arm64/pack_boot.py` can stamp those ranges with
   `--bootarchive BASE:SIZE`, `--teeshm BASE:SIZE` and `--scm BASE:SIZE`,
   so an image does not rely on the fallbacks.
