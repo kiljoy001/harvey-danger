@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build an SD image with mk-sdimg.py and verify its FAT and DTB contents."""
+"""Build a multi-board SD image with mk-sdimg.py and verify its contents."""
 
 from pathlib import Path
 import shutil
@@ -14,16 +14,25 @@ PART_OFFSET = 2048 * 512
 DTS = """
 /dts-v1/;
 
-/ {
+/ {{
 	#address-cells = <2>;
 	#size-cells = <2>;
-	compatible = "example,sdimg-test";
+	compatible = "{compat}";
 
-	chosen {
+	chosen {{
 		stdout-path = "/serial@fe660000";
-	};
-};
+	}};
+}};
 """
+
+
+def make_dtb(tmp: Path, name: str, compat: str) -> Path:
+    dts = tmp / f"{name}.dts"
+    dts.write_text(DTS.format(compat=compat))
+    dtb = tmp / f"{name}.dtb"
+    subprocess.run(["dtc", "-q", "-I", "dts", "-O", "dtb",
+                    "-o", str(dtb), str(dts)], check=True)
+    return dtb
 
 
 def props(path: Path, names: tuple[str, ...]) -> dict[str, list[str]]:
@@ -36,7 +45,8 @@ def props(path: Path, names: tuple[str, ...]) -> dict[str, list[str]]:
 
 
 def main() -> None:
-    for tool in ("sfdisk", "mkfs.vfat", "mcopy", "fdtget", "fdtput", "dtc"):
+    for tool in ("sfdisk", "mkfs.vfat", "mcopy", "mmd", "mtype",
+                 "fdtget", "fdtput", "dtc"):
         if shutil.which(tool) is None:
             print(f"SD image test: skip, missing {tool}")
             return
@@ -48,38 +58,47 @@ def main() -> None:
         sdk = tmp / "sdk.tar"
         sdk.write_bytes(b"S" * 8192)
 
-        dts = tmp / "board.dts"
-        dts.write_text(DTS)
-        dtb = tmp / "board.dtb"
-        subprocess.run(["dtc", "-q", "-I", "dts", "-O", "dtb",
-                        "-o", str(dtb), str(dts)], check=True)
-        original = dtb.read_bytes()
+        one = make_dtb(tmp, "one", "example,sdimg-one")
+        two = make_dtb(tmp, "two", "example,sdimg-two")
+        original = {p: p.read_bytes() for p in (one, two)}
 
         out = tmp / "sd.img"
         parts = tmp / "parts"
         subprocess.run([
             sys.executable, str(MK),
-            "--image", str(kernel), "--dtb", str(dtb), "--sdk", str(sdk),
-            "--out", str(out), "--ram", "0x40000000:0x80000000",
-            "--teeshm", "0x9200000:0x200000", "--size-mb", "64",
-            "--parts-dir", str(parts),
+            "--image", str(kernel), "--sdk", str(sdk), "--out", str(out),
+            "--dtb", f"one={one}", "--dtb", f"two={two}",
+            "--default-dtb", "one",
+            "--ram", "0x40000000:0x80000000",
+            "--teeshm", "0x9200000:0x200000",
+            "--size-mb", "64", "--parts-dir", str(parts),
         ], check=True, stdout=subprocess.DEVNULL)
 
-        if dtb.read_bytes() != original:
-            raise SystemExit("mk-sdimg modified the input DTB")
+        for path, data in original.items():
+            if path.read_bytes() != data:
+                raise SystemExit(f"mk-sdimg modified the input DTB {path}")
 
-        extracted = tmp / "extract"
-        extracted.mkdir()
-        for name in ("Image", "board.dtb", "sdk.tar"):
+        extract = tmp / "extract"
+        extract.mkdir()
+        names = ["Image", "sdk.tar", "board.dtb",
+                 "dtbs/one.dtb", "dtbs/two.dtb", "boot.cmd"]
+        if shutil.which("mkimage") is not None:
+            names.append("boot.scr")
+        for name in names:
+            dest = extract / name
+            dest.parent.mkdir(parents=True, exist_ok=True)
             subprocess.run(["mcopy", "-i", f"{out}@@{PART_OFFSET}",
-                            f"::{name}", str(extracted / name)], check=True)
+                            f"::{name}", str(dest)], check=True)
 
-        if (extracted / "Image").read_bytes() != kernel.read_bytes():
+        if (extract / "Image").read_bytes() != kernel.read_bytes():
             raise SystemExit("Image content mismatch")
-        if (extracted / "sdk.tar").read_bytes() != sdk.read_bytes():
+        if (extract / "sdk.tar").read_bytes() != sdk.read_bytes():
             raise SystemExit("sdk.tar content mismatch")
+        if (extract / "board.dtb").read_bytes() != \
+                (extract / "dtbs" / "one.dtb").read_bytes():
+            raise SystemExit("board.dtb is not the default DTB")
 
-        got = props(extracted / "board.dtb",
+        got = props(extract / "board.dtb",
                     ("harvey,bootarchive", "harvey,teeshm", "harvey,ram"))
         want = {
             "harvey,bootarchive": ["0", "50000000", "0", "2000"],
@@ -89,11 +108,16 @@ def main() -> None:
         if got != want:
             raise SystemExit(f"stamped properties mismatch: {got}")
 
+        script = (extract / "boot.cmd").read_text()
+        for needle in ("dtbs/one.dtb", "0x50000000", "sdk.tar", "booti"):
+            if needle not in script:
+                raise SystemExit(f"boot.cmd missing {needle!r}: {script}")
+
         part = parts / "sd.part.00"
         if not part.is_file() or part.stat().st_size != out.stat().st_size:
             raise SystemExit("parts split mismatch")
 
-        print("SD image build, FAT contents and stamped /chosen PASS")
+        print("SD multi-board image, FAT contents and stamped /chosen PASS")
 
 
 if __name__ == "__main__":

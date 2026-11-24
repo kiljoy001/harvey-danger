@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
-"""Build a bootable SD-card image for the Orange Pi 3B.
+"""Build a bootable SD-card image for one or more ARM64 boards.
 
-The image holds an MBR, one FAT32 partition and the three files U-Boot
-needs: the kernel Image, the board DTB and the SDK boot archive.  Before
-the DTB is written, /chosen/harvey,bootarchive is stamped with the SDK
-load address and size, and --teeshm/--scm/--ram can stamp the other
+The image holds an MBR and one FAT32 partition with the kernel Image, the
+SDK boot archive, and a board DTB.  Repeat --dtb to put several boards in
+one image under dtbs/; board.dtb is an alias for the default one and a
+boot.cmd/boot.scr selects it with the harvey_dtb variable.
+
+Before each DTB is written, /chosen/harvey,bootarchive is stamped with the
+SDK load address and size, and --teeshm/--scm/--ram can stamp the other
 ranges, so the kernel reserves them without board fallbacks.
 
 Write it to the card from U-Boot with `mmc write` (split into 80 MiB
@@ -12,7 +15,8 @@ chunks for TFTP), or with dd from a workstation:
 
     python3 util/arm64/mk-sdimg.py \
         --image build/arm64-kernel/harvey.img \
-        --dtb /home/scott/tftp/orangepi-3b-v1.1.dtb \
+        --dtb orangepi-3b=/home/scott/tftp/orangepi-3b-v1.1.dtb \
+        --dtb rk3588-evb=/path/rk3588-evb.dtb \
         --sdk /tmp/opencode/sdk-board.boot \
         --out /tmp/opencode/sd.img
 
@@ -22,6 +26,7 @@ from pathlib import Path
 import argparse
 import atexit
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -59,10 +64,37 @@ def stamp_range(path: Path, prop: str, base: int, size: int) -> None:
     ], check=True)
 
 
+def dtb_specs(specs: list[str]) -> list[tuple[str, Path]]:
+    """Parse repeated [NAME=]PATH arguments into unique (name, path)."""
+    out = []
+    seen = set()
+    for spec in specs:
+        if "=" in spec:
+            name, path = spec.split("=", 1)
+        else:
+            path = spec
+            name = Path(path).stem
+        name = re.sub(r"[^A-Za-z0-9._-]", "_", name).strip("._-")
+        if not name:
+            sys.exit(f"bad DTB name in {spec!r}")
+        if name in seen:
+            sys.exit(f"duplicate DTB name {name}")
+        seen.add(name)
+        out.append((name, Path(path)))
+    return out
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--image", default="build/arm64-kernel/harvey.img")
-    ap.add_argument("--dtb", default="/home/scott/tftp/orangepi-3b-v1.1.dtb")
+    ap.add_argument("--dtb", action="append", metavar="[NAME=]PATH",
+                    help="board DTB; repeat for a multi-board image "
+                         "(default: /home/scott/tftp/orangepi-3b-v1.1.dtb)")
+    ap.add_argument("--default-dtb", default="",
+                    help="DTB written as board.dtb and used by boot.cmd "
+                         "(default: first --dtb)")
+    ap.add_argument("--boot-script", action="store_true",
+                    help="write boot.cmd/boot.scr even for one DTB")
     ap.add_argument("--sdk", default="/tmp/opencode/sdk-board.boot")
     ap.add_argument("--out", default="/tmp/opencode/sd.img")
     ap.add_argument("--uboot", default="",
@@ -85,38 +117,51 @@ def main() -> None:
                     help="do not add the harvey,* /chosen properties")
     args = ap.parse_args()
 
-    for name, path in (("image", args.image), ("dtb", args.dtb),
-                       ("sdk", args.sdk)):
+    dtbs = dtb_specs(args.dtb or ["/home/scott/tftp/orangepi-3b-v1.1.dtb"])
+    for name, path in (("image", args.image), ("sdk", args.sdk)):
         if not Path(path).is_file():
             sys.exit(f"missing {name}: {path}")
-    for tool in ("sfdisk", "mkfs.vfat", "mcopy", "fdtget", "fdtput"):
+    for name, path in dtbs:
+        if not path.is_file():
+            sys.exit(f"missing dtb {name}: {path}")
+    for tool in ("sfdisk", "mkfs.vfat", "mcopy", "mtype", "mmd",
+                 "fdtget", "fdtput"):
         if shutil.which(tool) is None:
             sys.exit(f"missing {tool}")
 
     image = Path(args.image)
-    dtb = Path(args.dtb)
     sdk = Path(args.sdk)
     sdk_load = int(args.sdk_load, 0)
 
-    # Stamp the ranges into a copy; never rewrite the caller's DTB.
-    with tempfile.NamedTemporaryFile(suffix=".dtb", delete=False) as tf:
-        dtbwork = Path(tf.name)
-    shutil.copyfile(dtb, dtbwork)
-    atexit.register(dtbwork.unlink, missing_ok=True)
-    if not args.no_stamp:
-        stamp_range(dtbwork, "harvey,bootarchive", sdk_load,
-                    sdk.stat().st_size)
-        if args.teeshm:
-            base, size = parse_range(args.teeshm)
-            stamp_range(dtbwork, "harvey,teeshm", base, size)
-        if args.scm:
-            base, size = parse_range(args.scm)
-            stamp_range(dtbwork, "harvey,scm", base, size)
-        if args.ram:
-            base, size = parse_range(args.ram)
-            stamp_range(dtbwork, "harvey,ram", base, size)
+    names = [name for name, _ in dtbs]
+    default_name = args.default_dtb or names[0]
+    if default_name not in names:
+        sys.exit(f"--default-dtb {default_name} is not one of: " +
+                 ", ".join(names))
 
-    need = image.stat().st_size + dtbwork.stat().st_size + sdk.stat().st_size
+    # Stamp the ranges into copies; never rewrite the caller's DTBs.
+    stamped = []
+    for name, dtb in dtbs:
+        with tempfile.NamedTemporaryFile(suffix=".dtb", delete=False) as tf:
+            work = Path(tf.name)
+        shutil.copyfile(dtb, work)
+        atexit.register(work.unlink, missing_ok=True)
+        if not args.no_stamp:
+            stamp_range(work, "harvey,bootarchive", sdk_load,
+                        sdk.stat().st_size)
+            if args.teeshm:
+                base, size = parse_range(args.teeshm)
+                stamp_range(work, "harvey,teeshm", base, size)
+            if args.scm:
+                base, size = parse_range(args.scm)
+                stamp_range(work, "harvey,scm", base, size)
+            if args.ram:
+                base, size = parse_range(args.ram)
+                stamp_range(work, "harvey,ram", base, size)
+        stamped.append((name, work))
+
+    need = (image.stat().st_size + sdk.stat().st_size +
+            sum(work.stat().st_size for _, work in stamped))
     part_start = UBOOT_PART_START if args.uboot else PART_START
     size = (args.size_mb * 1024 * 1024) if args.size_mb else \
         need + need // 10
@@ -156,20 +201,66 @@ def main() -> None:
                    stdout=subprocess.DEVNULL)
 
     offset = part_start * SECTOR
-    for path, name in ((image, "Image"), (dtbwork, "board.dtb"),
-                       (sdk, "sdk.tar")):
-        subprocess.run(["mcopy", "-i", f"{out}@@{offset}", str(path),
-                        f"::{name}"], check=True)
+    part_image = f"{out}@@{offset}"
+    subprocess.run(["mmd", "-i", part_image, "::dtbs"], check=True)
+
+    subprocess.run(["mcopy", "-i", part_image, str(image), "::Image"],
+                   check=True)
+    subprocess.run(["mcopy", "-i", part_image, str(sdk), "::sdk.tar"],
+                   check=True)
+    default_work = dict(stamped)[default_name]
+    subprocess.run(["mcopy", "-i", part_image, str(default_work),
+                    "::board.dtb"], check=True)
+    for name, work in stamped:
+        subprocess.run(["mcopy", "-i", part_image, str(work),
+                        f"::dtbs/{name}.dtb"], check=True)
+
+    boot_script = args.boot_script or len(stamped) > 1
+    boot_scr = None
+    if boot_script:
+        script = (
+            "# Generated by mk-sdimg.py\n"
+            "# Pick a board with: setenv harvey_dtb dtbs/<name>.dtb\n"
+            'if test -z "${harvey_dtb}"; then\n'
+            f"\tsetenv harvey_dtb dtbs/{default_name}.dtb\n"
+            "fi\n"
+            "fatload mmc 1:1 0x40080000 Image\n"
+            "fatload mmc 1:1 0x48000000 ${harvey_dtb}\n"
+            f"fatload mmc 1:1 0x{sdk_load:x} sdk.tar\n"
+            "booti 0x40080000 - 0x48000000\n"
+        )
+        with tempfile.NamedTemporaryFile("w", suffix=".cmd",
+                                         delete=False) as tf:
+            tf.write(script)
+            bootcmd = Path(tf.name)
+        atexit.register(bootcmd.unlink, missing_ok=True)
+        subprocess.run(["mcopy", "-i", part_image, str(bootcmd),
+                        "::boot.cmd"], check=True)
+        if shutil.which("mkimage") is not None:
+            boot_scr = Path(str(bootcmd) + ".scr")
+            subprocess.run(["mkimage", "-A", "arm64", "-T", "script",
+                            "-C", "none", "-n", "harvey", "-d",
+                            str(bootcmd), str(boot_scr)], check=True)
+            atexit.register(boot_scr.unlink, missing_ok=True)
+            subprocess.run(["mcopy", "-i", part_image, str(boot_scr),
+                            "::boot.scr"], check=True)
 
     # Read each file back so a silent failure cannot pass.
-    for name in ("Image", "board.dtb", "sdk.tar"):
-        if subprocess.run(["mtype", "-i", f"{out}@@{offset}", f"::{name}"],
+    verify = ["Image", "board.dtb", "sdk.tar"]
+    verify += [f"dtbs/{name}.dtb" for name in names]
+    if boot_script:
+        verify.append("boot.cmd")
+    if boot_scr is not None:
+        verify.append("boot.scr")
+    for name in verify:
+        if subprocess.run(["mtype", "-i", part_image, f"::{name}"],
                           stdout=subprocess.DEVNULL).returncode != 0:
             sys.exit(f"{name} missing from the image")
 
     blocks = size // SECTOR
     print(f"sd image: {out} ({size} bytes, {blocks} blocks)")
     print(f"  partition 1 at sector {part_start}, {part_sectors} sectors")
+    print(f"  boards: {', '.join(names)} (default {default_name})")
     print()
     print("U-Boot write (after loading the parts at 0x50000000 + i*0x05000000):")
     print(f"  mmc dev 1")
@@ -177,14 +268,27 @@ def main() -> None:
     print()
     print("U-Boot boot:")
     print("  fatload mmc 1:1 0x40080000 Image")
-    print("  fatload mmc 1:1 0x48000000 board.dtb")
+    print(f"  fatload mmc 1:1 0x48000000 dtbs/{default_name}.dtb")
     print(f"  fatload mmc 1:1 0x{sdk_load:x} sdk.tar")
     print("  booti 0x40080000 - 0x48000000")
     print()
     print("  setenv bootcmd 'fatload mmc 1:1 0x40080000 Image; "
-          "fatload mmc 1:1 0x48000000 board.dtb; "
+          f"fatload mmc 1:1 0x48000000 dtbs/{default_name}.dtb; "
           f"fatload mmc 1:1 0x{sdk_load:x} sdk.tar; "
           "booti 0x40080000 - 0x48000000'; saveenv")
+    if len(names) > 1:
+        print()
+        print("Boards in this image (set harvey_dtb before booting):")
+        for name in names:
+            print(f"  setenv harvey_dtb dtbs/{name}.dtb")
+        if boot_scr is not None:
+            print()
+            print("  boot.scr is in the image and loads sdk.tar for you.")
+        else:
+            print()
+            print("  boot.cmd is in the image; install it with:")
+            print("  mkimage -A arm64 -T script -C none -n harvey "
+                  "-d boot.cmd boot.scr")
 
     if args.parts_dir:
         pdir = Path(args.parts_dir)

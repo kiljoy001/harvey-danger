@@ -65,11 +65,14 @@ true when written: check the code and `git log` before relying on them.
 - `util/arm64/pack_boot.py` can stamp those ranges with
   `--bootarchive BASE:SIZE`, `--teeshm BASE:SIZE`, `--scm BASE:SIZE` and
   `--ram BASE:SIZE`, so an image does not rely on the fallbacks.
-- `mk-sdimg.py` stamps `harvey,bootarchive` from `--sdk-load` and the
-  SDK size, accepts `--teeshm/--scm/--ram`, and writes a stamped copy
-  without modifying the input DTB.  `harvey,ram` is the kernel's fallback
-  when the firmware DTB has no `/memory`; the real Orange Pi v1.1 DTB is
-  such a file, and the host test covers the fallback.
+- `mk-sdimg.py` takes repeated `--dtb [NAME=]PATH`, writes `dtbs/`,
+  aliases the default as `board.dtb`, and emits `boot.cmd` (plus
+  `boot.scr` when `mkimage` is installed) for multi-board images.  It
+  stamps `harvey,bootarchive` from `--sdk-load` and the SDK size,
+  accepts `--teeshm/--scm/--ram`, and never modifies the input DTBs.
+  `harvey,ram` is the kernel's fallback when the firmware DTB has no
+  `/memory`; the real Orange Pi v1.1 DTB is such a file, and the host
+  test covers the fallback.
 - Verified on QEMU virt: the kernel builds with clang-23 (with and
   without `ARM64_RK3566_NPU_PROBE` and `ARM64_NO_GMAC`) and boots; a
   patched DTB carrying `simple-framebuffer` and the three `/chosen`
@@ -127,9 +130,9 @@ true when written: check the code and `git log` before relying on them.
   DTB may lack `/memory`; add one with `fdtput` before inspecting.  The
   Orange Pi 3B v1.1 DTB (with a synthetic 2 GiB `/memory`) reports
   `board rk3566` and 46 classified devices.
-- `python3 util/arm64/test_sdimg.py` builds a small SD image with
-  `mk-sdimg.py`, extracts the FAT contents, and checks the stamped
-  `/chosen` ranges and the input DTB is untouched.
+- `python3 util/arm64/test_sdimg.py` builds a two-board SD image,
+  extracts the FAT contents, and checks `dtbs/`, `board.dtb`, `boot.cmd`,
+  the stamped `/chosen` ranges and that the input DTBs are untouched.
 - A Plan 9 wait message is `"<prog> <pid>: <status>"`: match the status
   with `strstr`, not `strcmp`.
 
