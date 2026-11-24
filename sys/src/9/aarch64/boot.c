@@ -76,9 +76,6 @@ extern void arm64pnpinit(Fdtinfo *);
 extern u64 arm64dmabase, arm64dmasize;
 extern u64 arm64teeshmbase, arm64teeshmsize;
 extern Dev etherdevtab, ipdevtab;
-extern void ethergmacinit(void);
-extern void ethermediumlink(void);
-extern int rk3566pipepoweron(void);
 extern Dev rootdevtab;
 extern Dev virtio9pdevtab;
 extern Dev ringdevtab;
@@ -313,24 +310,8 @@ initprocess(void *arg)
 	if(bootinfo != nil &&
 	   (bootinfo->board == Fdtboardrk3566 ||
 	    (bootinfo->board == Fdtboardunknown &&
-	     useruartbase == 0xfe660000ULL))){
-		Fdtdev *wdt = fdtdev(bootinfo, Fdtclasswdt);
-		u64 wdtbase = wdt != nil && wdt->base != 0 ?
-		              wdt->base : 0xfe600000ULL;
-
-		*(volatile u32 *)wdtbase = 0;		/* WDT_CR */
-		*(volatile u32 *)(wdtbase + 0xc) = 0x76;	/* WDT_CRR */
-		if(rk3566pipepoweron() < 0)
-			arm64uartputs("HARVEY-ARM64 PD_PIPE FAIL\n");
-		else
-			arm64uartputs("HARVEY-ARM64 PD_PIPE PASS\n");
-#ifndef ARM64_NO_GMAC
-		ethergmacinit();
-		ethermediumlink();
-		etherdevtab.reset();
-		ipdevtab.reset();
-#endif
-	}
+	     useruartbase == 0xfe660000ULL)))
+		rk3566lateinit(bootinfo);
 	kproc("alarm", alarmkproc, nil);
 	arm64uartputs("HARVEY-ARM64 FILE-EXEC START\n");
 	arm64runprocessargs(ARM64EXECSTUBENTRY, USTKTOP-512,

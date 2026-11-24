@@ -17,6 +17,41 @@
 extern void arm64uartputs(char *);
 #define uartputs arm64uartputs
 
+extern Dev etherdevtab, ipdevtab;
+extern void ethergmacinit(void);
+extern void ethermediumlink(void);
+extern int rk3566pipepoweron(void);
+
+/*
+ * Late RK3566 bring-up, after the generic boot probes.  Everything here
+ * is board policy: the watchdog U-Boot may have left running, the PCIe
+ * PHY power domain, and the GMAC.  The generic path selects it by
+ * Fdtboardrk3566 and never calls it on another SoC.
+ */
+void
+rk3566lateinit(Fdtinfo *info)
+{
+	Fdtdev *wdt;
+	u64 wdtbase;
+
+	if(info == nil)
+		return;
+	wdt = fdtdev(info, Fdtclasswdt);
+	wdtbase = wdt != nil && wdt->base != 0 ? wdt->base : 0xfe600000ULL;
+	*(volatile u32 *)wdtbase = 0;		/* WDT_CR */
+	*(volatile u32 *)(wdtbase + 0xc) = 0x76;	/* WDT_CRR */
+	if(rk3566pipepoweron() < 0)
+		uartputs("HARVEY-ARM64 PD_PIPE FAIL\n");
+	else
+		uartputs("HARVEY-ARM64 PD_PIPE PASS\n");
+#ifndef ARM64_NO_GMAC
+	ethergmacinit();
+	ethermediumlink();
+	etherdevtab.reset();
+	ipdevtab.reset();
+#endif
+}
+
 #ifdef ARM64_RK3566_NPU_PROBE
 
 /* SCMI shared-memory page; /chosen/harvey,scm overrides it. */
