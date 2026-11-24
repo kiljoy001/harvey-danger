@@ -61,8 +61,9 @@ true when written: check the code and `git log` before relying on them.
   `platform_rk3566.c`, selected by `board`.  `main.c` and `boot.c` keep
   one board-selected call each and know no SCMI/PMU/CRU addresses.
 - `#P/platform` exposes the same identity to user space: `board`,
-  `compatible`, `ram`, `bootarchive`, `teeshm`, `scm` and `framebuffer`
-  as `key value...` lines (see `doc/drivers/platform-bus.md`).
+  `model`, `compatible`, `ram` (image bank), `bootarchive`, `teeshm`,
+  `scm`, `framebuffer` and one `memory` line per usable bank, as
+  `key value...` lines (see `doc/drivers/platform-bus.md`).
 - `util/arm64/pack_boot.py` can stamp those ranges with
   `--bootarchive BASE:SIZE`, `--teeshm BASE:SIZE`, `--scm BASE:SIZE` and
   `--ram BASE:SIZE`, so an image does not rely on the fallbacks.

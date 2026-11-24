@@ -593,6 +593,7 @@ fdtparse(void *blob, usize bytes, Fdtinfo *out)
 	out->rambase = out->ramsize = out->uartbase = 0;
 	out->lklarena = 0;
 	out->board = Fdtboardunknown;
+	out->model[0] = 0;
 	out->rootcompat[0] = 0;
 	out->bootarchbase = out->bootarchsize = 0;
 	out->teeshmbase = out->teeshmsize = 0;
@@ -795,7 +796,14 @@ fdtparse(void *blob, usize bytes, Fdtinfo *out)
 					node->method = 2;
 			}else if(same((char *)str+off, "cpu_on") && len == 4)
 				node->cpuon = get4(value);
-			else if(same((char *)str+off, "compatible")){
+			else if(depth == 1 && same((char *)str+off, "model")){
+				u32 k;
+
+				for(k = 0; k < len && value[k] != 0 &&
+				    k < sizeof(out->model)-1; k++)
+					out->model[k] = value[k];
+				out->model[k] = 0;
+			}else if(same((char *)str+off, "compatible")){
 				node->compat = value;
 				node->compatlen = len;
 				node->clas = classify(value, len);

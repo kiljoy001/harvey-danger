@@ -76,6 +76,7 @@ main(int argc, char **argv)
 	}
 	if(argc == 3 && strcmp(argv[2], "inspect") == 0){
 		printf("board %s (class %u)\n", fdtboardname(info.board), info.board);
+		printf("model %s\n", info.model);
 		printf("compatible %s\n", info.rootcompat);
 		printf("ram %#llx/%#llx uart %#llx/%u gic %#llx/%#llx/%u timer %u ncpu %u\n",
 		       (unsigned long long)info.rambase,
@@ -232,6 +233,7 @@ main(int argc, char **argv)
 	if(argc == 3){
 		if(strcmp(argv[2], "board") != 0 ||
 		   info.board != Fdtboardunknown ||
+		   strcmp(info.model, "Example Board") != 0 ||
 		   strcmp(info.rootcompat, "example,arm64-board") != 0 ||
 		   info.bootarchbase != 0x49000000 || info.bootarchsize != 0x1000 ||
 		   info.teeshmbase != 0x52000000 || info.teeshmsize != 0x200000 ||

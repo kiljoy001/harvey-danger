@@ -96,6 +96,7 @@ struct Fdtinfo {
 	u64 ramsize;
 	u64 lklarena;	/* /chosen harvey,lkl-arena-size, 0 if absent */
 	u32 board;		/* Fdtboard* */
+	char model[96];		/* root model string */
 	char rootcompat[160];	/* root compatible strings, space-separated */
 	u64 bootarchbase;	/* /chosen harvey,bootarchive */
 	u64 bootarchsize;

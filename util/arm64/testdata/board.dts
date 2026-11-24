@@ -4,6 +4,7 @@
 	#address-cells = <2>;
 	#size-cells = <2>;
 	compatible = "example,arm64-board";
+	model = "Example Board";
 
 	aliases {
 		serial2 = "/serial@fe660000";

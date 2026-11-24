@@ -510,6 +510,10 @@ arm64main(usize dtb)
 	uarthex(info.timerirq);
 	uartputs("\nboard: ");
 	uartputs((char *)fdtboardname(info.board));
+	if(info.model[0] != 0){
+		uartputs(" model ");
+		uartputs(info.model);
+	}
 	if(info.rootcompat[0] != 0){
 		uartputs(" [");
 		uartputs(info.rootcompat);

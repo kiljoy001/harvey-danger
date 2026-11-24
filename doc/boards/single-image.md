@@ -25,9 +25,9 @@ for the current RK356x boards.  Stamping them makes the image explicit
 and removes the guesses.
 
 User space sees the same summary in `#P/platform`, one `key value...`
-line per field (`board`, `compatible`, `ram`, `bootarchive`, `teeshm`,
-`scm`, `framebuffer`).  Drivers should branch on that, not on a UART
-address.
+line per field (`board`, `model`, `compatible`, `ram`, `bootarchive`,
+`teeshm`, `scm`, `framebuffer`, and one `memory` per bank).  Drivers
+should branch on that, not on a UART address.
 
 ## Build the image
 

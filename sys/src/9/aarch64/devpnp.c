@@ -948,14 +948,16 @@ pnpread(Chan *c, void *a, i32 n, i64 off)
 		return n;
 	}
 	if(TYPE(c) == Qplatform){
-		char pbuf[512];
+		char pbuf[1024];
 		Fdtinfo *pi;
+		int len, i;
 
 		pi = pnpinfo;
 		if(pi == nil)
 			return 0;
-		snprint(pbuf, sizeof pbuf,
+		len = snprint(pbuf, sizeof pbuf,
 		        "board %s\n"
+		        "model %s\n"
 		        "compatible %s\n"
 		        "ram 0x%llx 0x%llx\n"
 		        "bootarchive 0x%llx 0x%llx\n"
@@ -963,6 +965,7 @@ pnpread(Chan *c, void *a, i32 n, i64 off)
 		        "scm 0x%llx 0x%llx\n"
 		        "framebuffer 0x%llx 0x%llx %u %u %u %u\n",
 		        fdtboardname(pi->board),
+		        pi->model,
 		        pi->rootcompat,
 		        pi->rambase, pi->ramsize,
 		        pi->bootarchbase, pi->bootarchsize,
@@ -970,6 +973,13 @@ pnpread(Chan *c, void *a, i32 n, i64 off)
 		        pi->scmbase, pi->scmsize,
 		        pi->fbbase, pi->fbsize,
 		        pi->fbwidth, pi->fbheight, pi->fbstride, pi->fbbpp);
+		for(i = 0; i < (int)pi->nusable && i < 8 &&
+		    len < (int)sizeof pbuf; i++)
+			len += snprint(pbuf+len, sizeof pbuf-len,
+			               "memory 0x%llx 0x%llx\n",
+			               pi->usable[i].base, pi->usable[i].size);
+		if(len >= (int)sizeof pbuf)
+			len = sizeof pbuf-1;
 		return readstr(off, a, n, pbuf);
 	}
 	dev = DEV(c);	if(dev < 0 || dev >= (int)npnpdev)
