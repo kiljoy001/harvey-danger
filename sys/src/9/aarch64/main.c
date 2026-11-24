@@ -574,18 +574,38 @@ arm64main(usize dtb)
 			arm64dmasize = 0;
 		}
 	}
-	if(!is_bengal && info.nreserve < Maxfdtreserve &&
-	   info.rambase+info.ramsize > info.rambase &&
-	   info.ramsize > arm64dmasize + 2*1024*1024){
-		u64 base = (info.rambase + info.ramsize - arm64dmasize) &
-		           ~((u64)(2*1024*1024 - 1));
-		if(base > (u64)__image_end &&
-		   base+arm64dmasize > base &&
-		   base+arm64dmasize <= info.rambase+info.ramsize){
-			info.reserve[info.nreserve].base = base;
-			info.reserve[info.nreserve++].size = arm64dmasize;
-			arm64dmabase = base;
-		}
+	if(!is_bengal){
+		u32 bb, bi;
+		u64 bbase, bsize, base;
+
+		/*
+		 * Put the arena at the top of the largest bank.  On a split
+		 * board that keeps the image bank free, and it still lands
+		 * above the kernel on a single-bank board.
+		 */
+		bb = 0;
+		for(bi = 1; bi < info.nusable; bi++)
+			if(info.usable[bi].size > info.usable[bb].size)
+				bb = bi;
+		bbase = info.usable[bb].base;
+		bsize = info.usable[bb].size;
+		arm64dmabase = 0;
+		if(info.nreserve < Maxfdtreserve &&
+		   bsize > arm64dmasize + 2*1024*1024){
+			base = (bbase + bsize - arm64dmasize) &
+			       ~((u64)(2*1024*1024 - 1));
+			if(base >= bbase &&
+			   base+arm64dmasize > base &&
+			   base+arm64dmasize <= bbase+bsize &&
+			   (base > (u64)__image_end ||
+			    bbase > (u64)__image_end)){
+				info.reserve[info.nreserve].base = base;
+				info.reserve[info.nreserve++].size = arm64dmasize;
+				arm64dmabase = base;
+			}else
+				arm64dmasize = 0;
+		}else
+			arm64dmasize = 0;
 	}
 	/*
 	 * Static non-secure shared memory for OP-TEE.  Prefer the range the
