@@ -7,7 +7,8 @@ true when written: check the code and `git log` before relying on them.
 ## Where things are
 
 - `README.md`: what Harvey is.  `doc/drivers/`: the driver model, one file
-  per subsystem.  `doc/boards/`: per-board notes.
+  per subsystem.  `doc/boards/`: per-board notes; `single-image.md` is
+  the one-image runbook (DTB properties, `mk-sdimg.py`, boot script).
 - `doc/drivers/platform-bus.md`: `#P`, the only way a user-space driver
   reaches hardware (device tree discovery, MMIO windows, interrupts,
   claims, the DMA arena, the OP-TEE gate).  It is the contract; the code is
