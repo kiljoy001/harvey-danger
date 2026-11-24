@@ -21,6 +21,7 @@ extern Dev etherdevtab, ipdevtab;
 extern void ethergmacinit(Fdtinfo *);
 extern void ethermediumlink(void);
 extern int rk3566pipepoweron(void);
+extern void xhciplatforminit(Fdtinfo *);
 
 /*
  * Late RK356x bring-up, after the generic boot probes.  Everything here
@@ -36,6 +37,7 @@ rk356xlateinit(Fdtinfo *info)
 
 	if(info == nil)
 		return;
+	xhciplatforminit(info);
 	wdt = fdtdev(info, Fdtclasswdt);
 	wdtbase = wdt != nil && wdt->base != 0 ? wdt->base : 0xfe600000ULL;
 	*(volatile u32 *)wdtbase = 0;		/* WDT_CR */

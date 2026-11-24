@@ -159,6 +159,9 @@ main(int argc, char **argv)
 		   info.fbstride != 2880 || info.fbbpp != 32 ||
 		   fdtisrockchip(&info) != 0 ||
 		   fdtdevcompat(&info, "rockchip,rk3568-gmac") == nil ||
+		   fdtdevname(&info, "mmc@fe310000") == nil ||
+		   fdtdevcompatn(&info, "rockchip,rk3568-i2c", 0) == nil ||
+		   fdtdevcompatn(&info, "rockchip,rk3568-i2c", 1) != nil ||
 		   info.nmemory != 2 || info.memory[0].base != 0x20000000 ||
 		   info.memory[0].size != 0x10000000 ||
 		   info.memory[1].base != 0x40000000 ||

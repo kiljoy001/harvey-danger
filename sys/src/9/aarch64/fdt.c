@@ -439,14 +439,36 @@ fdtisrockchip(Fdtinfo *info)
 }
 
 Fdtdev *
-fdtdevcompat(Fdtinfo *info, char *compat)
+fdtdevcompatn(Fdtinfo *info, char *compat, u32 nth)
 {
 	u32 i;
 
 	if(info == nil || compat == nil)
 		return nil;
 	for(i = 0; i < info->ndev; i++)
-		if(same(info->dev[i].compat, compat))
+		if(same(info->dev[i].compat, compat)){
+			if(nth == 0)
+				return &info->dev[i];
+			nth--;
+		}
+	return nil;
+}
+
+Fdtdev *
+fdtdevcompat(Fdtinfo *info, char *compat)
+{
+	return fdtdevcompatn(info, compat, 0);
+}
+
+Fdtdev *
+fdtdevname(Fdtinfo *info, char *name)
+{
+	u32 i;
+
+	if(info == nil || name == nil)
+		return nil;
+	for(i = 0; i < info->ndev; i++)
+		if(same(info->dev[i].name, name))
 			return &info->dev[i];
 	return nil;
 }

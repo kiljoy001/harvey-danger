@@ -13,29 +13,116 @@
 #include "fns.h"
 #include "io.h"
 #include "../port/error.h"
+#include "fdt.h"
 
 enum {
 	Nctlr		= 8,
 	Dmasize		= 4*1024*1024,
 	Regbase		= 0x100000,
-	Dwc3Base	= 0xfd000000,
-	Otg0Base	= 0xfcc00000,
 	Dwc3Size	= 0x100000,
-
-	CruBase		= 0xfdd20000,
-	PmucruBase	= 0xfdd00000,
-	PmuBase		= 0xfdd90000,
-	PmuGrfBase	= 0xfdc20000,
-	Usbgrf0Base	= 0xfdca0000,
-	Usbgrf1Base	= 0xfdca8000,
-	Usb2phy0Base	= 0xfe8a0000,
-	Usb2phy1Base	= 0xfe8b0000,
-	CombphyBase	= 0xfe830000,
-	PipeGrfBase	= 0xfdc50000,
-	PipePhyGrfBase	= 0xfdc80000,
-	Gpio0Base	= 0xfdd60000,
 };
 #define Dmabase 0x100000000ULL
+
+/*
+ * RK356x glue bases.  The defaults match the Orange Pi 3B; xhciplatforminit()
+ * replaces them from the device tree on any board that provides the nodes.
+ * Register offsets and the sequences below stay here: they are the quirk.
+ */
+typedef struct XhciBases XhciBases;
+struct XhciBases {
+	u64 dwc3, otg0, cru, pmucru, pmu, pmugrf;
+	u64 usbgrf0, usbgrf1;
+	u64 ehci0, ehci1, ohci0, ohci1;
+	u64 combphy, pipephygrf, gpio0;
+};
+static XhciBases xb = {
+	.dwc3		= 0xfd000000,
+	.otg0		= 0xfcc00000,
+	.cru		= 0xfdd20000,
+	.pmucru		= 0xfdd00000,
+	.pmu		= 0xfdd90000,
+	.pmugrf		= 0xfdc20000,
+	.usbgrf0	= 0xfdca0000,
+	.usbgrf1	= 0xfdca8000,
+	.ehci0		= 0xfd800000,
+	.ehci1		= 0xfd880000,
+	.ohci0		= 0xfd840000,
+	.ohci1		= 0xfd8c0000,
+	.combphy	= 0xfe830000,
+	.pipephygrf	= 0xfdc80000,
+	.gpio0		= 0xfdd60000,
+};
+#define Dwc3Base	(xb.dwc3)
+#define Otg0Base	(xb.otg0)
+#define CruBase		(xb.cru)
+#define PmucruBase	(xb.pmucru)
+#define PmuBase		(xb.pmu)
+#define PmuGrfBase	(xb.pmugrf)
+#define Usbgrf0Base	(xb.usbgrf0)
+#define Usbgrf1Base	(xb.usbgrf1)
+#define Ehci0Base	(xb.ehci0)
+#define Ehci1Base	(xb.ehci1)
+#define Ohci0Base	(xb.ohci0)
+#define Ohci1Base	(xb.ohci1)
+#define CombphyBase	(xb.combphy)
+#define PipePhyGrfBase	(xb.pipephygrf)
+#define Gpio0Base	(xb.gpio0)
+
+static u32 xhci_board = Fdtboardunknown;
+
+void
+xhciplatforminit(Fdtinfo *info)
+{
+	Fdtdev *d;
+
+	if(info == nil)
+		return;
+	xhci_board = info->board;
+	/* The two DWC3 nodes are host0_xhci (OTG) and host1_xhci. */
+	d = fdtdevcompatn(info, "rockchip,rk3568-dwc3", 0);
+	if(d != nil && d->base != 0)
+		xb.otg0 = d->base;
+	d = fdtdevcompatn(info, "rockchip,rk3568-dwc3", 1);
+	if(d != nil && d->base != 0)
+		xb.dwc3 = d->base;
+
+	if((d = fdtdevcompat(info, "rockchip,rk3568-cru")) != nil && d->base != 0)
+		xb.cru = d->base;
+	if((d = fdtdevcompat(info, "rockchip,rk3568-pmucru")) != nil && d->base != 0)
+		xb.pmucru = d->base;
+	if((d = fdtdevcompat(info, "rockchip,rk3568-pmu")) != nil && d->base != 0)
+		xb.pmu = d->base;
+	if((d = fdtdevcompat(info, "rockchip,rk3568-pmugrf")) != nil && d->base != 0)
+		xb.pmugrf = d->base;
+	if((d = fdtdevcompatn(info, "rockchip,rk3568-usb2phy-grf", 0)) != nil &&
+	   d->base != 0)
+		xb.usbgrf0 = d->base;
+	if((d = fdtdevcompatn(info, "rockchip,rk3568-usb2phy-grf", 1)) != nil &&
+	   d->base != 0)
+		xb.usbgrf1 = d->base;
+	if((d = fdtdevname(info, "usb@fd800000")) != nil && d->base != 0)
+		xb.ehci0 = d->base;
+	if((d = fdtdevname(info, "usb@fd880000")) != nil && d->base != 0)
+		xb.ehci1 = d->base;
+	if((d = fdtdevname(info, "usb@fd840000")) != nil && d->base != 0)
+		xb.ohci0 = d->base;
+	if((d = fdtdevname(info, "usb@fd8c0000")) != nil && d->base != 0)
+		xb.ohci1 = d->base;
+	/* combphy1 is the second node; fall back to the first if alone. */
+	d = fdtdevcompatn(info, "rockchip,rk3568-naneng-combphy", 1);
+	if(d == nil)
+		d = fdtdevcompatn(info, "rockchip,rk3568-naneng-combphy", 0);
+	if(d != nil && d->base != 0)
+		xb.combphy = d->base;
+	if((d = fdtdevcompat(info, "rockchip,rk3568-pipe-phy-grf")) != nil &&
+	   d->base != 0)
+		xb.pipephygrf = d->base;
+	d = fdtdevname(info, "gpio@fdd60000");
+	if(d == nil)
+		d = fdtdevcompatn(info, "rockchip,gpio-bank", 0);
+	if(d != nil && d->base != 0)
+		xb.gpio0 = d->base;
+}
 
 typedef struct Xtransport Xtransport;
 struct Xtransport {
@@ -284,7 +371,7 @@ static void
 ehciprobe(void)
 {
 	volatile u32 *cru = (volatile u32 *)KADDR(CruBase);
-	u64 base[2] = {0xfd800000ULL, 0xfd880000ULL};
+	u64 base[2] = {Ehci0Base, Ehci1Base};
 	int i;
 	u32 cap, portsc;
 
@@ -446,21 +533,18 @@ dwc3init_otg0(void)
 static void
 xreset(void)
 {
-	extern u64 useruartbase;
-
-	if(useruartbase != 0xfe660000ULL)
-		return;
-
 	/*
 	 * Initialize board power, PHYs and controller host modes before the
 	 * user-space xHCI engine takes ownership. This reprograms U-Boot state.
 	 */
+	if(xhci_board != Fdtboardrk3566 && xhci_board != Fdtboardrk3568)
+		return;
 	ncontrollers = 0;
 	vbusinit();
 	dwc3init();
 	dwc3init_otg0();
-	ohciinit(0xfd840000ULL, 0);
-	ohciinit(0xfd8c0000ULL, 1);
+	ohciinit(Ohci0Base, 0);
+	ohciinit(Ohci1Base, 1);
 	if(addcontroller(Dwc3Base) < 0)
 		print("xhci: USB3 controller not responding\n");
 	if(addcontroller(Otg0Base) < 0)
@@ -555,16 +639,16 @@ xopen(Chan *c, int mode)
 	if(c->qid.path == 1){
 		volatile u32 *g0 = (volatile u32 *)KADDR(Usbgrf0Base);
 		volatile u32 *g1 = (volatile u32 *)KADDR(Usbgrf1Base);
-		volatile u32 *e0 = (volatile u32 *)KADDR(0xfd800000);
-		volatile u32 *e1 = (volatile u32 *)KADDR(0xfd880000);
+		volatile u32 *e0 = (volatile u32 *)KADDR(Ehci0Base);
+		volatile u32 *e1 = (volatile u32 *)KADDR(Ehci1Base);
 		u32 c0 = e0[0]&0xff, c1 = e1[0]&0xff;
 		print("xhci: grf0 c0 %ux sus %ux clk %ux grf1 c0 %ux sus %ux clk %ux\n",
 		      g0[0xc0/4], g0[0x04/4], g0[0x08/4],
 		      g1[0xc0/4], g1[0x04/4], g1[0x08/4]);
 		print("xhci: ehci0 cap %ux portsc %ux ehci1 cap %ux portsc %ux\n",
 		      e0[0], e0[(c0+0x44)/4], e1[0], e1[(c1+0x44)/4]);
-		volatile u32 *h0 = (volatile u32 *)KADDR(0xfd840000);
-		volatile u32 *h1 = (volatile u32 *)KADDR(0xfd8c0000);
+		volatile u32 *h0 = (volatile u32 *)KADDR(Ohci0Base);
+		volatile u32 *h1 = (volatile u32 *)KADDR(Ohci1Base);
 		print("xhci: ohci0 rev %ux ndp %u p1 %ux p2 %ux ohci1 rev %ux ndp %u p1 %ux p2 %ux\n",
 		      h0[0], h0[0x48/4]&0xff, h0[0x54/4], h0[0x58/4],
 		      h1[0], h1[0x48/4]&0xff, h1[0x54/4], h1[0x58/4]);

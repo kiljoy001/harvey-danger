@@ -208,7 +208,8 @@ arm64mmubuild(Fdtinfo *info)
 		if(d->clas != Fdtclasscru && d->clas != Fdtclassgrf &&
 		   d->clas != Fdtclassvop && d->clas != Fdtclasshdmi &&
 		   d->clas != Fdtclassiommu && d->clas != Fdtclasswdt &&
-		   d->clas != Fdtclassgmac)
+		   d->clas != Fdtclassgmac && d->clas != Fdtclassusb &&
+		   d->clas != Fdtclassgpio)
 			continue;
 		if(d->base != 0 && d->size != 0)
 			device[regions++] = (Fdtvirtio){d->base, d->size};
@@ -216,29 +217,12 @@ arm64mmubuild(Fdtinfo *info)
 			device[regions++] = (Fdtvirtio){d->base2, d->size2};
 	}
 	/*
-	 * The remaining blocks are Rockchip SoC ranges that the device tree
-	 * does not classify.  They only exist on Rockchip parts, and the
-	 * fixed list is the one place that still names them; other boards
-	 * must not inherit these mappings from the single image.
+	 * Everything the in-tree drivers touch is now a DT node above.  The
+	 * RK3566 NPU probe is the one exception; mark its windows optional
+	 * so a DTB that places RAM over them drops the mapping instead of
+	 * failing the whole identity map.
 	 */
 	fixedstart = regions;
-	if(fdtisrockchip(info)){
-		device[regions++] = (Fdtvirtio){0xfdd20000ULL, Pagesz};
-		device[regions++] = (Fdtvirtio){0xfdd90000ULL, Pagesz};
-		/* USB/DWC3 transport and the PHY/GRF/GPIO blocks it programs. */
-		device[regions++] = (Fdtvirtio){0xfd000000ULL, 0x100000};
-		device[regions++] = (Fdtvirtio){0xfcc00000ULL, 0x100000};
-		device[regions++] = (Fdtvirtio){0xfd800000ULL, 0x100000};
-		device[regions++] = (Fdtvirtio){0xfdca0000ULL, 0x8000};
-		device[regions++] = (Fdtvirtio){0xfdca8000ULL, 0x8000};
-		device[regions++] = (Fdtvirtio){0xfe8a0000ULL, 0x10000};
-		device[regions++] = (Fdtvirtio){0xfe8b0000ULL, 0x10000};
-		device[regions++] = (Fdtvirtio){0xfe830000ULL, 0x100};
-		device[regions++] = (Fdtvirtio){0xfdd60000ULL, 0x100};
-		device[regions++] = (Fdtvirtio){0xfdc20000ULL, 0x10000};
-		device[regions++] = (Fdtvirtio){0xfdc50000ULL, 0x1000};
-		device[regions++] = (Fdtvirtio){0xfdc80000ULL, 0x1000};
-	}
 #ifdef ARM64_RK3566_NPU_PROBE
 	/* Temporary RK3566 register probe; a user-space driver owns these later. */
 	if(info->board == Fdtboardrk3566){

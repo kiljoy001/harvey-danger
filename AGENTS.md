@@ -74,16 +74,17 @@ true when written: check the code and `git log` before relying on them.
   `bengal` and `unknown`.  RK3588 peripherals and a real
   `rockchip,rk3588-evb-v10` root compatible are covered by the host FDT
   test; no RK3588 hardware has been booted yet.
-- `mmu.c` adds its fixed Rockchip MMIO fallback list only when
-  `fdtisrockchip()` is true, so other boards no longer inherit those
-  mappings from the single image.
-- `ethergmac.c` now takes its GMAC/GRF/CRU bases from `Fdtdev`
-  (`fdtdevcompat()` for the shared GRF/CRU classes) and the kernel maps
-  the GMAC window for the in-tree driver.  It still only compiles; it
-  has not run on the Orange Pi.
-- Next: `devxhci.c` still names RK3566 addresses; move it to
-  `fdtdevcompat()` the same way, then drop the fixed list once every
-  in-tree driver does.
+- `mmu.c` no longer has a fixed Rockchip MMIO list.  It maps the
+  DT-discovered cru/grf/vop/hdmi/iommu/wdt/gmac/usb/gpio windows; the
+  board-gated RK3566 NPU probe windows are the only non-DT mappings.
+- `devxhci.c` and `ethergmac.c` resolve their bases with
+  `fdtdevcompat()`, `fdtdevcompatn()` and `fdtdevname()`; the old
+  addresses remain as fallbacks for a DTB that lacks the nodes.  Both
+  only compile; neither has run on the Orange Pi yet.
+- QEMU virt with a synthetic DTB carrying DWC3/EHCI/OHCI/GPIO/GMAC
+  nodes passes `MMU-ON`, so the DT-derived mappings are exercised.
+- Next: run `devxhci`/`ethergmac` on the Orange Pi, then remove the
+  per-driver fallback constants once the DT nodes are confirmed.
 
 ### Bengal phone bring-up
 
