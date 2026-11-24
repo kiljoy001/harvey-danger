@@ -481,6 +481,25 @@ fdtisrockchip(Fdtinfo *info)
 	       info->board == Fdtboardrk3588;
 }
 
+int
+fdtinram(Fdtinfo *info, u64 base, u64 size)
+{
+	u32 i;
+	u64 end;
+
+	if(info == nil || size == 0)
+		return 0;
+	end = base + size;
+	if(end < base)
+		return 0;
+	for(i = 0; i < info->nusable; i++){
+		if(end <= info->usable[i].base + info->usable[i].size &&
+		   base >= info->usable[i].base)
+			return 1;
+	}
+	return 0;
+}
+
 Fdtdev *
 fdtdevcompatn(Fdtinfo *info, char *compat, u32 nth)
 {

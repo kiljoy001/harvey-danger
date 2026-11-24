@@ -456,9 +456,7 @@ arm64main(usize dtb)
 	/* The device tree is now the source of platform identity. */
 	is_bengal = info.board == Fdtboardbengal;
 	if(info.fbbase != 0 && info.fbbpp == 32 &&
-	   info.fbbase >= info.rambase &&
-	   info.fbbase + info.fbsize > info.fbbase &&
-	   info.fbbase + info.fbsize <= info.rambase + info.ramsize){
+	   fdtinram(&info, info.fbbase, info.fbsize)){
 		fb_base = (u32 *)info.fbbase;
 		fb_width = info.fbwidth != 0 ? info.fbwidth : 720;
 		fb_height = info.fbheight != 0 ? info.fbheight : 1600;
@@ -597,9 +595,7 @@ arm64main(usize dtb)
 	 */
 	if(info.teeshmbase != 0 && info.teeshmsize != 0 &&
 	   info.nreserve < Maxfdtreserve &&
-	   info.teeshmbase >= info.rambase &&
-	   info.teeshmbase + info.teeshmsize > info.teeshmbase &&
-	   info.teeshmbase + info.teeshmsize <= info.rambase + info.ramsize){
+	   fdtinram(&info, info.teeshmbase, info.teeshmsize)){
 		info.reserve[info.nreserve].base = info.teeshmbase;
 		info.reserve[info.nreserve++].size = info.teeshmsize;
 		arm64teeshmbase = info.teeshmbase;
@@ -623,8 +619,7 @@ arm64main(usize dtb)
 	   info.bootarchsize <= 0xffffffffULL &&
 	   info.nreserve < Maxfdtreserve &&
 	   info.bootarchbase >= (u64)__image_end &&
-	   info.bootarchbase + info.bootarchsize > info.bootarchbase &&
-	   info.bootarchbase + info.bootarchsize <= info.rambase + info.ramsize){
+	   fdtinram(&info, info.bootarchbase, info.bootarchsize)){
 		info.reserve[info.nreserve].base = info.bootarchbase;
 		info.reserve[info.nreserve++].size = info.bootarchsize;
 		arm64bootarchbase = info.bootarchbase;

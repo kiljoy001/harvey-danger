@@ -167,13 +167,20 @@ main(int argc, char **argv)
 		   info.usable[0].size != 0x40000000 ||
 		   info.usable[1].base != 0x100000000ULL ||
 		   info.usable[1].size != 0x40000000 ||
-		   info.ramtotal != 0x80000000ULL){
+		   info.ramtotal != 0x80000000ULL ||
+		   !fdtinram(&info, 0x40000000, 0x40000000) ||
+		   !fdtinram(&info, 0x100000000ULL, 0x40000000) ||
+		   fdtinram(&info, 0x80000000, 0x1000) ||
+		   fdtinram(&info, 0x100000000ULL, 0x40000001) ||
+		   fdtinram(&info, 0x3ffff000, 0x2000)){
 			fprintf(stderr, "multibank: memory %u usable %u "
 			        "base %#llx/%#llx total %#llx\n",
 			        info.nmemory, info.nusable,
 			        (unsigned long long)info.rambase,
 			        (unsigned long long)info.ramsize,
 			        (unsigned long long)info.ramtotal);
+			free(work);
+			free(original);
 			return 1;
 		}
 		free(work);

@@ -140,6 +140,7 @@ int fdtparse(void *, usize, Fdtinfo *);
 int fdtselectram(Fdtinfo *, u64, u64);
 int fdtiscompat(Fdtinfo *, char *);
 int fdtisrockchip(Fdtinfo *);
+int fdtinram(Fdtinfo *, u64, u64);
 Fdtdev *fdtdev(Fdtinfo *, u32);
 Fdtdev *fdtdevcompat(Fdtinfo *, char *);
 Fdtdev *fdtdevcompatn(Fdtinfo *, char *, u32);
