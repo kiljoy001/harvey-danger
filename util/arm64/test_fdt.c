@@ -108,7 +108,8 @@ main(int argc, char **argv)
 		return 0;
 	}
 	if(argc == 3 && strcmp(argv[2], "h6") == 0){
-		if(info.nmemory != 1 || info.memory[0].base != 0x40000000 ||
+		if(info.board != Fdtboardsun50ih6 ||
+		   info.nmemory != 1 || info.memory[0].base != 0x40000000 ||
 		   info.memory[0].size != 0x80000000 ||
 		   info.uartbase != 0x05000000 || info.uarttype != Fdtdwuart ||
 		   info.gicdist != 0x03021000 || info.giccpu != 0x03022000 ||

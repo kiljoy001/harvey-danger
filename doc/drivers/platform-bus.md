@@ -67,11 +67,10 @@ framebuffer 0x5c000000 0x1000000 720 1600 2880 32
 ```
 
 `board` is the SoC family selected from the root `compatible`: `qemu-virt`,
-`rk3566`, `rk3568`, `rk3588`, `bengal`, or `unknown`.  Ranges are base and
-size; a zero
-base means the image did not provide one.  Drivers and init should select
-board-specific sequences from this file, not from the UART address or other
-accidentals.
+`rk3566`, `rk3568`, `rk3588`, `bengal`, `sun50i-h6`, or `unknown`.  Ranges
+are base and size; a zero base means the image did not provide one.
+Drivers and init should select board-specific sequences from this file,
+not from the UART address or other accidentals.
 
 If the firmware passes no `/memory` node, the kernel falls back to
 `/chosen/harvey,ram`; `mk-sdimg.py --ram BASE:SIZE` and

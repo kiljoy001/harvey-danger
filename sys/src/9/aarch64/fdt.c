@@ -334,6 +334,8 @@ fdtboardname(u32 board)
 		return "rk3588";
 	case Fdtboardbengal:
 		return "bengal";
+	case Fdtboardsun50ih6:
+		return "sun50i-h6";
 	default:
 		return "unknown";
 	}
@@ -541,6 +543,8 @@ boardid(Fdtinfo *out)
 	if(fdtiscompat(out, "linux,dummy-virt") ||
 	   compatstarts(out, "qemu,virt"))
 		return Fdtboardqemuvirt;
+	if(compatstarts(out, "allwinner,sun50i-h6"))
+		return Fdtboardsun50ih6;
 	if(compatstarts(out, "rockchip,rk3566"))
 		return Fdtboardrk3566;
 	if(compatstarts(out, "rockchip,rk3568"))

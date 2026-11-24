@@ -16,6 +16,7 @@ enum {
 	Fdtboardrk3568,
 	Fdtboardrk3588,
 	Fdtboardbengal,
+	Fdtboardsun50ih6,
 };
 struct Fdtreserve {
 	u64 base;

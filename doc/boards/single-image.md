@@ -18,7 +18,7 @@ an armv8 timer.  A board DTB normally provides those.  It also reads:
 | `/chosen/harvey,teeshm` | OP-TEE shared memory |
 | `/chosen/harvey,scm` | SCMI shared memory |
 | `simple-framebuffer` | early framebuffer console |
-| root `/compatible` | board class (`rk3566`, `rk3568`, `rk3588`, ...) |
+| root `/compatible` | board class (`rk3566`, `rk3568`, `rk3588`, `sun50i-h6`, ...) |
 
 The `harvey,*` properties are optional; the kernel has board fallbacks
 for the current RK356x boards.  Stamping them makes the image explicit

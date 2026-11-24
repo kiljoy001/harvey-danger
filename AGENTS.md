@@ -80,7 +80,7 @@ true when written: check the code and `git log` before relying on them.
   properties parses them and prints `fb:`, `bootarchive:`, `teeshm:` in
   the early banner.
 - Board classes are `qemu-virt`, `rk3566`, `rk3568`, `rk3588`,
-  `bengal` and `unknown`.  RK3588 peripherals and a real
+  `bengal`, `sun50i-h6` and `unknown`.  RK3588 peripherals and a real
   `rockchip,rk3588-evb-v10` root compatible are covered by the host FDT
   test; no RK3588 hardware has been booted yet.
 - `mmu.c` no longer has a fixed Rockchip MMIO list.  It maps the
