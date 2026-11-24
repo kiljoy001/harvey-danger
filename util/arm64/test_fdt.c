@@ -67,8 +67,46 @@ main(int argc, char **argv)
 		return 2;
 	n = fread(original, 1, Maxdtb, f);
 	fclose(f);
-	if(n < 80 || fdtparse(original, n, &info) < 0)
+	if(n < 80 || fdtparse(original, n, &info) < 0){
+		fprintf(stderr, "fdtparse failed (no /memory or missing "
+		        "gic/timer nodes?)\n");
+		free(work);
+		free(original);
 		return 1;
+	}
+	if(argc == 3 && strcmp(argv[2], "inspect") == 0){
+		printf("board %s (class %u)\n", fdtboardname(info.board), info.board);
+		printf("compatible %s\n", info.rootcompat);
+		printf("ram %#llx/%#llx uart %#llx/%u gic %#llx/%#llx/%u timer %u ncpu %u\n",
+		       (unsigned long long)info.rambase,
+		       (unsigned long long)info.ramsize,
+		       (unsigned long long)info.uartbase, info.uarttype,
+		       (unsigned long long)info.gicdist,
+		       (unsigned long long)info.giccpu, info.gicversion,
+		       info.timerirq, info.ncpu);
+		printf("fb %#llx/%#llx %ux%u stride %u bpp %u\n",
+		       (unsigned long long)info.fbbase,
+		       (unsigned long long)info.fbsize,
+		       info.fbwidth, info.fbheight, info.fbstride, info.fbbpp);
+		printf("bootarchive %#llx/%#llx teeshm %#llx/%#llx scm %#llx/%#llx\n",
+		       (unsigned long long)info.bootarchbase,
+		       (unsigned long long)info.bootarchsize,
+		       (unsigned long long)info.teeshmbase,
+		       (unsigned long long)info.teeshmsize,
+		       (unsigned long long)info.scmbase,
+		       (unsigned long long)info.scmsize);
+		for(i = 0; i < info.ndev; i++)
+			printf("dev %-24s %-32s %#llx/%#llx irq %u class %s\n",
+			       info.dev[i].name, info.dev[i].compat,
+			       (unsigned long long)info.dev[i].base,
+			       (unsigned long long)info.dev[i].size,
+			       info.dev[i].irq, fdtclassname(info.dev[i].clas));
+		printf("memory banks %u reserve %u virtio %u devices %u\n",
+		       info.nmemory, info.nreserve, info.nvirtio, info.ndev);
+		free(work);
+		free(original);
+		return 0;
+	}
 	if(argc == 3 && strcmp(argv[2], "h6") == 0){
 		if(info.nmemory != 1 || info.memory[0].base != 0x40000000 ||
 		   info.memory[0].size != 0x80000000 ||

@@ -78,13 +78,53 @@ xhciplatforminit(Fdtinfo *info)
 	if(info == nil)
 		return;
 	xhci_board = info->board;
-	/* The two DWC3 nodes are host0_xhci (OTG) and host1_xhci. */
-	d = fdtdevcompatn(info, "rockchip,rk3568-dwc3", 0);
+
+	/*
+	 * Prefer node names: several nodes share a compatible string and DT
+	 * order is not a contract.  The compatible lookups keep older DTBs
+	 * working.
+	 */
+	d = fdtdevname(info, "usb@fcc00000");
+	if(d == nil)
+		d = fdtdevcompatn(info, "rockchip,rk3568-dwc3", 0);
 	if(d != nil && d->base != 0)
 		xb.otg0 = d->base;
-	d = fdtdevcompatn(info, "rockchip,rk3568-dwc3", 1);
+	d = fdtdevname(info, "usb@fd000000");
+	if(d == nil)
+		d = fdtdevcompatn(info, "rockchip,rk3568-dwc3", 1);
 	if(d != nil && d->base != 0)
 		xb.dwc3 = d->base;
+
+	if((d = fdtdevname(info, "syscon@fdca0000")) == nil)
+		d = fdtdevcompatn(info, "rockchip,rk3568-usb2phy-grf", 0);
+	if(d != nil && d->base != 0)
+		xb.usbgrf0 = d->base;
+	if((d = fdtdevname(info, "syscon@fdca8000")) == nil)
+		d = fdtdevcompatn(info, "rockchip,rk3568-usb2phy-grf", 1);
+	if(d != nil && d->base != 0)
+		xb.usbgrf1 = d->base;
+
+	if((d = fdtdevname(info, "usb@fd800000")) != nil && d->base != 0)
+		xb.ehci0 = d->base;
+	if((d = fdtdevname(info, "usb@fd880000")) != nil && d->base != 0)
+		xb.ehci1 = d->base;
+	if((d = fdtdevname(info, "usb@fd840000")) != nil && d->base != 0)
+		xb.ohci0 = d->base;
+	if((d = fdtdevname(info, "usb@fd8c0000")) != nil && d->base != 0)
+		xb.ohci1 = d->base;
+
+	/* Host1's USB3 port uses combphy1 at phy@fe830000. */
+	if((d = fdtdevname(info, "phy@fe830000")) != nil && d->base != 0)
+		xb.combphy = d->base;
+	if((d = fdtdevname(info, "syscon@fdc80000")) == nil)
+		d = fdtdevcompat(info, "rockchip,rk3568-pipe-phy-grf");
+	if(d != nil && d->base != 0)
+		xb.pipephygrf = d->base;
+
+	if((d = fdtdevname(info, "gpio@fdd60000")) == nil)
+		d = fdtdevcompatn(info, "rockchip,gpio-bank", 0);
+	if(d != nil && d->base != 0)
+		xb.gpio0 = d->base;
 
 	if((d = fdtdevcompat(info, "rockchip,rk3568-cru")) != nil && d->base != 0)
 		xb.cru = d->base;
@@ -94,34 +134,6 @@ xhciplatforminit(Fdtinfo *info)
 		xb.pmu = d->base;
 	if((d = fdtdevcompat(info, "rockchip,rk3568-pmugrf")) != nil && d->base != 0)
 		xb.pmugrf = d->base;
-	if((d = fdtdevcompatn(info, "rockchip,rk3568-usb2phy-grf", 0)) != nil &&
-	   d->base != 0)
-		xb.usbgrf0 = d->base;
-	if((d = fdtdevcompatn(info, "rockchip,rk3568-usb2phy-grf", 1)) != nil &&
-	   d->base != 0)
-		xb.usbgrf1 = d->base;
-	if((d = fdtdevname(info, "usb@fd800000")) != nil && d->base != 0)
-		xb.ehci0 = d->base;
-	if((d = fdtdevname(info, "usb@fd880000")) != nil && d->base != 0)
-		xb.ehci1 = d->base;
-	if((d = fdtdevname(info, "usb@fd840000")) != nil && d->base != 0)
-		xb.ohci0 = d->base;
-	if((d = fdtdevname(info, "usb@fd8c0000")) != nil && d->base != 0)
-		xb.ohci1 = d->base;
-	/* combphy1 is the second node; fall back to the first if alone. */
-	d = fdtdevcompatn(info, "rockchip,rk3568-naneng-combphy", 1);
-	if(d == nil)
-		d = fdtdevcompatn(info, "rockchip,rk3568-naneng-combphy", 0);
-	if(d != nil && d->base != 0)
-		xb.combphy = d->base;
-	if((d = fdtdevcompat(info, "rockchip,rk3568-pipe-phy-grf")) != nil &&
-	   d->base != 0)
-		xb.pipephygrf = d->base;
-	d = fdtdevname(info, "gpio@fdd60000");
-	if(d == nil)
-		d = fdtdevcompatn(info, "rockchip,gpio-bank", 0);
-	if(d != nil && d->base != 0)
-		xb.gpio0 = d->base;
 }
 
 typedef struct Xtransport Xtransport;

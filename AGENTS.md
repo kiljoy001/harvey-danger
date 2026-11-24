@@ -117,6 +117,11 @@ true when written: check the code and `git log` before relying on them.
   --elf build/arm64-lkl/lklboot`.
 - QEMU tests that type at the shell must wait until after
   `HARVEY-ARM64 RC START` (init starts an LKL guest first; about 50 s).
+- `build/arm64/test-fdt <dtb> inspect` prints the board class, early
+  ranges and every device the kernel would discover.  A U-Boot control
+  DTB may lack `/memory`; add one with `fdtput` before inspecting.  The
+  Orange Pi 3B v1.1 DTB (with a synthetic 2 GiB `/memory`) reports
+  `board rk3566` and 46 classified devices.
 - A Plan 9 wait message is `"<prog> <pid>: <status>"`: match the status
   with `strstr`, not `strcmp`.
 
