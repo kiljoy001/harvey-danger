@@ -1,3 +1,11 @@
+# The active ARM64 build is util/arm64/build_kernel.py (clang, shared
+# port sources, full kernel and boot Image):
+#
+#     python3 util/arm64/build_kernel.py
+#
+# The util/build cpu.json line below is the older microkernel-only build
+# and is kept for reference.
+
 ARCH=aarch64  \
 STRIP=aarch64-none-elf-strip \
 CC=aarch64-none-elf-gcc \
