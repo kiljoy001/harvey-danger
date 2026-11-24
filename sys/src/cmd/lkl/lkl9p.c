@@ -481,6 +481,9 @@ extern int	modem_voice_hangup(int);
 extern int	modem_voice_calls(void);
 extern int	modem_wms_list(void);
 extern int	modem_wms_send(const char*, const char*);
+extern int	modem_wds_status(void);
+extern int	modem_wds_start(const char*);
+extern int	modem_wds_stop(void);
 extern void	modemstatus_buf(char*, int);
 extern char	lkl_dmesg[];
 extern int	lkl_dmesg_len;
@@ -841,6 +844,12 @@ dowrite(Req *r, LklFid *lf, WorkItem *wi)
 				modem_wms_send(cmd + 4, sp);
 			}
 		}
+		else if(strcmp(cmd, "datastat") == 0)
+			modem_wds_status();
+		else if(strncmp(cmd, "dataup ", 7) == 0)
+			modem_wds_start(cmd + 7);
+		else if(strcmp(cmd, "datadown") == 0)
+			modem_wds_stop();
 		else if(strcmp(cmd, "ipabind") == 0)
 			lklhost_spawn(ipabind_thread, nil);
 		qunlock(&modemlk);
@@ -1308,8 +1317,6 @@ mkblocknodes(void *arg)
 						}
 					}
 				}
-				/* Bind Qualcomm IPA v4.2 (5840000.ipa) in background for rmnet_ipa0. */
-				lklhost_spawn(ipabind_thread, nil);
 			}
 		}
 	}

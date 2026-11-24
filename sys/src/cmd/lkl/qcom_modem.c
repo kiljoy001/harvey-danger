@@ -69,6 +69,13 @@ enum {
 	VoiceAnswerCall	= 0x0022,
 	VoiceGetAllCalls = 0x002f,
 
+	/* WDS (Mobile Data) message IDs */
+	WdsStartNet	= 0x0020,
+	WdsStopNet	= 0x0021,
+	WdsGetPktStatus	= 0x0022,
+	WdsGetSettings	= 0x002d,
+	WdsBindMuxPort	= 0x00a2,
+
 	MaxQrtrSvcs	= 64,
 	MaxScanNets	= 24,
 	MaxVoiceCalls	= 8,
@@ -140,6 +147,13 @@ static struct {
 		u8	dir;
 	} calls[MaxVoiceCalls];
 	int	sms_stored;
+	u32	wds_handle;
+	int	wds_status;	/* 1=disconnected, 2=connected, 3=suspended */
+	u32	wds_ip;
+	u32	wds_gw;
+	u32	wds_mask;
+	u32	wds_dns1;
+	u32	wds_mtu;
 	char	info[128];
 } mst = {
 	.opmode = -1,
@@ -858,6 +872,140 @@ modem_wms_send(const char *dest, const char *text)
 	return 0;
 }
 
+/* ---- Stage 3 Control: QMI WDS (0x01) Mobile Data over rmnet_ipa0 ---- */
+
+static u32
+wds_le32(const uchar *p)
+{
+	return (u32)p[0] | ((u32)p[1] << 8) | ((u32)p[2] << 16) | ((u32)p[3] << 24);
+}
+
+static void
+putle32(uchar *p, u32 v)
+{
+	p[0] = v & 0xff;
+	p[1] = (v >> 8) & 0xff;
+	p[2] = (v >> 16) & 0xff;
+	p[3] = (v >> 24) & 0xff;
+}
+
+int
+modem_wds_status(void)
+{
+	uchar req[8], resp[512];
+	const uchar *v;
+	int n, vl, err;
+
+	if(!mst.probed)
+		modem_probe();
+	n = qmi_txn(QmiSvcWds, WdsGetPktStatus, nil, 0, resp, sizeof resp, 5);
+	if(n < 0){
+		snprint(mst.info, sizeof mst.info, "datastat txn err %d", n);
+		return -1;
+	}
+	err = qmi_result_err(resp, n);
+	if(err != 0){
+		snprint(mst.info, sizeof mst.info, "datastat qmi err %d", err);
+		return -1;
+	}
+	v = qmi_find_tlv(resp, n, 0x01, &vl);
+	mst.wds_status = (v != nil && vl >= 1) ? v[0] : 0;
+
+	if(mst.wds_status == 2){
+		/* Request IPv4 addr | GW | subnet | DNS | MTU */
+		req[0] = 0x10; putle16(req + 1, 4); putle32(req + 3, 0x00003370);
+		n = qmi_txn(QmiSvcWds, WdsGetSettings, req, 7, resp, sizeof resp, 5);
+		if(n >= 0 && qmi_result_err(resp, n) == 0){
+			if((v = qmi_find_tlv(resp, n, 0x1e, &vl)) != nil && vl >= 4)
+				mst.wds_ip = wds_le32(v);
+			if((v = qmi_find_tlv(resp, n, 0x20, &vl)) != nil && vl >= 4)
+				mst.wds_gw = wds_le32(v);
+			if((v = qmi_find_tlv(resp, n, 0x21, &vl)) != nil && vl >= 4)
+				mst.wds_mask = wds_le32(v);
+			if((v = qmi_find_tlv(resp, n, 0x15, &vl)) != nil && vl >= 4)
+				mst.wds_dns1 = wds_le32(v);
+			if((v = qmi_find_tlv(resp, n, 0x29, &vl)) != nil && vl >= 4)
+				mst.wds_mtu = wds_le32(v);
+		}
+	}
+	snprint(mst.info, sizeof mst.info, "datastat ok (state=%d)", mst.wds_status);
+	return mst.wds_status;
+}
+
+int
+modem_wds_start(const char *apn)
+{
+	uchar req[128], resp[256];
+	const uchar *v;
+	int n, vl, err, pos = 0, alen;
+
+	if(!mst.probed)
+		modem_probe();
+	if(apn == nil || apn[0] == 0){
+		snprint(mst.info, sizeof mst.info, "dataup: usage dataup <apn>");
+		return -1;
+	}
+	/* Bind embedded IPA endpoint (ep_type=5 EMBEDDED, iface=1, mux_id=1) */
+	req[pos++] = 0x10; putle16(req + pos, 8); pos += 2;
+	putle32(req + pos, 5); pos += 4;
+	putle32(req + pos, 1); pos += 4;
+	req[pos++] = 0x11; putle16(req + pos, 1); pos += 2;
+	req[pos++] = 1;
+	qmi_txn(QmiSvcWds, WdsBindMuxPort, req, pos, resp, sizeof resp, 5);
+
+	/* Start Network Interface: TLV 0x14=APN, TLV 0x19=IPv4(4) */
+	pos = 0;
+	alen = strlen(apn);
+	if(alen > 64)
+		alen = 64;
+	req[pos++] = 0x14; putle16(req + pos, alen); pos += 2;
+	memmove(req + pos, apn, alen); pos += alen;
+	req[pos++] = 0x19; putle16(req + pos, 1); pos += 2;
+	req[pos++] = 4;
+
+	n = qmi_txn(QmiSvcWds, WdsStartNet, req, pos, resp, sizeof resp, 20);
+	if(n < 0){
+		snprint(mst.info, sizeof mst.info, "dataup(%s) txn err %d", apn, n);
+		return -1;
+	}
+	err = qmi_result_err(resp, n);
+	if(err != 0){
+		snprint(mst.info, sizeof mst.info, "dataup(%s) qmi err %d", apn, err);
+		return -1;
+	}
+	v = qmi_find_tlv(resp, n, 0x01, &vl);
+	if(v != nil && vl >= 4)
+		mst.wds_handle = wds_le32(v);
+	modem_wds_status();
+	snprint(mst.info, sizeof mst.info, "dataup(%s) ok handle=0x%x", apn, mst.wds_handle);
+	return 0;
+}
+
+int
+modem_wds_stop(void)
+{
+	uchar req[16], resp[128];
+	int n, err;
+
+	if(!mst.probed)
+		modem_probe();
+	req[0] = 0x01; putle16(req + 1, 4); putle32(req + 3, mst.wds_handle);
+	n = qmi_txn(QmiSvcWds, WdsStopNet, req, 7, resp, sizeof resp, 10);
+	if(n < 0){
+		snprint(mst.info, sizeof mst.info, "datadown txn err %d", n);
+		return -1;
+	}
+	err = qmi_result_err(resp, n);
+	if(err != 0){
+		snprint(mst.info, sizeof mst.info, "datadown qmi err %d", err);
+		return -1;
+	}
+	mst.wds_handle = 0;
+	mst.wds_status = 1;
+	snprint(mst.info, sizeof mst.info, "datadown ok");
+	return 0;
+}
+
 static const char*
 opmode_str(int m)
 {
@@ -941,6 +1089,17 @@ modemstatus_buf(char *out, int outsz)
 		pos += snprint(out + pos, outsz - pos, "lte rssi=%d rsrp=%d rsrq=%d snr=%d\n",
 			mst.lte_rssi, mst.lte_rsrp, mst.lte_rsrq, mst.lte_snr);
 	pos += snprint(out + pos, outsz - pos, "info %s\n", mst.info);
+	if(mst.wds_status > 0){
+		pos += snprint(out + pos, outsz - pos, "wds state=%d handle=0x%x",
+			mst.wds_status, mst.wds_handle);
+		if(mst.wds_ip != 0)
+			pos += snprint(out + pos, outsz - pos, " ip=%u.%u.%u.%u gw=%u.%u.%u.%u dns=%u.%u.%u.%u mtu=%u",
+				(mst.wds_ip>>24)&0xff, (mst.wds_ip>>16)&0xff, (mst.wds_ip>>8)&0xff, mst.wds_ip&0xff,
+				(mst.wds_gw>>24)&0xff, (mst.wds_gw>>16)&0xff, (mst.wds_gw>>8)&0xff, mst.wds_gw&0xff,
+				(mst.wds_dns1>>24)&0xff, (mst.wds_dns1>>16)&0xff, (mst.wds_dns1>>8)&0xff, mst.wds_dns1&0xff,
+				mst.wds_mtu);
+		pos += snprint(out + pos, outsz - pos, "\n");
+	}
 	if(mst.sms_stored >= 0)
 		pos += snprint(out + pos, outsz - pos, "sms stored=%d\n", mst.sms_stored);
 	for(i = 0; i < mst.ncalls && pos < outsz - 64; i++)
