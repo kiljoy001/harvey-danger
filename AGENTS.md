@@ -63,7 +63,8 @@ true when written: check the code and `git log` before relying on them.
 - `#P/platform` exposes the same identity to user space: `board`,
   `model`, `compatible`, `ram` (image bank), `bootarchive`, `teeshm`,
   `scm`, `framebuffer` and one `memory` line per usable bank, as
-  `key value...` lines (see `doc/drivers/platform-bus.md`).
+  `key value...` lines (see `doc/drivers/platform-bus.md`).  Boot walks
+  and reads it and prints `HARVEY-ARM64 PLATFORM PASS`.
 - `util/arm64/pack_boot.py` can stamp those ranges with
   `--bootarchive BASE:SIZE`, `--teeshm BASE:SIZE`, `--scm BASE:SIZE` and
   `--ram BASE:SIZE`, so an image does not rely on the fallbacks.

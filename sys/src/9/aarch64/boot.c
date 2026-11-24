@@ -507,17 +507,35 @@ pnpprobe(Fdtinfo *info)
 	Walkqid *walk;
 	int n;
 
-	if(info->ndev == 0)
-		return;
+	if(info->ndev > 0){
+		root = pnpdevtab.attach("");
+		names[0] = info->dev[0].name;
+		names[1] = "reg";
+		walk = pnpdevtab.walk(root, nil, names, 2);
+		if(walk == nil || walk->nqid != 2 || walk->clone == nil){
+			if(walk != nil)
+				free(walk);
+			cclose(root);
+			panic("ARM64 #P walk failed");
+		}
+		reg = walk->clone;
+		free(walk);
+		cclose(root);
+		pnpdevtab.open(reg, OREAD);
+		n = pnpdevtab.read(reg, buf, sizeof(buf), 0);
+		cclose(reg);
+		if(n < 2 || memcmp(buf, "0x", 2) != 0)
+			panic("ARM64 #P reg read failed");
+		arm64uartputs("HARVEY-ARM64 PNP PASS\n");
+	}
 	root = pnpdevtab.attach("");
-	names[0] = info->dev[0].name;
-	names[1] = "reg";
-	walk = pnpdevtab.walk(root, nil, names, 2);
-	if(walk == nil || walk->nqid != 2 || walk->clone == nil){
+	names[0] = "platform";
+	walk = pnpdevtab.walk(root, nil, names, 1);
+	if(walk == nil || walk->nqid != 1 || walk->clone == nil){
 		if(walk != nil)
 			free(walk);
 		cclose(root);
-		panic("ARM64 #P walk failed");
+		panic("ARM64 #P/platform walk failed");
 	}
 	reg = walk->clone;
 	free(walk);
@@ -525,9 +543,9 @@ pnpprobe(Fdtinfo *info)
 	pnpdevtab.open(reg, OREAD);
 	n = pnpdevtab.read(reg, buf, sizeof(buf), 0);
 	cclose(reg);
-	if(n < 2 || memcmp(buf, "0x", 2) != 0)
-		panic("ARM64 #P reg read failed");
-	arm64uartputs("HARVEY-ARM64 PNP PASS\n");
+	if(n < 6 || memcmp(buf, "board ", 6) != 0)
+		panic("ARM64 #P/platform read failed");
+	arm64uartputs("HARVEY-ARM64 PLATFORM PASS\n");
 }
 
 static int
