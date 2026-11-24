@@ -206,6 +206,49 @@ static const Fdtclass classtab[] = {
 	{ "rockchip,iommu-v2", Fdtclassiommu },
 	{ "rockchip,iommu", Fdtclassiommu },
 	{ "rockchip,rk3568-power-controller", Fdtclasspower },
+	/* RK3588 uses the same IP blocks with its own compatible strings. */
+	{ "rockchip,rk3588-uart", Fdtclassuart },
+	{ "rockchip,rk3588-i2c", Fdtclassi2c },
+	{ "rockchip,rk3588-spi", Fdtclassspi },
+	{ "rockchip,rk3588-gpio-bank", Fdtclassgpio },
+	{ "rockchip,rk3588-pwm", Fdtclasspwm },
+	{ "rockchip,rk3588-gmac", Fdtclassgmac },
+	{ "rockchip,rk3588-dw-mshc", Fdtclassmmc },
+	{ "rockchip,rk3588-sdhci", Fdtclassmmc },
+	{ "rockchip,rk3588-dwcmshc", Fdtclassmmc },
+	{ "rockchip,rk3588-dwc3", Fdtclassusb },
+	{ "rockchip,rk3588-usb2phy", Fdtclassusb },
+	{ "rockchip,rk3588-naneng-combphy", Fdtclassusb },
+	{ "rockchip,rk3588-pcie", Fdtclasspcie },
+	{ "rockchip,rk3588-saradc", Fdtclasssaradc },
+	{ "rockchip,rk3588-tsadc", Fdtclasstsadc },
+	{ "rockchip,rk3588-wdt", Fdtclasswdt },
+	{ "rockchip,rk3588-rng", Fdtclassrng },
+	{ "rockchip,rk3588-crypto", Fdtclassrng },
+	{ "rockchip,rk3588-i2s", Fdtclassi2s },
+	{ "rockchip,rk3588-i2s-tdm", Fdtclassi2s },
+	{ "rockchip,rk3588-cru", Fdtclasscru },
+	{ "rockchip,rk3588-pmucru", Fdtclasscru },
+	{ "rockchip,rk3588-pmu", Fdtclassgrf },
+	{ "rockchip,rk3588-grf", Fdtclassgrf },
+	{ "rockchip,rk3588-pmugrf", Fdtclassgrf },
+	{ "rockchip,rk3588-usb2phy-grf", Fdtclassgrf },
+	{ "rockchip,rk3588-pipe-grf", Fdtclassgrf },
+	{ "rockchip,rk3588-pipe-phy-grf", Fdtclassgrf },
+	{ "rockchip,rk3588-rknpu", Fdtclassnpu },
+	{ "rockchip,rk3588-mali", Fdtclassgpu },
+	{ "arm,mali-valhall-csf", Fdtclassgpu },
+	{ "rockchip,rk3588-vop", Fdtclassvop },
+	{ "rockchip,rk3588-dw-hdmi", Fdtclasshdmi },
+	{ "rockchip,rk3588-mipi-dsi", Fdtclassdsi },
+	{ "rockchip,rk3588-edp", Fdtclassedp },
+	{ "rockchip,rk3588-sfc", Fdtclasssfc },
+	{ "rockchip,rk3588-vpu", Fdtclassvpu },
+	{ "rockchip,rk3588-vdec", Fdtclassvpu },
+	{ "rockchip,rk3588-vepu", Fdtclassvpu },
+	{ "rockchip,rk3588-av1", Fdtclassvpu },
+	{ "rockchip,rk3588-iommu", Fdtclassiommu },
+	{ "rockchip,rk3588-power-controller", Fdtclasspower },
 	/* Qualcomm SM6115 / Bengal (Moto G Power 2021). */
 	{ "qcom,bengal-gcc", Fdtclasscru },
 	{ "qcom,sm6115-gcc", Fdtclasscru },
@@ -671,7 +714,8 @@ fdtparse(void *blob, usize bytes, Fdtinfo *out)
 				if(hascompat(value, len, "arm,pl011"))
 					node->uarttype = Fdtpl011;
 				else if(hascompat(value, len, "snps,dw-apb-uart") ||
-				        hascompat(value, len, "rockchip,rk3568-uart"))
+				        hascompat(value, len, "rockchip,rk3568-uart") ||
+				        hascompat(value, len, "rockchip,rk3588-uart"))
 					node->uarttype = Fdtdwuart;
 				node->uart = node->uarttype != 0;
 				if(hascompat(value, len, "arm,gic-v3"))

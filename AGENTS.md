@@ -68,8 +68,12 @@ true when written: check the code and `git log` before relying on them.
   without `ARM64_RK3566_NPU_PROBE`) and boots; a patched DTB carrying
   `simple-framebuffer` and the three `/chosen` properties parses them and
   prints `fb:`, `bootarchive:`, `teeshm:` in the early banner.
-- Next: the NPU quirk into a board file, then a second SoC (rk3588), and
-  drivers consuming `Fdtdev` base/size/irq instead of constants.
+- RK3588 peripheral compatible strings are classified in `fdt.c` and the
+  host FDT test covers a real `rockchip,rk3588-evb-v10` root compatible;
+  no RK3588 hardware has been booted yet.
+- Next: drivers consuming `Fdtdev` base/size/irq instead of constants,
+  and replacing `mmu.c`'s fixed Rockchip MMIO list with mappings derived
+  from those devices.
 
 ### Bengal phone bring-up
 

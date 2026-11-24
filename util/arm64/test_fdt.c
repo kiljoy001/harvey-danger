@@ -98,19 +98,27 @@ main(int argc, char **argv)
 		return 0;
 	}
 	if(argc == 3 && strcmp(argv[2], "rk3588") == 0){
+		Fdtdev *mmc, *i2c, *uart;
+
 		/*
 		 * Root compatible is a real board string, not the bare SoC
 		 * token.  Board detection must match the prefix; fdtiscompat
 		 * stays exact.
 		 */
+		mmc = fdtdev(&info, Fdtclassmmc);
+		i2c = fdtdev(&info, Fdtclassi2c);
+		uart = fdtdev(&info, Fdtclassuart);
 		if(info.board != Fdtboardrk3588 ||
 		   fdtiscompat(&info, "rockchip,rk3588-evb-v10") != 1 ||
 		   fdtiscompat(&info, "rockchip,rk3588") != 0 ||
-		   fdtdev(&info, Fdtclassmmc) == nil ||
-		   fdtdev(&info, Fdtclassi2c) == nil ||
+		   mmc == nil || i2c == nil || uart == nil ||
+		   strcmp(mmc->compat, "rockchip,rk3588-dwcmshc") != 0 ||
+		   strcmp(i2c->compat, "rockchip,rk3588-i2c") != 0 ||
+		   info.uartbase != 0xfe660000 || info.uarttype != Fdtdwuart ||
 		   fdtdev(&info, Fdtclassnone) != nil){
-			fprintf(stderr, "rk3588: board %u compat %s\n",
-			        info.board, info.rootcompat);
+			fprintf(stderr, "rk3588: board %u compat %s uart %#llx/%u\n",
+			        info.board, info.rootcompat,
+			        (unsigned long long)info.uartbase, info.uarttype);
 			return 1;
 		}
 		free(work);

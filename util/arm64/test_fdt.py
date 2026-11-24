@@ -25,6 +25,13 @@ def main() -> None:
     RK3588.write_bytes(BOARD.read_bytes())
     subprocess.run(["fdtput", "-t", "s", str(RK3588), "/", "compatible",
                     "rockchip,rk3588-evb-v10"], check=True)
+    for node, compat in (
+        ("/mmc@fe310000", "rockchip,rk3588-dwcmshc"),
+        ("/serial@fe660000", "rockchip,rk3588-uart"),
+        ("/i2c@fe5a0000", "rockchip,rk3588-i2c"),
+    ):
+        subprocess.run(["fdtput", "-t", "s", str(RK3588), node,
+                        "compatible", compat], check=True)
     subprocess.run(["cc", "-O1", "-g", "-fsanitize=address,undefined",
                     "-fno-omit-frame-pointer", "-Wall", "-Wextra", "-Werror",
                     "-D_XOPEN_SOURCE=700",
