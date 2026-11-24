@@ -136,6 +136,24 @@ main(int argc, char **argv)
 		puts("FDT Orange Pi 3 H6 discovery PASS");
 		return 0;
 	}
+	if(argc == 3 && strcmp(argv[2], "nomem") == 0){
+		if(info.nmemory != 1 || info.memory[0].base != 0x40000000 ||
+		   info.memory[0].size != 0x80000000 ||
+		   info.rambase != 0x40000000 || info.ramsize != 0x80000000 ||
+		   info.uartbase != 0xfe660000 || info.uarttype != Fdtdwuart ||
+		   fdtselectram(&info, 0x40080000, 0x40400000) < 0){
+			fprintf(stderr, "nomem: memory %u %#llx/%#llx uart %#llx/%u\n",
+			        info.nmemory,
+			        (unsigned long long)info.rambase,
+			        (unsigned long long)info.ramsize,
+			        (unsigned long long)info.uartbase, info.uarttype);
+			return 1;
+		}
+		free(work);
+		free(original);
+		puts("FDT harvey,ram fallback PASS");
+		return 0;
+	}
 	if(argc == 3 && strcmp(argv[2], "rk3588") == 0){
 		Fdtdev *mmc, *i2c, *uart;
 

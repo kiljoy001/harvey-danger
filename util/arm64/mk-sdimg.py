@@ -2,9 +2,13 @@
 """Build a bootable SD-card image for the Orange Pi 3B.
 
 The image holds an MBR, one FAT32 partition and the three files U-Boot
-needs: the kernel Image, the board DTB and the SDK boot archive.  Write it
-to the card from U-Boot with `mmc write` (split into 80 MiB chunks for
-TFTP), or with dd from a workstation:
+needs: the kernel Image, the board DTB and the SDK boot archive.  Before
+the DTB is written, /chosen/harvey,bootarchive is stamped with the SDK
+load address and size, and --teeshm/--scm/--ram can stamp the other
+ranges, so the kernel reserves them without board fallbacks.
+
+Write it to the card from U-Boot with `mmc write` (split into 80 MiB
+chunks for TFTP), or with dd from a workstation:
 
     python3 util/arm64/mk-sdimg.py \
         --image build/arm64-kernel/harvey.img \
@@ -16,16 +20,43 @@ It prints the U-Boot commands for both the write and the boot.
 """
 from pathlib import Path
 import argparse
+import atexit
 import os
 import shutil
 import subprocess
 import sys
+import tempfile
 
 SECTOR = 512
 PART_START = 2048          # 1 MiB alignment, no bootloader
 UBOOT_PART_START = 0x8000  # 16 MiB, after the Rockchip bootloader area
 UBOOT_OFFSET = 0x40        # idbloader starts here; the FIT follows at 0x4000
 CHUNK = 83886080           # 80 MiB, the U-Boot TFTP part size
+
+
+def parse_range(text: str) -> tuple[int, int]:
+    try:
+        base_text, size_text = text.split(":", 1)
+        base = int(base_text, 0)
+        size = int(size_text, 0)
+    except ValueError:
+        sys.exit(f"expected BASE:SIZE, got {text!r}")
+    if base < 0 or size <= 0 or base + size > 1 << 64:
+        sys.exit(f"bad range {text!r}")
+    return base, size
+
+
+def stamp_range(path: Path, prop: str, base: int, size: int) -> None:
+    """Stamp a two-u64 /chosen property, creating /chosen if needed."""
+    if subprocess.run(["fdtget", "-p", str(path), "/chosen"],
+                      stdout=subprocess.DEVNULL,
+                      stderr=subprocess.DEVNULL).returncode != 0:
+        subprocess.run(["fdtput", "-c", str(path), "/chosen"], check=True)
+    subprocess.run([
+        "fdtput", "-t", "u", str(path), "/chosen", prop,
+        str((base >> 32) & 0xFFFFFFFF), str(base & 0xFFFFFFFF),
+        str((size >> 32) & 0xFFFFFFFF), str(size & 0xFFFFFFFF),
+    ], check=True)
 
 
 def main() -> None:
@@ -42,20 +73,50 @@ def main() -> None:
                     help="image size (default: files + 10%)")
     ap.add_argument("--parts-dir", default="",
                     help="also split the image into 80 MiB TFTP parts here")
+    ap.add_argument("--sdk-load", default="0x50000000",
+                    help="U-Boot load address for sdk.tar")
+    ap.add_argument("--teeshm", default="",
+                    help="BASE:SIZE stamped as /chosen/harvey,teeshm")
+    ap.add_argument("--scm", default="",
+                    help="BASE:SIZE stamped as /chosen/harvey,scm")
+    ap.add_argument("--ram", default="",
+                    help="BASE:SIZE stamped as /chosen/harvey,ram fallback")
+    ap.add_argument("--no-stamp", action="store_true",
+                    help="do not add the harvey,* /chosen properties")
     args = ap.parse_args()
 
     for name, path in (("image", args.image), ("dtb", args.dtb),
                        ("sdk", args.sdk)):
         if not Path(path).is_file():
             sys.exit(f"missing {name}: {path}")
-    for tool in ("sfdisk", "mkfs.vfat", "mcopy"):
+    for tool in ("sfdisk", "mkfs.vfat", "mcopy", "fdtget", "fdtput"):
         if shutil.which(tool) is None:
             sys.exit(f"missing {tool}")
 
     image = Path(args.image)
     dtb = Path(args.dtb)
     sdk = Path(args.sdk)
-    need = image.stat().st_size + dtb.stat().st_size + sdk.stat().st_size
+    sdk_load = int(args.sdk_load, 0)
+
+    # Stamp the ranges into a copy; never rewrite the caller's DTB.
+    with tempfile.NamedTemporaryFile(suffix=".dtb", delete=False) as tf:
+        dtbwork = Path(tf.name)
+    shutil.copyfile(dtb, dtbwork)
+    atexit.register(dtbwork.unlink, missing_ok=True)
+    if not args.no_stamp:
+        stamp_range(dtbwork, "harvey,bootarchive", sdk_load,
+                    sdk.stat().st_size)
+        if args.teeshm:
+            base, size = parse_range(args.teeshm)
+            stamp_range(dtbwork, "harvey,teeshm", base, size)
+        if args.scm:
+            base, size = parse_range(args.scm)
+            stamp_range(dtbwork, "harvey,scm", base, size)
+        if args.ram:
+            base, size = parse_range(args.ram)
+            stamp_range(dtbwork, "harvey,ram", base, size)
+
+    need = image.stat().st_size + dtbwork.stat().st_size + sdk.stat().st_size
     size = (args.size_mb * 1024 * 1024) if args.size_mb else \
         need + need // 10
     size = (size + 1024 * 1024 - 1) // (1024 * 1024) * 1024 * 1024
@@ -94,7 +155,7 @@ def main() -> None:
                    stdout=subprocess.DEVNULL)
 
     offset = part_start * SECTOR
-    for path, name in ((image, "Image"), (dtb, "board.dtb"),
+    for path, name in ((image, "Image"), (dtbwork, "board.dtb"),
                        (sdk, "sdk.tar")):
         subprocess.run(["mcopy", "-i", f"{out}@@{offset}", str(path),
                         f"::{name}"], check=True)
@@ -116,12 +177,12 @@ def main() -> None:
     print("U-Boot boot:")
     print("  fatload mmc 1:1 0x40080000 Image")
     print("  fatload mmc 1:1 0x48000000 board.dtb")
-    print("  fatload mmc 1:1 0x50000000 sdk.tar")
+    print(f"  fatload mmc 1:1 0x{sdk_load:x} sdk.tar")
     print("  booti 0x40080000 - 0x48000000")
     print()
     print("  setenv bootcmd 'fatload mmc 1:1 0x40080000 Image; "
           "fatload mmc 1:1 0x48000000 board.dtb; "
-          "fatload mmc 1:1 0x50000000 sdk.tar; "
+          f"fatload mmc 1:1 0x{sdk_load:x} sdk.tar; "
           "booti 0x40080000 - 0x48000000'; saveenv")
 
     if args.parts_dir:

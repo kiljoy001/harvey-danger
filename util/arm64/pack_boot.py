@@ -12,9 +12,9 @@ drivers, rounded up.  The total is stamped into the DTB as
 /chosen/harvey,lkl-arena-size so the kernel reservation grows with the
 family table instead of being a board constant.
 
-The optional --bootarchive, --teeshm and --scm BASE:SIZE arguments stamp
-the matching /chosen properties, so the kernel takes those ranges from
-the image instead of the legacy board fallbacks.
+The optional --bootarchive, --teeshm, --scm and --ram BASE:SIZE arguments
+stamp the matching /chosen properties, so the kernel takes those ranges
+from the image instead of the legacy board fallbacks.
 
 Usage:
     pack_boot.py --template harvey-boot.img --kernel harvey.img \
@@ -94,6 +94,8 @@ def main() -> None:
                     help="BASE:SIZE stamped as /chosen/harvey,teeshm")
     ap.add_argument("--scm",
                     help="BASE:SIZE stamped as /chosen/harvey,scm")
+    ap.add_argument("--ram",
+                    help="BASE:SIZE stamped as /chosen/harvey,ram fallback")
     args = ap.parse_args()
 
     arena = arena_size(args.families_json,
@@ -116,6 +118,7 @@ def main() -> None:
         ("harvey,bootarchive", args.bootarchive),
         ("harvey,teeshm", args.teeshm),
         ("harvey,scm", args.scm),
+        ("harvey,ram", args.ram),
     ):
         if spec:
             base, size = parse_range(spec)

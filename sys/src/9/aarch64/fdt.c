@@ -552,6 +552,7 @@ fdtparse(void *blob, usize bytes, Fdtinfo *out)
 	out->bootarchbase = out->bootarchsize = 0;
 	out->teeshmbase = out->teeshmsize = 0;
 	out->scmbase = out->scmsize = 0;
+	out->fixrambase = out->fixramsize = 0;
 	out->fbbase = out->fbsize = 0;
 	out->fbwidth = out->fbheight = out->fbstride = out->fbbpp = 0;
 	out->uarttype = out->gicversion = 0;
@@ -692,6 +693,11 @@ fdtparse(void *blob, usize bytes, Fdtinfo *out)
 			         same((char *)str+off, "harvey,scm") && len == 16){
 				out->scmbase = get8(value);
 				out->scmsize = get8(value+8);
+			}else if(depth == 2 && node->pathlen < Maxpath &&
+			         same(path, "/chosen") &&
+			         same((char *)str+off, "harvey,ram") && len == 16){
+				out->fixrambase = get8(value);
+				out->fixramsize = get8(value+8);
 			}else if(depth == 2 && node->pathlen < Maxpath &&
 			         same(path, "/aliases")){
 				if(len == 0 || strnlen0(value, len) < 0)
@@ -1025,6 +1031,19 @@ done:
 	}else if(nconsoles == 1){
 		out->uartbase = consoles[0].base;
 		out->uarttype = consoles[0].type;
+	}
+	/*
+	 * Some firmware passes a board DTB with no /memory node (U-Boot
+	 * normally adds it).  Fall back to /chosen/harvey,ram, which the
+	 * image packer can stamp.
+	 */
+	if(out->nmemory == 0 && out->fixramsize != 0 &&
+	   out->fixrambase + out->fixramsize > out->fixrambase){
+		out->memory[0].base = out->fixrambase;
+		out->memory[0].size = out->fixramsize;
+		out->nmemory = 1;
+		out->rambase = out->fixrambase;
+		out->ramsize = out->fixramsize;
 	}
 	out->board = boardid(out);
 	return out->nmemory != 0 && out->ramsize != 0 &&

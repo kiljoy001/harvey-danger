@@ -10,6 +10,7 @@ OUT = ROOT / "build/arm64"
 DTB = OUT / "qemu-virt.dtb"
 BOARD = OUT / "test-board.dtb"
 H6 = OUT / "h6-orangepi3.dtb"
+NOMEM = OUT / "nomem.dtb"
 RK3568 = OUT / "rk3568-test.dtb"
 RK3588 = OUT / "rk3588-test.dtb"
 TEST = OUT / "test-fdt"
@@ -23,6 +24,8 @@ def main() -> None:
                     str(ROOT / "util/arm64/testdata/board.dts")], check=True)
     subprocess.run(["dtc", "-q", "-I", "dts", "-O", "dtb", "-o", str(H6),
                     str(ROOT / "util/arm64/testdata/h6-orangepi3.dts")], check=True)
+    subprocess.run(["dtc", "-q", "-I", "dts", "-O", "dtb", "-o", str(NOMEM),
+                    str(ROOT / "util/arm64/testdata/nomem.dts")], check=True)
     RK3588.write_bytes(BOARD.read_bytes())
     subprocess.run(["fdtput", "-t", "s", str(RK3588), "/", "compatible",
                     "rockchip,rk3588-evb-v10"], check=True)
@@ -46,6 +49,7 @@ def main() -> None:
     subprocess.run([str(TEST), str(DTB)], check=True)
     subprocess.run([str(TEST), str(BOARD), "board"], check=True)
     subprocess.run([str(TEST), str(H6), "h6"], check=True)
+    subprocess.run([str(TEST), str(NOMEM), "nomem"], check=True)
     subprocess.run([str(TEST), str(RK3568), "rk3568"], check=True)
     subprocess.run([str(TEST), str(RK3588), "rk3588"], check=True)
 

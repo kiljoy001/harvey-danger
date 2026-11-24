@@ -63,8 +63,13 @@ true when written: check the code and `git log` before relying on them.
   `compatible`, `ram`, `bootarchive`, `teeshm`, `scm` and `framebuffer`
   as `key value...` lines (see `doc/drivers/platform-bus.md`).
 - `util/arm64/pack_boot.py` can stamp those ranges with
-  `--bootarchive BASE:SIZE`, `--teeshm BASE:SIZE` and `--scm BASE:SIZE`,
-  so an image does not rely on the fallbacks.
+  `--bootarchive BASE:SIZE`, `--teeshm BASE:SIZE`, `--scm BASE:SIZE` and
+  `--ram BASE:SIZE`, so an image does not rely on the fallbacks.
+- `mk-sdimg.py` stamps `harvey,bootarchive` from `--sdk-load` and the
+  SDK size, accepts `--teeshm/--scm/--ram`, and writes a stamped copy
+  without modifying the input DTB.  `harvey,ram` is the kernel's fallback
+  when the firmware DTB has no `/memory`; the real Orange Pi v1.1 DTB is
+  such a file, and the host test covers the fallback.
 - Verified on QEMU virt: the kernel builds with clang-23 (with and
   without `ARM64_RK3566_NPU_PROBE` and `ARM64_NO_GMAC`) and boots; a
   patched DTB carrying `simple-framebuffer` and the three `/chosen`

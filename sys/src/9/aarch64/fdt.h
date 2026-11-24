@@ -102,6 +102,8 @@ struct Fdtinfo {
 	u64 teeshmsize;
 	u64 scmbase;		/* /chosen harvey,scm */
 	u64 scmsize;
+	u64 fixrambase;		/* /chosen harvey,ram, used when /memory is absent */
+	u64 fixramsize;
 	u64 fbbase;		/* simple-framebuffer */
 	u64 fbsize;
 	u32 fbwidth;
