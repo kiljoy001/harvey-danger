@@ -207,7 +207,8 @@ arm64mmubuild(Fdtinfo *info)
 		Fdtdev *d = &info->dev[k];
 		if(d->clas != Fdtclasscru && d->clas != Fdtclassgrf &&
 		   d->clas != Fdtclassvop && d->clas != Fdtclasshdmi &&
-		   d->clas != Fdtclassiommu && d->clas != Fdtclasswdt)
+		   d->clas != Fdtclassiommu && d->clas != Fdtclasswdt &&
+		   d->clas != Fdtclassgmac)
 			continue;
 		if(d->base != 0 && d->size != 0)
 			device[regions++] = (Fdtvirtio){d->base, d->size};

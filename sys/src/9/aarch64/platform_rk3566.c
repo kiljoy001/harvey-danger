@@ -18,7 +18,7 @@ extern void arm64uartputs(char *);
 #define uartputs arm64uartputs
 
 extern Dev etherdevtab, ipdevtab;
-extern void ethergmacinit(void);
+extern void ethergmacinit(Fdtinfo *);
 extern void ethermediumlink(void);
 extern int rk3566pipepoweron(void);
 
@@ -45,7 +45,7 @@ rk356xlateinit(Fdtinfo *info)
 	else
 		uartputs("HARVEY-ARM64 PD_PIPE PASS\n");
 #ifndef ARM64_NO_GMAC
-	ethergmacinit();
+	ethergmacinit(info);
 	ethermediumlink();
 	etherdevtab.reset();
 	ipdevtab.reset();

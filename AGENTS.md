@@ -66,9 +66,10 @@ true when written: check the code and `git log` before relying on them.
   `--bootarchive BASE:SIZE`, `--teeshm BASE:SIZE` and `--scm BASE:SIZE`,
   so an image does not rely on the fallbacks.
 - Verified on QEMU virt: the kernel builds with clang-23 (with and
-  without `ARM64_RK3566_NPU_PROBE`) and boots; a patched DTB carrying
-  `simple-framebuffer` and the three `/chosen` properties parses them and
-  prints `fb:`, `bootarchive:`, `teeshm:` in the early banner.
+  without `ARM64_RK3566_NPU_PROBE` and `ARM64_NO_GMAC`) and boots; a
+  patched DTB carrying `simple-framebuffer` and the three `/chosen`
+  properties parses them and prints `fb:`, `bootarchive:`, `teeshm:` in
+  the early banner.
 - Board classes are `qemu-virt`, `rk3566`, `rk3568`, `rk3588`,
   `bengal` and `unknown`.  RK3588 peripherals and a real
   `rockchip,rk3588-evb-v10` root compatible are covered by the host FDT
@@ -76,9 +77,13 @@ true when written: check the code and `git log` before relying on them.
 - `mmu.c` adds its fixed Rockchip MMIO fallback list only when
   `fdtisrockchip()` is true, so other boards no longer inherit those
   mappings from the single image.
-- Next: drivers consuming `Fdtdev` base/size/irq instead of constants
-  (`devxhci.c` and `ethergmac.c` still name RK3566 addresses), then
-  dropping the fixed list once they do.
+- `ethergmac.c` now takes its GMAC/GRF/CRU bases from `Fdtdev`
+  (`fdtdevcompat()` for the shared GRF/CRU classes) and the kernel maps
+  the GMAC window for the in-tree driver.  It still only compiles; it
+  has not run on the Orange Pi.
+- Next: `devxhci.c` still names RK3566 addresses; move it to
+  `fdtdevcompat()` the same way, then drop the fixed list once every
+  in-tree driver does.
 
 ### Bengal phone bring-up
 

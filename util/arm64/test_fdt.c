@@ -117,6 +117,8 @@ main(int argc, char **argv)
 		   strcmp(i2c->compat, "rockchip,rk3588-i2c") != 0 ||
 		   info.uartbase != 0xfe660000 || info.uarttype != Fdtdwuart ||
 		   fdtisrockchip(&info) != 1 ||
+		   fdtdevcompat(&info, "rockchip,rk3588-i2c") == nil ||
+		   fdtdevcompat(&info, "rockchip,rk3588") != nil ||
 		   fdtdev(&info, Fdtclassnone) != nil){
 			fprintf(stderr, "rk3588: board %u compat %s uart %#llx/%u\n",
 			        info.board, info.rootcompat,
@@ -156,6 +158,7 @@ main(int argc, char **argv)
 		   info.fbwidth != 720 || info.fbheight != 1600 ||
 		   info.fbstride != 2880 || info.fbbpp != 32 ||
 		   fdtisrockchip(&info) != 0 ||
+		   fdtdevcompat(&info, "rockchip,rk3568-gmac") == nil ||
 		   info.nmemory != 2 || info.memory[0].base != 0x20000000 ||
 		   info.memory[0].size != 0x10000000 ||
 		   info.memory[1].base != 0x40000000 ||

@@ -15,12 +15,9 @@
 #include "../port/error.h"
 #include "../port/netif.h"
 #include "etherif.h"
+#include "fdt.h"
 
 enum {
-	GmacBase	= 0xfe010000,
-	GrfBase		= 0xfdc60000,
-	CruBase		= 0xfdd20000,
-
 	/* dwmac4 MAC registers */
 	GmacConfig	= 0x000,
 	GmacIntEn	= 0x0b4,
@@ -122,6 +119,11 @@ struct Gmac {
 };
 
 static Gmac gmac;
+
+/* Fallbacks for a DTB that does not carry the GMAC/GRF/CRU nodes. */
+static u64 gmacbase = 0xfe010000;
+static u64 grfbase = 0xfdc60000;
+static u64 crubase = 0xfdd20000;
 
 static void gmacpoll(void);
 
@@ -557,9 +559,9 @@ gmacreset(Ether *ether)
 		return -1;
 	memset(&r, 0, sizeof r);
 	memset(g, 0, sizeof *g);
-	g->regs = (volatile u32 *)KADDR(GmacBase);
-	g->grf = (volatile u32 *)KADDR(GrfBase);
-	g->cru = (volatile u32 *)KADDR(CruBase);
+	g->regs = (volatile u32 *)KADDR(gmacbase);
+	g->grf = (volatile u32 *)KADDR(grfbase);
+	g->cru = (volatile u32 *)KADDR(crubase);
 	g->ether = ether;
 
 	gmacwake(g);
@@ -631,7 +633,28 @@ gmacreset(Ether *ether)
 }
 
 void
-ethergmacinit(void)
+ethergmacinit(Fdtinfo *info)
 {
+	Fdtdev *d;
+
+	/*
+	 * Take the bases from the device tree.  The class lookup is a
+	 * fallback for DTBs whose compatible string is not the RK3568
+	 * one; the GRF/CRU lookups stay exact because several nodes
+	 * share those classes (pmugrf, pmucru, pipe-grf, ...).
+	 */
+	if(info != nil){
+		d = fdtdevcompat(info, "rockchip,rk3568-gmac");
+		if(d == nil)
+			d = fdtdev(info, Fdtclassgmac);
+		if(d != nil && d->base != 0)
+			gmacbase = d->base;
+		d = fdtdevcompat(info, "rockchip,rk3568-grf");
+		if(d != nil && d->base != 0)
+			grfbase = d->base;
+		d = fdtdevcompat(info, "rockchip,rk3568-cru");
+		if(d != nil && d->base != 0)
+			crubase = d->base;
+	}
 	addethercard("gmac", gmacreset);
 }

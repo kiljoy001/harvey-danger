@@ -134,6 +134,7 @@ int fdtselectram(Fdtinfo *, u64, u64);
 int fdtiscompat(Fdtinfo *, char *);
 int fdtisrockchip(Fdtinfo *);
 Fdtdev *fdtdev(Fdtinfo *, u32);
+Fdtdev *fdtdevcompat(Fdtinfo *, char *);
 const char *fdtboardname(u32);
 const char *fdtclassname(u32);
 int arm64timerinit(Fdtinfo *);

@@ -438,6 +438,19 @@ fdtisrockchip(Fdtinfo *info)
 	       info->board == Fdtboardrk3588;
 }
 
+Fdtdev *
+fdtdevcompat(Fdtinfo *info, char *compat)
+{
+	u32 i;
+
+	if(info == nil || compat == nil)
+		return nil;
+	for(i = 0; i < info->ndev; i++)
+		if(same(info->dev[i].compat, compat))
+			return &info->dev[i];
+	return nil;
+}
+
 static int
 compatstarts(Fdtinfo *info, char *want)
 {
