@@ -8,6 +8,14 @@ typedef struct Fdtreserve Fdtreserve;
 typedef struct Fdtvirtio Fdtvirtio;
 typedef struct Fdtmemory Fdtmemory;
 typedef struct Fdtdev Fdtdev;
+
+enum {
+	Fdtboardunknown,
+	Fdtboardqemuvirt,
+	Fdtboardrk3566,
+	Fdtboardrk3588,
+	Fdtboardbengal,
+};
 struct Fdtreserve {
 	u64 base;
 	u64 size;
@@ -85,6 +93,20 @@ struct Fdtinfo {
 	u64 rambase;
 	u64 ramsize;
 	u64 lklarena;	/* /chosen harvey,lkl-arena-size, 0 if absent */
+	u32 board;		/* Fdtboard* */
+	char rootcompat[160];	/* root compatible strings, space-separated */
+	u64 bootarchbase;	/* /chosen harvey,bootarchive */
+	u64 bootarchsize;
+	u64 teeshmbase;		/* /chosen harvey,teeshm */
+	u64 teeshmsize;
+	u64 scmbase;		/* /chosen harvey,scm */
+	u64 scmsize;
+	u64 fbbase;		/* simple-framebuffer */
+	u64 fbsize;
+	u32 fbwidth;
+	u32 fbheight;
+	u32 fbstride;
+	u32 fbbpp;
 	u64 uartbase;
 	u32 uarttype;
 	u32 gicversion;
@@ -108,6 +130,9 @@ struct Fdtinfo {
 
 int fdtparse(void *, usize, Fdtinfo *);
 int fdtselectram(Fdtinfo *, u64, u64);
+int fdtiscompat(Fdtinfo *, char *);
+Fdtdev *fdtdev(Fdtinfo *, u32);
+const char *fdtboardname(u32);
 const char *fdtclassname(u32);
 int arm64timerinit(Fdtinfo *);
 void arm64timerstop(void);

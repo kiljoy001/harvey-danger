@@ -40,6 +40,30 @@ true when written: check the code and `git log` before relying on them.
   `#P/<node>/regs` file (registers through pread/pwrite); EL0 cache
   maintenance; per-device IOMMU contexts.
 
+### DTB-first platform: branch `dtb-platform`
+
+- Worktree `~/Repo/harvey-dtb`; baseline tag `pre-dtb-platform`.
+  The branch changes only `sys/src/9/aarch64`; the `vmm-hypervisor`
+  worktree stays untouched.
+- `Fdtinfo` now carries platform identity and early resources: `board`
+  from the root `compatible`, `rootcompat`, the `simple-framebuffer`
+  geometry, and the `/chosen` properties `harvey,bootarchive`,
+  `harvey,teeshm` and `harvey,scm`.  Lookups are `fdtiscompat()`,
+  `fdtdev()` and `fdtboardname()`.
+- `main.c` no longer scans the blob for `qcom,bengal` or assumes
+  `0x5c000000`, `0x50000000`/`0x49000000`, or `0x09200000`; those remain
+  only as documented fallbacks for DTBs that lack the properties.
+  `boot.c` selects the RK3566 WDT/PCIe quirk by `board`, taking the WDT
+  base from `#P` discovery.
+- Still board-specific: the `ARM64_RK3566_NPU_PROBE` SCMI/PMU/CRU block.
+  It is selected by board now; move it to `platform_rk3566.c` next.
+- Verified on QEMU virt: the kernel builds with clang-23 and boots; a
+  patched DTB carrying `simple-framebuffer` and the three `/chosen`
+  properties parses them and prints `fb:`, `bootarchive:`, `teeshm:`
+  in the early banner.
+- Next: the NPU quirk into a board file, then a second SoC (rk3588), and
+  drivers consuming `Fdtdev` base/size/irq instead of constants.
+
 ### Bengal phone bring-up
 
 - Uncommitted work on `vmm-hypervisor` (lkl9p, lklusb, the Bengal DTS and

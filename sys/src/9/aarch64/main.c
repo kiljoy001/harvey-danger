@@ -32,6 +32,36 @@ enum {
 static usize uartbase;
 static u32 uarttype;
 static int is_bengal = 0;
+/* SCMI shared-memory page: /chosen/harvey,scm when present. */
+#ifdef ARM64_RK3566_NPU_PROBE
+static u64 scmbase = 0x10f000ULL;
+#endif
+
+/*
+ * Framebuffer console.  The base, geometry and stride come from the
+ * /chosen simple-framebuffer node when the firmware provides one; the
+ * fallback below exists only for boards whose DT still lacks it.
+ */
+static u32 *fb_base;
+static u32 fb_width = 720;
+static u32 fb_height = 1600;
+static u32 fb_pxstride = 720;	/* pixels per scanline */
+static u32 fb_bpp = 32;
+
+static u32 *
+fbmem(void)
+{
+	if(fb_base != nil)
+		return fb_bpp == 32 ? fb_base : nil;
+	if(is_bengal){
+		fb_base = (u32 *)0x5c000000ULL;
+		fb_width = 720;
+		fb_height = 1600;
+		fb_pxstride = 720;
+		fb_bpp = 32;
+	}
+	return fb_base;
+}
 
 static void
 fb_flush(u64 start, u64 size)
@@ -76,7 +106,9 @@ fb_draw_char(int x, int y, char c, u32 color)
 	else if(c >= 'a' && c <= 'f') d = c - 'a' + 10;
 	else if(c >= 'A' && c <= 'F') d = c - 'A' + 10;
 	if(d < 0) return;
-	volatile u32 *fb = (volatile u32 *)0x5c000000ULL;
+	volatile u32 *fb = (volatile u32 *)fbmem();
+	if(fb == nil)
+		return;
 	for(int r = 0; r < 7; r++){
 		u8 bits = hexfon5x7[d][r];
 		for(int col = 0; col < 5; col++){
@@ -85,8 +117,8 @@ fb_draw_char(int x, int y, char c, u32 color)
 					for(int dx = 0; dx < 5; dx++){
 						int px = x + col*5 + dx;
 						int py = y + r*5 + dy;
-						if(px < 720 && py < 1600)
-							fb[py * 720 + px] = color;
+						if(px < fb_width && py < fb_height)
+							fb[py * fb_pxstride + px] = color;
 					}
 				}
 			}
@@ -97,14 +129,17 @@ fb_draw_char(int x, int y, char c, u32 color)
 void
 fb_draw_hex(int x, int y, u64 val, u32 color)
 {
-	if(!is_bengal)
+	volatile u32 *fb;
+	int i;
+
+	fb = (volatile u32 *)fbmem();
+	if(fb == nil)
 		return;
-	volatile u32 *fb = (volatile u32 *)0x5c000000ULL;
-	for(int i = 15; i >= 0; i--){
+	for(i = 15; i >= 0; i--){
 		int nybble = (val >> (i * 4)) & 0xf;
 		fb_draw_char(x + (15 - i) * 30, y, nybble < 10 ? '0' + nybble : 'A' + nybble - 10, color);
 	}
-	fb_flush((u64)&fb[y * 720], 35 * 720 * 4);
+	fb_flush((u64)&fb[y * fb_pxstride], 35 * fb_pxstride * (fb_bpp/8));
 }
 
 static const u8 font5x7[95][5] = {
@@ -172,34 +207,37 @@ fb_con_expand(void)
 static void
 fb_con_newline(void)
 {
-	volatile u32 *fb = (volatile u32 *)0x5c000000ULL;
+	volatile u32 *fb = (volatile u32 *)fbmem();
+	if(fb == nil)
+		return;
 	fb_con_x = 12;
 	fb_con_y += 16;
-	if(fb_con_y + 16 > 1584){
-		for(int y = fb_con_top; y < 1568; y++)
-			for(int x = 0; x < 720; x++)
-				fb[y * 720 + x] = fb[(y + 16) * 720 + x];
-		for(int y = 1568; y < 1584; y++)
-			for(int x = 0; x < 720; x++)
-				fb[y * 720 + x] = 0x00000000;
-		fb_con_y = 1568;
-		fb_flush((u64)&fb[fb_con_top * 720], (1584 - fb_con_top) * 720 * 4);
+	if(fb_con_y + 16 > fb_height - 16){
+		for(int y = fb_con_top; y < fb_height - 32; y++)
+			for(int x = 0; x < fb_width; x++)
+				fb[y * fb_pxstride + x] = fb[(y + 16) * fb_pxstride + x];
+		for(int y = fb_height - 32; y < fb_height - 16; y++)
+			for(int x = 0; x < fb_width; x++)
+				fb[y * fb_pxstride + x] = 0x00000000;
+		fb_con_y = fb_height - 32;
+		fb_flush((u64)&fb[fb_con_top * fb_pxstride],
+		         (fb_height - 16 - fb_con_top) * fb_pxstride * (fb_bpp/8));
 	}
 }
 
 static void
 fb_con_putc(int c)
 {
-	volatile u32 *fb = (volatile u32 *)0x5c000000ULL;
-	if(!is_bengal)
+	volatile u32 *fb = (volatile u32 *)fbmem();
+	if(fb == nil)
 		return;
 	while(__sync_lock_test_and_set(&fb_con_lock, 1))
 		;
 	if(!fb_con_init){
 		fb_con_init = 1;
-		for(int i = 0; i < 1600 * 720; i++)
+		for(int i = 0; i < fb_height * fb_width; i++)
 			fb[i] = 0x00000000;
-		fb_flush((u64)&fb[0], 1600 * 720 * 4);
+		fb_flush((u64)&fb[0], fb_height * fb_width * (fb_bpp/8));
 	}
 	if(c == '\r'){
 		fb_con_x = 12;
@@ -220,15 +258,15 @@ fb_con_putc(int c)
 			u32 px = (bits & (1 << row)) ? 0x00ffffff : 0x00000000;
 			int x0 = fb_con_x + col * 2;
 			int y0 = fb_con_y + row * 2;
-			fb[y0 * 720 + x0] = px;
-			fb[y0 * 720 + x0 + 1] = px;
-			fb[(y0 + 1) * 720 + x0] = px;
-			fb[(y0 + 1) * 720 + x0 + 1] = px;
+			fb[y0 * fb_pxstride + x0] = px;
+			fb[y0 * fb_pxstride + x0 + 1] = px;
+			fb[(y0 + 1) * fb_pxstride + x0] = px;
+			fb[(y0 + 1) * fb_pxstride + x0 + 1] = px;
 		}
 	}
-	fb_flush((u64)&fb[fb_con_y * 720], 16 * 720 * 4);
+	fb_flush((u64)&fb[fb_con_y * fb_pxstride], 16 * fb_pxstride * (fb_bpp/8));
 	fb_con_x += 12;
-	if(fb_con_x + 12 > 708)
+	if(fb_con_x + 12 > fb_width - 12)
 		fb_con_newline();
 	__sync_lock_release(&fb_con_lock);
 }
@@ -262,7 +300,7 @@ uartputc(int c)
 	volatile u32 *uart;
 	int n;
 
-	if(is_bengal)
+	if(fb_base != nil || is_bengal)
 		fb_con_putc(c);
 	if(uartbase == 0)
 		return;
@@ -306,7 +344,6 @@ arm64uartputs(char *s)
 #define uartputs arm64uartputs
 
 /* Optional U-Boot-supplied boot archive (programs for /boot). */
-enum { BootarchiveAddr = 0x50000000 };
 u64 arm64bootarchbase;
 u32 arm64bootarchsize;
 
@@ -376,7 +413,7 @@ static u32 scmiret;
 static u32
 scmicall(u32 proto, u32 cmd, u32 a0, u32 a1, u32 *out)
 {
-	volatile Scmishmem *s = (volatile Scmishmem *)0x10f000ULL;
+	volatile Scmishmem *s = (volatile Scmishmem *)scmbase;
 	u64 r;
 	u32 i, v;
 
@@ -396,7 +433,7 @@ scmicall(u32 proto, u32 cmd, u32 a0, u32 a1, u32 *out)
 	}
 	__asm__ volatile("dsb sy" ::: "memory");
 	/* The vendor TF-A takes the SCMI shmem address in x1. */
-	r = smccall(0x82000010ULL, 0x10f000ULL, 0);
+	r = smccall(0x82000010ULL, scmbase, 0);
 	scmiret = (u32)r;
 	for(i = 0; i < 1000000 && !(s->status & 3); i++)
 		__asm__ volatile("nop");
@@ -421,7 +458,7 @@ scmiprint(u32 id)
 	uarthex(attr);
 	/* the short name follows the attributes word, 16 bytes */
 	{
-		volatile Scmishmem *s = (volatile Scmishmem *)0x10f000ULL;
+		volatile Scmishmem *s = (volatile Scmishmem *)scmbase;
 		for(i = 0; i < 16; i++)
 			name[i] = ((u8 *)&s->payload[2])[i];
 		name[16] = 0;
@@ -439,7 +476,7 @@ scmiprint(u32 id)
 	uartputs(" smcret ");
 	uarthex(scmiret);
 	uartputs(" chan ");
-	uarthex(((volatile Scmishmem *)0x10f000ULL)->status);
+	uarthex(((volatile Scmishmem *)scmbase)->status);
 	uartputs("\n");
 }
 
@@ -454,16 +491,16 @@ rk3566npuprobe(u64 dmapage)
 	uartputs("psci ");
 	uarthex(smccall(0x84000000ULL, 0, 0));
 	uartputs(" smc1 ");
-	uarthex(smccall(0x82000010ULL, 0x10f000ULL, 0));
+	uarthex(smccall(0x82000010ULL, scmbase, 0));
 	uartputs("\n");
 
 	uartputs("npu scmi channel ");
-	uarthex(((volatile Scmishmem *)0x10f000ULL)->status);
+	uarthex(((volatile Scmishmem *)scmbase)->status);
 	uartputs("\n");
 
 	/* BASE PROTOCOL_VERSION: no payload, reply is status + version. */
 	{
-		volatile Scmishmem *sh = (volatile Scmishmem *)0x10f000ULL;
+		volatile Scmishmem *sh = (volatile Scmishmem *)scmbase;
 
 		for(i = 0; i < 1000000 && !(sh->status & 1); i++)
 			__asm__ volatile("nop");
@@ -472,7 +509,7 @@ rk3566npuprobe(u64 dmapage)
 		sh->length = 4;
 		sh->header = (0x10 << 10);
 		__asm__ volatile("dsb sy" ::: "memory");
-		smccall(0x82000010ULL, 0x10f000ULL, 0);
+		smccall(0x82000010ULL, scmbase, 0);
 		for(i = 0; i < 1000000 && !(sh->status & 3); i++)
 			__asm__ volatile("nop");
 		uartputs("base ver st ");
@@ -492,7 +529,7 @@ rk3566npuprobe(u64 dmapage)
 	}
 	/* BASE DISCOVER_LIST_PROTOCOLS. */
 	{
-		volatile Scmishmem *sh = (volatile Scmishmem *)0x10f000ULL;
+		volatile Scmishmem *sh = (volatile Scmishmem *)scmbase;
 
 		for(i = 0; i < 1000000 && !(sh->status & 1); i++)
 			__asm__ volatile("nop");
@@ -501,7 +538,7 @@ rk3566npuprobe(u64 dmapage)
 		sh->length = 4;
 		sh->header = 0x06 | (0x10 << 10);
 		__asm__ volatile("dsb sy" ::: "memory");
-		smccall(0x82000010ULL, 0x10f000ULL, 0);
+		smccall(0x82000010ULL, scmbase, 0);
 		for(i = 0; i < 1000000 && !(sh->status & 3); i++)
 			__asm__ volatile("nop");
 		uartputs("base protos st ");
@@ -522,7 +559,7 @@ rk3566npuprobe(u64 dmapage)
 	uartputs(" smcret ");
 	uarthex(scmiret);
 	uartputs("\n");
-	v = ((volatile u64 *)0x10f000ULL)[0];
+	v = ((volatile u64 *)scmbase)[0];
 	uartputs("shmem0 ");
 	uarthex(v);
 	uartputs("\n");
@@ -629,14 +666,19 @@ arm64fault(void)
 	__asm__ volatile("mrs %0, far_el1" : "=r"(far));
 	__asm__ volatile("mrs %0, mpidr_el1" : "=r"(mpidr));
 	fb_stripe(15, 0x00ff0022);	/* Slot 15: Bright Red/Magenta on CPU fault/trap */
-	if(is_bengal){
-		volatile u32 *fb = (volatile u32 *)0x5c000000ULL;
-		for(int i = 850 * 720; i < 1150 * 720; i++)
-			fb[i] = 0x00000000;
-		fb_draw_hex(60, 880, esr, 0x00ffff00);   /* ESR in Yellow */
-		fb_draw_hex(60, 940, elr, 0x0000ffff);   /* ELR in Cyan */
-		fb_draw_hex(60, 1000, far, 0x00ff00ff);  /* FAR in Magenta */
-		fb_draw_hex(60, 1060, mpidr, 0x0000ff00); /* MPIDR in Green */
+	if(fb_base != nil || is_bengal){
+		volatile u32 *fb = (volatile u32 *)fbmem();
+		if(fb != nil){
+			int y0 = fb_height * 850 / 1600;
+			int y1 = fb_height * 1150 / 1600;
+			for(int y = y0; y < y1; y++)
+				for(int x = 0; x < fb_width; x++)
+					fb[y * fb_pxstride + x] = 0x00000000;
+			fb_draw_hex(60, fb_height * 880 / 1600, esr, 0x00ffff00);   /* ESR in Yellow */
+			fb_draw_hex(60, fb_height * 940 / 1600, elr, 0x0000ffff);   /* ELR in Cyan */
+			fb_draw_hex(60, fb_height * 1000 / 1600, far, 0x00ff00ff);  /* FAR in Magenta */
+			fb_draw_hex(60, fb_height * 1060 / 1600, mpidr, 0x0000ff00); /* MPIDR in Green */
+		}
 	}
 	uartputs("ARM64 exception esr ");
 	uarthex(esr);
@@ -670,20 +712,6 @@ arm64main(usize dtb)
 
 	arm64machinit();
 	__asm__ volatile("msr vbar_el1, %0; isb" :: "r"(arm64vectors) : "memory");
-	if(dtb != 0 && (dtb & 7) == 0){
-		p = (u8 *)dtb;
-		if(beget4(p) == Fdtmagic){
-			usize tsz = beget4(p + 4);
-			for(usize k = 0; k < 512 && k + 11 < tsz; k++){
-				if(p[k]=='q' && p[k+1]=='c' && p[k+2]=='o' && p[k+3]=='m' &&
-				   p[k+4]==',' && p[k+5]=='b' && p[k+6]=='e' && p[k+7]=='n' &&
-				   p[k+8]=='g' && p[k+9]=='a' && p[k+10]=='l'){
-					is_bengal = 1;
-					break;
-				}
-			}
-		}
-	}
 	fb_stripe(0, 0x00ffffff);	/* Slot 0: Entry (White) */
 	if(dtb == 0 || (dtb & 7) != 0){
 		fb_stripe(15, 0x00ff0000);	/* RED: dtb pointer invalid/unaligned */
@@ -709,6 +737,22 @@ arm64main(usize dtb)
 		uartputs("HARVEY-ARM64 FDT-ERROR\n");
 		return;
 	}
+	/* The device tree is now the source of platform identity. */
+	is_bengal = info.board == Fdtboardbengal;
+#ifdef ARM64_RK3566_NPU_PROBE
+	if(info.scmbase != 0)
+		scmbase = info.scmbase;
+#endif
+	if(info.fbbase != 0 && info.fbbpp == 32 &&
+	   info.fbbase >= info.rambase &&
+	   info.fbbase + info.fbsize > info.fbbase &&
+	   info.fbbase + info.fbsize <= info.rambase + info.ramsize){
+		fb_base = (u32 *)info.fbbase;
+		fb_width = info.fbwidth != 0 ? info.fbwidth : 720;
+		fb_height = info.fbheight != 0 ? info.fbheight : 1600;
+		fb_pxstride = info.fbstride != 0 ? info.fbstride/4 : fb_width;
+		fb_bpp = 32;
+	}
 	fb_stripe(1, 0x0000ff00);	/* Slot 1: FDT parsed (Green) */
 	if(fdtselectram(&info, (u64)_start, (u64)__image_end) < 0){
 		fb_stripe(15, 0x00000088);	/* DARK BLUE: fdtselectram error */
@@ -733,6 +777,21 @@ arm64main(usize dtb)
 	uarthex(info.giccpu);
 	uartputs("\ntimer irq: ");
 	uarthex(info.timerirq);
+	uartputs("\nboard: ");
+	uartputs((char *)fdtboardname(info.board));
+	if(info.rootcompat[0] != 0){
+		uartputs(" [");
+		uartputs(info.rootcompat);
+		uartputs("]");
+	}
+	uartputs("\nncpu: ");
+	uarthex(info.ncpu);
+	uartputs(" fb: ");
+	uarthex(info.fbbase);
+	uartputs(" bootarchive: ");
+	uarthex(info.bootarchbase);
+	uartputs(" teeshm: ");
+	uarthex(info.teeshmbase);
 	uartputs("\nHARVEY-ARM64 EARLY-BOOT PASS\n");
 #ifdef ARM64_TEST_RESERVE
 	if(info.nreserve == Maxfdtreserve)
@@ -796,30 +855,52 @@ arm64main(usize dtb)
 		}
 	}
 	/*
-	 * The vendor RK3566 OP-TEE build's memory map puts the static
-	 * non-secure shared memory at 0x09200000, 2 MiB (type
-	 * MEM_AREA_NSEC_SHM, right after TEE/TA RAM).  Reserve it so the
-	 * page allocator never reuses it, and publish it as "teeshm" for
-	 * the userspace OP-TEE client.
+	 * Static non-secure shared memory for OP-TEE.  Prefer the range the
+	 * firmware/pack tool stamped into /chosen; the RK3566 vendor layout
+	 * (0x09200000, 2 MiB, type MEM_AREA_NSEC_SHM) is kept only as a
+	 * fallback for DTBs that predate the property.
 	 */
-	if(info.nreserve < Maxfdtreserve && 0x9200000 >= info.rambase &&
-	   0x9200000 + 0x200000 <= info.rambase + info.ramsize){
+	if(info.teeshmbase != 0 && info.teeshmsize != 0 &&
+	   info.nreserve < Maxfdtreserve &&
+	   info.teeshmbase >= info.rambase &&
+	   info.teeshmbase + info.teeshmsize > info.teeshmbase &&
+	   info.teeshmbase + info.teeshmsize <= info.rambase + info.ramsize){
+		info.reserve[info.nreserve].base = info.teeshmbase;
+		info.reserve[info.nreserve++].size = info.teeshmsize;
+		arm64teeshmbase = info.teeshmbase;
+		arm64teeshmsize = info.teeshmsize;
+	}else if(info.board == Fdtboardrk3566 &&
+	         info.nreserve < Maxfdtreserve &&
+	         0x9200000 >= info.rambase &&
+	         0x9200000 + 0x200000 <= info.rambase + info.ramsize){
 		info.reserve[info.nreserve].base = 0x9200000;
 		info.reserve[info.nreserve++].size = 0x200000;
 		arm64teeshmbase = 0x9200000;
 		arm64teeshmsize = 0x200000;
 	}
 	/*
-	 * U-Boot may load a boot archive next to the kernel (see the board
-	 * boot command).  Reserve it before the page allocator exists so the
-	 * blobs stay intact; program names in it replace the embedded ones.
+	 * Boot archive (programs for /boot), if the loader or pack tool
+	 * placed one.  /chosen/harvey,bootarchive names it directly; the
+	 * magic scan at the legacy load addresses is only a fallback for
+	 * images and loaders that do not stamp it.
 	 */
-	/*
-	 * QEMU virt with 768 MiB puts the DMA arena at 0x50000000, which is
-	 * also the board's archive address.  Scan the board address first,
-	 * then the lower QEMU slot that clears the arena.
-	 */
-	if(!is_bengal){
+	if(info.bootarchbase != 0 && info.bootarchsize >= 24 &&
+	   info.bootarchsize <= 0xffffffffULL &&
+	   info.nreserve < Maxfdtreserve &&
+	   info.bootarchbase >= (u64)__image_end &&
+	   info.bootarchbase + info.bootarchsize > info.bootarchbase &&
+	   info.bootarchbase + info.bootarchsize <= info.rambase + info.ramsize){
+		info.reserve[info.nreserve].base = info.bootarchbase;
+		info.reserve[info.nreserve++].size = info.bootarchsize;
+		arm64bootarchbase = info.bootarchbase;
+		arm64bootarchsize = (u32)info.bootarchsize;
+	}else if(!is_bengal){
+		/*
+		 * QEMU virt with 768 MiB puts the DMA arena at 0x50000000,
+		 * which is also the board's archive address.  Scan the
+		 * board address first, then the lower QEMU slot that
+		 * clears the arena.
+		 */
 		static const u64 cand[] = { 0x50000000ULL, 0x49000000ULL };
 		u64 addr;
 		u32 ci;
@@ -1006,7 +1087,14 @@ arm64main(usize dtb)
 	uartputs("HARVEY-ARM64 ADDRESS-SPACE SWITCH PASS\n");
 	uartputs("HARVEY-ARM64 EL0-TIMER-IRQ PASS\n");
 #ifdef ARM64_RK3566_NPU_PROBE
-	if(info.uartbase == 0xfe660000ULL)
+	/*
+	 * Board quirk, not a generic path: the RK3566 NPU needs the vendor
+	 * clock/reset sequence before its registers can be touched.  Select
+	 * it by platform identity; the UART address is a fallback for DTBs
+	 * without a root compatible.
+	 */
+	if(info.board == Fdtboardrk3566 ||
+	   (info.board == Fdtboardunknown && info.uartbase == 0xfe660000ULL))
 		rk3566npuprobe(page1);
 #endif
 #ifdef ARM64_FULL_KERNEL

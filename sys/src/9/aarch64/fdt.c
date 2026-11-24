@@ -30,6 +30,9 @@ struct Fdtnode {
 	u8 *compat;
 	u32 compatlen, pathlen, uarttype, gicversion;
 	u32 clas;
+	u32 fbwidth, fbheight, fbstride, fbbpp;
+	char fbformat[16];
+	int fb;
 	int memory, uart, gic, timer, virtio;
 	int cpu, psci, psci_std;
 	u32 method, cpuon;
@@ -274,6 +277,23 @@ fdtclassname(u32 clas)
 	return name[clas];
 }
 
+const char *
+fdtboardname(u32 board)
+{
+	switch(board){
+	case Fdtboardqemuvirt:
+		return "qemu-virt";
+	case Fdtboardrk3566:
+		return "rk3566";
+	case Fdtboardrk3588:
+		return "rk3588";
+	case Fdtboardbengal:
+		return "bengal";
+	default:
+		return "unknown";
+	}
+}
+
 static int
 cells(u8 *p, u32 n, u32 count, u64 *v)
 {
@@ -336,6 +356,71 @@ fdtselectram(Fdtinfo *info, u64 imagebase, u64 imageend)
 }
 
 int
+fdtiscompat(Fdtinfo *info, char *want)
+{
+	char *p;
+
+	if(info == nil || want == nil)
+		return 0;
+	if(same(info->rootcompat, want))
+		return 1;
+	for(p = info->rootcompat; *p != 0; p++)
+		if(*p == ' ' && same(p+1, want))
+			return 1;
+	return 0;
+}
+
+Fdtdev *
+fdtdev(Fdtinfo *info, u32 clas)
+{
+	u32 i;
+
+	if(info == nil || clas == Fdtclassnone)
+		return nil;
+	for(i = 0; i < info->ndev; i++)
+		if(info->dev[i].clas == clas)
+			return &info->dev[i];
+	return nil;
+}
+
+static int
+compatstarts(Fdtinfo *info, char *want)
+{
+	char *p;
+	u32 i, n;
+
+	for(n = 0; want[n] != 0; n++)
+		;
+	for(p = info->rootcompat; *p != 0; ){
+		for(i = 0; i < n && p[i] == want[i]; i++)
+			;
+		if(i == n)
+			return 1;
+		while(*p != 0 && *p != ' ')
+			p++;
+		while(*p == ' ')
+			p++;
+	}
+	return 0;
+}
+
+static u32
+boardid(Fdtinfo *out)
+{
+	if(fdtiscompat(out, "linux,dummy-virt") ||
+	   compatstarts(out, "qemu,virt"))
+		return Fdtboardqemuvirt;
+	if(compatstarts(out, "rockchip,rk3566"))
+		return Fdtboardrk3566;
+	if(compatstarts(out, "rockchip,rk3588"))
+		return Fdtboardrk3588;
+	if(compatstarts(out, "qcom,bengal") ||
+	   compatstarts(out, "qcom,sm6115"))
+		return Fdtboardbengal;
+	return Fdtboardunknown;
+}
+
+int
 fdtparse(void *blob, usize bytes, Fdtinfo *out)
 {
 	u8 *p, *s, *str, *value;
@@ -370,6 +455,13 @@ fdtparse(void *blob, usize bytes, Fdtinfo *out)
 	str = p+stroff;
 	out->rambase = out->ramsize = out->uartbase = 0;
 	out->lklarena = 0;
+	out->board = Fdtboardunknown;
+	out->rootcompat[0] = 0;
+	out->bootarchbase = out->bootarchsize = 0;
+	out->teeshmbase = out->teeshmsize = 0;
+	out->scmbase = out->scmsize = 0;
+	out->fbbase = out->fbsize = 0;
+	out->fbwidth = out->fbheight = out->fbstride = out->fbbpp = 0;
 	out->uarttype = out->gicversion = 0;
 	out->gicdist = out->giccpu = 0;
 	gicphandle = 0;
@@ -437,6 +529,9 @@ fdtparse(void *blob, usize bytes, Fdtinfo *out)
 			node->cpu = node->psci = 0;
 			node->method = node->cpuon = 0;
 			node->uarttype = node->gicversion = 0;
+			node->fb = 0;
+			node->fbwidth = node->fbheight = node->fbstride = node->fbbpp = 0;
+			node->fbformat[0] = 0;
 			node->intrext = nil;
 			node->intrextlen = 0;
 			node->phandle = 0;
@@ -491,6 +586,21 @@ fdtparse(void *blob, usize bytes, Fdtinfo *out)
 				if(len == 8)
 					out->lklarena = get8(value);
 			}else if(depth == 2 && node->pathlen < Maxpath &&
+			         same(path, "/chosen") &&
+			         same((char *)str+off, "harvey,bootarchive") && len == 16){
+				out->bootarchbase = get8(value);
+				out->bootarchsize = get8(value+8);
+			}else if(depth == 2 && node->pathlen < Maxpath &&
+			         same(path, "/chosen") &&
+			         same((char *)str+off, "harvey,teeshm") && len == 16){
+				out->teeshmbase = get8(value);
+				out->teeshmsize = get8(value+8);
+			}else if(depth == 2 && node->pathlen < Maxpath &&
+			         same(path, "/chosen") &&
+			         same((char *)str+off, "harvey,scm") && len == 16){
+				out->scmbase = get8(value);
+				out->scmsize = get8(value+8);
+			}else if(depth == 2 && node->pathlen < Maxpath &&
 			         same(path, "/aliases")){
 				if(len == 0 || strnlen0(value, len) < 0)
 					return -1;
@@ -504,6 +614,29 @@ fdtparse(void *blob, usize bytes, Fdtinfo *out)
 			}else if(same((char *)str+off, "reg")){
 				node->reg = value;
 				node->reglen = len;
+			}else if(same((char *)str+off, "width") && len == 4){
+				node->fbwidth = get4(value);
+			}else if(same((char *)str+off, "height") && len == 4){
+				node->fbheight = get4(value);
+			}else if(same((char *)str+off, "stride") && len == 4){
+				node->fbstride = get4(value);
+			}else if(same((char *)str+off, "format") && len >= 2){
+				u32 k;
+
+				for(k = 0; k < len && k < sizeof(node->fbformat)-1 &&
+				    value[k] != 0; k++)
+					node->fbformat[k] = value[k];
+				node->fbformat[k] = 0;
+				node->fbbpp = 32;
+				if(same(node->fbformat, "a8b8g8r8") ||
+				   same(node->fbformat, "x8r8g8b8") ||
+				   same(node->fbformat, "x8b8g8r8") ||
+				   same(node->fbformat, "a8r8g8b8"))
+					node->fbbpp = 32;
+				else if(same(node->fbformat, "r5g6b5"))
+					node->fbbpp = 16;
+				else if(same(node->fbformat, "r8g8b8"))
+					node->fbbpp = 24;
 			}else if(same((char *)str+off, "device_type") && len >= 7 &&
 			         value[6] == 0 && same((char *)value, "memory"))
 				node->memory = 1;
@@ -521,6 +654,20 @@ fdtparse(void *blob, usize bytes, Fdtinfo *out)
 				node->compat = value;
 				node->compatlen = len;
 				node->clas = classify(value, len);
+				if(depth == 1){
+					u32 k, o;
+
+					o = 0;
+					for(k = 0; k < len && o < sizeof(out->rootcompat)-1; k++)
+						out->rootcompat[o++] = value[k] == 0 ? ' ' : value[k];
+					while(o > 0 && out->rootcompat[o-1] == ' ')
+						o--;
+					out->rootcompat[o] = 0;
+				}
+				if(hascompat(value, len, "simple-framebuffer") ||
+				   hascompat(value, len, "rpi,simple-framebuffer") ||
+				   hascompat(value, len, "allwinner,simple-framebuffer"))
+					node->fb = 1;
 				if(hascompat(value, len, "arm,pl011"))
 					node->uarttype = Fdtpl011;
 				else if(hascompat(value, len, "snps,dw-apb-uart") ||
@@ -592,6 +739,15 @@ fdtparse(void *blob, usize bytes, Fdtinfo *out)
 			if(node->enabled && node->timer && node->intrlen >= 36 &&
 			   get4(node->intr+24) == 1)
 				out->timerirq = get4(node->intr+28)+16;
+			if(node->enabled && node->fb && node->reg != nil &&
+			   regpair(node, 0, &base, &size) == 0){
+				out->fbbase = base;
+				out->fbsize = size;
+				out->fbwidth = node->fbwidth;
+				out->fbheight = node->fbheight;
+				out->fbstride = node->fbstride;
+				out->fbbpp = node->fbbpp;
+			}
 			if(node->enabled && node->reg != nil &&
 			   regpair(node, 0, &base, &size) == 0){
 				if(node->memory){
@@ -777,6 +933,7 @@ done:
 		out->uartbase = consoles[0].base;
 		out->uarttype = consoles[0].type;
 	}
+	out->board = boardid(out);
 	return out->nmemory != 0 && out->ramsize != 0 &&
 	       out->gicdist != 0 &&
 	       out->gicversion != 0 && out->timerirq != 0 ? 0 : -1;
