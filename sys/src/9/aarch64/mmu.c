@@ -13,7 +13,7 @@ enum {
 	L1blocksz = 1024 * 1024 * 1024,
 };
 
-static const u64 Maxidentity = 16ULL * 1024 * 1024 * 1024;
+static const u64 Maxidentity = 64ULL * 1024 * 1024 * 1024;
 static u64 kernelroot;
 u64 arm64kernelmair, arm64kerneltcr, arm64kernelsctlr;
 extern u64 arm64dmabase, arm64dmasize;

@@ -123,4 +123,4 @@ stamp `harvey,ram` first or add a synthetic node before inspecting.
   have not run on the Orange Pi yet.
 - RAM is managed per bank: every 2 MiB-aligned bank is mapped and added
   to the page allocator, with the image bank first.  Banks above the
-  16 GiB identity-map cap are not mapped yet.
+  64 GiB identity-map cap are not mapped yet.
