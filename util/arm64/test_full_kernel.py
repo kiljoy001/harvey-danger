@@ -38,6 +38,7 @@ def main() -> None:
                 "HARVEY-ARM64 9RING PASS",
                 "HARVEY-ARM64 BOOT-PROBES PASS",
                 "HARVEY-ARM64 PLATFORM PASS",
+                "HARVEY-ARM64 DMA-FS PASS",
                 "HARVEY-ARM64 IPI PASS",
                 "HARVEY-ARM64 LIBC-USER PASS",
                 "HARVEY-ARM64 USER-PROCESS PASS",

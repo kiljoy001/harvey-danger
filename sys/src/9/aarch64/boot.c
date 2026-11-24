@@ -548,6 +548,38 @@ pnpprobe(Fdtinfo *info)
 	arm64uartputs("HARVEY-ARM64 PLATFORM PASS\n");
 }
 
+static void
+dmaprobe(void)
+{
+	char *names[2];
+	char buf[64];
+	Chan *root, *c;
+	Walkqid *walk;
+	int n;
+
+	if(arm64dmasize == 0)
+		return;
+	root = pnpdevtab.attach("");
+	names[0] = "dma";
+	names[1] = "base";
+	walk = pnpdevtab.walk(root, nil, names, 2);
+	if(walk == nil || walk->nqid != 2 || walk->clone == nil){
+		if(walk != nil)
+			free(walk);
+		cclose(root);
+		panic("ARM64 #P/dma walk failed");
+	}
+	c = walk->clone;
+	free(walk);
+	cclose(root);
+	pnpdevtab.open(c, OREAD);
+	n = pnpdevtab.read(c, buf, sizeof(buf), 0);
+	cclose(c);
+	if(n < 4 || memcmp(buf, "0x", 2) != 0 || memcmp(buf, "0x0\n", 4) == 0)
+		panic("ARM64 #P/dma base failed");
+	arm64uartputs("HARVEY-ARM64 DMA-FS PASS\n");
+}
+
 static int
 neverready(void *a)
 {
@@ -595,6 +627,7 @@ worker(void *arg)
 			arm64uartputs("HARVEY-ARM64 ROOT-WALK PASS\n");
 		}
 		pnpprobe(bootinfo);
+		dmaprobe();
 		ringprobe();
 		virtio9pprobe();
 		arm64uartputs("HARVEY-ARM64 BOOT-PROBES PASS\n");

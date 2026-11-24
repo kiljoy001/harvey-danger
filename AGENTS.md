@@ -97,6 +97,9 @@ true when written: check the code and `git log` before relying on them.
   affinity values, not by a 4-CPU-per-affinity index.  QEMU virt with 8
   CPUs now reports every CPU scheduler/timer and `IPI PASS`; the GICR
   size comes from the DT, so the scan stays inside the mapped window.
+- The non-Bengal DMA arena is half the largest bank, capped at 512 MiB
+  and floored at 32 MiB, so `#P/dma` exists on 256/512 MiB boards.  Boot
+  walks `#P/dma/base` and prints `HARVEY-ARM64 DMA-FS PASS`.
 - `devxhci.c` and `ethergmac.c` resolve their bases with
   `fdtdevcompat()`, `fdtdevcompatn()` and `fdtdevname()`; the old
   addresses remain as fallbacks for a DTB that lacks the nodes.  Both

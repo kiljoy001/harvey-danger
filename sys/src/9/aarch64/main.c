@@ -576,12 +576,13 @@ arm64main(usize dtb)
 	}
 	if(!is_bengal){
 		u32 bb, bi;
-		u64 bbase, bsize, base;
+		u64 bbase, bsize, base, want;
 
 		/*
 		 * Put the arena at the top of the largest bank.  On a split
 		 * board that keeps the image bank free, and it still lands
-		 * above the kernel on a single-bank board.
+		 * above the kernel on a single-bank board.  Shrink the
+		 * default 512 MiB on small boards so #P/dma still exists.
 		 */
 		bb = 0;
 		for(bi = 1; bi < info.nusable; bi++)
@@ -590,18 +591,22 @@ arm64main(usize dtb)
 		bbase = info.usable[bb].base;
 		bsize = info.usable[bb].size;
 		arm64dmabase = 0;
-		if(info.nreserve < Maxfdtreserve &&
-		   bsize > arm64dmasize + 2*1024*1024){
-			base = (bbase + bsize - arm64dmasize) &
+		want = arm64dmasize;
+		if(want > bsize / 2)
+			want = bsize / 2;
+		want &= ~((u64)(2*1024*1024 - 1));
+		if(info.nreserve < Maxfdtreserve && want >= 32ULL * 1024 * 1024){
+			base = (bbase + bsize - want) &
 			       ~((u64)(2*1024*1024 - 1));
 			if(base >= bbase &&
-			   base+arm64dmasize > base &&
-			   base+arm64dmasize <= bbase+bsize &&
+			   base+want > base &&
+			   base+want <= bbase+bsize &&
 			   (base > (u64)__image_end ||
 			    bbase > (u64)__image_end)){
 				info.reserve[info.nreserve].base = base;
-				info.reserve[info.nreserve++].size = arm64dmasize;
+				info.reserve[info.nreserve++].size = want;
 				arm64dmabase = base;
+				arm64dmasize = want;
 			}else
 				arm64dmasize = 0;
 		}else
