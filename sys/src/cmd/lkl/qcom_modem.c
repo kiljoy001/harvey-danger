@@ -1,0 +1,708 @@
+/*
+ * In-process Qualcomm QMI cellular modem client over AF_QIPCRTR for Bengal / SM6115.
+ *
+ * Exposes live MPSS cellular status and control over 9P (/mnt/lkl/modemstatus
+ * and /mnt/lkl/modemctl):
+ *   - QRTR service discovery (WDS, DMS, NAS, WMS, VOICE, UIM, etc.)
+ *   - DMS: firmware revision, IMEI, operating mode (ONLINE / LPM)
+ *   - UIM: SIM slot presence and card state
+ *   - NAS: registration state, signal info (LTE/WCDMA/GSM), and live RF network scan
+ */
+#include <u.h>
+#include <libc.h>
+
+extern long	lkl_syscall(long no, long *params);
+extern int	lkl_printf(const char *fmt, ...);
+
+enum {
+	LklNrClose	= 57,
+	LklNrSocket	= 198,
+	LklNrBind	= 200,
+	LklNrGetsockname = 204,
+	LklNrSendto	= 206,
+	LklNrRecvfrom	= 207,
+	LklNrSetsockopt	= 208,
+
+	AfQipcrtr	= 42,
+	SockDgram	= 2,
+	SolSocket	= 1,
+	SoRcvtimeo	= 20,
+
+	QrtrPortCtrl	= 0xfffffffeU,
+	QrtrNewServer	= 4,
+	QrtrNewLookup	= 10,
+
+	/* Standard QMI service IDs */
+	QmiSvcWds	= 0x01,
+	QmiSvcDms	= 0x02,
+	QmiSvcNas	= 0x03,
+	QmiSvcWms	= 0x05,
+	QmiSvcVoice	= 0x09,
+	QmiSvcUim	= 0x0b,
+
+	/* QMI message types */
+	QmiTypeReq	= 0,
+	QmiTypeResp	= 2,
+	QmiTypeInd	= 4,
+
+	/* DMS message IDs */
+	DmsGetRevId	= 0x0023,
+	DmsGetSerials	= 0x0025,
+	DmsGetOpMode	= 0x002d,
+	DmsSetOpMode	= 0x002e,
+
+	/* UIM message IDs */
+	UimGetCardStat	= 0x002f,
+
+	/* NAS message IDs */
+	NasPerformScan	= 0x0021,
+	NasGetServSys	= 0x0024,
+	NasGetSigInfo	= 0x004f,
+
+	MaxQrtrSvcs	= 64,
+	MaxScanNets	= 24,
+};
+
+typedef struct SockaddrQrtr SockaddrQrtr;
+struct SockaddrQrtr {
+	u16	sq_family;
+	u16	pad;
+	u32	sq_node;
+	u32	sq_port;
+};
+
+typedef struct QrtrCtrlPkt QrtrCtrlPkt;
+struct QrtrCtrlPkt {
+	u32	cmd;
+	u32	service;
+	u32	instance;
+	u32	node;
+	u32	port;
+};
+
+typedef struct QrtrSvc QrtrSvc;
+struct QrtrSvc {
+	u32	service;
+	u32	instance;
+	u32	node;
+	u32	port;
+};
+
+typedef struct ScanNet ScanNet;
+struct ScanNet {
+	u16	mcc;
+	u16	mnc;
+	u8	status;
+	u8	rat;
+	char	desc[48];
+};
+
+static struct {
+	int	probed;
+	int	nsvcs;
+	QrtrSvc	svcs[MaxQrtrSvcs];
+
+	char	rev[96];
+	char	imei[32];
+	int	opmode;		/* -1 unknown, 0 online, 1 lpm, ... */
+	u16	offline_reason;
+	int	hw_restricted;
+	int	simslots;
+	int	simstate[2];	/* 0 absent, 1 present, 2 error, -1 unknown */
+
+	int	regstate;	/* -1 unknown, 0 not_reg, 1 reg, 2 searching, 3 denied */
+	int	rat;		/* radio interface */
+	int	has_lte_sig;
+	signed char	lte_rssi;
+	signed char	lte_rsrq;
+	short	lte_rsrp;
+	short	lte_snr;
+
+	int	nscan;
+	ScanNet	scan[MaxScanNets];
+	char	info[128];
+} mst = {
+	.opmode = -1,
+	.simstate = { -1, -1 },
+	.regstate = -1,
+};
+
+static u16 qmi_txnid = 1;
+
+static long
+msys(long nr, long a0, long a1, long a2, long a3, long a4, long a5)
+{
+	long p[6] = { a0, a1, a2, a3, a4, a5 };
+	return lkl_syscall(nr, p);
+}
+
+static u16
+le16(const uchar *p)
+{
+	return (u16)p[0] | ((u16)p[1] << 8);
+}
+
+static void
+putle16(uchar *p, u16 v)
+{
+	p[0] = (uchar)v;
+	p[1] = (uchar)(v >> 8);
+}
+
+static int
+set_rcvtimeo(int fd, long sec)
+{
+	struct { long tv_sec; long tv_usec; } tv;
+	tv.tv_sec = sec;
+	tv.tv_usec = 0;
+	return (int)msys(LklNrSetsockopt, fd, SolSocket, SoRcvtimeo,
+		(long)&tv, sizeof tv, 0);
+}
+
+static int
+qrtr_open_client(SockaddrQrtr *meout, long timeout_sec)
+{
+	SockaddrQrtr me;
+	u32 alen;
+	long fd;
+
+	fd = msys(LklNrSocket, AfQipcrtr, SockDgram, 0, 0, 0, 0);
+	if(fd < 0)
+		return -1;
+	memset(&me, 0, sizeof me);
+	alen = sizeof me;
+	if(msys(LklNrGetsockname, fd, (long)&me, (long)&alen, 0, 0, 0) < 0){
+		msys(LklNrClose, fd, 0, 0, 0, 0, 0);
+		return -1;
+	}
+	if(msys(LklNrBind, fd, (long)&me, sizeof me, 0, 0, 0) < 0){
+		msys(LklNrClose, fd, 0, 0, 0, 0, 0);
+		return -1;
+	}
+	alen = sizeof me;
+	if(msys(LklNrGetsockname, fd, (long)&me, (long)&alen, 0, 0, 0) < 0){
+		msys(LklNrClose, fd, 0, 0, 0, 0, 0);
+		return -1;
+	}
+	set_rcvtimeo((int)fd, timeout_sec);
+	if(meout != nil)
+		*meout = me;
+	return (int)fd;
+}
+
+static int
+qrtr_discover(void)
+{
+	SockaddrQrtr me, ctrl, from;
+	QrtrCtrlPkt req, resp;
+	u32 alen;
+	int fd;
+	long m;
+
+	fd = qrtr_open_client(&me, 2);
+	if(fd < 0)
+		return -1;
+
+	memset(&ctrl, 0, sizeof ctrl);
+	ctrl.sq_family = AfQipcrtr;
+	ctrl.sq_node = me.sq_node;
+	ctrl.sq_port = QrtrPortCtrl;
+
+	memset(&req, 0, sizeof req);
+	req.cmd = QrtrNewLookup;
+	req.service = 0;
+	req.instance = 0;
+
+	if(msys(LklNrSendto, fd, (long)&req, sizeof req, 0, (long)&ctrl, sizeof ctrl) < 0){
+		msys(LklNrClose, fd, 0, 0, 0, 0, 0);
+		return -1;
+	}
+
+	mst.nsvcs = 0;
+	for(;;){
+		alen = sizeof from;
+		m = msys(LklNrRecvfrom, fd, (long)&resp, sizeof resp, 0,
+			(long)&from, (long)&alen);
+		if(m < (long)sizeof resp)
+			break;
+		if(resp.cmd != QrtrNewServer)
+			continue;
+		if(resp.service == 0 && resp.instance == 0 &&
+		   resp.node == 0 && resp.port == 0)
+			break;
+		if(mst.nsvcs < MaxQrtrSvcs){
+			mst.svcs[mst.nsvcs].service = resp.service;
+			mst.svcs[mst.nsvcs].instance = resp.instance;
+			mst.svcs[mst.nsvcs].node = resp.node;
+			mst.svcs[mst.nsvcs].port = resp.port;
+			mst.nsvcs++;
+		}
+	}
+	msys(LklNrClose, fd, 0, 0, 0, 0, 0);
+	lkl_printf("qcom_modem: discovered %d QRTR services\n", mst.nsvcs);
+	return mst.nsvcs;
+}
+
+static QrtrSvc*
+find_svc(u32 svc)
+{
+	int i;
+
+	for(i = 0; i < mst.nsvcs; i++)
+		if(mst.svcs[i].service == svc)
+			return &mst.svcs[i];
+	return nil;
+}
+
+/*
+ * Send a QMI request with optional TLVs to a discovered QRTR service and
+ * receive the matching QMI response.  Returns response TLV payload length
+ * (>= 0) into resp_tlv, or negative error code (or -1000 - qmi_err).
+ */
+static int
+qmi_txn(u32 svc_id, u16 msg_id, const uchar *req_tlv, int req_len,
+	uchar *resp_tlv, int resp_max, long timeout_sec)
+{
+	QrtrSvc *s;
+	SockaddrQrtr dst, from;
+	uchar tx[512], rx[4096];
+	u32 alen;
+	u16 tid;
+	int fd, tries;
+	long m;
+
+	s = find_svc(svc_id);
+	if(s == nil)
+		return -2;
+	if(7 + req_len > (int)sizeof tx)
+		return -3;
+
+	fd = qrtr_open_client(nil, timeout_sec);
+	if(fd < 0)
+		return -4;
+
+	tid = qmi_txnid++;
+	if(qmi_txnid == 0)
+		qmi_txnid = 1;
+
+	tx[0] = QmiTypeReq;
+	putle16(tx + 1, tid);
+	putle16(tx + 3, msg_id);
+	putle16(tx + 5, (u16)req_len);
+	if(req_len > 0)
+		memmove(tx + 7, req_tlv, req_len);
+
+	memset(&dst, 0, sizeof dst);
+	dst.sq_family = AfQipcrtr;
+	dst.sq_node = s->node;
+	dst.sq_port = s->port;
+
+	if(msys(LklNrSendto, fd, (long)tx, 7 + req_len, 0, (long)&dst, sizeof dst) < 0){
+		msys(LklNrClose, fd, 0, 0, 0, 0, 0);
+		return -5;
+	}
+
+	for(tries = 0; tries < 16; tries++){
+		alen = sizeof from;
+		m = msys(LklNrRecvfrom, fd, (long)rx, sizeof rx, 0,
+			(long)&from, (long)&alen);
+		if(m < 7){
+			msys(LklNrClose, fd, 0, 0, 0, 0, 0);
+			return -6;
+		}
+		if(rx[0] != QmiTypeResp)
+			continue;
+		if(le16(rx + 1) != tid || le16(rx + 3) != msg_id)
+			continue;
+		int tlen = le16(rx + 5);
+		if(7 + tlen > (int)m)
+			tlen = (int)m - 7;
+		if(tlen > resp_max)
+			tlen = resp_max;
+		if(resp_tlv != nil && tlen > 0)
+			memmove(resp_tlv, rx + 7, tlen);
+		msys(LklNrClose, fd, 0, 0, 0, 0, 0);
+		return tlen;
+	}
+	msys(LklNrClose, fd, 0, 0, 0, 0, 0);
+	return -7;
+}
+
+static const uchar*
+qmi_find_tlv(const uchar *buf, int len, u8 type, int *vlen)
+{
+	int pos = 0;
+
+	while(pos + 3 <= len){
+		u8 t = buf[pos];
+		int l = le16(buf + pos + 1);
+		if(pos + 3 + l > len)
+			break;
+		if(t == type){
+			if(vlen != nil)
+				*vlen = l;
+			return buf + pos + 3;
+		}
+		pos += 3 + l;
+	}
+	return nil;
+}
+
+static int
+qmi_result_err(const uchar *buf, int len)
+{
+	const uchar *v;
+	int vl;
+
+	v = qmi_find_tlv(buf, len, 0x02, &vl);
+	if(v == nil || vl < 4)
+		return 0;
+	if(le16(v) == 0)
+		return 0;
+	return (int)le16(v + 2);
+}
+
+static void
+query_dms(void)
+{
+	uchar r[512];
+	const uchar *v;
+	int n, vl;
+
+	n = qmi_txn(QmiSvcDms, DmsGetRevId, nil, 0, r, sizeof r, 3);
+	if(n >= 0 && qmi_result_err(r, n) == 0){
+		v = qmi_find_tlv(r, n, 0x01, &vl);
+		if(v != nil && vl > 0){
+			if(vl >= (int)sizeof mst.rev)
+				vl = sizeof(mst.rev) - 1;
+			memmove(mst.rev, v, vl);
+			mst.rev[vl] = 0;
+		}
+	}
+
+	n = qmi_txn(QmiSvcDms, DmsGetSerials, nil, 0, r, sizeof r, 3);
+	if(n >= 0 && qmi_result_err(r, n) == 0){
+		v = qmi_find_tlv(r, n, 0x11, &vl);
+		if(v != nil && vl > 0){
+			if(vl >= (int)sizeof mst.imei)
+				vl = sizeof(mst.imei) - 1;
+			memmove(mst.imei, v, vl);
+			mst.imei[vl] = 0;
+		}
+	}
+
+	n = qmi_txn(QmiSvcDms, DmsGetOpMode, nil, 0, r, sizeof r, 3);
+	if(n >= 0 && qmi_result_err(r, n) == 0){
+		v = qmi_find_tlv(r, n, 0x01, &vl);
+		if(v != nil && vl >= 1)
+			mst.opmode = v[0];
+		v = qmi_find_tlv(r, n, 0x10, &vl);
+		mst.offline_reason = (v != nil && vl >= 2) ? le16(v) : 0;
+		v = qmi_find_tlv(r, n, 0x11, &vl);
+		mst.hw_restricted = (v != nil && vl >= 1) ? v[0] : -1;
+	}
+}
+
+static void
+query_uim(void)
+{
+	uchar r[512];
+	const uchar *v;
+	int n, vl, i, pos;
+
+	n = qmi_txn(QmiSvcUim, UimGetCardStat, nil, 0, r, sizeof r, 3);
+	if(n < 0 || qmi_result_err(r, n) != 0)
+		return;
+	/*
+	 * TLV 0x10 (Card Status):
+	 *   u16 index_gw_pri, u16 index_1x_pri, u16 index_gw_sec, u16 index_1x_sec,
+	 *   u8 num_slots,
+	 *   slot[]: u8 card_state, u8 upin_state, u8 upin_retries, u8 upuk_retries,
+	 *           u8 error_code, u8 num_app, app[]...
+	 */
+	v = qmi_find_tlv(r, n, 0x10, &vl);
+	if(v == nil || vl < 9)
+		return;
+	mst.simslots = v[8];
+	pos = 9;
+	for(i = 0; i < mst.simslots && i < 2 && pos + 6 <= vl; i++){
+		int napp;
+		mst.simstate[i] = v[pos];
+		napp = v[pos + 5];
+		pos += 6;
+		/* Skip application descriptors to reach next slot */
+		while(napp-- > 0 && pos + 2 <= vl){
+			int aidlen;
+			if(pos + 3 > vl)
+				break;
+			aidlen = v[pos + 2];
+			pos += 3 + aidlen;
+			if(pos + 1 > vl)
+				break;
+			pos += 1 + v[pos];	/* label */
+			pos += 1 + 4 + 4;	/* upin_replaced + pin1 + pin2 */
+		}
+	}
+}
+
+static void
+query_nas(void)
+{
+	uchar r[512];
+	const uchar *v;
+	int n, vl;
+
+	n = qmi_txn(QmiSvcNas, NasGetServSys, nil, 0, r, sizeof r, 3);
+	if(n >= 0 && qmi_result_err(r, n) == 0){
+		v = qmi_find_tlv(r, n, 0x01, &vl);
+		if(v != nil && vl >= 6){
+			mst.regstate = v[0];
+			if(v[5] > 0 && vl >= 7)
+				mst.rat = v[6];
+		}
+	}
+
+	mst.has_lte_sig = 0;
+	n = qmi_txn(QmiSvcNas, NasGetSigInfo, nil, 0, r, sizeof r, 3);
+	if(n >= 0 && qmi_result_err(r, n) == 0){
+		v = qmi_find_tlv(r, n, 0x14, &vl);	/* LTE signal strength */
+		if(v != nil && vl >= 6){
+			mst.has_lte_sig = 1;
+			mst.lte_rssi = (signed char)v[0];
+			mst.lte_rsrq = (signed char)v[1];
+			mst.lte_rsrp = (short)le16(v + 2);
+			mst.lte_snr  = (short)le16(v + 4);
+		}
+	}
+}
+
+int
+modem_probe(void)
+{
+	int n;
+
+	n = qrtr_discover();
+	if(n <= 0){
+		snprint(mst.info, sizeof mst.info, "no QRTR services (mpss not ready)");
+		return -1;
+	}
+	mst.probed = 1;
+	query_dms();
+	query_uim();
+	query_nas();
+	snprint(mst.info, sizeof mst.info, "probe ok (%d qrtr svcs)", n);
+	return 0;
+}
+
+int
+modem_set_opmode(int mode)
+{
+	uchar req[4], resp[128];
+	int n, err;
+
+	if(!mst.probed)
+		modem_probe();
+	req[0] = 0x01;
+	putle16(req + 1, 1);
+	req[3] = (uchar)mode;
+	n = qmi_txn(QmiSvcDms, DmsSetOpMode, req, 4, resp, sizeof resp, 5);
+	if(n < 0){
+		snprint(mst.info, sizeof mst.info, "set_opmode(%d) txn err %d", mode, n);
+		return -1;
+	}
+	err = qmi_result_err(resp, n);
+	if(err != 0){
+		snprint(mst.info, sizeof mst.info, "set_opmode(%d) qmi err %d", mode, err);
+		return -1;
+	}
+	query_dms();
+	query_nas();
+	snprint(mst.info, sizeof mst.info, "opmode set to %d", mst.opmode);
+	return 0;
+}
+
+int
+modem_scan(void)
+{
+	uchar req[4], resp[2048];
+	const uchar *v, *vr;
+	int n, vl, vrl, err, cnt, pos, i, rcnt, rpos;
+
+	if(!mst.probed)
+		modem_probe();
+
+	/* TLV 0x10 = network_type bitmask: 0x07 = GSM | UMTS | LTE */
+	req[0] = 0x10;
+	putle16(req + 1, 1);
+	req[3] = 0x07;
+
+	snprint(mst.info, sizeof mst.info, "scanning...");
+	n = qmi_txn(QmiSvcNas, NasPerformScan, req, 4, resp, sizeof resp, 45);
+	if(n < 0){
+		snprint(mst.info, sizeof mst.info, "scan txn err %d", n);
+		return -1;
+	}
+	err = qmi_result_err(resp, n);
+	if(err != 0){
+		snprint(mst.info, sizeof mst.info, "scan qmi err %d", err);
+		return -1;
+	}
+
+	mst.nscan = 0;
+	v = qmi_find_tlv(resp, n, 0x10, &vl);
+	if(v != nil && vl >= 2){
+		cnt = le16(v);
+		pos = 2;
+		for(i = 0; i < cnt && mst.nscan < MaxScanNets && pos + 6 <= vl; i++){
+			ScanNet *sn = &mst.scan[mst.nscan];
+			int dlen;
+			sn->mcc = le16(v + pos);
+			sn->mnc = le16(v + pos + 2);
+			sn->status = v[pos + 4];
+			dlen = v[pos + 5];
+			pos += 6;
+			if(pos + dlen > vl)
+				break;
+			int cpy = dlen < (int)sizeof(sn->desc) - 1 ? dlen : (int)sizeof(sn->desc) - 1;
+			memmove(sn->desc, v + pos, cpy);
+			sn->desc[cpy] = 0;
+			sn->rat = 0;
+			pos += dlen;
+			mst.nscan++;
+		}
+	}
+	/* Match RAT info from TLV 0x12 if present */
+	vr = qmi_find_tlv(resp, n, 0x12, &vrl);
+	if(vr != nil && vrl >= 2){
+		rcnt = le16(vr);
+		rpos = 2;
+		for(i = 0; i < rcnt && rpos + 5 <= vrl; i++){
+			u16 mcc = le16(vr + rpos);
+			u16 mnc = le16(vr + rpos + 2);
+			u8 rat = vr[rpos + 4];
+			rpos += 5;
+			if(i < mst.nscan && mst.scan[i].mcc == mcc && mst.scan[i].mnc == mnc)
+				mst.scan[i].rat = rat;
+		}
+	}
+	query_nas();
+	snprint(mst.info, sizeof mst.info, "scan ok (%d networks)", mst.nscan);
+	return mst.nscan;
+}
+
+static const char*
+opmode_str(int m)
+{
+	switch(m){
+	case 0: return "online";
+	case 1: return "low-power";
+	case 2: return "ftm";
+	case 3: return "offline";
+	case 4: return "resetting";
+	case 5: return "shutting-down";
+	case 6: return "persistent-lpm";
+	default: return "unknown";
+	}
+}
+
+static const char*
+sim_str(int s)
+{
+	switch(s){
+	case 0: return "absent";
+	case 1: return "present";
+	case 2: return "error";
+	default: return "unknown";
+	}
+}
+
+static const char*
+reg_str(int r)
+{
+	switch(r){
+	case 0: return "not-registered";
+	case 1: return "registered";
+	case 2: return "searching";
+	case 3: return "denied";
+	default: return "unknown";
+	}
+}
+
+static const char*
+rat_str(int r)
+{
+	switch(r){
+	case 4: return "GSM";
+	case 5: return "UMTS";
+	case 8: return "LTE";
+	case 12: return "5G-NR";
+	default: return "?";
+	}
+}
+
+void
+modemstatus_buf(char *out, int outsz)
+{
+	int pos = 0, i;
+
+	if(!mst.probed)
+		modem_probe();
+	else{
+		query_dms();
+		query_nas();
+	}
+
+	pos += snprint(out + pos, outsz - pos, "qrtr_svcs %d", mst.nsvcs);
+	if(find_svc(QmiSvcWds))   pos += snprint(out + pos, outsz - pos, " WDS");
+	if(find_svc(QmiSvcDms))   pos += snprint(out + pos, outsz - pos, " DMS");
+	if(find_svc(QmiSvcNas))   pos += snprint(out + pos, outsz - pos, " NAS");
+	if(find_svc(QmiSvcWms))   pos += snprint(out + pos, outsz - pos, " WMS");
+	if(find_svc(QmiSvcVoice)) pos += snprint(out + pos, outsz - pos, " VOICE");
+	if(find_svc(QmiSvcUim))   pos += snprint(out + pos, outsz - pos, " UIM");
+	pos += snprint(out + pos, outsz - pos, "\n");
+
+	pos += snprint(out + pos, outsz - pos, "rev %s\n", mst.rev[0] ? mst.rev : "unknown");
+	pos += snprint(out + pos, outsz - pos, "imei %s\n", mst.imei[0] ? mst.imei : "unknown");
+	pos += snprint(out + pos, outsz - pos, "opmode %s (%d) reason=0x%04x hw_restr=%d\n",
+		opmode_str(mst.opmode), mst.opmode, mst.offline_reason, mst.hw_restricted);
+	pos += snprint(out + pos, outsz - pos, "sim slots=%d slot0=%s slot1=%s\n",
+		mst.simslots, sim_str(mst.simstate[0]), sim_str(mst.simstate[1]));
+	pos += snprint(out + pos, outsz - pos, "nas reg=%s rat=%s\n",
+		reg_str(mst.regstate), rat_str(mst.rat));
+	if(mst.has_lte_sig)
+		pos += snprint(out + pos, outsz - pos, "lte rssi=%d rsrp=%d rsrq=%d snr=%d\n",
+			mst.lte_rssi, mst.lte_rsrp, mst.lte_rsrq, mst.lte_snr);
+	pos += snprint(out + pos, outsz - pos, "info %s\n", mst.info);
+	{
+		extern int rmtfs_loaded_mask, rmtfs_opens, rmtfs_allocs, rmtfs_alloc_sz;
+		extern int rmtfs_reads, rmtfs_writes, rmtfs_rw_skips;
+		extern char rmtfs_last_open[], rmtfs_last_skip[];
+		pos += snprint(out + pos, outsz - pos,
+			"rmtfs loaded=0x%x open=%d alloc=%d(0x%x) rd=%d wr=%d skip=%d last=%s\n",
+			rmtfs_loaded_mask, rmtfs_opens, rmtfs_allocs, rmtfs_alloc_sz,
+			rmtfs_reads, rmtfs_writes, rmtfs_rw_skips,
+			rmtfs_last_open[0] ? rmtfs_last_open : "none");
+		if(rmtfs_last_skip[0])
+			pos += snprint(out + pos, outsz - pos, "rmtfs_skip %s\n", rmtfs_last_skip);
+	}
+	{
+		extern int tftp_rrqs, tftp_enoents, tftp_wrqs, tftp_nmisses, tftp_nhits, tftp_nwrq_log;
+		extern char tftp_last_miss[], tftp_misses[][64], tftp_hits[][64], tftp_wrq_log[][320];
+		int k;
+		pos += snprint(out + pos, outsz - pos,
+			"tftp rrq=%d miss=%d wrq=%d last_miss=%s\n",
+			tftp_rrqs, tftp_enoents, tftp_wrqs,
+			tftp_last_miss[0] ? tftp_last_miss : "none");
+		for(k = 0; k < tftp_nhits && pos < outsz - 80; k++)
+			pos += snprint(out + pos, outsz - pos, "tftp_hit %s\n", tftp_hits[k]);
+		for(k = 0; k < tftp_nmisses && pos < outsz - 80; k++)
+			pos += snprint(out + pos, outsz - pos, "tftp_miss %s\n", tftp_misses[k]);
+		for(k = 0; k < tftp_nwrq_log && pos < outsz - 340; k++)
+			pos += snprint(out + pos, outsz - pos, "tftp_wrq %s\n", tftp_wrq_log[k]);
+	}
+	for(i = 0; i < mst.nscan && pos < outsz - 80; i++){
+		pos += snprint(out + pos, outsz - pos, "cell %03d-%02d rat=%s status=0x%02x %s\n",
+			mst.scan[i].mcc, mst.scan[i].mnc, rat_str(mst.scan[i].rat),
+			mst.scan[i].status, mst.scan[i].desc);
+	}
+}

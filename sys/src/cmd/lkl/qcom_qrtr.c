@@ -13,6 +13,7 @@
 extern long	lkl_syscall(long no, long *params);
 extern void	lkl_printf(const char *fmt, ...);
 extern int	lklhost_spawn(void (*fn)(void*), void *arg);
+extern void	lkl_host_dma_sync(unsigned long pa, unsigned long size, int op);
 
 enum {
 	LklNrMknodat	= 33,
@@ -47,7 +48,7 @@ enum {
 	RmtfsVer	= 1,
 
 	SectorSz	= 512,
-	MaxPartBytes	= 4 * 1024 * 1024,
+	MaxPartBytes	= 8 * 1024 * 1024,
 };
 
 typedef struct SockaddrQrtr SockaddrQrtr;
@@ -151,6 +152,58 @@ read_sysfs_str(char *path, char *buf, int bufsz)
 
 /* ---- tqftpserv (RFC 1350 TFTP over AF_QIPCRTR, service 4096) ---- */
 
+int		tftp_rrqs;
+int		tftp_enoents;
+int		tftp_wrqs;
+char		tftp_last_miss[96];
+char		tftp_misses[8][64];
+int		tftp_nmisses;
+char		tftp_hits[4][64];
+int		tftp_nhits;
+char		tftp_wrq_log[6][320];
+int		tftp_nwrq_log;
+
+typedef struct RamFile RamFile;
+struct RamFile {
+	char	name[96];
+	uchar	*data;
+	int	len;
+};
+static RamFile	ramfiles[16];
+static int	nramfiles;
+
+static RamFile*
+ramfile_find(const char *name)
+{
+	int i;
+	for(i = 0; i < nramfiles; i++)
+		if(strcmp(ramfiles[i].name, name) == 0)
+			return &ramfiles[i];
+	return nil;
+}
+
+static void
+ramfile_put(const char *name, const uchar *data, int len)
+{
+	RamFile *rf = ramfile_find(name);
+	if(rf == nil){
+		if(nramfiles >= (int)nelem(ramfiles))
+			return;
+		rf = &ramfiles[nramfiles++];
+		snprint(rf->name, sizeof rf->name, "%s", name);
+	}
+	free(rf->data);
+	rf->data = nil;
+	rf->len = 0;
+	if(len > 0){
+		rf->data = malloc(len);
+		if(rf->data != nil){
+			memmove(rf->data, data, len);
+			rf->len = len;
+		}
+	}
+}
+
 static void
 tftp_send_err(int fd, SockaddrQrtr *peer, u16 code, char *msg)
 {
@@ -169,12 +222,22 @@ static int
 tftp_open_local(char *req, char *outpath, int outsz, long *fsz)
 {
 	static char *prefixes[] = {
+		"/readonly/vendor/firmware_mnt/image/",
 		"/readonly/firmware/image/",
+		"/readonly/firmware_mnt/image/",
+		"/readonly/vendor/firmware/",
 		"/firmware/image/",
+		"/firmware_mnt/image/",
+		"/vendor/firmware/",
+		"/readwrite/",
 		"/readonly/",
 		"/",
 	};
 	static char *roots[] = {
+		"/fw/persist/rfs/msm/mpss/",
+		"/fw/persist/rfs/msm/mpss/readwrite/",
+		"/fw/persist/rfs/shared/",
+		"/fw/persist/",
 		"/fw/modem/image/",
 		"/fw/dsp/",
 		"/lib/firmware/",
@@ -261,12 +324,29 @@ tftp_handle_rrq(SockaddrQrtr *peer, uchar *req, int reqlen)
 	if(tfd < 0)
 		return;
 
-	ffd = tftp_open_local(fname, local, sizeof local, &fsz);
-	if(ffd < 0){
-		lkl_printf("tqftpserv: RRQ %s -> ENOENT\n", fname);
-		tftp_send_err(tfd, peer, 1, "file not found");
-		qsys(LklNrClose, tfd, 0, 0, 0, 0, 0);
-		return;
+	tftp_rrqs++;
+	{
+		RamFile *rf = ramfile_find(fname);
+		if(rf != nil){
+			ffd = -2;	/* served from RAM overlay */
+			fsz = rf->len;
+			if(tftp_nhits < 4)
+				snprint(tftp_hits[tftp_nhits++], 64, "RAM:%s", fname);
+		}else{
+			ffd = tftp_open_local(fname, local, sizeof local, &fsz);
+			if(ffd < 0){
+				tftp_enoents++;
+				snprint(tftp_last_miss, sizeof tftp_last_miss, "%s", fname);
+				if(tftp_nmisses < 8)
+					snprint(tftp_misses[tftp_nmisses++], 64, "%s", fname);
+				lkl_printf("tqftpserv: RRQ %s -> ENOENT\n", fname);
+				tftp_send_err(tfd, peer, 1, "file not found");
+				qsys(LklNrClose, tfd, 0, 0, 0, 0, 0);
+				return;
+			}
+			if(tftp_nhits < 4)
+				snprint(tftp_hits[tftp_nhits++], 64, "%s", fname);
+		}
 	}
 	lkl_printf("tqftpserv: RRQ %s -> %s (%ld bytes, blk=%d)\n",
 		fname, local, fsz, blksize);
@@ -290,7 +370,8 @@ tftp_handle_rrq(SockaddrQrtr *peer, uchar *req, int reqlen)
 		flen = sizeof from;
 		r = qsys(LklNrRecvfrom, tfd, (long)ack, sizeof ack, 0, (long)&from, (long)&flen);
 		if(r < 4 || ((ack[0] << 8) | ack[1]) != 4){
-			qsys(LklNrClose, ffd, 0, 0, 0, 0, 0);
+			if(ffd >= 0)
+				qsys(LklNrClose, ffd, 0, 0, 0, 0, 0);
 			qsys(LklNrClose, tfd, 0, 0, 0, 0, 0);
 			return;
 		}
@@ -298,16 +379,26 @@ tftp_handle_rrq(SockaddrQrtr *peer, uchar *req, int reqlen)
 
 	pkt = malloc(4 + blksize);
 	if(pkt == nil){
-		qsys(LklNrClose, ffd, 0, 0, 0, 0, 0);
+		if(ffd >= 0)
+			qsys(LklNrClose, ffd, 0, 0, 0, 0, 0);
 		qsys(LklNrClose, tfd, 0, 0, 0, 0, 0);
 		return;
 	}
 
 	blk = 1;
 	for(;;){
-		n = qsys(LklNrPread64, ffd, (long)(pkt + 4), blksize, off, 0, 0);
-		if(n < 0)
-			n = 0;
+		if(ffd == -2){
+			RamFile *rf = ramfile_find(fname);
+			n = (rf != nil && off < rf->len) ? (rf->len - off) : 0;
+			if(n > blksize)
+				n = blksize;
+			if(n > 0)
+				memmove(pkt + 4, rf->data + off, n);
+		}else{
+			n = qsys(LklNrPread64, ffd, (long)(pkt + 4), blksize, off, 0, 0);
+			if(n < 0)
+				n = 0;
+		}
 		pkt[0] = 0;
 		pkt[1] = 3;	/* DATA */
 		pkt[2] = blk >> 8;
@@ -329,7 +420,8 @@ tftp_handle_rrq(SockaddrQrtr *peer, uchar *req, int reqlen)
 	}
 
 	free(pkt);
-	qsys(LklNrClose, ffd, 0, 0, 0, 0, 0);
+	if(ffd >= 0)
+		qsys(LklNrClose, ffd, 0, 0, 0, 0, 0);
 	qsys(LklNrClose, tfd, 0, 0, 0, 0, 0);
 }
 
@@ -408,21 +500,59 @@ tftp_handle_wrq(SockaddrQrtr *peer, uchar *req, int reqlen)
 		qsys(LklNrSendto, tfd, (long)ack, 4, 0, (long)peer, sizeof *peer);
 	}
 
-	for(;;){
-		flen = sizeof from;
-		r = qsys(LklNrRecvfrom, tfd, (long)dbuf, 4 + blksize, 0, (long)&from, (long)&flen);
-		if(r < 4)
-			break;
-		if(((dbuf[0] << 8) | dbuf[1]) != 3)	/* DATA */
-			break;
-		total += r - 4;
-		ack[0] = 0;
-		ack[1] = 4;	/* ACK(block) */
-		ack[2] = dbuf[2];
-		ack[3] = dbuf[3];
-		qsys(LklNrSendto, tfd, (long)ack, 4, 0, (long)peer, sizeof *peer);
-		if(r - 4 < blksize)
-			break;
+	tftp_wrqs++;
+	{
+		char preview[256];
+		uchar *wbuf = nil;
+		int plen = 0, wcap = 0, wlen = 0;
+
+		for(;;){
+			flen = sizeof from;
+			r = qsys(LklNrRecvfrom, tfd, (long)dbuf, 4 + blksize, 0, (long)&from, (long)&flen);
+			if(r < 4)
+				break;
+			if(((dbuf[0] << 8) | dbuf[1]) != 3)	/* DATA */
+				break;
+			if(r > 4){
+				int k, n = (int)(r - 4);
+				for(k = 0; k < n && plen < (int)sizeof(preview) - 1; k++){
+					uchar c = dbuf[4 + k];
+					preview[plen++] = (c >= 0x20 && c < 0x7f) ? (char)c : ' ';
+				}
+				if(wlen + n <= 65536){
+					if(wlen + n > wcap){
+						int nc = wcap ? wcap * 2 : 4096;
+						while(nc < wlen + n)
+							nc *= 2;
+						if(nc > 65536)
+							nc = 65536;
+						uchar *nb = realloc(wbuf, nc);
+						if(nb != nil){
+							wbuf = nb;
+							wcap = nc;
+						}
+					}
+					if(wbuf != nil && wlen + n <= wcap){
+						memmove(wbuf + wlen, dbuf + 4, n);
+						wlen += n;
+					}
+				}
+			}
+			total += r - 4;
+			ack[0] = 0;
+			ack[1] = 4;	/* ACK(block) */
+			ack[2] = dbuf[2];
+			ack[3] = dbuf[3];
+			qsys(LklNrSendto, tfd, (long)ack, 4, 0, (long)peer, sizeof *peer);
+			if(r - 4 < blksize)
+				break;
+		}
+		if(wbuf != nil && total == wlen)
+			ramfile_put(fname, wbuf, wlen);
+		free(wbuf);
+		preview[plen] = 0;
+		if(tftp_nwrq_log < 6)
+			snprint(tftp_wrq_log[tftp_nwrq_log++], 320, "%s (%ldB): %s", fname, total, preview);
 	}
 	lkl_printf("tqftpserv: WRQ %s -> %ld bytes (RAM sink)\n", fname, total);
 	free(dbuf);
@@ -478,6 +608,16 @@ static RmtPart rmtparts[] = {
 static int	rmtmemfd = -1;
 static u64	rmtmempa;
 static u64	rmtmemsz;
+static volatile int rmtfs_ready;
+int		rmtfs_loaded_mask;
+int		rmtfs_opens;
+int		rmtfs_allocs;
+int		rmtfs_alloc_sz;
+int		rmtfs_reads;
+int		rmtfs_writes;
+int		rmtfs_rw_skips;
+char		rmtfs_last_open[64];
+char		rmtfs_last_skip[96];
 
 static void
 rmtfs_load_parts(void)
@@ -519,6 +659,7 @@ rmtfs_load_parts(void)
 					off += n;
 				}
 				rmtparts[i].size = (u32)off;
+				rmtfs_loaded_mask |= (1 << i);
 				lkl_printf("rmtfs: loaded %s (%s) %ud bytes RO into RAM\n",
 					rmtparts[i].partname, devpath, rmtparts[i].size);
 			}
@@ -637,8 +778,11 @@ rmtfs_thread(void *arg)
 		return;
 	}
 	fd = qrtr_open_and_publish(RmtfsSvc, RmtfsVer, 0);
-	if(fd < 0)
+	if(fd < 0){
+		rmtfs_ready = -1;
 		return;
+	}
+	rmtfs_ready = 1;
 
 	for(;;){
 		u16 txn, msgid, mlen;
@@ -669,6 +813,8 @@ rmtfs_thread(void *arg)
 			if(qmi_find_tlv(body, mlen, 0x01, &pv, &pl) == 0 && pl < sizeof qpath){
 				memmove(qpath, pv, pl);
 				qpath[pl] = 0;
+				snprint(rmtfs_last_open, sizeof rmtfs_last_open, "%s", qpath);
+				rmtfs_opens++;
 				for(i = 0; i < (int)nelem(rmtparts); i++)
 					if(strcmp(qpath, rmtparts[i].qmipath) == 0){
 						cid = i + 1;
@@ -724,26 +870,48 @@ rmtfs_thread(void *arg)
 				u32 nsec = le32(iv + 1 + k * 12 + 8);
 				u64 poff = (u64)sec * SectorSz;
 				u64 bytes = (u64)nsec * SectorSz;
+				u64 boff = moff;
 
-				if(poff + bytes > rp->size || (u64)moff + bytes > rmtmemsz)
+				if(boff >= rmtmempa && boff < rmtmempa + rmtmemsz)
+					boff -= rmtmempa;
+				if(poff + bytes > rp->size || boff + bytes > rmtmemsz){
+					rmtfs_rw_skips++;
+					snprint(rmtfs_last_skip, sizeof rmtfs_last_skip,
+						"d=%u s=%u n=%u m=0x%x p=0x%x z=0x%llx",
+						dir, sec, nsec, moff, rp->size, rmtmemsz);
 					continue;
-				if(dir == 0)	/* READ: RAM -> shared mem */
+				}
+				if(dir == 0){	/* READ: RAM -> shared mem (clean cache for MPSS DMA) */
+					rmtfs_reads++;
 					qsys(LklNrPwrite64, rmtmemfd,
-						(long)(rp->data + poff), bytes, moff, 0, 0);
-				else		/* WRITE: shared mem -> RAM ONLY (never flash) */
+						(long)(rp->data + poff), bytes, (long)boff, 0, 0);
+					lkl_host_dma_sync((unsigned long)(rmtmempa + boff),
+						(unsigned long)bytes, 0);
+				}else{		/* WRITE: shared mem -> RAM ONLY (inval cache first) */
+					rmtfs_writes++;
+					lkl_host_dma_sync((unsigned long)(rmtmempa + boff),
+						(unsigned long)bytes, 1);
 					qsys(LklNrPread64, rmtmemfd,
-						(long)(rp->data + poff), bytes, moff, 0, 0);
+						(long)(rp->data + poff), bytes, (long)boff, 0, 0);
+				}
 			}
 			rlen += qmi_put_tlv(resp + rlen, 0x02, res, sizeof res);
 			rmtfs_send_resp(fd, &peer, txn, msgid, resp, rlen);
 			break;
 		}
-		case 0x04:	/* RMTFS_ALLOC_BUFF */
+		case 0x04: {	/* RMTFS_ALLOC_BUFF */
+			uchar *sv;
+			u16 sl;
+
+			rmtfs_allocs++;
+			if(qmi_find_tlv(body, mlen, 0x02, &sv, &sl) == 0 && sl >= 4)
+				rmtfs_alloc_sz = (int)le32(sv);
 			rlen += qmi_put_tlv(resp + rlen, 0x02, res, sizeof res);
 			rlen += qmi_put_tlv(resp + rlen, 0x10, &rmtmempa, sizeof rmtmempa);
-			lkl_printf("rmtfs: ALLOC_BUFF -> pa=%#llx\n", rmtmempa);
+			lkl_printf("rmtfs: ALLOC_BUFF sz=0x%x -> pa=%#llx\n", rmtfs_alloc_sz, rmtmempa);
 			rmtfs_send_resp(fd, &peer, txn, msgid, resp, rlen);
 			break;
+		}
 		case 0x05: {	/* RMTFS_GET_DEV_ERROR */
 			u32 st = 0;
 			rlen += qmi_put_tlv(resp + rlen, 0x02, res, sizeof res);
@@ -768,4 +936,13 @@ qcom_qrtr_start(void)
 		lkl_printf("qcom_qrtr: spawn tqftpserv failed\n");
 	if(lklhost_spawn(rmtfs_thread, nil) < 0)
 		lkl_printf("qcom_qrtr: spawn rmtfs failed\n");
+}
+
+void
+qcom_qrtr_wait_ready(void)
+{
+	int i;
+
+	for(i = 0; i < 100 && rmtfs_ready == 0; i++)
+		sleep(100);
 }
