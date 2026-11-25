@@ -958,6 +958,17 @@
 		};
 	};
 
+	gpio-keys {
+		compatible = "gpio-keys";
+
+		key-vol-up {
+			label = "volume_up";
+			gpios = <&pm6125_gpios 5 1>;	/* GPIO_ACTIVE_LOW */
+			linux,code = <115>;		/* KEY_VOLUMEUP */
+			debounce-interval = <15>;
+		};
+	};
+
 	sound {
 		compatible = "qcom,qrb4210-rb2-sndcard";
 		model = "Borneo-QDSP6";

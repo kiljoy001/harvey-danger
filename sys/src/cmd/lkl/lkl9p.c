@@ -487,6 +487,105 @@ extern int	modem_wds_stop(void);
 extern void	modemstatus_buf(char*, int);
 extern char	lkl_dmesg[];
 extern int	lkl_dmesg_len;
+static long
+readsysfsint(const char *path, long *out)
+{
+	char buf[64];
+	long fd, n;
+
+	fd = lklopenat(LklAtFdcwd, path, LklOrdonly, 0);
+	if(fd < 0)
+		return -1;
+	n = sys0(LklNrRead, fd, (long)buf, sizeof(buf) - 1, 0, 0, 0);
+	lklclose(fd);
+	if(n <= 0)
+		return -1;
+	buf[n] = 0;
+	*out = strtol(buf, nil, 10);
+	return 0;
+}
+
+static void
+powerstatus_buf(char *buf, int len)
+{
+	char pmi[64], pm[64], p[128], name[64];
+	long vbat = -1, vph = -1, vbus = -1, ibus = -1;
+	long chgt = -1, pmi_t = -1, pm_t = -1, xo_t = -1, cpu_t = -1;
+	long pct = -1;
+	int i;
+	char *e = buf + len, *s = buf;
+
+	pmi[0] = 0;
+	pm[0] = 0;
+	for(i = 0; i < 4; i++){
+		long fd, n;
+		snprint(p, sizeof p, "/sys/bus/iio/devices/iio:device%d/name", i);
+		fd = lklopenat(LklAtFdcwd, p, LklOrdonly, 0);
+		if(fd < 0)
+			continue;
+		n = sys0(LklNrRead, fd, (long)name, sizeof(name) - 1, 0, 0, 0);
+		lklclose(fd);
+		if(n <= 0)
+			continue;
+		name[n] = 0;
+		if(strstr(name, "pmic@2:adc") != nil)
+			snprint(pmi, sizeof pmi, "/sys/bus/iio/devices/iio:device%d", i);
+		else if(strstr(name, "pmic@0:adc") != nil)
+			snprint(pm, sizeof pm, "/sys/bus/iio/devices/iio:device%d", i);
+	}
+	if(pmi[0]){
+		snprint(p, sizeof p, "%s/in_voltage_vbat_sns_input", pmi);
+		readsysfsint(p, &vbat);
+		snprint(p, sizeof p, "%s/in_voltage_vph_pwr_input", pmi);
+		readsysfsint(p, &vph);
+		snprint(p, sizeof p, "%s/in_voltage_usb_in_v_div_16_input", pmi);
+		readsysfsint(p, &vbus);
+		snprint(p, sizeof p, "%s/in_voltage_usb_in_i_uv_input", pmi);
+		readsysfsint(p, &ibus);
+		snprint(p, sizeof p, "%s/in_temp_chg_temp_input", pmi);
+		readsysfsint(p, &chgt);
+		snprint(p, sizeof p, "%s/in_temp_die_temp_input", pmi);
+		readsysfsint(p, &pmi_t);
+	}
+	if(pm[0]){
+		snprint(p, sizeof p, "%s/in_temp_die_temp_input", pm);
+		readsysfsint(p, &pm_t);
+		snprint(p, sizeof p, "%s/in_temp_xo_therm_input", pm);
+		readsysfsint(p, &xo_t);
+	}
+	readsysfsint("/sys/class/thermal/thermal_zone0/temp", &cpu_t);
+
+	if(vbat >= 0){
+		long mv = vbat / 1000;
+		if(mv <= 3400)
+			pct = 0;
+		else if(mv >= 4350)
+			pct = 100;
+		else
+			pct = (mv - 3400) * 100 / (4350 - 3400);
+		s = seprint(s, e, "vbat_mv %ld\nest_pct %ld\n", mv, pct);
+	}
+	if(vph >= 0)
+		s = seprint(s, e, "vph_mv %ld\n", vph / 1000);
+	if(vbus >= 0)
+		s = seprint(s, e, "vbus_mv %ld\nusb_present %d\n",
+			vbus / 1000, (vbus / 1000) > 4000 ? 1 : 0);
+	if(ibus >= 0)
+		s = seprint(s, e, "ibus_ua %ld\n", ibus);
+	if(chgt >= 0)
+		s = seprint(s, e, "chg_temp_mc %ld\n", chgt);
+	if(pmi_t >= 0)
+		s = seprint(s, e, "pmi632_temp_mc %ld\n", pmi_t);
+	if(pm_t >= 0)
+		s = seprint(s, e, "pm6125_temp_mc %ld\n", pm_t);
+	if(xo_t >= 0)
+		s = seprint(s, e, "xo_temp_mc %ld\n", xo_t);
+	if(cpu_t >= 0)
+		s = seprint(s, e, "cpu_temp_mc %ld\n", cpu_t);
+	if(s == buf)
+		seprint(s, e, "status unavailable\n");
+}
+
 static QLock	wifiscanlk;
 static QLock	modemlk;
 
@@ -545,6 +644,18 @@ doopen(Req *r, LklFid *lf)
 		if(mfd >= 0){
 			sys0(LklNrWrite, mfd, (long)mbuf, strlen(mbuf), 0, 0, 0);
 			lklclose(mfd);
+		}
+	}
+	if(strcmp(lf->path, "/power") == 0 && (m == OREAD || m == ORDWR)){
+		char pbuf[512];
+		long pfd;
+
+		powerstatus_buf(pbuf, sizeof pbuf);
+		pfd = lklopenat(LklAtFdcwd, "/power",
+			LklOwronly | LklOcreat | LklOtrunc, 0444);
+		if(pfd >= 0){
+			sys0(LklNrWrite, pfd, (long)pbuf, strlen(pbuf), 0, 0, 0);
+			lklclose(pfd);
 		}
 	}
 	if(strcmp(lf->path, "/wifiscan") == 0 && (m == OREAD || m == ORDWR)){
@@ -1458,6 +1569,9 @@ lkl9p_start(char *srvname)
 	if(dfd >= 0)
 		lklclose(dfd);
 	dfd = lklopenat(LklAtFdcwd, "/modemstatus", LklOwronly | LklOcreat | LklOtrunc, 0444);
+	if(dfd >= 0)
+		lklclose(dfd);
+	dfd = lklopenat(LklAtFdcwd, "/power", LklOwronly | LklOcreat | LklOtrunc, 0444);
 	if(dfd >= 0)
 		lklclose(dfd);
 
