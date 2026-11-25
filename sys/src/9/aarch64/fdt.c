@@ -32,6 +32,7 @@ struct Fdtnode {
 	u32 clas;
 	u32 fbwidth, fbheight, fbstride, fbbpp;
 	char fbformat[16];
+	char group[Maxfdtname];
 	int fb;
 	int memory, uart, gic, timer, virtio;
 	int cpu, psci, psci_std;
@@ -602,8 +603,8 @@ fdtparse(void *blob, usize bytes, Fdtinfo *out)
 {
 	u8 *p, *s, *str, *value;
 	u32 total, soff, ssize, stroff, strsize, rsv, pos, token, namelen, len, depth;
-	u32 i, off, stride, oldlen, naliases, nconsoles, wantlen;
-	u64 base, size;
+	u32 i, k, n, off, stride, oldlen, naliases, nconsoles, wantlen;
+	u64 base, size, wb, ws;
 	Fdtnode nodes[Maxdepth], *node;
 	Fdtalias aliases[Maxaliases];
 	Fdtconsole consoles[Maxconsoles];
@@ -701,6 +702,7 @@ fdtparse(void *blob, usize bytes, Fdtinfo *out)
 			node->intrlen = 0;
 			node->compat = nil;
 			node->compatlen = 0;
+			node->group[0] = 0;
 			node->clas = Fdtclassnone;
 			node->memory = depth == 1 && i-pos >= 6 &&
 			               s[pos] == 'm' && s[pos+1] == 'e' &&
@@ -798,6 +800,13 @@ fdtparse(void *blob, usize bytes, Fdtinfo *out)
 					aliases[naliases].pathlen = strnlen0(value, len);
 					naliases++;
 				}
+			}else if(same((char *)str+off, "harvey,group") &&
+			         len > 0 && len < Maxfdtname){
+				u32 k;
+
+				for(k = 0; k < len && value[k] != 0; k++)
+					node->group[k] = value[k];
+				node->group[k] = 0;
 			}else if(same((char *)str+off, "reg")){
 				node->reg = value;
 				node->reglen = len;
@@ -1022,18 +1031,28 @@ fdtparse(void *blob, usize bytes, Fdtinfo *out)
 					dev->size = size;
 					if(same(dev->compat, "qcom,ipa") && dev->size < 0x80000)
 						dev->size = 0x80000;
-					dev->base2 = 0;
-					dev->size2 = 0;
-					if(node->clas == Fdtclassiommu &&
-					   regpair(node, 1, &base, &size) == 0){
-						dev->base2 = base;
-						dev->size2 = size;
+					/*
+					 * Every reg range: a compound node can put
+					 * its functions in separate windows (a
+					 * display controller and its IOMMU, a
+					 * controller and a second block).
+					 */
+					dev->nwin = 1;
+					for(k = 1; k < Maxfdtwin; k++){
+						if(regpair(node, k, &wb, &ws) < 0 ||
+						   ws == 0)
+							break;
+						dev->wbase[k-1] = wb;
+						dev->wsize[k-1] = ws;
+						dev->nwin++;
 					}
 					if(node->clas == Fdtclasstsadc &&
 					   regpair(node, 1, &base, &size) == 0 &&
 					   base >= dev->base &&
-					   base + size - dev->base <= 64*1024)
+					   base + size - dev->base <= 64*1024){
 						dev->size = (base + size) - dev->base;
+						dev->nwin = 1;	/* merged into window 0 */
+					}
 					if(node->clas == Fdtclasspower){
 						u64 rbase, rsize, minb, maxe;
 						u32 ridx;
@@ -1048,6 +1067,7 @@ fdtparse(void *blob, usize bytes, Fdtinfo *out)
 						}
 						dev->base = minb;
 						dev->size = maxe - minb;
+						dev->nwin = 1;	/* merged into window 0 */
 					}
 					dev->irq = 0;
 					dev->irqflags = 0;
@@ -1091,7 +1111,13 @@ fdtparse(void *blob, usize bytes, Fdtinfo *out)
 							}
 						}
 					}
+					for(b = 0; b < sizeof dev->group - 1 &&
+					    node->group[b] != 0; b++)
+						dev->group[b] = node->group[b];
+					dev->group[b] = 0;
 					dev->clas = node->clas;
+					dev->depth = depth;
+					dev->parent = ~0u;
 					out->ndev++;
 				}
 			}
@@ -1114,6 +1140,20 @@ fdtparse(void *blob, usize bytes, Fdtinfo *out)
 done:
 	if(!ended)
 		return -1;
+	/*
+	 * Parents, now that every device is known.  Devices are appended in
+	 * post-order, so after a device the first one shallower than it is
+	 * its nearest enclosing device: everything in between is inside that
+	 * node's subtree.
+	 */
+	for(i = 0; i < out->ndev; i++){
+		for(n = i + 1; n < out->ndev; n++){
+			if(out->dev[n].depth < out->dev[i].depth){
+				out->dev[i].parent = n;
+				break;
+			}
+		}
+	}
 	if(stdoutpath != nil){
 		want = stdoutpath;
 		for(wantlen = 0; wantlen < stdoutlen && want[wantlen] != ':'; wantlen++)
@@ -1155,4 +1195,48 @@ done:
 	return out->nmemory != 0 && out->ramsize != 0 &&
 	       out->gicdist != 0 &&
 	       out->gicversion != 0 && out->timerirq != 0 ? 0 : -1;
+}
+
+enum {
+	Winalign = 2 * 1024 * 1024,	/* a physseg covers whole big pages */
+	Winspan = 64 * 1024 * 1024,	/* beyond this, map window 0 only */
+};
+
+/*
+ * The region a claim maps for a device: the union of its windows, big-
+ * page aligned so a physseg can cover it, and the number of windows it
+ * covers.  A device whose windows are spread further apart than Winspan
+ * maps as its first window alone; its windows file still lists them all.
+ */
+u32
+fdtdevmap(Fdtdev *d, u64 *base, u64 *size)
+{
+	u64 b, e, wb, ws;
+	u32 i;
+
+	if(d->nwin == 0){
+		*base = 0;
+		*size = 0;
+		return 0;
+	}
+	b = d->base;
+	e = d->base + d->size;
+	for(i = 1; i < d->nwin; i++){
+		fdtdevwin(d, i, &wb, &ws);
+		if(wb < b)
+			b = wb;
+		if(wb + ws > e)
+			e = wb + ws;
+	}
+	b &= ~(u64)(Winalign - 1);
+	e = (e + Winalign - 1) & ~(u64)(Winalign - 1);
+	if(e - b > Winspan){
+		*base = d->base & ~(u64)(Winalign - 1);
+		*size = ((d->base + d->size + Winalign - 1) &
+			 ~(u64)(Winalign - 1)) - *base;
+		return 1;
+	}
+	*base = b;
+	*size = e - b;
+	return i;
 }

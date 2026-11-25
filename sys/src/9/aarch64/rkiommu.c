@@ -395,9 +395,12 @@ rkiommuinit(Fdtinfo *info)
 		i->base[0] = d->base;
 		i->size[0] = d->size;
 		i->nbase = 1;
-		if(d->base2 != 0){
-			i->base[1] = d->base2;
-			i->size[1] = d->size2;
+		if(d->nwin > 1){
+			u64 b, sz;
+
+			fdtdevwin(d, 1, &b, &sz);
+			i->base[1] = b;
+			i->size[1] = sz;
 			i->nbase = 2;
 		}
 		i->irq = d->irq;

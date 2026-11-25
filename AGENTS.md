@@ -142,6 +142,26 @@ true when written: check the code and `git log` before relying on them.
   the repo (only the header generated from it, `sys/src/cmd/sdio/wifi_conf.h`),
   so the wifi fragment fails without it.
 
+### `#P` compound devices: branch `dtb-pdma`
+
+- `#P` models compound hardware three ways, all tested in QEMU by
+  `util/arm64/test_pnp_features.py` (alongside the claims/DMA test):
+  - a claim covers the device tree below it: `#P/<node>/parent` names
+    the nearest enclosing device, and holding it holds the children
+    (`ssusb@4e00000` -> `dwc3@4e00000`);
+  - every `reg` range of a node is a window (`Maxfdtwin = 4`,
+    `nwin`/`wbase`/`wsize`, `fdtdevwin()`); `#P/<node>/windows` lists
+    the region a claim maps and then each window, and `fdtdevmap()`
+    makes that region one physseg, so a single `segattach` covers them
+    all; `reg`/`size`/`regs` remain window 0;
+  - `harvey,group = "<name>"` turns separate nodes into one item:
+    `#P/group/<name>/{members,claim,owner}`, claimed all at once or not
+    at all, with member and ancestor conflicts refused.
+- `lklhost_mapdev` maps the region once and registers every window in
+  `mmio[]`, so a guest that ioremaps any of a node's ranges resolves.
+- Windows spread further apart than 64 MiB map window 0 only (the
+  windows file still lists all of them).
+
 ### Bengal phone bring-up
 
 - Uncommitted work on `vmm-hypervisor` (lkl9p, lklusb, the Bengal DTS and

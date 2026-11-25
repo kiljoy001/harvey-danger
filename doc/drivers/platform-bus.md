@@ -16,10 +16,16 @@ kernel drivers for these devices, and no private mappings.
 #P/<node>/class          uart, i2c, mmc, usb, ...     (0444)
 #P/<node>/family         serial, soc, mmc, usb, ...   (0444)
 #P/<node>/console        firmware console flag        (0444)
+#P/<node>/parent         nearest enclosing device     (0444)
+#P/<node>/windows        mapped region, then each reg window (0444)
 #P/<node>/wait           blocks until one interrupt   (0444, holder only)
 #P/<node>/claim          hold the device while open   (0666)
 #P/<node>/owner          the holder, empty if free    (0444)
 #P/<node>/regs           one register per read/write  (0666, holder only)
+
+#P/group/<name>/members  the devices the group holds  (0444)
+#P/group/<name>/claim    hold the whole group at once (0666)
+#P/group/<name>/owner    the group holder, empty      (0444)
 ```
 
 `<node>` is the device-tree node name, e.g. `mmc@fe310000`.  The path is
@@ -64,6 +70,35 @@ write(fd, "emmc", 4);		/* keep fd open: closing releases */
   the claim file over through `/srv` if the old one posted it.
 
 `owner` shows the first holder's name, with ` shared` for a shared claim.
+
+## Compound devices
+
+Hardware often arrives in parts.  Three shapes, and what `#P` does with
+each:
+
+* **One window, functions behind indirection.**  A bus controller, a
+  PMIC on SPMI, an I2C expander: the functions are reached through the
+  controller's registers, so they are not devices of their own and a
+  claim on the controller covers them all.
+* **One node, several MMIO windows.**  A display controller and its
+  IOMMU, or a controller with a second block.  `reg`/`size` name the
+  first window; `windows` lists the region a claim maps (its first
+  line) and then every window, window 0 first.  One `segattach` by node
+  name maps that whole region, and window *i* sits at
+  `mapped + (window[i] - region)`.  `regs` stays window 0.
+* **Several nodes that are one device** (a controller and its PHY, a
+  display and its panel).  The tree marks them with the same
+  `harvey,group = "<name>"` property; `#P/group/<name>` is then an item
+  of its own.  Writing its `claim` holds **every member or none**, and
+  `owner` names the holder.  A member cannot be claimed separately while
+  the group is held, and the group cannot be claimed while any member is
+  held by someone else.  A group name is unique like a node name.
+
+A claim also covers the device tree below it: claiming a device holds
+every device nested inside it (`parent` names the nearest one).  That is
+the parent/child case -- `ssusb@4e00000` and its `dwc3@4e00000`, a bus
+and the expanders under it -- without either side having to name the
+other.
 
 ## Registers through files
 

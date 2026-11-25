@@ -1311,7 +1311,7 @@ htimer_free(void *timer)
  * both hooks out of the mapping.  The window is device memory, mapped by
  * the kernel; the guest touches it through these two entry points only.
  */
-enum { Nmmio = 64, Nresmem = 32 };
+enum { Nmmio = 128, Nresmem = 32 };
 static struct {
 	u64	pa;
 	u64	len;
@@ -1375,35 +1375,67 @@ pnpnum(char *node, char *file)
 }
 
 /*
- * lklhost_mapdev - map a #P node's register window.
- * Returns 0 and the window's physical base and size.  The service is
- * expected to have claimed the node first.
+ * lklhost_mapdev - map a #P node's register windows.
+ *
+ * #P/<node>/windows is the region a claim maps on its first line, then
+ * one line per window (the node's reg ranges).  The segment is mapped
+ * once and every window is registered against it, so a guest driver
+ * that ioremaps any of the node's ranges resolves through mmio[].  The
+ * returned base/size are window 0, the one #P/reg and #P/size name.
  */
 int
 lklhost_mapdev(char *node, u64 *base, u64 *size)
 {
-	u64 pa, len, grant;
+	char path[80], buf[256], *p;
+	u64 mb, ms, wb, ws, pa, len;
+	int fd, n, first;
 	void *va;
 
+	snprint(path, sizeof path, "#P/%s/windows", node);
+	if((fd = open(path, OREAD)) < 0)
+		return -1;
+	n = read(fd, buf, sizeof buf - 1);
+	close(fd);
+	if(n <= 0)
+		return -1;
+	buf[n] = 0;
 	if(nmmio >= Nmmio)
 		return -1;
-	pa = pnpnum(node, "reg");
-	len = pnpnum(node, "size");
-	if(pa == ~0ULL || len == ~0ULL || len == 0)
+
+	p = buf;
+	mb = strtoull(p, &p, 0);
+	ms = strtoull(p, &p, 0);
+	if(mb == 0 || ms == 0)
 		return -1;
-	/*
-	 * segattach grants the 2 MiB block that contains the device, not the
-	 * device window; the window starts at pa & (2 MiB - 1) inside it.
-	 */
-	grant = ((pa & 0x1fffffULL) + len + 0x1fffffULL) & ~0x1fffffULL;
-	va = segattach(0, node, 0, grant);
+	va = segattach(0, node, 0, ms);
 	if(va == (void*)-1)
 		return -1;
-	va = (uchar*)va + (pa & 0x1fffffULL);
-	mmio[nmmio].pa = pa;
-	mmio[nmmio].len = len;
-	mmio[nmmio].va = va;
-	nmmio++;
+
+	first = 1;
+	pa = len = 0;
+	for(;;){
+		while(*p == ' ' || *p == '\n')
+			p++;
+		if(*p == 0)
+			break;
+		wb = strtoull(p, &p, 0);
+		ws = strtoull(p, &p, 0);
+		if(ws == 0 || wb < mb || wb + ws > mb + ms)
+			continue;
+		if(nmmio >= Nmmio)
+			break;
+		mmio[nmmio].pa = wb;
+		mmio[nmmio].len = ws;
+		mmio[nmmio].va = (uchar*)va + (wb - mb);
+		nmmio++;
+		if(first){
+			pa = wb;
+			len = ws;
+			first = 0;
+		}
+	}
+	if(first)
+		return -1;
 	*base = pa;
 	*size = len;
 	return 0;

@@ -20,6 +20,8 @@ enum {
 	Qconsole,
 	Qwait,
 	Qfamily,
+	Qparent,
+	Qwindows,
 	Qclaim,
 	Qowner,
 	Qirq2,
@@ -46,6 +48,11 @@ enum {
 	Qirqdir,
 	Qirqline,
 	Qirqedge,
+	Qgroupdir,	/* #P/group */
+	Qgroup,		/* #P/group/<name>; DEV is the group index */
+	Qgfmembers,
+	Qgfclaim,
+	Qgfowner,
 };
 
 /* 6 type bits: the DMA control files are past the old 4-bit field. */
@@ -93,10 +100,29 @@ struct Pnpclaim {
 static Lock pnplock;
 static Pnpclaim pnpclaim[Maxfdtdev];
 
-/* Whether the calling process holds dev's claim: an open claim file of
- * its own, or one it inherited. */
+/*
+ * A group is several devices the tree marks with the same
+ * "harvey,group" property: one grant for one compound, even when its
+ * parts are separate nodes with separate windows (a controller and its
+ * PHY, a display and its IOMMU).  Claiming the group claims every
+ * member, or none of them.
+ */
+enum { Maxfdtgroup = 8 };
+typedef struct Pnpgroup Pnpgroup;
+struct Pnpgroup {
+	char name[Maxfdtname];
+	char owner[32];
+	int shared;
+	int holders;
+	u32 nmemb;
+	u32 memb[Maxfdtdev];
+};
+static Pnpgroup pnpgroup[Maxfdtgroup];
+static u32 npnpgroup;
+
+/* Claim file for device d in this process, or nil. */
 static int
-pnpholds(int dev)
+holdsdev(int d)
 {
 	Proc *up = externup();
 	Fgrp *f;
@@ -110,15 +136,82 @@ pnpholds(int dev)
 	lock(&f->r.l);
 	for(i = 0; i <= f->maxfd; i++){
 		c = f->fd[i];
-		if(c != nil && c->dev != nil && c->dev->dc == 'P' &&
-		   (c->flag & COPEN) && TYPE(c) == Qclaim && DEV(c) == dev &&
-		   c->aux != nil){
+		if(c == nil || c->dev == nil || c->dev->dc != 'P' ||
+		   (c->flag & COPEN) == 0 || c->aux == nil)
+			continue;
+		if(TYPE(c) == Qclaim && DEV(c) == d){
 			held = 1;
 			break;
+		}
+		if(TYPE(c) == Qgfclaim){
+			int g = *(int*)c->aux;
+			u32 m;
+
+			if(g <= 0 || g > (int)npnpgroup)
+				continue;
+			for(m = 0; m < pnpgroup[g-1].nmemb; m++)
+				if(pnpgroup[g-1].memb[m] == (u32)d){
+					held = 1;
+					break;
+				}
+			if(held)
+				break;
 		}
 	}
 	unlock(&f->r.l);
 	return held;
+}
+
+/*
+ * Whether the calling process holds dev's claim: a claim file of its own,
+ * or one on an ancestor.  A claim covers the subtree, so a driver that
+ * holds a compound device (a wrapper node, the bus a PMIC sits on) also
+ * holds everything described underneath it, without having to name each
+ * child.
+ */
+static int
+pnpholds(int dev)
+{
+	u32 d;
+
+	for(d = dev; d != ~0u && d < npnpdev; d = pnpdev[d].parent)
+		if(holdsdev(d))
+			return 1;
+	return 0;
+}
+
+/* Is x a descendant of d (or d itself)? */
+static int
+pnpdescends(u32 x, u32 d)
+{
+	while(x != ~0u && x < npnpdev){
+		if(x == d)
+			return 1;
+		x = pnpdev[x].parent;
+	}
+	return 0;
+}
+
+/*
+ * Whether a claim on d with this sharing conflicts with an existing claim:
+ * anywhere on the path to the root, or anywhere below.  The device itself
+ * is checked by the caller.  Call with pnplock held.
+ */
+static int
+pnpconflict(u32 d, int shared)
+{
+	u32 a, x;
+
+	for(a = pnpdev[d].parent; a != ~0u && a < npnpdev; a = pnpdev[a].parent)
+		if(pnpclaim[a].holders > 0 && (!shared || !pnpclaim[a].shared))
+			return 1;
+	for(x = 0; x < npnpdev; x++){
+		if(x == d || !pnpdescends(x, d))
+			continue;
+		if(pnpclaim[x].holders > 0 && (!shared || !pnpclaim[x].shared))
+			return 1;
+	}
+	return 0;
 }
 
 /*
@@ -599,7 +692,7 @@ pnpdup(Fdtdev *d)
 		if(strcmp(pnpdev[i].name, d->name) != 0)
 			continue;
 		if(pnpdev[i].base != d->base || pnpdev[i].size != d->size ||
-		   pnpdev[i].base2 != d->base2 || pnpdev[i].size2 != d->size2)
+		   pnpdev[i].nwin != d->nwin)
 			print("#P: %s keeps %#llux/%#llux, ignores %#llux/%#llux\n",
 				d->name, pnpdev[i].base, pnpdev[i].size,
 				d->base, d->size);
@@ -630,6 +723,33 @@ arm64pnpinit(Fdtinfo *info)
 			continue;
 		pnpdev[npnpdev++] = info->dev[i];
 	}
+	/*
+	 * Groups: devices the tree marks with the same harvey,group are
+	 * granted together, as one item.
+	 */
+	npnpgroup = 0;
+	for(i = 0; i < npnpdev; i++){
+		Pnpgroup *g;
+		u32 k;
+
+		if(pnpdev[i].group[0] == 0)
+			continue;
+		for(k = 0; k < npnpgroup; k++)
+			if(strcmp(pnpgroup[k].name, pnpdev[i].group) == 0)
+				break;
+		if(k == npnpgroup){
+			if(npnpgroup >= Maxfdtgroup)
+				continue;
+			g = &pnpgroup[npnpgroup++];
+			memset(g, 0, sizeof *g);
+			strncpy(g->name, pnpdev[i].group, sizeof g->name - 1);
+			g->name[sizeof g->name - 1] = 0;
+		}
+		g = &pnpgroup[k];
+		if(g->nmemb < Maxfdtdev)
+			g->memb[g->nmemb++] = i;
+	}
+
 	npnpresmem = 0;
 	for(i = 0; i < info->nreserve && npnpresmem < Maxfdtreserve; i++){
 		Pnpresmem *rm;
@@ -738,6 +858,15 @@ pnpgen(Chan *c, char *name, Dirtab *tab, int ntab, int s, Dir *dp)
 			return 1;
 		}
 		n++;
+		if(npnpgroup != 0){
+			if(s == n){
+				q.path = QPATH(npnpdev, Qgroupdir);
+				q.type = QTDIR;
+				devdir(c, q, "group", 0, eve, DMDIR|0555, dp);
+				return 1;
+			}
+			n++;
+		}
 		if(s == n){
 			q.path = QPATH(npnpdev, Qplatform);
 			q.type = QTFILE;
@@ -800,6 +929,14 @@ pnpgen(Chan *c, char *name, Dirtab *tab, int ntab, int s, Dir *dp)
 			q.path = QPATH(dev, Qfamily);
 			devdir(c, q, "family", 0, eve, 0444, dp);
 			break;
+		case Qparent:
+			q.path = QPATH(dev, Qparent);
+			devdir(c, q, "parent", 0, eve, 0444, dp);
+			break;
+		case Qwindows:
+			q.path = QPATH(dev, Qwindows);
+			devdir(c, q, "windows", 0, eve, 0444, dp);
+			break;
 		case Qclaim:
 			q.path = QPATH(dev, Qclaim);
 			devdir(c, q, "claim", 0, eve, 0666, dp);
@@ -822,6 +959,45 @@ pnpgen(Chan *c, char *name, Dirtab *tab, int ntab, int s, Dir *dp)
 			break;
 		default:
 			return -1;
+		}
+		return 1;
+	case Qgroupdir:
+		if(s == DEVDOTDOT){
+			q.path = QPATH(0, Qtopdir);
+			q.type = QTDIR;
+			devdir(c, q, "#P", 0, eve, DMDIR|0555, dp);
+			return 1;
+		}
+		if(s < 0 || s >= (int)npnpgroup)
+			return -1;
+		q.path = QPATH(s, Qgroup);
+		q.type = QTDIR;
+		devdir(c, q, pnpgroup[s].name, 0, eve, DMDIR|0555, dp);
+		return 1;
+	case Qgroup:
+		if(s == DEVDOTDOT){
+			q.path = QPATH(npnpdev, Qgroupdir);
+			q.type = QTDIR;
+			devdir(c, q, "group", 0, eve, DMDIR|0555, dp);
+			return 1;
+		}
+		dev = DEV(c);
+		if(dev < 0 || dev >= (int)npnpgroup || s < 0 || s > 2)
+			return -1;
+		q.type = QTFILE;
+		switch(s){
+		case 0:
+			q.path = QPATH(dev, Qgfmembers);
+			devdir(c, q, "members", 0, eve, 0444, dp);
+			break;
+		case 1:
+			q.path = QPATH(dev, Qgfclaim);
+			devdir(c, q, "claim", 0, eve, 0666, dp);
+			break;
+		default:
+			q.path = QPATH(dev, Qgfowner);
+			devdir(c, q, "owner", 0, eve, 0444, dp);
+			break;
 		}
 		return 1;
 	case Qdma:
@@ -1011,7 +1187,7 @@ pnpopen(Chan *c, int omode)
 	}else if(t == Qdmaclone || t == Qchunkctl || t == Qchunkdata ||
 	         t == Qteesmc || t == Qteeclean || t == Qteeinval ||
 	         t == Qteecivac || t == Qclaim || t == Qregs ||
-	         t == Qresmemctl){
+	         t == Qgfclaim || t == Qresmemctl){
 		/* DMA chunks, the SMC gate and claims accept writes. */
 	}else if(m != OREAD)
 		error(Eperm);
@@ -1134,6 +1310,26 @@ pnpclose(Chan *c)
 	   c->aux != nil)
 		arm64irqdisable(TYPE(c) == Qwait2 ? pnpdev[dev].irq2 : pnpdev[dev].irq,
 			*(int*)c->aux);
+	/* A group claim held the members it took, all at once. */
+	if(TYPE(c) == Qgfclaim && c->aux != nil){
+		int gi;
+
+		gi = *(int*)c->aux;
+		if(gi > 0 && gi <= (int)npnpgroup){
+			Pnpgroup *g = &pnpgroup[gi-1];
+			u32 m;
+
+			lock(&pnplock);
+			for(m = 0; m < g->nmemb; m++)
+				if(pnpclaim[g->memb[m]].holders > 0 &&
+				   --pnpclaim[g->memb[m]].holders == 0)
+					memset(&pnpclaim[g->memb[m]], 0,
+					       sizeof(Pnpclaim));
+			if(g->holders > 0 && --g->holders == 0)
+				memset(g->owner, 0, sizeof g->owner);
+			unlock(&pnplock);
+		}
+	}
 	/* The last claim file holding a device releases it. */
 	if(TYPE(c) == Qclaim && c->aux != nil &&
 	   (dev = DEV(c)) >= 0 && dev < (int)npnpdev){
@@ -1306,6 +1502,71 @@ pnpwrite(Chan *c, void *a, i32 n, i64 off)
 	USED(off);
 	if(n <= 0)
 		error(Ebadarg);
+	if(TYPE(c) == Qgfclaim){
+		char name[48], *f[3];
+		Pnpgroup *g;
+		int nf, shared, gi;
+		u32 m;
+
+		gi = DEV(c);
+		if(gi < 0 || gi >= (int)npnpgroup)
+			error(Ebadarg);
+		if(c->aux != nil)
+			error("claim already held through this file");
+		if(n >= (int)sizeof name)
+			error(Ebadarg);
+		memmove(name, a, n);
+		name[n] = 0;
+		nf = tokenize(name, f, nelem(f));
+		shared = nf == 2 && strcmp(f[1], "shared") == 0;
+		if(nf < 1 || nf > 2 || (nf == 2 && !shared) ||
+		   strlen(f[0]) >= sizeof g->owner)
+			error(Ebadarg);
+		g = &pnpgroup[gi];
+		lock(&pnplock);
+		/* All or nothing: every member must be claimable. */
+		for(m = 0; m < g->nmemb; m++){
+			u32 d = g->memb[m];
+
+			if(pnpconflict(d, shared) ||
+			   (pnpclaim[d].holders > 0 &&
+			    (!shared || !pnpclaim[d].shared))){
+				unlock(&pnplock);
+				error("group member already claimed");
+			}
+		}
+		for(m = 0; m < g->nmemb; m++){
+			Pnpclaim *cl = &pnpclaim[g->memb[m]];
+
+			if(cl->holders == 0){
+				strcpy(cl->owner, f[0]);
+				cl->shared = shared;
+			}
+			cl->holders++;
+		}
+		if(g->holders == 0){
+			strncpy(g->owner, f[0], sizeof g->owner - 1);
+			g->owner[sizeof g->owner - 1] = 0;
+			g->shared = shared;
+		}
+		g->holders++;
+		unlock(&pnplock);
+		c->aux = mallocz(sizeof(int), 1);
+		if(c->aux == nil){
+			lock(&pnplock);
+			for(m = 0; m < g->nmemb; m++)
+				if(pnpclaim[g->memb[m]].holders > 0 &&
+				   --pnpclaim[g->memb[m]].holders == 0)
+					memset(&pnpclaim[g->memb[m]], 0,
+					       sizeof(Pnpclaim));
+			if(g->holders > 0 && --g->holders == 0)
+				memset(g->owner, 0, sizeof g->owner);
+			unlock(&pnplock);
+			error(Enomem);
+		}
+		*(int*)c->aux = gi + 1;
+		return n;
+	}
 	if(TYPE(c) == Qclaim){
 		char name[48], *f[3];
 		int nf, dev, shared;
@@ -1327,6 +1588,13 @@ pnpwrite(Chan *c, void *a, i32 n, i64 off)
 			error(Ebadarg);
 		cl = &pnpclaim[dev];
 		lock(&pnplock);
+		/* A claim covers the subtree: a conflicting claim anywhere
+		 * on the path to the root, or anywhere below, makes this one
+		 * impossible. */
+		if(pnpconflict(dev, shared)){
+			unlock(&pnplock);
+			error("device claimed in its subtree");
+		}
 		if(cl->holders > 0 && (!shared || !cl->shared)){
 			unlock(&pnplock);
 			error("device already claimed");
@@ -1613,10 +1881,71 @@ pnpread(Chan *c, void *a, i32 n, i64 off)
 	case Qfamily:
 		snprint(buf, sizeof buf, "%s\n", pnpfamily(d->clas));
 		break;
+	case Qwindows:
+		{
+			/* First line: the region a claim maps (segattach).
+			 * Then one line per reg window, window 0 first. */
+			char wbuf[256], *p, *e;
+			u64 mb, ms, wb, ws;
+			u32 w;
+
+			p = wbuf;
+			e = wbuf + sizeof wbuf;
+			fdtdevmap(&pnpdev[dev], &mb, &ms);
+			p = seprint(p, e, "%#llux %#llux\n", mb, ms);
+			for(w = 0; w < pnpdev[dev].nwin && p < e; w++){
+				fdtdevwin(&pnpdev[dev], w, &wb, &ws);
+				p = seprint(p, e, "%#llux %#llux\n", wb, ws);
+			}
+			return readstr(off, a, n, wbuf);
+		}
+	case Qgfmembers:
+		{
+			/* One member name per line: the devices a claim on
+			 * this group holds. */
+			char mbuf[512], *p, *e;
+			u32 m;
+
+			p = mbuf;
+			e = mbuf + sizeof mbuf;
+			for(m = 0; m < pnpgroup[dev].nmemb && p < e; m++)
+				p = seprint(p, e, "%s\n",
+					pnpdev[pnpgroup[dev].memb[m]].name);
+			return readstr(off, a, n, mbuf);
+		}
+	case Qgfowner:
+		lock(&pnplock);
+		snprint(buf, sizeof buf, "%s%s\n", pnpgroup[dev].owner,
+			pnpgroup[dev].shared ? " shared" : "");
+		unlock(&pnplock);
+		break;
+	case Qparent:
+		/* The nearest enclosing device, empty at the top: a claim
+		 * on it covers this one. */
+		if(pnpdev[dev].parent != ~0u && pnpdev[dev].parent < npnpdev)
+			snprint(buf, sizeof buf, "%s\n",
+				pnpdev[pnpdev[dev].parent].name);
+		else
+			snprint(buf, sizeof buf, "\n");
+		break;
 	case Qowner:
 		lock(&pnplock);
-		snprint(buf, sizeof buf, "%s%s\n", pnpclaim[dev].owner,
-			pnpclaim[dev].shared ? " shared" : "");
+		{
+			/* A claim on an ancestor holds this device; report
+			 * the holder that actually applies. */
+			u32 a;
+
+			for(a = dev; a != ~0u && a < npnpdev;
+			    a = pnpdev[a].parent)
+				if(pnpclaim[a].holders > 0)
+					break;
+			if(a != ~0u && a < npnpdev)
+				snprint(buf, sizeof buf, "%s%s\n",
+					pnpclaim[a].owner,
+					pnpclaim[a].shared ? " shared" : "");
+			else
+				snprint(buf, sizeof buf, "\n");
+		}
 		unlock(&pnplock);
 		break;
 	case Qregs:

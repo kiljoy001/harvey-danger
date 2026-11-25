@@ -460,14 +460,16 @@ physseginit(Fdtinfo *info)
 	seg.pgszi = -1;	/* addphysseg defaults to base pages */
 	seg.attach = pnpsegattach;	/* only the device's claim holder */
 	for(i = 0; i < info->ndev; i++){
-		base = info->dev[i].base & ~(u64)(BIGPGSZ - 1);
-		end = (info->dev[i].base + info->dev[i].size + BIGPGSZ - 1) &
-		      ~(u64)(BIGPGSZ - 1);
-		if(end <= base)
-			end = base + BIGPGSZ;
+		/*
+		 * One segment per device, covering every window the node
+		 * describes (fdtdevmap): a claim then maps the whole
+		 * compound device in one go.
+		 */
+		if(fdtdevmap(&info->dev[i], &base, &end) == 0)
+			continue;
 		seg.name = info->dev[i].name;
 		seg.pa = base;
-		seg.size = (end - base) / BIGPGSZ;
+		seg.size = end / BIGPGSZ;
 		if(addphysseg(&seg) == 0)
 			n++;
 	}

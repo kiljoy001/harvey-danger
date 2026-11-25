@@ -171,7 +171,7 @@ arm64mmubuild(Fdtinfo *info)
 	u64 rootpa, l2pa, pa, start, end, base, bend;
 	u64 *root, *l2;
 	u32 i, j, k, b, regions, fixedstart;
-	Fdtvirtio device[Maxfdtvirtio+20+2*Maxfdtdev];
+	Fdtvirtio device[Maxfdtvirtio+20+Maxfdtwin*Maxfdtdev];
 
 	if(info->nusable == 0 || info->nvirtio > Maxfdtvirtio)
 		return 0;
@@ -249,10 +249,14 @@ arm64mmubuild(Fdtinfo *info)
 	fixedstart = regions;
 	for(k = 0; k < info->ndev; k++){
 		Fdtdev *d = &info->dev[k];
-		if(d->base != 0 && d->size != 0)
-			device[regions++] = (Fdtvirtio){d->base, d->size};
-		if(d->base2 != 0 && d->size2 != 0)
-			device[regions++] = (Fdtvirtio){d->base2, d->size2};
+		u64 wb, ws;
+		u32 w;
+
+		for(w = 0; w < d->nwin; w++){
+			fdtdevwin(d, w, &wb, &ws);
+			if(wb != 0 && ws != 0)
+				device[regions++] = (Fdtvirtio){wb, ws};
+		}
 	}
 	/*
 	 * The RK3566 NPU probe is the only remaining non-DT window; mark it

@@ -62,18 +62,42 @@ enum {
 	Fdtclassrtc,
 };
 
+enum { Maxfdtwin = 4 };		/* MMIO windows a node may describe */
+
 struct Fdtdev {
 	char name[Maxfdtname];
 	char compat[Maxfdtcompat];
-	u64 base;
+	char group[Maxfdtname];	/* harvey,group: devices granted together */
+	u64 base;	/* first window */
 	u64 size;
-	u64 base2;	/* second MMIO range, used by the VOP IOMMU */
-	u64 size2;
+	u32 nwin;	/* windows in the node's reg, 1..Maxfdtwin */
+	u64 wbase[Maxfdtwin-1];	/* windows 1..nwin-1 */
+	u64 wsize[Maxfdtwin-1];
 	u32 irq;	/* GIC interrupt ID (SPI+32, PPI+16); 0 when absent */
 	u32 irqflags;	/* trigger flags from the first interrupt cell */
 	u32 irq2;	/* second GIC interrupt ID; 0 when absent */
 	u32 clas;
+	u16 depth;	/* device-tree depth, for the parent pass */
+	u32 parent;	/* nearest enclosing device in dev[], ~0 when none */
 };
+
+/*
+ * Window i of a device.  Window 0 is base/size, the one #P names as
+ * reg/size and a claim maps by default; a compound node's further
+ * ranges are listed in #P/<node>/windows.
+ */
+static inline void
+fdtdevwin(Fdtdev *d, u32 i, u64 *base, u64 *size)
+{
+	if(i == 0){
+		*base = d->base;
+		*size = d->size;
+	}else{
+		*base = d->wbase[i-1];
+		*size = d->wsize[i-1];
+	}
+}
+u32 fdtdevmap(Fdtdev *, u64 *, u64 *);
 
 struct Fdtvirtio {
 	u64 base;
