@@ -417,7 +417,7 @@ arm64main(usize dtb)
 	u8 *p;
 	u32 size;
 	int parsed;
-	Fdtinfo info;
+	static Fdtinfo info;
 	u64 page0, page1, codepage, stackpage, codepage2, stackpage2;
 	u64 root, userroot, userroot2, translated;
 	u32 b;

@@ -171,7 +171,7 @@ arm64mmubuild(Fdtinfo *info)
 	u64 rootpa, l2pa, pa, start, end, base, bend;
 	u64 *root, *l2;
 	u32 i, j, k, b, regions, fixedstart;
-	Fdtvirtio device[Maxfdtvirtio+20+Maxfdtwin*Maxfdtdev];
+	static Fdtvirtio device[Maxfdtvirtio+20+Maxfdtwin*Maxfdtdev];
 
 	if(info->nusable == 0 || info->nvirtio > Maxfdtvirtio)
 		return 0;

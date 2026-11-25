@@ -317,8 +317,13 @@ mapdevice(char *node, int shared)
 {
 	u64 base, size;
 
-	if(claimdevice(node, shared) < 0)
-		return -1;
+	/*
+	 * A compound-device ancestor claim covers its subtree, so claiming
+	 * a child node (e.g. dwc3@4e00000 after ssusb@4e00000) is refused
+	 * even by the same owner.  Still attempt lklhost_mapdev(): the
+	 * kernel's pnpholds() allows mapping iff we hold node or an ancestor.
+	 */
+	claimdevice(node, shared);
 	if(lklhost_mapdev(node, &base, &size) < 0){
 		lkl_printf("lklboot: map %s: %r\n", node);
 		return -1;

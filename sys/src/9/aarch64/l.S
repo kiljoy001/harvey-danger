@@ -65,7 +65,7 @@ _startcode:
 
 	.section .bss.stack, "aw", %nobits
 	.balign 16
-	.skip 32768
+	.skip 65536
 _boot_stack_top:
 
 	.section .text.vectors, "ax"
