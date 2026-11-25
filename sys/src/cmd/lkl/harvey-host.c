@@ -13,9 +13,9 @@
 
 enum {
 	Page		= 4096,
-	Threadstack	= 512*1024,
+	Threadstack	= 128*1024,
 	Ntls		= 16,
-	Ntid		= 256,
+	Ntid		= 512,
 	Nreap		= 256,
 };
 
@@ -505,7 +505,7 @@ hthread_create(void (*f)(void*), void *arg)
 	Sthdr *h;
 	int pid, id, i;
 
-	if((raw = mallocz(2*Threadstack, 1)) == nil)
+	if((raw = malloc(2*Threadstack)) == nil)
 		return 0;
 	st = (uchar*)(((uintptr)raw + Threadstack - 1) & ~(uintptr)(Threadstack-1));
 	lock(&thlk);
@@ -551,7 +551,7 @@ lklhost_run_shared(void (*fn)(void*), void *arg)
 	uchar *raw, *st;
 	Sthdr *h;
 
-	if((raw = mallocz(2*Threadstack, 1)) == nil)
+	if((raw = malloc(2*Threadstack)) == nil)
 		sysfatal("lklhost_run_shared: malloc");
 	st = (uchar*)(((uintptr)raw + Threadstack - 1) & ~(uintptr)(Threadstack-1));
 	h = (Sthdr*)st;

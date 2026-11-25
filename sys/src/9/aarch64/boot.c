@@ -684,7 +684,7 @@ arm64kernelstart(Fdtinfo *info)
 	print("ARM64 multibank: %llud of %llud pages free\n",
 	      (uvlong)conf.upages, (uvlong)conf.npage);
 #endif
-	conf.nproc = 256;
+	conf.nproc = 1000;
 	conf.nimage = 64;
 	eve = "root";
 	procinit0();
