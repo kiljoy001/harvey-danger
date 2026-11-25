@@ -581,6 +581,33 @@ number(char **pp, u64 *v)
 	return n ? 0 : -1;
 }
 
+/*
+ * #P is keyed by the device-tree node name, so a name has to resolve to
+ * exactly one device.  A tree can describe one block more than once (the
+ * same window reached through another node, or a node copied into a
+ * guest tree): publish the first occurrence and drop the rest.  Equal
+ * windows are the same device and are dropped silently; a name that
+ * points at two different windows is a tree error, and which one was
+ * kept is reported rather than left silent.
+ */
+static int
+pnpdup(Fdtdev *d)
+{
+	u32 i;
+
+	for(i = 0; i < npnpdev; i++){
+		if(strcmp(pnpdev[i].name, d->name) != 0)
+			continue;
+		if(pnpdev[i].base != d->base || pnpdev[i].size != d->size ||
+		   pnpdev[i].base2 != d->base2 || pnpdev[i].size2 != d->size2)
+			print("#P: %s keeps %#llux/%#llux, ignores %#llux/%#llux\n",
+				d->name, pnpdev[i].base, pnpdev[i].size,
+				d->base, d->size);
+		return 1;
+	}
+	return 0;
+}
+
 void
 arm64pnpinit(Fdtinfo *info)
 {
@@ -595,7 +622,12 @@ arm64pnpinit(Fdtinfo *info)
 		 * kernel's own rkiommu driver works from the device tree,
 		 * so a user driver that owns a bus (the NPU, for one) can
 		 * programme the tables its device walks.
+		 *
+		 * One name, one device: pnpdup() drops a second node with
+		 * the same name so a later lookup cannot pick either.
 		 */
+		if(pnpdup(&info->dev[i]))
+			continue;
 		pnpdev[npnpdev++] = info->dev[i];
 	}
 	npnpresmem = 0;

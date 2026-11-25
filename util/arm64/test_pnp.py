@@ -155,12 +155,18 @@ listpnp(void)
 {
 	Dir *d;
 	char path[128], cls[32], own[64], reg[32];
-	int fd, i, n;
+	int fd, i, j, n;
 
 	if((fd = open("#P", OREAD)) < 0)
 		return;
 	n = dirreadall(fd, &d);
 	close(fd);
+	/* One name, one device: the kernel drops a second node with the
+	 * same name, so a listing must never repeat one. */
+	for(i = 0; i < n; i++)
+		for(j = i + 1; j < n; j++)
+			if(strcmp(d[i].name, d[j].name) == 0)
+				fail("#P: duplicate node name %s", d[i].name);
 	for(i = 0; i < n; i++){
 		snprint(path, sizeof path, "#P/%s/class", d[i].name);
 		if(readstr(path, cls, sizeof cls) == nil)

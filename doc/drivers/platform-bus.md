@@ -23,7 +23,13 @@ kernel drivers for these devices, and no private mappings.
 ```
 
 `<node>` is the device-tree node name, e.g. `mmc@fe310000`.  The path is
-built literally: `snprint(path, ..., "#P/%s/%s", node, file)`.
+built literally: `snprint(path, ..., "#P/%s/%s", node, file)`.  The name
+identifies the device, so it is unique in `#P`: if the tree describes one
+block more than once, the first node is published and the rest are
+dropped, which keeps a name resolving to exactly one device.  Equal
+windows are the same device and go silently; a second node with the same
+name but a different window is a tree error and is reported
+(`#P: <node> keeps <base>/<size>, ignores <base>/<size>`).
 
 `wait` returns once per interrupt: read it before touching the device's
 status registers, then acknowledge in the device.  Opening it enables the
