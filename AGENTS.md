@@ -120,6 +120,28 @@ true when written: check the code and `git log` before relying on them.
 - Next: run `devxhci`/`ethergmac` on the Orange Pi, then remove the
   per-driver fallback constants once the DT nodes are confirmed.
 
+### PMIC keys, ADC, LPG and vibrator on the Bengal DTS
+
+- The working tree's `util/arm64/lkl-bengal-usb.dts` carries the PMIC
+  nodes (not yet committed): a `resin` key (KEY_VOLUMEDOWN), the PM6125
+  and PMI632 ADC channels, PMI632 `pbs@7400` and `spmi-sdam@b600`, the
+  LPG charge LED and `vibrator@5700`.  Every compatible, ADC `reg` and
+  SPMI slave number was checked against 6.12 in `~/Repo/lkl`
+  (`qcom,spmi-vadc.h` has 0x01 = ADC5_1P25VREF, 0x4b/0x4c =
+  bat_id/xo_therm; PMI632 is slaves 2 and 3, the LPG in 3).
+- `util/arm64/lkl-bengal.config` now enables what those nodes need:
+  PWM, QCOM_PBS, LEDS_CLASS_MULTICOLOR (drivers/leds/rgb/Kconfig is
+  inside that `if`, so LEDS_QCOM_LPG vanishes without it),
+  LEDS_QCOM_LPG, INPUT_PM8XXX_VIBRATOR and NVMEM_SPMI_SDAM.
+- Verified by build only: `olddefconfig` resolves all six, the five
+  drivers compile, and a full `lkl.o` with the firmware lines stripped
+  builds and contains every compatible.  Not run on the phone yet.
+- A full LKL build in this tree needs `CONFIG_EXTRA_FIRMWARE_DIR`
+  (`/tmp/opencode/fw`) populated: `uwe5622/wcnmodem.bin` is in
+  `sys/src/cmd/sdio/`, but `uwe5622/wifi_2355b001_1ant.ini` is not in
+  the repo (only the header generated from it, `sys/src/cmd/sdio/wifi_conf.h`),
+  so the wifi fragment fails without it.
+
 ### Bengal phone bring-up
 
 - Uncommitted work on `vmm-hypervisor` (lkl9p, lklusb, the Bengal DTS and
