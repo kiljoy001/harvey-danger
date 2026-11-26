@@ -1254,6 +1254,8 @@ pnpopen(Chan *c, int omode)
 			if(!pnpholds(dev))
 				error("device not claimed");
 			irq = (t == Qwait2) ? pnpdev[dev].irq2 : pnpdev[dev].irq;
+			if(t == Qwait && (pnpdev[dev].irqflags & 3) != 0)
+				arm64irqedge(irq);
 		}
 		{
 			int *idp;

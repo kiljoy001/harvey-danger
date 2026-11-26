@@ -484,6 +484,20 @@
 				drive-strength = <2>;
 				bias-disable;
 			};
+
+			cci0_default: cci0-default-state {
+				pins = "gpio22", "gpio23";
+				function = "cci_i2c";
+				drive-strength = <2>;
+				bias-pull-up;
+			};
+
+			cci1_default: cci1-default-state {
+				pins = "gpio29", "gpio30";
+				function = "cci_i2c";
+				drive-strength = <2>;
+				bias-pull-up;
+			};
 		};
 
 		rng@1b53000 {
@@ -895,6 +909,40 @@
 			vdd-1.3-rfa-supply = <&pm6125_l17>;
 			vdd-3.3-ch0-supply = <&pm6125_l23>;
 			status = "okay";
+		};
+
+		cci: cci@5c1b000 {
+			compatible = "qcom,msm8996-cci";
+			#address-cells = <1>;
+			#size-cells = <0>;
+			reg = <0x0 0x05c1b000 0x0 0x1000>;
+			interrupt-parent = <&gic>;
+			interrupts = <0 206 1>;		/* GIC_SPI 206, edge rising */
+			power-domains = <&gcc 0>;	/* GCC_CAMSS_TOP_GDSC */
+			clocks = <&gcc 154>,		/* GCC_CAMERA_AHB_CLK */
+				 <&gcc 54>,		/* GCC_CAMSS_TOP_AHB_CLK */
+				 <&gcc 160>;		/* GCC_CAMSS_CCI_0_CLK */
+			clock-names = "camss_ahb", "camss_top_ahb", "cci";
+			assigned-clocks = <&gcc 55>,	/* GCC_CAMSS_TOP_AHB_CLK_SRC */
+					  <&gcc 161>;	/* GCC_CAMSS_CCI_CLK_SRC */
+			assigned-clock-rates = <40000000>, <37500000>;
+			pinctrl-names = "default";
+			pinctrl-0 = <&cci0_default &cci1_default>;
+			status = "okay";
+
+			cci_i2c0: i2c-bus@0 {
+				reg = <0>;
+				clock-frequency = <400000>;
+				#address-cells = <1>;
+				#size-cells = <0>;
+			};
+
+			cci_i2c1: i2c-bus@1 {
+				reg = <1>;
+				clock-frequency = <400000>;
+				#address-cells = <1>;
+				#size-cells = <0>;
+			};
 		};
 
 		dwc3@4e00000 {

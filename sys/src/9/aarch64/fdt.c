@@ -280,6 +280,8 @@ static const Fdtclass classtab[] = {
 	{ "qcom,wcn3990-wifi", Fdtclassgmac },
 	{ "qcom,icnss", Fdtclassgmac },
 	{ "qcom,ipa", Fdtclassgmac },
+	{ "qcom,cci-v1.2", Fdtclassi2c },
+	{ "qcom,cci", Fdtclassi2c },
 	{ "qcom,bengal-pinctrl", Fdtclassgpio },
 	{ "qcom,sm6115-pinctrl", Fdtclassgpio },
 	{ "qcom,sm6115-tlmm", Fdtclassgpio },
