@@ -1264,6 +1264,141 @@ rebootwatch(void *arg)
 	}
 }
 
+static u32
+lp_le32(u8 *p)
+{
+	return (u32)p[0] | ((u32)p[1]<<8) | ((u32)p[2]<<16) | ((u32)p[3]<<24);
+}
+
+static u64
+lp_le64(u8 *p)
+{
+	return (u64)lp_le32(p) | ((u64)lp_le32(p + 4) << 32);
+}
+
+/*
+ * Parse Android dynamic partition LP metadata inside 'super' and mount
+ * vendor_a (or vendor_b) strictly read-only at /fw/vendor via /dev/loop0.
+ */
+static void
+mount_super_vendor(char *superdev)
+{
+	u8 geo[64], hdr[256], *tbl, sb[128];
+	u32 magic, hdrsz, tblsz, meta_max = 65536, nslots = 2, slot;
+	u32 poff, pnum, pesz, eoff, enum_, eesz, i;
+	u64 voff = 0, vsz = 0;
+	int is_erofs = 0;
+	long sfd, lfd, r;
+	u8 linfo[232];
+
+	sfd = lklopenat(LklAtFdcwd, superdev, LklOrdonly, 0);
+	if(sfd < 0){
+		lkl_printf("lkl9p: open %s -> %ld\n", superdev, sfd);
+		return;
+	}
+	if(sys0(LklNrPread64, sfd, (long)geo, sizeof geo, 0x1000, 0, 0) == sizeof geo &&
+	   lp_le32(geo) == 0x616c4467){
+		meta_max = lp_le32(geo + 0x28);
+		nslots = lp_le32(geo + 0x2c);
+		if(meta_max == 0 || meta_max > 262144) meta_max = 65536;
+		if(nslots == 0 || nslots > 4) nslots = 2;
+	}
+	for(slot = 0; slot < nslots && vsz == 0; slot++){
+		u64 mbase = 0x3000ULL + (u64)slot * meta_max;
+		if(sys0(LklNrPread64, sfd, (long)hdr, sizeof hdr, mbase, 0, 0) < 0x68)
+			continue;
+		magic = lp_le32(hdr + 0x00);
+		hdrsz = lp_le32(hdr + 0x08);
+		tblsz = lp_le32(hdr + 0x2c);
+		if(magic != 0x414c5030 || hdrsz < 0x68 || tblsz == 0 || tblsz > 65536)
+			continue;
+		poff = lp_le32(hdr + 0x50);
+		pnum = lp_le32(hdr + 0x54);
+		pesz = lp_le32(hdr + 0x58);
+		eoff = lp_le32(hdr + 0x5c);
+		enum_ = lp_le32(hdr + 0x60);
+		eesz = lp_le32(hdr + 0x64);
+		tbl = malloc(tblsz);
+		if(tbl == nil)
+			break;
+		if(sys0(LklNrPread64, sfd, (long)tbl, tblsz, mbase + hdrsz, 0, 0) != (long)tblsz){
+			free(tbl);
+			continue;
+		}
+		for(i = 0; i < pnum; i++){
+			u8 *pe = tbl + poff + i * pesz;
+			u32 eidx, en;
+			if(poff + (i + 1) * pesz > tblsz)
+				break;
+			if(strncmp((char *)pe, "vendor_a", 36) != 0 &&
+			   strncmp((char *)pe, "vendor_b", 36) != 0)
+				continue;
+			eidx = lp_le32(pe + 0x28);
+			en = lp_le32(pe + 0x2c);
+			if(en == 0 || eidx >= enum_ || eoff + (eidx + 1) * eesz > tblsz)
+				continue;
+			{
+				u8 *ee = tbl + eoff + eidx * eesz;
+				u32 ttype = lp_le32(ee + 0x08);
+				u64 csz = lp_le64(ee + 0x00) * 512ULL;
+				u64 coff = lp_le64(ee + 0x0c) * 512ULL;
+				u32 m400 = 0, m438 = 0;
+				if(ttype != 0)
+					continue;
+				if(sys0(LklNrPread64, sfd, (long)sb, sizeof sb, coff + 0x400, 0, 0) == sizeof sb){
+					m400 = lp_le32(sb);
+					m438 = lp_le32(sb + 0x38);
+				}
+				lkl_printf("lkl9p: super slot%ud %.16s off=%#llux sz=%#llux @400=%#ux @438=%#ux\n",
+					slot, (char *)pe, coff, csz, m400, m438);
+				if((m438 & 0xffff) == 0xef53){
+					voff = coff; vsz = csz; is_erofs = 0;
+					break;
+				}
+				if(m400 == 0xe0f5e1e2){
+					voff = coff; vsz = csz; is_erofs = 1;
+					break;
+				}
+			}
+		}
+		free(tbl);
+	}
+	if(vsz == 0){
+		lklclose(sfd);
+		return;
+	}
+	sys0(LklNrMknodat, LklAtFdcwd, (long)"/dev/loop0", 0060600, (7<<8) | 0, 0, 0);
+	lfd = lklopenat(LklAtFdcwd, "/dev/loop0", LklOrdonly, 0);
+	if(lfd < 0){
+		lkl_printf("lkl9p: open /dev/loop0 -> %ld\n", lfd);
+		lklclose(sfd);
+		return;
+	}
+	r = sys0(LklNrIoctl, lfd, 0x4c00, sfd, 0, 0, 0);	/* LOOP_SET_FD */
+	if(r < 0){
+		lkl_printf("lkl9p: LOOP_SET_FD -> %ld\n", r);
+		lklclose(lfd);
+		lklclose(sfd);
+		return;
+	}
+	memset(linfo, 0, sizeof linfo);
+	*(u64 *)(linfo + 0x18) = voff;		/* lo_offset */
+	*(u64 *)(linfo + 0x20) = vsz;		/* lo_sizelimit */
+	*(u32 *)(linfo + 0x34) = 1;		/* LO_FLAGS_READ_ONLY */
+	r = sys0(LklNrIoctl, lfd, 0x4c04, (long)linfo, 0, 0, 0);	/* LOOP_SET_STATUS64 */
+	lklclose(lfd);
+	lklclose(sfd);
+	if(r < 0){
+		lkl_printf("lkl9p: LOOP_SET_STATUS64 -> %ld\n", r);
+		return;
+	}
+	lklmkdirat(LklAtFdcwd, "/fw/vendor", 0555);
+	r = sys0(LklNrMount, (long)"/dev/loop0", (long)"/fw/vendor",
+		 (long)(is_erofs ? "erofs" : "ext4"), 1, 0, 0);
+	lkl_printf("lkl9p: mount /dev/loop0 /fw/vendor (%s RO) -> %ld\n",
+		is_erofs ? "erofs" : "ext4", r);
+}
+
 static void
 mkblocknodes(void *arg)
 {
@@ -1354,7 +1489,9 @@ mkblocknodes(void *arg)
 					r = sys0(LklNrMount, (long)dpath, (long)"/fw/persist",
 						 (long)"ext4", 1, 0, 0);
 					lkl_printf("lkl9p: mount %s /fw/persist (RO) -> %ld\n", dpath, r);
-					break;
+				}else if(strstr(ubuf, "PARTNAME=super\n") != nil){
+					snprint(dpath, sizeof dpath, "/dev/mmcblk0p%d", i);
+					mount_super_vendor(dpath);
 				}
 			}
 			r = sys0(LklNrMount, (long)"/dev/mmcblk0p31", (long)"/fw/modem",

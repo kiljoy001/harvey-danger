@@ -204,6 +204,11 @@
 				regulators-0 {
 					compatible = "qcom,rpm-pm6125-regulators";
 
+					pm6125_s6: s6 {
+						regulator-min-microvolt = <304000>;
+						regulator-max-microvolt = <1456000>;
+					};
+
 					pm6125_l8: l8 {
 						regulator-min-microvolt = <400000>;
 						regulator-max-microvolt = <728000>;
@@ -219,6 +224,11 @@
 						regulator-max-microvolt = <1384000>;
 					};
 
+					pm6125_l18: l18 {
+						regulator-min-microvolt = <1232000>;
+						regulator-max-microvolt = <1232000>;
+					};
+
 					pm6125_l23: l23 {
 						regulator-min-microvolt = <3200000>;
 						regulator-max-microvolt = <3400000>;
@@ -226,6 +236,68 @@
 				};
 			};
 		};
+	};
+
+	camera_iovdd: regulator-camera-iovdd {
+		compatible = "regulator-fixed";
+		regulator-name = "camera_iovdd";
+		regulator-min-microvolt = <1800000>;
+		regulator-max-microvolt = <1800000>;
+		startup-delay-us = <233>;
+		enable-active-high;
+		gpio = <&tlmm 96 0>;
+	};
+
+	camera_main_front_avdd: regulator-camera-main-front-avdd {
+		compatible = "regulator-fixed";
+		regulator-name = "camera_main_front_avdd";
+		regulator-min-microvolt = <2800000>;
+		regulator-max-microvolt = <2800000>;
+		startup-delay-us = <233>;
+		enable-active-high;
+		gpio = <&tlmm 26 0>;
+	};
+
+	camera_main_dvdd: regulator-camera-main-dvdd {
+		compatible = "regulator-fixed";
+		regulator-name = "camera_main_dvdd";
+		regulator-min-microvolt = <1050000>;
+		regulator-max-microvolt = <1050000>;
+		startup-delay-us = <233>;
+		enable-active-high;
+		gpio = <&tlmm 93 0>;
+		vin-supply = <&pm6125_s6>;
+	};
+
+	camera_front_dvdd: regulator-camera-front-dvdd {
+		compatible = "regulator-fixed";
+		regulator-name = "camera_front_dvdd";
+		regulator-min-microvolt = <1200000>;
+		regulator-max-microvolt = <1200000>;
+		startup-delay-us = <233>;
+		enable-active-high;
+		gpio = <&tlmm 36 0>;
+		vin-supply = <&pm6125_s6>;
+	};
+
+	camera_depth_macro_avdd: regulator-camera-depth-macro-avdd {
+		compatible = "regulator-fixed";
+		regulator-name = "camera_depth_macro_avdd";
+		regulator-min-microvolt = <2800000>;
+		regulator-max-microvolt = <2800000>;
+		startup-delay-us = <233>;
+		enable-active-high;
+		gpio = <&tlmm 111 0>;
+	};
+
+	camera_main_macro_afvdd: regulator-camera-main-macro-afvdd {
+		compatible = "regulator-fixed";
+		regulator-name = "camera_main_macro_afvdd";
+		regulator-min-microvolt = <2800000>;
+		regulator-max-microvolt = <2800000>;
+		startup-delay-us = <233>;
+		enable-active-high;
+		gpio = <&tlmm 25 0>;
 	};
 
 	soc@0 {
@@ -497,6 +569,34 @@
 				function = "cci_i2c";
 				drive-strength = <2>;
 				bias-pull-up;
+			};
+
+			cam_mclk0_default: cam-mclk0-default-state {
+				pins = "gpio20";
+				function = "cam_mclk";
+				drive-strength = <2>;
+				bias-disable;
+			};
+
+			cam_mclk1_default: cam-mclk1-default-state {
+				pins = "gpio21";
+				function = "cam_mclk";
+				drive-strength = <4>;
+				bias-disable;
+			};
+
+			cam_mclk2_default: cam-mclk2-default-state {
+				pins = "gpio27";
+				function = "cam_mclk";
+				drive-strength = <4>;
+				bias-disable;
+			};
+
+			cam_mclk3_default: cam-mclk3-default-state {
+				pins = "gpio28";
+				function = "cam_mclk";
+				drive-strength = <4>;
+				bias-disable;
 			};
 		};
 
@@ -943,6 +1043,32 @@
 				#address-cells = <1>;
 				#size-cells = <0>;
 			};
+		};
+
+		cam-probe {
+			compatible = "qcom,borneo-cam-probe";
+			power-domains = <&gcc 0>;
+			iovdd-supply = <&camera_iovdd>;
+			main-front-avdd-supply = <&camera_main_front_avdd>;
+			main-dvdd-supply = <&camera_main_dvdd>;
+			front-dvdd-supply = <&camera_front_dvdd>;
+			depth-macro-avdd-supply = <&camera_depth_macro_avdd>;
+			afvdd-supply = <&camera_main_macro_afvdd>;
+			clocks = <&gcc 24>,	/* GCC_CAMSS_MCLK0_CLK (main) */
+				 <&gcc 26>,	/* GCC_CAMSS_MCLK1_CLK (front) */
+				 <&gcc 28>,	/* GCC_CAMSS_MCLK2_CLK (macro) */
+				 <&gcc 30>;	/* GCC_CAMSS_MCLK3_CLK (depth) */
+			clock-names = "mclk0", "mclk1", "mclk2", "mclk3";
+			pinctrl-names = "default";
+			pinctrl-0 = <&cam_mclk0_default &cam_mclk1_default
+				     &cam_mclk2_default &cam_mclk3_default>;
+			reset-gpios = <&tlmm 18 0>,	/* main reset */
+				      <&tlmm 19 0>,	/* front reset */
+				      <&tlmm 24 0>,	/* macro pwdn */
+				      <&tlmm 65 0>;	/* depth pwdn */
+			cci-bus0 = <&cci_i2c0>;
+			cci-bus1 = <&cci_i2c1>;
+			status = "okay";
 		};
 
 		dwc3@4e00000 {
