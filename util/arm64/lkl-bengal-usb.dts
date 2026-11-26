@@ -1068,6 +1068,56 @@
 				      <&tlmm 65 0>;	/* depth pwdn */
 			cci-bus0 = <&cci_i2c0>;
 			cci-bus1 = <&cci_i2c1>;
+			status = "disabled";
+		};
+
+		camss: camss@5c11000 {
+			compatible = "qcom,sm6115-tfe-capture";
+			reg = <0x0 0x05c11000 0x0 0x1000>,
+			      <0x0 0x05c52000 0x0 0x1000>,
+			      <0x0 0x05c53000 0x0 0x1000>,
+			      <0x0 0x05c54000 0x0 0x1000>,
+			      <0x0 0x05c6e000 0x0 0x5000>,
+			      <0x0 0x05c66000 0x0 0x0400>;
+			reg-names = "cpas", "csiphy0", "csiphy1", "csiphy2", "tfe0", "tpg0";
+			interrupt-parent = <&gic>;
+			interrupts = <0 74 1>,	/* CSIPHY2 (front) */
+				     <0 210 1>,	/* TFE_CSID0 */
+				     <0 211 1>;	/* TFE0 */
+			interrupt-names = "csiphy2", "csid0", "tfe0";
+			power-domains = <&gcc 0>;	/* GCC_CAMSS_TOP_GDSC */
+			clocks = <&gcc 154>,	/* GCC_CAMERA_AHB_CLK */
+				 <&gcc 54>,	/* GCC_CAMSS_TOP_AHB_CLK */
+				 <&gcc 156>,	/* GCC_CAMSS_AXI_CLK */
+				 <&gcc 32>,	/* GCC_CAMSS_NRT_AXI_CLK */
+				 <&gcc 37>,	/* GCC_CAMSS_RT_AXI_CLK */
+				 <&gcc 148>,	/* GCC_AHB2PHY_CSI_CLK */
+				 <&gcc 162>,	/* GCC_CAMSS_CPHY_0_CLK */
+				 <&gcc 164>,	/* GCC_CAMSS_CPHY_2_CLK */
+				 <&gcc 22>,	/* GCC_CAMSS_CSI2PHYTIMER_CLK */
+				 <&gcc 40>,	/* GCC_CAMSS_TFE_0_CPHY_RX_CLK */
+				 <&gcc 41>,	/* GCC_CAMSS_TFE_0_CSID_CLK */
+				 <&gcc 38>,	/* GCC_CAMSS_TFE_0_CLK */
+				 <&gcc 26>;	/* GCC_CAMSS_MCLK1_CLK (front) */
+			clock-names = "cam_ahb", "top_ahb", "axi", "nrt_axi", "rt_axi",
+				      "ahb2phy_csi", "cphy0", "cphy2", "csi2phytimer",
+				      "tfe0_cphy_rx", "tfe0_csid", "tfe0", "mclk1";
+			assigned-clocks = <&gcc 55>,	/* GCC_CAMSS_TOP_AHB_CLK_SRC */
+					  <&gcc 157>,	/* GCC_CAMSS_AXI_CLK_SRC */
+					  <&gcc 53>,	/* GCC_CAMSS_TFE_CPHY_RX_CLK_SRC */
+					  <&gcc 23>,	/* GCC_CAMSS_CSI2PHYTIMER_CLK_SRC */
+					  <&gcc 42>,	/* GCC_CAMSS_TFE_0_CSID_CLK_SRC */
+					  <&gcc 39>;	/* GCC_CAMSS_TFE_0_CLK_SRC */
+			assigned-clock-rates = <80000000>, <150000000>, <240000000>,
+					       <200000000>, <240000000>, <256000000>;
+			mipi-csi-vdd-supply = <&pm6125_l18>;
+			iovdd-supply = <&camera_iovdd>;
+			avdd-supply = <&camera_main_front_avdd>;
+			dvdd-supply = <&camera_front_dvdd>;
+			pinctrl-names = "default";
+			pinctrl-0 = <&cam_mclk1_default>;
+			reset-gpios = <&tlmm 19 0>;
+			cci-bus0 = <&cci_i2c0>;
 			status = "okay";
 		};
 

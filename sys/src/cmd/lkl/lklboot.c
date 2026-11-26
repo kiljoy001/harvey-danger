@@ -397,6 +397,7 @@ watchfamily(Family *f)
 			293, 295, 297,	/* CDSP: GLINK (261), SMP2P (263), WDOG (265) */
 			309, 311, 314,	/* ADSP: GLINK (277), SMP2P (279), WDOG (282) */
 			100, 102, 339,	/* MPSS: GLINK (68),  SMP2P (70),  WDOG (307) */
+			242,		/* CAMSS: TFE_CSID0 (SPI 210, edge rising) */
 		};
 		int i;
 

@@ -48,7 +48,13 @@
 			"mailbox@0f111000",
 			"qcom,icnss@C800000",
 			"qcom,ipa@0x5800000",
-			"qcom,cci0"
+			"qcom,cci0",
+			"qcom,cam-cpas@5c11000",
+			"qcom,csiphy0",
+			"qcom,csiphy1",
+			"qcom,csiphy2",
+			"qcom,tfe0@5c6e000",
+			"qcom,tpg0@5c66000"
 		],
 		"dtb": "lkl-bengal-usb.dtb",
 		"setup": "usb"
