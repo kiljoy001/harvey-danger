@@ -9,7 +9,9 @@
 
 
 #define	nelem(x)	(sizeof(x)/sizeof((x)[0]))
+#ifndef offsetof
 #define	offsetof(s, m)	(usize)(&(((s*)0)->m))
+#endif
 #define	assert(x)	do{if(!(x))_assert(#x);}while(0)
 
 /*

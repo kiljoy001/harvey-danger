@@ -525,7 +525,7 @@ logappend(void *data, long n)
 static void
 fsread(Req *r, void *aux)
 {
-	switch((int)aux){
+	switch((int)(uintptr)aux){
 	case Qlog:
 		qlock(&cardlk);
 		if(logready)
@@ -553,7 +553,7 @@ fsread(Req *r, void *aux)
 static void
 fswrite(Req *r, void *aux)
 {
-	switch((int)aux){
+	switch((int)(uintptr)aux){
 	case Qlog:
 		qlock(&cardlk);
 		if(logappend(r->ifcall.data, r->ifcall.count) < 0){
