@@ -1397,6 +1397,10 @@ mount_super_vendor(char *superdev)
 		 (long)(is_erofs ? "erofs" : "ext4"), 1, 0, 0);
 	lkl_printf("lkl9p: mount /dev/loop0 /fw/vendor (%s RO) -> %ld\n",
 		is_erofs ? "erofs" : "ext4", r);
+	lklmkdirat(LklAtFdcwd, "/cam", 0755);
+	r = sys0(LklNrMount, (long)"/sys/devices/platform/soc@0/5c11000.camss",
+		 (long)"/cam", 0, 0x1000, 0, 0);	/* MS_BIND */
+	lkl_printf("lkl9p: bind /cam -> %ld\n", r);
 }
 
 static void

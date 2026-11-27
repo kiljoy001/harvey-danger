@@ -1093,31 +1093,49 @@
 				 <&gcc 37>,	/* GCC_CAMSS_RT_AXI_CLK */
 				 <&gcc 148>,	/* GCC_AHB2PHY_CSI_CLK */
 				 <&gcc 162>,	/* GCC_CAMSS_CPHY_0_CLK */
+				 <&gcc 163>,	/* GCC_CAMSS_CPHY_1_CLK */
 				 <&gcc 164>,	/* GCC_CAMSS_CPHY_2_CLK */
+				 <&gcc 18>,	/* GCC_CAMSS_CSI0PHYTIMER_CLK */
+				 <&gcc 20>,	/* GCC_CAMSS_CSI1PHYTIMER_CLK */
 				 <&gcc 22>,	/* GCC_CAMSS_CSI2PHYTIMER_CLK */
 				 <&gcc 40>,	/* GCC_CAMSS_TFE_0_CPHY_RX_CLK */
 				 <&gcc 41>,	/* GCC_CAMSS_TFE_0_CSID_CLK */
 				 <&gcc 38>,	/* GCC_CAMSS_TFE_0_CLK */
-				 <&gcc 26>;	/* GCC_CAMSS_MCLK1_CLK (front) */
+				 <&gcc 24>,	/* GCC_CAMSS_MCLK0_CLK (main) */
+				 <&gcc 26>,	/* GCC_CAMSS_MCLK1_CLK (front) */
+				 <&gcc 28>,	/* GCC_CAMSS_MCLK2_CLK (macro) */
+				 <&gcc 30>;	/* GCC_CAMSS_MCLK3_CLK (depth) */
 			clock-names = "cam_ahb", "top_ahb", "axi", "nrt_axi", "rt_axi",
-				      "ahb2phy_csi", "cphy0", "cphy2", "csi2phytimer",
-				      "tfe0_cphy_rx", "tfe0_csid", "tfe0", "mclk1";
+				      "ahb2phy_csi", "cphy0", "cphy1", "cphy2",
+				      "csi0phytimer", "csi1phytimer", "csi2phytimer",
+				      "tfe0_cphy_rx", "tfe0_csid", "tfe0",
+				      "mclk0", "mclk1", "mclk2", "mclk3";
 			assigned-clocks = <&gcc 55>,	/* GCC_CAMSS_TOP_AHB_CLK_SRC */
 					  <&gcc 157>,	/* GCC_CAMSS_AXI_CLK_SRC */
 					  <&gcc 53>,	/* GCC_CAMSS_TFE_CPHY_RX_CLK_SRC */
+					  <&gcc 19>,	/* GCC_CAMSS_CSI0PHYTIMER_CLK_SRC */
+					  <&gcc 21>,	/* GCC_CAMSS_CSI1PHYTIMER_CLK_SRC */
 					  <&gcc 23>,	/* GCC_CAMSS_CSI2PHYTIMER_CLK_SRC */
 					  <&gcc 42>,	/* GCC_CAMSS_TFE_0_CSID_CLK_SRC */
 					  <&gcc 39>;	/* GCC_CAMSS_TFE_0_CLK_SRC */
-			assigned-clock-rates = <80000000>, <150000000>, <240000000>,
-					       <200000000>, <240000000>, <256000000>;
+			assigned-clock-rates = <80000000>, <200000000>, <240000000>,
+					       <200000000>, <200000000>, <200000000>,
+					       <240000000>, <460800000>;
 			mipi-csi-vdd-supply = <&pm6125_l18>;
 			iovdd-supply = <&camera_iovdd>;
 			avdd-supply = <&camera_main_front_avdd>;
 			dvdd-supply = <&camera_front_dvdd>;
+			main-dvdd-supply = <&camera_main_dvdd>;
+			depth-macro-avdd-supply = <&camera_depth_macro_avdd>;
 			pinctrl-names = "default";
-			pinctrl-0 = <&cam_mclk1_default>;
-			reset-gpios = <&tlmm 19 0>;
+			pinctrl-0 = <&cam_mclk0_default &cam_mclk1_default
+				     &cam_mclk2_default &cam_mclk3_default>;
+			main-reset-gpios = <&tlmm 18 0>;
+			front-reset-gpios = <&tlmm 19 0>;
+			depth-reset-gpios = <&tlmm 65 0>;
+			macro-reset-gpios = <&tlmm 24 0>;
 			cci-bus0 = <&cci_i2c0>;
+			cci-bus1 = <&cci_i2c1>;
 			status = "okay";
 		};
 
